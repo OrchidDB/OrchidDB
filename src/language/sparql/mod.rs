@@ -162,7 +162,7 @@ impl SparqlPlanner {
                             .map(|triple| ConstructTriple {
                                 subject: term(&triple.subject),
                                 predicate: named_term(&triple.predicate),
-                                object: term(&triple.object),
+                                object: terms::exact_term(&triple.object),
                             })
                             .collect(),
                         input: Box::new(lowered.node),

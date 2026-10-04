@@ -3,15 +3,19 @@
 //! substrings: a function spelling inside data or an identifier is untouched.
 use std::ops::ControlFlow;
 
+#[cfg(feature = "duckdb")]
 use datafusion::common::DFSchema;
+#[cfg(feature = "duckdb")]
 use datafusion::logical_expr::Expr;
 use datafusion::sql::sqlparser::{ast, dialect::DuckDbDialect, parser::Parser};
+#[cfg(feature = "duckdb")]
 use datafusion::sql::unparser::Unparser;
 
 use super::{SqlDialect, SqlError, SqlResult};
 
 /// Render a scalar expression using the same rules as complete queries. The
 /// catalog binder uses this after replacing column references by typed NULLs.
+#[cfg(feature = "duckdb")]
 pub(crate) fn expression_sql(expr: &Expr, _schema: &DFSchema) -> SqlResult<String> {
     let dialect = SqlDialect::DuckDb.unparser_dialect();
     let encoded =

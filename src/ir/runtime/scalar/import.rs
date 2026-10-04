@@ -134,7 +134,7 @@ struct VertexProperty {
 #[derive(Debug)]
 struct Vertex {
     id: Value,
-    key: String,
+    key: Vec<u8>,
     label: String,
     properties: BTreeMap<String, Vec<VertexProperty>>,
 }
@@ -142,8 +142,8 @@ struct Vertex {
 struct Edge {
     id: Value,
     label: String,
-    src: String,
-    dst: String,
+    src: Vec<u8>,
+    dst: Vec<u8>,
     properties: BTreeMap<String, Value>,
 }
 #[derive(Debug, Default)]
@@ -151,12 +151,15 @@ struct Import {
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
 }
-fn identity(value: &Json) -> IrResult<(Value, String)> {
+fn identity(value: &Json) -> IrResult<(Value, Vec<u8>)> {
     let id = decode(value)?;
-    if !matches!(id, Value::Int(_) | Value::Long(_) | Value::String(_)) {
+    if !matches!(id, Value::Int(_) | Value::Long(_) | Value::BigInt(_) | Value::BigDecimal(_) | Value::String(_)) {
         return Err(error("Unsupported GraphSON element ID type"));
     }
-    Ok((id, value.to_string()))
+    // Accepted JSON representations of one typed ID must share an identity.
+    // Native keys preserve numeric widths and BigDecimal scale.
+    let key = crate::ir::value::set_member_key(&id);
+    Ok((id, key))
 }
 fn properties(value: Option<&Json>) -> IrResult<BTreeMap<String, Value>> {
     match value {

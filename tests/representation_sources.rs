@@ -604,3 +604,25 @@ async fn relationship_mapping_uses_canonical_endpoint_keys() {
         assert_eq!(rows, vec![(1, "a".into()), (50, "a".into())]);
     }
 }
+
+#[tokio::test]
+async fn representation_dependencies_can_exceed_sixty_four_levels() {
+    use orchiddb::ir::rel::{mapping::GraphMapping, representation::select};
+    use arrow::datatypes::{DataType, Field, Schema};
+    use std::sync::Arc;
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("base", Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)])));
+    let mut previous = "base".to_owned();
+    for index in 0..80 {
+        let name = format!("level_{index}");
+        mapping.register_representation_source(serde_json::from_value(json!({
+            "name": name,
+            "default_representation": "source",
+            "representations": [{"name": "source", "source": {"kind": "table", "name": previous}}]
+        })).unwrap()).unwrap();
+        previous = name;
+    }
+    let selected = select(mapping.relational_plan(&format!("SELECT id FROM {previous}")).unwrap()).unwrap();
+    assert_eq!(selected.representation_selections.len(), 80);
+    assert_eq!(selected.plan.schema().field(0).data_type(), &DataType::Int64);
+}

@@ -134,9 +134,7 @@ impl LoweringVisitor {
         }
     }
 
-    /// Lowers `traversalMethod_hasKey` subtree. Both alternatives are
-    /// approximated: literal varargs become an OR-key filter; the predicate
-    /// form lowers as Identity (no constraint).
+    /// Lower literal keys or apply a predicate to the current property's key.
     pub(super) fn dispatch_traversalMethod_hasKey<'input>(
         &mut self,
         ctx: &TraversalMethod_hasKeyContextAll<'input>,
@@ -168,8 +166,17 @@ impl LoweringVisitor {
                 }
                 self.push_has_key_filter(keys);
             }
-            TraversalMethod_hasKeyContextAll::TraversalMethod_hasKey_PContext(_) => {
-                self.steps.push(Step::Identity);
+            TraversalMethod_hasKeyContextAll::TraversalMethod_hasKey_PContext(c) => {
+                let Some(ctx) = c.traversalPredicate() else {
+                    self.fail(GremlinError::Parse("hasKey() missing predicate".into()));
+                    return;
+                };
+                self.visit_traversalPredicate(&ctx);
+                if let Some(predicate) = self.pop_predicate() {
+                    self.steps.push(Step::WhereTraversal(vec![
+                        Step::PropertyKey, Step::Is { predicate },
+                    ]));
+                }
             }
             TraversalMethod_hasKeyContextAll::Error(_) => {
                 self.fail(GremlinError::Parse("hasKey() failed to parse".to_string()));

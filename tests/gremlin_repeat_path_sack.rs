@@ -7,6 +7,8 @@ use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 use std::sync::Arc;
 
 #[path = "gremlin_case_runner/dataset.rs"]
+// This binary needs only selected graphs from the shared corpus fixtures.
+#[allow(dead_code)]
 mod dataset;
 
 fn results(query: &str, graph: &PropertyGraph) -> Vec<String> {

@@ -54,6 +54,7 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
     };
     Ok(format!("CAST({literal} AS {target})"))
 }
+#[cfg(feature = "duckdb")]
 pub(crate) use functions::expression_sql;
 mod rows;
 use rows::*;
@@ -354,6 +355,7 @@ pub struct PreparedSql {
     schema: SchemaRef,
 }
 
+#[cfg(feature = "duckdb")]
 impl PreparedSql {
     pub(crate) fn output_schema(&self) -> SchemaRef { self.schema.clone() }
 }
@@ -403,10 +405,12 @@ pub enum SqlValue {
 ///
 /// DuckDB hands nested values back as Arrow arrays rather than scalars, so its
 /// executor reuses this instead of re-deriving the mapping.
+#[cfg(feature = "duckdb")]
 pub(super) fn sql_value_from_array(array: &dyn Array, index: usize) -> SqlResult<SqlValue> {
     scalar_to_sql_value(&ScalarValue::try_from_array(array, index)?)
 }
 
+#[cfg(feature = "duckdb")]
 fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
     fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> SqlValue) -> SqlValue {
         value.as_ref().map_or(SqlValue::Null, render)
@@ -449,6 +453,7 @@ fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
     })
 }
 
+#[cfg(feature = "duckdb")]
 fn nested_sql_values(outer: &dyn Array, items: ArrayRef) -> SqlResult<SqlValue> {
     if outer.is_null(0) {
         return Ok(SqlValue::Null);
@@ -460,6 +465,7 @@ fn nested_sql_values(outer: &dyn Array, items: ArrayRef) -> SqlResult<SqlValue> 
     Ok(SqlValue::List(out))
 }
 
+#[cfg(feature = "duckdb")]
 fn render_scaled_i128(value: i128, scale: i8) -> String {
     if scale <= 0 {
         return format!("{value}{}", "0".repeat((-scale) as usize));

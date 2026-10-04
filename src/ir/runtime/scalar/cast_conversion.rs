@@ -272,19 +272,19 @@ fn parse_struct_literal(raw: &str) -> Option<BTreeMap<String, Value>> {
 pub(super) fn mode_conversion_error(mode: CastMode) -> IrResult<Value> {
     match mode {
         CastMode::ExplicitStrict => Err(cast_conversion_error()),
-        CastMode::TryOrLenient | CastMode::NestedElement => Ok(Value::Null),
+        CastMode::TryOrLenient => Ok(Value::Null),
     }
 }
 
 fn downgrade_or_err(err: RuntimeError, mode: CastMode) -> IrResult<Value> {
     match mode {
         CastMode::ExplicitStrict => Err(err),
-        CastMode::TryOrLenient | CastMode::NestedElement => Ok(Value::Null),
+        CastMode::TryOrLenient => Ok(Value::Null),
     }
 }
 
-/// `strict_cast_i64` but returning `Ok(None)` for the lenient / nested
-/// modes instead of raising. Strict mode preserves the original
+/// `strict_cast_i64` but returning `Ok(None)` for the lenient mode
+/// instead of raising. Strict mode preserves the original
 /// conversion/overflow distinction the harness expects.
 fn strict_or_lenient_i64(
     value: &Value,
@@ -297,7 +297,7 @@ fn strict_or_lenient_i64(
         Ok(n) => Ok(Some(n)),
         Err(err) => match mode {
             CastMode::ExplicitStrict => Err(err),
-            CastMode::TryOrLenient | CastMode::NestedElement => Ok(None),
+            CastMode::TryOrLenient => Ok(None),
         },
     }
 }
@@ -478,7 +478,7 @@ fn cast_to_parametric_decimal(
             CastMode::ExplicitStrict => Ok(Value::String(decimal_overflow_message(
                 value, &decimal, precision, scale,
             ))),
-            CastMode::TryOrLenient | CastMode::NestedElement => Ok(Value::Null),
+            CastMode::TryOrLenient => Ok(Value::Null),
         };
     }
     Ok(Value::BigDecimal(rounded))
@@ -726,24 +726,6 @@ fn cast_input_text(value: &Value) -> String {
         Value::BigDecimal(n) => n.to_string(),
         Value::Bool(value) => value.to_string(),
         other => format!("{other:?}"),
-    }
-}
-
-fn strip_array_suffix(type_name: &str) -> Option<&str> {
-    let trimmed = type_name.trim();
-    if !trimmed.ends_with(']') {
-        return None;
-    }
-    let open = trimmed.rfind('[')?;
-    if trimmed[open + 1..trimmed.len() - 1].trim().is_empty()
-        || trimmed[open + 1..trimmed.len() - 1]
-            .trim()
-            .chars()
-            .all(|ch| ch.is_ascii_digit())
-    {
-        Some(trimmed[..open].trim())
-    } else {
-        None
     }
 }
 

@@ -43,18 +43,10 @@ pub(crate) enum BindingKind {
     Timestamp,
     TimestampMs,
     Interval,
-    InternalId,
     ListValue,
     ListInt,
-    FixedListInt,
     ListNode,
     ListRelationship,
-    StructA,
-    StructInt,
-    StructListInt,
-    StructDescription,
-    MapStringInt,
-    UnionMovieGrade,
     Value,
 }
 
@@ -74,20 +66,10 @@ impl BindingKind {
             BindingKind::Timestamp => "TIMESTAMP",
             BindingKind::TimestampMs => "TIMESTAMP_MS",
             BindingKind::Interval => "INTERVAL",
-            BindingKind::InternalId => "INTERNAL_ID",
             BindingKind::ListValue => "ANY[]",
             BindingKind::ListInt => "INT64[]",
-            BindingKind::FixedListInt => "INT64[4]",
             BindingKind::ListNode => "NODE[]",
             BindingKind::ListRelationship => "REL[]",
-            BindingKind::StructA => "STRUCT(a INT64)",
-            BindingKind::StructInt => "STRUCT(x INT64)",
-            BindingKind::StructListInt => "STRUCT(x INT64[])",
-            BindingKind::StructDescription => {
-                "STRUCT(rating DOUBLE, stars INT8, views INT64, release TIMESTAMP, release_ns TIMESTAMP_NS, release_ms TIMESTAMP_MS, release_sec TIMESTAMP_SEC, release_tz TIMESTAMP_TZ, film DATE, u8 UINT8, u16 UINT16, u32 UINT32, u64 UINT64, hugedata INT128)"
-            }
-            BindingKind::MapStringInt => "MAP(STRING, INT64)",
-            BindingKind::UnionMovieGrade => "UNION(credit BOOL, grade1 DOUBLE, grade2 INT64)",
             BindingKind::Value => "ANY",
         }
     }

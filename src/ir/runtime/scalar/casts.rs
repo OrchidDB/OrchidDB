@@ -10,13 +10,6 @@ pub(crate) fn cast_to_string(v: &Value) -> Value {
     Value::String(display_for_as_string(v))
 }
 
-pub(crate) fn cast_list_to_string(v: &Value) -> Value {
-    match v {
-        Value::List(items) => Value::List(items.iter().map(|item| if matches!(item, Value::Null) { Value::Null } else { cast_to_string(item) }).collect()),
-        other => cast_to_string(other),
-    }
-}
-
 fn display_for_as_string(v: &Value) -> String {
     match v {
         Value::Scalar(v) => v.to_string(),
@@ -294,25 +287,6 @@ fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<Stri
         })
         .cloned()
         .collect()
-}
-
-fn display_property_value(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Byte(n) => n.to_string(),
-        Value::Short(n) => n.to_string(),
-        Value::Int(n) => n.to_string(),
-        Value::Long(n) => n.to_string(),
-        Value::Float32(f) => (*f as f64).to_string(),
-        Value::Float(f) => f.to_string(),
-        Value::BigInt(n) => n.to_string(),
-        Value::BigDecimal(d) => d.to_string(),
-        Value::Temporal(t) => t.to_string(),
-        Value::DateTime(s) => s.clone(),
-        Value::InternalId { table, offset } => format!("{table}:{offset}"),
-        other => display_for_as_string(other),
-    }
 }
 
 fn tinker_node_id(label: &str, key: crate::ir::ElementId) -> String {

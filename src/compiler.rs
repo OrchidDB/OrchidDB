@@ -585,7 +585,10 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
                     dialect, node, scope, principal, index, &schemas,
                 )?);
             }
-            let base = node.source_query.as_deref().unwrap_or(&node.table);
+            let base = match &node.source_query {
+                Some(query) => format!("({query})"),
+                None => node.table.clone(),
+            };
             Some(format!(
                 "SELECT n.* FROM {base} AS n WHERE ({})",
                 filters.join(" OR ")

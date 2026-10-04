@@ -85,6 +85,45 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Cached release artifact changed'):
             p.collect(self.state, self.path)
 
+    def test_collector_accepts_old_and_new_macos_artifact_names(self):
+        for kind, prefix in [('python', 'wheels-'), ('cpp', 'package-')]:
+            for images in [('macos-26', 'macos-26-intel'), ('macos-14', 'macos-15-intel'),
+                           ('macos-26', 'macos-15-intel')]:
+                with self.subTest(kind=kind, images=images):
+                    self.state['builds'] = {kind + '/packages': {'run_id': 1}}
+                    names = [prefix + os for os in ['ubuntu-22.04', *images]]
+                    if kind == 'python':
+                        names.append(prefix + 'windows-2022')
+                    artifacts = [{'name': name, 'expired': False} for name in names]
+                    downloaded = []
+
+                    def download(args, **kwargs):
+                        name = args[args.index('--name') + 1]
+                        downloaded.append(name)
+                        folder = Path(args[args.index('--dir') + 1])
+                        folder.mkdir()
+                        (folder / 'SOURCE_COMMIT').write_text(self.state['pins'][kind])
+                        (folder / (name + '.archive')).write_text('retained payload')
+
+                    with tempfile.TemporaryDirectory() as directory:
+                        path = Path(directory) / 'state.json'
+                        with patch.object(p, 'api', return_value={'artifacts': artifacts}), \
+                             patch.object(p, 'validate_artifact'), \
+                             patch.object(p.subprocess, 'run', side_effect=download):
+                            p.collect(self.state, path)
+                        self.assertEqual(downloaded, names)
+                        self.assertTrue(self.state['builds'][kind + '/packages']['artifacts'])
+
+    def test_collector_does_not_reuse_expired_macos_artifacts(self):
+        self.state['builds'] = {'cpp/packages': {'run_id': 1}}
+        artifacts = [{'name': 'package-' + os, 'expired': os == 'macos-14'}
+                     for os in ['ubuntu-22.04', 'macos-14', 'macos-15-intel']]
+        with patch.object(p, 'api', return_value={'artifacts': artifacts}), \
+             patch.object(p.subprocess, 'run') as download:
+            p.collect(self.state, self.path)
+        download.assert_not_called()
+        self.assertNotIn('artifacts', self.state['builds']['cpp/packages'])
+
     def test_unaudited_recovered_workflow_rejected(self):
         with patch.object(p, 'find_run', return_value={'headSha': 'wrong'}), self.assertRaisesRegex(ValueError, 'Workflow revision changed'):
             self.dispatch()

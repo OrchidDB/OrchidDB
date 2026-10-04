@@ -1,8 +1,5 @@
 mod normalization;
 use normalization::normalize_cypher_extensions;
-mod visitor;
-
-mod expression;
 
 use crate::ParsedGraphProgram;
 use crate::grammar::generated::cypher::cypherlexer::CypherLexer;
@@ -19,7 +16,7 @@ use antlr4rust::recognizer::Recognizer;
 use antlr4rust::token::{TOKEN_DEFAULT_CHANNEL, TOKEN_EOF, Token};
 use antlr4rust::token_factory::TokenFactory;
 use antlr4rust::token_stream::UnbufferedTokenStream;
-use antlr4rust::tree::{ParseTree, ParseTreeVisitor};
+use antlr4rust::tree::ParseTree;
 use std::cell::RefCell;
 use std::rc::Rc;
 

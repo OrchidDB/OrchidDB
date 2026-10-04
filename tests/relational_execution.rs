@@ -555,3 +555,84 @@ async fn batched_fanout_keeps_duplicate_outputs_and_parent_bulk() {
         assert_eq!(row.bindings["answer"], Value::Int(1));
     }
 }
+
+#[tokio::test]
+async fn streaming_batches_preserve_global_order_aggregation_and_bulk() {
+    use orchiddb::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit};
+    use orchiddb::ir::plan::{Node, NullsOrder, ProjectErrorPolicy, ProjectMode, ProjectionItem, SortDir, SortKey};
+    use orchiddb::ir::policy::GraphPlanPolicy;
+    // More than two default Arrow batches; filtering leaves both full and
+    // partial output batches before whole-input sort/aggregate consumers.
+    let source = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        error_policy: ProjectErrorPolicy::PropagateError,
+        items: vec![ProjectionItem { alias: "copy".into(), expr: IrExpr::Binding("x".into()) }],
+        input: Box::new(Node::GraphFilter {
+            condition: IrExpr::Binary { op: BinaryOp::Lt, lhs: Box::new(IrExpr::Binding("x".into())), rhs: Box::new(IrExpr::Lit(Lit::Int(17000))) },
+            input: Box::new(Node::GraphValues { bindings: vec!["x".into()], rows: (0..20000).map(|i| vec![Value::Int(i)]).collect(), bulk: Some(vec![2; 20000]) }),
+        }),
+    };
+    let graph = PropertyGraph::new();
+    let sorted = GraphPlan::new(GraphPlanPolicy::gremlin(), Node::GraphSort {
+        keys: vec![SortKey { expr: IrExpr::Binding("copy".into()), dir: SortDir::Desc, nulls: NullsOrder::Last }], input: Box::new(source.clone()),
+    });
+    let (rows, _) = execute_rows_with_jvm(&sorted, &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(rows.len(), 17000);
+    for (row, expected) in rows.iter().zip((0..17000).rev()) {
+        assert_eq!(row.bindings["x"], Value::Int(expected));
+        assert_eq!(row.bindings["copy"], Value::Int(expected));
+        assert_eq!(row.bulk, 2);
+    }
+    let aggregated = GraphPlan::new(GraphPlanPolicy::gremlin(), Node::GraphAggregate {
+        group: vec![], aggs: vec![AggCall { kind: AggKind::CountBulk, alias: "count".into(), arg: None, distinct: false }], fields: vec!["count".into()], input: Box::new(source),
+    });
+    let (rows, _) = execute_rows_with_jvm(&aggregated, &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].bindings["count"], Value::Long(34000));
+}
+
+#[tokio::test]
+async fn direct_relational_execution_accepts_deep_plans() {
+    use datafusion::logical_expr::{LogicalPlanBuilder, lit};
+    use orchiddb::ir::rel::{LoweredPlan, execute_lowered};
+    let mut plan = LogicalPlanBuilder::empty(true).build().unwrap();
+    for _ in 0..300 {
+        plan = LogicalPlanBuilder::from(plan).filter(lit(true)).unwrap().build().unwrap();
+    }
+    let result = execute_lowered(LoweredPlan {
+        plan,
+        fields: vec![],
+        result_form: orchiddb::ir::policy::ResultForm::RowSet,
+        islands: Default::default(),
+    }).await.unwrap();
+    assert_eq!(result.batch.num_rows(), 1);
+}
+
+#[tokio::test]
+async fn nested_correlated_bodies_compile_in_their_own_scope() {
+    use orchiddb::ir::plan::{ApplyKind, Node};
+    use orchiddb::ir::policy::{GraphPlanPolicy, OptionalMissing};
+    let correlate = || Node::GraphCorrelate { bindings: vec!["current".into()] };
+    let apply = |left: Node, right: Node| Node::GraphApply {
+        kind: ApplyKind::Inner,
+        correlation: vec!["current".into()],
+        outputs: vec!["current".into()],
+        optional_missing: OptionalMissing::Null,
+        left: left.boxed(),
+        right: right.boxed(),
+    };
+    let mut body = correlate();
+    for _ in 0..20 {
+        body = apply(correlate(), body);
+    }
+    // Explicit traverser bulk keeps the seed on the native path.
+    let seed = Node::GraphValues {
+        bindings: vec!["current".into()],
+        rows: vec![vec![Value::String("ok".into())]],
+        bulk: Some(vec![1]),
+    };
+    let query = GraphPlan::new(GraphPlanPolicy::gremlin(), apply(seed, body));
+    let (rows, _) = execute_rows_with_jvm(&query, &PropertyGraph::new(), Default::default()).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("current"), Value::String("ok".into()));
+}

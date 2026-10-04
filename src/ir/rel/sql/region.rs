@@ -9,6 +9,7 @@ pub trait RegionSession: std::fmt::Debug + Send {
 
 pub(crate) type SharedRegionSession = Arc<std::sync::Mutex<Box<dyn RegionSession>>>;
 
+#[cfg(feature = "duckdb")]
 pub(crate) fn bind_inputs(prepared: &mut PreparedSql) -> SqlResult<()> {
     // Very large generated scalar expressions exceed practical PostgreSQL
     // planning limits. Keep that operator in the residual DAG and partition

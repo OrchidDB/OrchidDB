@@ -274,13 +274,6 @@ where
     })
 }
 
-pub(super) fn consume_local_order_by<'a, I>(steps: &mut Peekable<I>)
-where
-    I: Iterator<Item = &'a Step>,
-{
-    while consume_by(steps).is_some() {}
-}
-
 fn simple_by_key_expr(
     spec: &crate::language::gremlin::ast::BySpec,
     lo: &Lowerer,

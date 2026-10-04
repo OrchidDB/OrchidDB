@@ -84,15 +84,6 @@ fn project_expr(input: Node, expr: IrExpr) -> Node {
     }
 }
 
-fn bin_op(op: MathOp) -> BinaryOp {
-    match op {
-        MathOp::Add => BinaryOp::Add,
-        MathOp::Sub => BinaryOp::Sub,
-        MathOp::Mul => BinaryOp::Mul,
-        MathOp::Div => BinaryOp::Div,
-    }
-}
-
 fn math_bin_expr(op: MathOp, lhs: IrExpr, rhs: IrExpr) -> IrExpr {
     IrExpr::Call {
         name: "gremlin_math_bin".into(),

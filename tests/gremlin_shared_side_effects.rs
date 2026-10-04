@@ -120,3 +120,50 @@ async fn native_property_children_keep_labels_and_register_forward_side_effects(
     assert_eq!(rows[0][0]["value"], json!([{"type":"int","value":1}]));
     assert_eq!(native(&mut engine, "g.V().hasLabel('registered').values('p')").await[0][0]["value"], 1);
 }
+
+#[tokio::test]
+async fn audit_mixed_overlay_property_types_keep_native_values() {
+    for reverse in [false, true] {
+        let mut engine = GraphEngine::in_memory().unwrap();
+        let queries = if reverse {
+            [
+                "g.addV('number').property('p',1)",
+                "g.addV('text').property('p','text')",
+            ]
+        } else {
+            [
+                "g.addV('text').property('p','text')",
+                "g.addV('number').property('p',1)",
+            ]
+        };
+        for query in queries {
+            native(&mut engine, query).await;
+        }
+        assert_eq!(
+            native(&mut engine, "g.V().hasLabel('number').values('p')").await[0][0]["value"],
+            1
+        );
+        assert_eq!(
+            native(&mut engine, "g.V().hasLabel('text').values('p')").await[0][0]["value"],
+            "text"
+        );
+        native(
+            &mut engine,
+            "g.V().hasLabel('number').as('n').addE('number_edge').to('n').property('p',1)",
+        )
+        .await;
+        native(
+            &mut engine,
+            "g.V().hasLabel('text').as('n').addE('text_edge').to('n').property('p','text')",
+        )
+        .await;
+        assert_eq!(
+            native(&mut engine, "g.E().hasLabel('number_edge').values('p')").await[0][0]["value"],
+            1
+        );
+        assert_eq!(
+            native(&mut engine, "g.E().hasLabel('text_edge').values('p')").await[0][0]["value"],
+            "text"
+        );
+    }
+}

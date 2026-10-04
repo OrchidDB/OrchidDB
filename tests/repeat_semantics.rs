@@ -37,14 +37,25 @@ fn bounded_repeat_runs_beyond_sixteen_iterations() {
 }
 
 #[test]
-fn nonterminating_repeat_fails_instead_of_returning_a_partial_answer() {
+fn nonterminating_repeat_obeys_caller_deadline() {
     let query = parse_traversal("g.inject(1).repeat(__.identity())").unwrap();
     let plan = GremlinPlanner::new().plan(&query).unwrap();
-    let error = execute(&plan, &PropertyGraph::new()).unwrap_err();
-    assert!(
-        error.contains("execution limit"),
-        "{error}"
-    );
+    let mut control = orchiddb::ir::jvm::JvmExecution::default();
+    control.deadline = Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let error = runtime.block_on(orchiddb::ir::rel::runtime::execute_rows_with_jvm(
+        &plan, &PropertyGraph::new(), control,
+    )).unwrap_err();
+    assert!(error.contains("deadline exceeded"), "{error}");
+}
+
+#[test]
+fn repeat_can_exceed_the_former_engine_iteration_ceiling() {
+    let query = parse_traversal("g.inject(1).repeat(__.identity()).times(10001)").unwrap();
+    let plan = GremlinPlanner::new().plan(&query).unwrap();
+    let rows = datafusion_test::execute_rows(&plan, &PropertyGraph::new()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].bindings["current"], orchiddb::ir::value::Value::Int(1));
 }
 
 #[test]

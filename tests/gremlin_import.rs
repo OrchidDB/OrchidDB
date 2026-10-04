@@ -98,6 +98,19 @@ fn malformed_graphson_does_not_mutate_existing_graph() {
     assert!(execute_rows(&plan(&missing.query("")), &graph).is_err());
 }
 
+#[test]
+fn graphson_duplicate_decoded_ids_are_rejected_before_mutation() {
+    let file = File::new("json", r#"
+{"id":{"@type":"gx:BigInteger","@value":"002"},"label":"person"}
+{"id":{"@type":"gx:BigInteger","@value":2},"label":"person"}
+"#);
+    let graph = PropertyGraph::new();
+    graph.insert_node("existing", Default::default());
+    let error = execute_rows(&plan(&file.query("")), &graph).unwrap_err();
+    assert!(error.contains("Duplicate imported vertex ID"), "{error}");
+    assert_eq!(values(&graph, "g.V().count()"), vec![Value::Long(1)]);
+}
+
 #[cfg(feature = "duckdb")]
 mod durable {
     use super::*;

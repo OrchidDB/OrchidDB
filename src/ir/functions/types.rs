@@ -78,6 +78,7 @@ fn unsupported(data_type: &DataType) -> DataFusionError {
 /// A NULL expression with the original nested type. Unnamed DuckDB STRUCTs
 /// have no round-trippable CAST type spelling, so build a type reference from
 /// NULL-only constructors. cast_to_type drops that reference during binding.
+#[cfg(feature = "duckdb")]
 pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
     let reference = match data_type {
         DataType::List(field)

@@ -2,31 +2,42 @@
 //! all residual relational operators execute through DataFusion. No Graph IR plan
 //! is retained by the executor and no graph interpreter fallback is available.
 use arrow::array::RecordBatch;
+use std::sync::{Arc, Mutex};
+#[cfg(feature = "duckdb")]
 use std::{
     any::Any,
     fmt,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
 };
 
 use super::{LoweredPlan, RelResult, sql};
 use crate::ir::runtime::ReturnedBatches;
+#[cfg(feature = "duckdb")]
 use async_trait::async_trait;
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
-use datafusion::common::{DFSchemaRef, DataFusionError, Result};
-use datafusion::execution::{TaskContext, context::SessionState};
-use datafusion::logical_expr::{
-    Expr, Extension, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
-};
+use datafusion::common::DataFusionError;
+#[cfg(feature = "duckdb")]
+use datafusion::common::{DFSchemaRef, Result};
+use datafusion::execution::TaskContext;
+#[cfg(feature = "duckdb")]
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::LogicalPlan;
+#[cfg(feature = "duckdb")]
+use datafusion::logical_expr::{Expr, Extension, UserDefinedLogicalNode, UserDefinedLogicalNodeCore};
+#[cfg(feature = "duckdb")]
 use datafusion::physical_expr::EquivalenceProperties;
+#[cfg(feature = "duckdb")]
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
+#[cfg(feature = "duckdb")]
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion::physical_plan::ExecutionPlan;
+#[cfg(feature = "duckdb")]
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
-    SendableRecordBatchStream,
+    DisplayAs, DisplayFormatType, Partitioning, PlanProperties, SendableRecordBatchStream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, ExtensionPlanner, PhysicalPlanner};
 use datafusion::prelude::{SessionConfig, SessionContext};
+#[cfg(feature = "duckdb")]
 use futures::stream;
 
 #[derive(Debug, Clone, Default)]
@@ -55,12 +66,13 @@ pub(crate) struct DagSession {
     session: SessionContext,
     #[cfg(feature = "duckdb")]
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
+    #[cfg(feature = "duckdb")]
     external: std::collections::BTreeSet<String>,
     optimize: bool,
     pub(crate) region_session: Option<sql::region::SharedRegionSession>,
 }
 impl DagSession {
-    pub(crate) fn new(timeout: Option<std::time::Duration>) -> Self {
+    pub(crate) fn new(_timeout: Option<std::time::Duration>) -> Self {
         let session = super::optimizer::session(
             SessionConfig::new().with_target_partitions(1),
         );
@@ -72,26 +84,18 @@ impl DagSession {
         let state = datafusion::execution::session_state::SessionStateBuilder::new_from_existing(session.state())
             .with_optimizer_rules(rules).build();
         Self {
+            #[cfg(feature = "duckdb")]
             external: Default::default(),
             optimize: true,
             region_session: None,
             session: SessionContext::new_with_state(state),
             #[cfg(feature = "duckdb")]
             executor: Arc::new(Mutex::new(
-                timeout
+                _timeout
                     .map(sql::DuckDbExecutor::with_timeout)
                     .unwrap_or_default(),
             )),
         }
-    }
-
-    #[cfg(feature = "duckdb")]
-    pub(crate) fn from_executor(executor: sql::DuckDbExecutor, external: std::collections::BTreeSet<String>) -> Self {
-        // Mapped RDF lowering supplies explicit term-identity projections.
-        // Keep these SQL column boundaries: generic projection elimination
-        // currently produces join aliases the SQL unparser does not emit.
-        // DuckDB still optimizes each generated region normally.
-        Self { session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor: Arc::new(Mutex::new(executor)), external, optimize: false, region_session: None }
     }
 
     #[cfg(feature = "duckdb")]
@@ -107,22 +111,20 @@ impl DagSession {
         self.executor.lock().map_err(|_| "DuckDB executor poisoned".into())
     }
 
-    #[cfg(feature = "duckdb")]
-    pub(crate) fn into_executor(self) -> sql::DuckDbExecutor {
-        drop(self.session);
-        Arc::try_unwrap(self.executor).expect("DAG execution has completed").into_inner().expect("DuckDB executor poisoned")
-    }
+
 }
 
 /// A planned DuckDB region has no DataFusion inputs: its native relational scans
 /// and their Arrow sources are captured by PreparedSql. Its schema remains the
 /// original relational schema, including column qualifiers used by consumers.
+#[cfg(feature = "duckdb")]
 #[derive(Clone)]
 struct DuckDbRegion {
     id: usize,
     schema: DFSchemaRef,
     prepared: Arc<sql::PreparedSql>,
 }
+#[cfg(feature = "duckdb")]
 impl fmt::Debug for DuckDbRegion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DuckDbRegion")
@@ -130,6 +132,7 @@ impl fmt::Debug for DuckDbRegion {
             .finish()
     }
 }
+#[cfg(feature = "duckdb")]
 impl PartialEq for DuckDbRegion {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -137,23 +140,28 @@ impl PartialEq for DuckDbRegion {
             && self.schema == other.schema
     }
 }
+#[cfg(feature = "duckdb")]
 impl Eq for DuckDbRegion {}
+#[cfg(feature = "duckdb")]
 impl Hash for DuckDbRegion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
         self.prepared.query.hash(state);
     }
 }
+#[cfg(feature = "duckdb")]
 impl PartialOrd for DuckDbRegion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
+#[cfg(feature = "duckdb")]
 impl Ord for DuckDbRegion {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.id, &self.prepared.query).cmp(&(other.id, &other.prepared.query))
     }
 }
+#[cfg(feature = "duckdb")]
 impl UserDefinedLogicalNodeCore for DuckDbRegion {
     fn name(&self) -> &str {
         match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbRegion", sql::SqlDialect::Postgres => "PostgresRegion" }
@@ -187,11 +195,13 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
 /// through another engine, avoiding repeated effects or changed error semantics.
 /// Analyze each logical node once. A rejected ancestor must not repeatedly
 /// rescan its descendants while partitioning into smaller regions.
+#[cfg(feature = "duckdb")]
 #[derive(Default)]
 struct SqlEligibility {
     reasons: std::collections::HashMap<usize, Option<&'static str>>,
     postgres: bool,
 }
+#[cfg(feature = "duckdb")]
 impl SqlEligibility {
     fn visit(&mut self, plan: &LogicalPlan) -> Option<&'static str> {
         let key = plan as *const LogicalPlan as usize;
@@ -467,9 +477,9 @@ pub async fn execute(lowered: LoweredPlan) -> RelResult<(ReturnedBatches, DagSta
 /// Prepare nested and top-level regions with the same island placement rules.
 pub(crate) async fn prepare_with_extensions(
     logical: &LogicalPlan,
-    mut extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+    extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     resources: &DagSession,
-    cost: Arc<Mutex<crate::ir::QueryCost>>,
+    _cost: Arc<Mutex<crate::ir::QueryCost>>,
 ) -> RelResult<(Arc<dyn ExecutionPlan>, Arc<TaskContext>, DagStats)> {
     let session = &resources.session;
     // Optimize while relational scans and expressions remain visible, before
@@ -516,11 +526,15 @@ pub(crate) async fn prepare_with_extensions(
     };
 
     #[cfg(feature = "duckdb")]
-    extensions.push(Arc::new(RegionPlanner {
-        executor: resources.executor.clone(),
-        region_session: resources.region_session.clone(),
-        cost,
-    }));
+    let extensions = {
+        let mut extensions = extensions;
+        extensions.push(Arc::new(RegionPlanner {
+            executor: resources.executor.clone(),
+            region_session: resources.region_session.clone(),
+            cost: _cost,
+        }));
+        extensions
+    };
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
         .create_physical_plan(&plan, &query_state)

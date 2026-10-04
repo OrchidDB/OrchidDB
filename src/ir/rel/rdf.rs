@@ -157,10 +157,12 @@ impl RdfDatasetMapping {
     pub(crate) fn registered_tables(&self)->BTreeMap<String,Arc<dyn TableProvider>> {self.tables.clone()}
     pub fn is_empty(&self)->bool {self.sources.is_empty() && self.relational.is_empty()}
 
+    #[cfg(feature = "duckdb")]
     pub(crate) fn dataset_sources(&self, dataset: &str) -> &[IriQuadSource] {
         self.sources.get(dataset).map(Vec::as_slice).unwrap_or_default()
     }
 
+    #[cfg(feature = "duckdb")]
     pub(crate) fn writable_graph_table(&self, dataset: &str) -> Option<&(String, String)> {
         self.writable_graph_tables.contains(dataset).then(|| self.graph_tables.get(dataset)).flatten()
     }

@@ -117,13 +117,6 @@ fn merge_equal_traversers(rows: &mut Vec<Row>) -> IrResult<()> {
     Ok(())
 }
 
-/// Helper used when the planner emits a barrier with everything default
-/// — i.e. it acts as an explicit "materialise here" boundary. The
-/// stream is unchanged.
-pub(crate) fn passthrough_barrier(rows: Vec<Row>) -> Vec<Row> {
-    rows
-}
-
 /// Remove compiler temporaries once a complete Gremlin step has finished.
 /// Actual labels are identified by their select-history register. Path elision
 /// is permitted only by the planner's whole-traversal proof.

@@ -94,7 +94,7 @@ use datafusion::logical_expr::{
     BinaryExpr, Cast, Expr, ExprSchemable, JoinType, LogicalPlan, LogicalPlanBuilder, Operator,
     TryCast,
 };
-use datafusion::prelude::{SessionConfig, SessionContext, lit};
+use datafusion::prelude::{SessionConfig, lit};
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 
@@ -126,8 +126,6 @@ const STAR_SEP: &str = "__star__";
 /// itself lives in a column named after the binding.
 const PATH_LEN_SUFFIX: &str = "__pathlen";
 const PATH_INNER_SUFFIX: &str = "__pathinner";
-const MAX_EXECUTABLE_PLAN_NODES: usize = 200;
-const MAX_EXECUTABLE_PLAN_DEPTH: usize = 64;
 
 #[derive(Debug, Clone, Default)]
 pub struct RelBackend {
@@ -147,10 +145,6 @@ pub struct RelBackendOptions {
     pub mapping: Option<Arc<mapping::GraphMapping>>,
     /// Read-only RDF quad sources keyed by SPARQL dataset name.
     pub rdf_datasets: Option<Arc<rdf::RdfDatasetMapping>>,
-    /// Optional, explicitly requested guard on recursive variable-length
-    /// expansion depth. `None` preserves complete trail semantics and is the
-    /// default; setting a value trades completeness for a workload ceiling.
-    pub varlen_recursive_ceiling: Option<u32>,
 }
 
 impl Default for RelBackendOptions {
@@ -159,7 +153,6 @@ impl Default for RelBackendOptions {
             tolerate_internal_path_state: true,
             mapping: None,
             rdf_datasets: None,
-            varlen_recursive_ceiling: None,
         }
     }
 }
@@ -190,12 +183,6 @@ impl IslandReport {
     pub fn is_complete(&self) -> bool {
         self.unsupported.is_empty()
     }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct LogicalPlanStats {
-    nodes: usize,
-    depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -321,13 +308,10 @@ impl RelBackend {
 }
 
 pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
-    let stats = logical_plan_stats(&lowered.plan);
-    if stats.nodes > MAX_EXECUTABLE_PLAN_NODES || stats.depth > MAX_EXECUTABLE_PLAN_DEPTH {
-        return Err(RelError::Unsupported(format!(
-            "relational island too complex to execute safely yet: nodes={} depth={}",
-            stats.nodes, stats.depth
-        )));
-    }
+    stack::on_query_stack(execute_lowered_inner(lowered)).await
+}
+
+async fn execute_lowered_inner(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
     let output_schema = Arc::new(lowered.plan.schema().as_arrow().clone());
     let config = SessionConfig::new()
         .set_usize("datafusion.optimizer.max_passes", 1)
@@ -349,19 +333,6 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
         result_form: lowered.result_form,
         batch,
     })
-}
-
-fn logical_plan_stats(plan: &LogicalPlan) -> LogicalPlanStats {
-    let mut stats = LogicalPlanStats::default();
-    let mut stack = vec![(plan, 1usize)];
-    while let Some((node, depth)) = stack.pop() {
-        stats.nodes += 1;
-        stats.depth = stats.depth.max(depth);
-        for input in node.inputs() {
-            stack.push((input, depth + 1));
-        }
-    }
-    stats
 }
 
 fn graph_plan_stats(root: &Node) -> GraphPlanStats {

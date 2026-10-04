@@ -2,7 +2,7 @@
 //! `simplePath`, `cyclicPath`, `discard`/`none()`, plus the small
 //! `lower_quantifier_filter` helper used by all-of / any-of / none-of.
 
-use super::context::{CURRENT, ChildTraversalKind, Lowerer, PATH, TraversalContext};
+use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
 use std::iter::Peekable;
 
 use super::helpers::{any_label, consume_by, element_token_filter, filter_by_ids, or_chain};
@@ -10,7 +10,7 @@ use super::literals::gvalue_to_expr;
 use super::predicates::{predicate_to_expr, predicate_to_expr_with_bindings};
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::IrExpr;
-use crate::ir::plan::{ApplyKind, Node, PathFilterScope, QuantifierKind};
+use crate::ir::plan::{ApplyKind, Node, QuantifierKind};
 use crate::ir::policy::{OptionalMissing, PropertyMissing};
 use crate::language::gremlin::ast::{BySpec, Step};
 use crate::language::gremlin::planner::error::GremlinPlanResult;
@@ -300,22 +300,6 @@ pub(super) fn lower_quantifier_filter(
         }
         .boxed(),
     })
-}
-
-pub(super) fn lower_simple_path(input: Node) -> Node {
-    Node::GraphPathFilter {
-        condition: IrExpr::SimplePath(PATH.into()),
-        scope: PathFilterScope::FinalPath,
-        input: input.boxed(),
-    }
-}
-
-pub(super) fn lower_cyclic_path(input: Node) -> Node {
-    Node::GraphPathFilter {
-        condition: IrExpr::Not(Box::new(IrExpr::SimplePath(PATH.into()))),
-        scope: PathFilterScope::FinalPath,
-        input: input.boxed(),
-    }
 }
 
 pub(super) fn lower_discard_or_none(input: Node) -> Node {

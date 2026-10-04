@@ -11,7 +11,7 @@ use super::literals::{
     parse_math_expr, sack_op_from_text,
 };
 use super::{
-    AggKind, BTreeMap, CastTarget, CompareOp, Direction, GValue, GremlinError, GremlinVisitor,
+    AggKind, CastTarget, CompareOp, Direction, GValue, GremlinError, GremlinVisitor,
     ListOpKind, LoweringVisitor, ParseTreeVisitor, Predicate, SackOp, Step, StringOp, TextKind,
 };
 use crate::grammar::generated::gremlin::gremlinparser::*;
@@ -37,6 +37,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_query(&mut self, ctx: &QueryContext<'input>) {
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         if ctx.emptyQuery().is_some() {
             // Empty traversal — emit a degenerate vertex scan for the
             // compile_ok metric.
@@ -67,6 +68,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             "unrecognised query form: `{}`",
             ctx.get_text()
         )));
+        });
     }
 
     fn visit_rootTraversal(&mut self, ctx: &RootTraversalContext<'input>) {
@@ -95,6 +97,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_chainedTraversal(&mut self, ctx: &ChainedTraversalContext<'input>) {
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         // Left-recursive: chainedTraversal | chainedTraversal DOT traversalMethod.
         // Walk the inner chain first so steps land in source order.
         if let Some(inner) = ctx.chainedTraversal() {
@@ -103,6 +106,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         if let Some(method) = ctx.traversalMethod() {
             self.visit_traversalMethod(&method);
         }
+        });
     }
 
     // ---- spawn methods ----
@@ -1469,6 +1473,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     // dispatches to the corresponding sub-rule's visit method.
 
     fn visit_traversalPredicate(&mut self, ctx: &TraversalPredicateContext<'input>) {
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         if ctx.K_AND().is_some() || ctx.K_OR().is_some() || ctx.K_NEGATE().is_some() {
             let mut parts = ctx.traversalPredicate_all();
             if parts.is_empty() {
@@ -1601,6 +1606,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         // this for a proper error later. (`Without([])` renders as the SQL
         // literal `TRUE`.)
         self.predicate_stack.push(Predicate::Without(Vec::new()));
+        });
     }
 
     fn visit_traversalPredicate_eq(&mut self, ctx: &TraversalPredicate_eqContext<'input>) {
@@ -1712,6 +1718,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_genericLiteral(&mut self, ctx: &GenericLiteralContext<'input>) {
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         if let Some(value) = self.literal_overrides.get(&ctx.start().start).cloned() { self.value_stack.push(value); return; }
         if let Some(token)=ctx.traversalT(){self.value_stack.push(GValue::Token(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
         if let Some(token)=ctx.traversalDirection(){self.value_stack.push(GValue::DirectionToken(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
@@ -1837,6 +1844,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         // surrounding step still compiles. Honest tradeoff for compile
         // coverage of literal-rich scenarios.
         self.value_stack.push(GValue::Null);
+        });
     }
 
     fn visit_stringLiteral(&mut self, ctx: &StringLiteralContext<'input>) {

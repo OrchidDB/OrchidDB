@@ -1,7 +1,6 @@
 //! Graph mutation syntax supported by the Gremlin frontend.
 use super::*;
 use crate::language::gremlin::ast::MutationArgument;
-use antlr4rust::parser_rule_context::ParserRuleContext;
 
 impl LoweringVisitor {
     pub(super) fn lower_add_vertex<'input>(

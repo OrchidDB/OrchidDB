@@ -72,15 +72,7 @@ pub(crate) enum CastMode {
     ExplicitStrict,
     /// Cypher `toFloat` / `toInteger` / `toBoolean` style helpers:
     /// invalid conversions return null rather than raising.
-    #[allow(dead_code)]
     TryOrLenient,
-    /// Element-wise recursion inside list / struct / union conversion.
-    /// Null elements are passed through unchanged and incompatible
-    /// elements degrade to `Value::Null` instead of being promoted to a
-    /// top-level conversion error. Top-level "wrong shape" inputs (e.g.
-    /// casting a scalar to a list target) still error because that
-    /// represents a structural mismatch, not a per-element issue.
-    NestedElement,
 }
 
 #[derive(Clone, Debug)]

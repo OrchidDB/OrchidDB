@@ -4,19 +4,13 @@
 use crate::ir::diagnostics::QueryExecutionError;
 use super::{LoweredPlan, RelBackend};
 use crate::ir::{
-    catalog::{
-        PropertyGraph,
-        snapshot::binary::{decode_value_bytes, encode_value},
-    },
+    catalog::PropertyGraph,
     runtime::{RuntimeError, IrResult, ReturnedBatches, Row, eval, context::ExecutionContext},
     jvm::JvmExecution,
     plan::{GraphPlan, Node},
     value::Value,
 };
-use arrow::{
-    array::{Array, BinaryArray, BinaryBuilder, RecordBatch, UInt64Array},
-    datatypes::{DataType, Field, Schema, SchemaRef},
-};
+use arrow::array::RecordBatch;
 use async_trait::async_trait;
 use datafusion::{
     common::{DFSchemaRef, DataFusionError, Result, tree_node::{TreeNode, Transformed}},
@@ -42,7 +36,7 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -61,61 +55,11 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 fn failure(e: impl ToString) -> DataFusionError {
     DataFusionError::Execution(e.to_string())
 }
-fn schema() -> SchemaRef {
-    static SCHEMA: OnceLock<SchemaRef> = OnceLock::new();
-    SCHEMA.get_or_init(|| Arc::new(Schema::new(vec![
-        Field::new("bindings", DataType::Binary, false),
-        Field::new("bulk", DataType::UInt64, false),
-    ]))).clone()
-}
-fn encode_rows(rows: Vec<Row>) -> Result<RecordBatch> {
-    let mut bindings = BinaryBuilder::new();
-    let mut bulk = Vec::with_capacity(rows.len());
-    let mut encoded = Vec::new();
-    for row in rows {
-        encoded.clear();
-        encode_value(&mut encoded, &Value::Map(row.bindings));
-        bindings.append_value(&encoded);
-        bulk.push(row.bulk);
-    }
-    Ok(RecordBatch::try_new(
-        schema(),
-        vec![
-            Arc::new(bindings.finish()),
-            Arc::new(UInt64Array::from(bulk)),
-        ],
-    )?)
-}
-fn decode_rows(batch: &RecordBatch) -> Result<Vec<Row>> {
-    if batch.schema().as_ref() != schema().as_ref() {
-        return Err(failure("Invalid traverser batch schema"));
-    }
-    let bindings = batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<BinaryArray>()
-        .ok_or_else(|| failure("Invalid bindings"))?;
-    let bulk = batch
-        .column(1)
-        .as_any()
-        .downcast_ref::<UInt64Array>()
-        .ok_or_else(|| failure("Invalid bulk"))?;
-    (0..batch.num_rows())
-        .map(|i| {
-            if bindings.is_null(i) || bulk.is_null(i) {
-                return Err(failure("Null traverser transport field"));
-            }
-            let Value::Map(bindings) = decode_value_bytes(bindings.value(i)).map_err(failure)?
-            else {
-                return Err(failure("Invalid traverser bindings"));
-            };
-            Ok(Row {
-                bindings,
-                bulk: bulk.value(i),
-            })
-        })
-        .collect()
-}
+mod transport;
+mod execution;
+use execution::{Source, source_kernel};
+use transport::{schema, encode_rows, decode_rows};
+
 #[derive(Clone)]
 pub(crate) struct RowKernel {
     id: u64,
@@ -127,6 +71,12 @@ pub(crate) struct RowKernel {
     /// Adjacent unary kernels may retain rows in memory without reordering evaluation.
     fuse_unary: bool,
     contract: Option<optimize::Contract>,
+    /// The operator can consume input incrementally while preserving order.
+    streaming: bool,
+    source: Option<Source>,
+    slice: Option<crate::ir::plan::Slice>,
+    /// Flat fused stages; execution never recurses through closure wrappers.
+    prefix: Vec<Arc<Kernel>>,
 }
 impl fmt::Debug for RowKernel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -208,6 +158,10 @@ fn kernel(
             kernel: Arc::new(operation),
             relational_input: None,
             contract: None,
+            streaming: name == "DecodeTraversers",
+            source: None,
+            slice: None,
+            prefix: vec![],
             fuse_unary: matches!(name,
                 "Bind" | "Filter" | "Project" | "CurrentProject" | "Return" | "RetainBindings"
                 | "Expand" | "PathFilter" | "CorrelatedInput"
@@ -217,8 +171,8 @@ fn kernel(
         }),
     })
 }
-/// Fuse adjacent read kernels, including their zero-input sources. This does not move predicates,
-/// change evaluation order, share branches, or cross SQL/JVM/write boundaries.
+/// Fuse batch-local reads and chunked sources into a flat pipeline. Fusion
+/// never crosses SQL, JVM, write or whole-input operators.
 /// Every original operator keeps its cancellation and work-budget check.
 fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
     use datafusion::common::tree_node::{TreeNode, Transformed};
@@ -228,20 +182,18 @@ fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
         if !parent.fuse_unary || parent.inputs.len()!=1 { return Ok(Transformed::no(plan)); }
         let LogicalPlan::Extension(input) = &parent.inputs[0] else { return Ok(Transformed::no(plan)); };
         let Some(child) = input.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
-        if !child.fuse_unary || child.inputs.len()>1 || child.relational_input.is_some() || parent.relational_input.is_some() {
+        if !child.fuse_unary || (child.inputs.len()!=1 && child.source.is_none()) || child.relational_input.is_some() || parent.relational_input.is_some()
+            || !child.streaming || !parent.streaming {
             return Ok(Transformed::no(plan));
         }
         let mut fused=parent.clone();
         fused.id=NEXT_ID.fetch_add(1,Ordering::Relaxed);
         fused.name=format!("Fused({} -> {})",child.name,parent.name);
         fused.inputs=child.inputs.clone();
-        let before=child.kernel.clone();let after=parent.kernel.clone();
-        fused.kernel=Arc::new(move |inputs,state| {
-            let rows=before(inputs,state)?;
-            state.context.jvm.check()?;
-            state.context.charge(1)?;
-            after(vec![rows],state)
-        });
+        fused.source=child.source.clone();
+        fused.prefix=child.prefix.clone();
+        fused.prefix.push(child.kernel.clone());
+        fused.prefix.extend(parent.prefix.iter().cloned());
         Ok(Transformed::yes(LogicalPlan::Extension(Extension{node:Arc::new(fused)})))
     })?.data)
 }
@@ -295,7 +247,7 @@ impl ExtensionPlanner for KernelPlanner {
         let properties = Arc::new(PlanProperties::new(
             EquivalenceProperties::new(schema()),
             Partitioning::UnknownPartitioning(1),
-            EmissionType::Final,
+            if kernel.streaming { EmissionType::Incremental } else { EmissionType::Final },
             Boundedness::Bounded,
         ));
         Ok(Some(Arc::new(KernelExec {
@@ -371,63 +323,7 @@ impl ExecutionPlan for KernelExec {
         if partition != 0 {
             return Err(failure("Stateful kernel has one partition"));
         }
-        let inputs = self.inputs.clone();
-        let state = self.state.clone();
-        let kernel = self.kernel.clone();
-        let work = async move {
-            let mut input_rows = Vec::new();
-            // Preserve input order for observable effects. No parallel branch replay.
-            for input in inputs {
-                let batches = datafusion::physical_plan::collect(input, context.clone()).await?;
-                let mut rows = Vec::new();
-                for batch in batches {
-                    if let Some(fields) = &kernel.relational_input {
-                        let returned = ReturnedBatches {
-                            fields: fields.clone(),
-                            result_form: crate::ir::policy::ResultForm::RowSet,
-                            batch,
-                        };
-                        let (bindings, values) = crate::ir::exec::batch_to_bindings(&returned)
-                            .ok_or_else(|| failure("Unsupported Arrow boundary value"))?;
-                        rows.extend(values.into_iter().map(|values| Row {
-                            bindings: bindings.iter().cloned().zip(values).collect(),
-                            bulk: 1,
-                        }));
-                    } else {
-                        rows.extend(decode_rows(&batch)?);
-                    }
-                }
-                input_rows.push(rows);
-            }
-            tokio::task::spawn_blocking(move || {
-                let mut state = state.lock().map_err(|_| failure("Query state poisoned"))?;
-                state.context.jvm.check().map_err(failure)?;
-                state.context.charge(1).map_err(failure)?;
-                for rows in &mut input_rows { state.graph.normalize_source_rows(rows).map_err(failure)?;
-                    if kernel.name != "DecodeTraversers" {state.graph.prefetch_source(rows);}
-                }
-                state.graph.check_source().map_err(failure)?;
-                if !kernel.name.contains("DecodeTraversers") {
-                    let cost = &mut state.context.query_cost;
-                    cost.native_kernel_calls = cost.native_kernel_calls.saturating_add(1);
-                    cost.native_input_rows = cost.native_input_rows.saturating_add(input_rows.iter().map(|rows| rows.len() as u64).sum::<u64>());
-                }
-                let rows = (kernel.kernel)(input_rows, &mut state)
-                    .map_err(|error| DataFusionError::External(Box::new(error)))?;
-                state.graph.check_source().map_err(failure)?;
-                if !kernel.name.contains("DecodeTraversers") {
-                    let cost = &mut state.context.query_cost;
-                    cost.native_output_rows = cost.native_output_rows.saturating_add(rows.len() as u64);
-                }
-                encode_rows(rows)
-            })
-            .await
-            .map_err(failure)?
-        };
-        Ok(Box::pin(RecordBatchStreamAdapter::new(
-            schema(),
-            stream::once(work),
-        )))
+        execution::execute(self, context)
     }
 }
 
@@ -436,9 +332,64 @@ struct Compiler<'a> {
     policy: crate::ir::policy::GraphPlanPolicy,
     sql: bool,
     islands: super::island_planner::SharedMemo,
+    lowered: std::cell::RefCell<std::collections::HashMap<usize, LogicalPlan>>,
 }
 impl Compiler<'_> {
     fn lower(&self, node: &Node) -> Result<LogicalPlan> {
+        let key = node as *const Node as usize;
+        if let Some(plan) = self.lowered.borrow_mut().remove(&key) {
+            return Ok(plan);
+        }
+        // Rewritten subplans can own temporary IR nodes. Keep their pointer
+        // identities local to this lowering call, including on failure.
+        let outer = self.lowered.take();
+        let result = stacker::maybe_grow(128 * 1024, 2 * 1024 * 1024, || self.lower_worklist(node));
+        self.lowered.replace(outer);
+        result
+    }
+    fn lower_worklist(&self, node: &Node) -> Result<LogicalPlan> {
+        let key = node as *const Node as usize;
+        // Consume child results from a heap worklist. Native input chains no
+        // longer consume one compiler stack frame per operator.
+        let mut pending = vec![(node, false)];
+        while let Some((node, ready)) = pending.pop() {
+            let key = node as *const Node as usize;
+            if ready {
+                let plan = self.lower_native(node)?;
+                self.lowered.borrow_mut().insert(key, plan);
+            } else if let Some(plan) = self.lower_sql(node)? {
+                self.lowered.borrow_mut().insert(key, plan);
+            } else {
+                pending.push((node, true));
+                // Consecutive CREATE clauses become one ordered mutation
+                // program, rather than nested physical operators/futures.
+                if matches!(node, Node::GraphCreate { .. }) {
+                    let mut input = node;
+                    while let Node::GraphCreate { input: next, .. } = input {
+                        input = next;
+                    }
+                    pending.push((input, false));
+                } else {
+                    // Correlated bodies have their own compiler and binding
+                    // scope. Precompiling them here duplicates nested work.
+                    let inputs = match node {
+                        Node::GraphApply { left, .. } => vec![left.as_ref()],
+                        Node::GraphRepeat { seed, .. } => vec![seed.as_ref()],
+                        Node::GraphCoalesce { input, .. }
+                        | Node::GraphChoose { input, .. }
+                        | Node::GraphMerge { input, .. }
+                        | Node::GraphGroupMap { input, .. }
+                        | Node::GraphGroupSideEffect { input, .. }
+                        | Node::GraphSideEffect { input, .. } => vec![input.as_ref()],
+                        _ => crate::ir::analysis::children(node),
+                    };
+                    pending.extend(inputs.into_iter().rev().map(|child| (child, false)));
+                }
+            }
+        }
+        self.lowered.borrow_mut().remove(&key).ok_or_else(|| failure("Missing compiled query root"))
+    }
+    fn lower_sql(&self, node: &Node) -> Result<Option<LogicalPlan>> {
         let can_lower_sql = self.sql && {
             let islands = self.islands.lock().unwrap();
             islands.safe(node)
@@ -472,11 +423,14 @@ impl Compiler<'_> {
                         _ => unreachable!(),
                     };
                 adapter.relational_input = Some(lowered.fields);
-                return Ok(LogicalPlan::Extension(Extension {
+                return Ok(Some(LogicalPlan::Extension(Extension {
                     node: Arc::new(adapter),
-                }));
+                })));
             }
         }
+        Ok(None)
+    }
+    fn lower_native(&self, node: &Node) -> Result<LogicalPlan> {
         if let Node::GraphSlice { input, slice } = node {
             if let Some(plan) = self.lower_bounded(input, slice)? {
                 return Ok(plan);
@@ -485,7 +439,6 @@ impl Compiler<'_> {
         self.lower_kernel(node).map(|plan| optimize::annotate(plan, node))
     }
     fn lower_kernel(&self, node: &Node) -> Result<LogicalPlan> {
-        use crate::ir::runtime::ops::*;
         use crate::ir::plan::*;
         match node {
             Node::GraphReturn { input, .. } => self.lower(input),
@@ -506,13 +459,11 @@ impl Compiler<'_> {
                 rows,
                 bulk,
             } => {
-                let bindings = bindings.clone();
-                let rows = rows.clone();
-                let bulk = bulk.clone();
-                Ok(kernel("Values", vec![], move |_, _| {
-                    source::values_op(&bindings, &rows, bulk.as_deref())
+                Ok(source_kernel("Values", Source::Values {
+                    bindings: bindings.clone(), rows: Arc::new(rows.clone()), bulk: bulk.clone(),
                 }))
             }
+
             Node::GraphOneRow => Ok(kernel("OneRow", vec![], |_, _| Ok(vec![Row::new()]))),
             Node::GraphEmpty => Ok(kernel("Empty", vec![], |_, _| Ok(vec![]))),
             // Scalar kernels retain language semantics; DataFusion schedules
@@ -527,7 +478,6 @@ pub async fn execute_rows_with_jvm(
     graph: &PropertyGraph,
     jvm: JvmExecution,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
-    validate_plan_size(&plan.root)?;
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
         crate::ir::jvm::validate_computer_plan(&plan.root)
     })?;
@@ -560,6 +510,7 @@ async fn execute_rows_inner(
             sql: !has_mutating_branches(&plan.root)
                 && !(graph.mapping.is_some() && graph.has_mutations()),
             islands: super::island_planner::IslandMemo::new(&plan.root),
+            lowered: Default::default(),
         };
         let needed = if prune_return {
             match plan.root.as_ref() {
@@ -633,7 +584,6 @@ impl Compiler<'_> {
             select::select_op,
             slice::{slice_expr_op, slice_op},
             sort::sort_op,
-            source::{node_scan, rel_scan},
             unwind::unwind_op,
         };
         use std::collections::BTreeSet;
@@ -641,33 +591,10 @@ impl Compiler<'_> {
             Node::GraphNodeScan {
                 binding, labels, ..
             } => {
-                let binding = binding.clone();
-                let labels = labels.clone();
-                Ok(kernel("NodeScan", vec![], move |mut inputs, state| {
-                    let graph = &state.graph;
-                    let ctx = &mut state.context;
-                    let binding = &binding;
-                    let labels = &labels;
-                    node_scan(binding, labels, graph)
-                }))
+                Ok(source_kernel("NodeScan", Source::Nodes { binding: binding.clone(), labels: labels.clone() }))
             }
-            Node::GraphRelScan {
-                binding,
-                types,
-                dir,
-                ..
-            } => {
-                let binding = binding.clone();
-                let types = types.clone();
-                let dir = dir.clone();
-                Ok(kernel("RelScan", vec![], move |mut inputs, state| {
-                    let graph = &state.graph;
-                    let ctx = &mut state.context;
-                    let binding = &binding;
-                    let types = &types;
-                    let dir = &dir;
-                    rel_scan(binding, types, *dir, graph)
-                }))
+            Node::GraphRelScan { binding, types, .. } => {
+                Ok(source_kernel("RelScan", Source::Edges { binding: binding.clone(), types: types.clone() }))
             }
             Node::GraphBind {
                 bind,
@@ -787,26 +714,34 @@ impl Compiler<'_> {
                     },
                 ))
             }
-            Node::GraphCreate {
-                nodes,
-                edges,
-                input,
-                ..
-            } => {
-                let nodes = nodes.clone();
-                let edges = edges.clone();
+            Node::GraphCreate { .. } => {
+                let mut stages = Vec::new();
+                let mut input = node;
+                while let Node::GraphCreate { nodes, edges, input: next, .. } = input {
+                    stages.push((nodes.clone(), edges.clone()));
+                    input = next;
+                }
+                stages.reverse();
                 Ok(kernel(
                     "Create",
                     vec![self.lower(input)?],
                     move |mut inputs, state| {
-                        let graph = &state.graph;
-                        let ctx = &mut state.context;
-                        let nodes = &nodes;
-                        let edges = &edges;
-                        {
-                            let rows = inputs.remove(0);
-                            create_op(nodes, edges, rows, graph)
+                        let mut rows = inputs.remove(0);
+                        for (index, (nodes, edges)) in stages.iter().enumerate() {
+                            if index > 0 {
+                                state.context.charge(1)?;
+                                state.context.query_cost.native_kernel_calls += 1;
+                                state.context.query_cost.native_input_rows += rows.len() as u64;
+                                state.graph.normalize_source_rows(&mut rows).map_err(RuntimeError::Runtime)?;
+                                state.graph.prefetch_source(&rows);
+                                state.graph.check_source().map_err(RuntimeError::Runtime)?;
+                            }
+                            rows = create_op(nodes, edges, rows, &state.graph)?;
+                            if index + 1 < stages.len() {
+                                state.context.query_cost.native_output_rows += rows.len() as u64;
+                            }
                         }
+                        Ok(rows)
                     },
                 ))
             }
@@ -1134,12 +1069,16 @@ impl Compiler<'_> {
                 path,
                 selector,
                 parts,
+                path_mode,
+                match_mode,
                 input,
                 ..
             } => {
                 let path = path.clone();
                 let selector = selector.clone();
                 let parts = parts.clone();
+                let path_mode = *path_mode;
+                let match_mode = *match_mode;
                 Ok(kernel(
                     "PathPattern",
                     vec![self.lower(input)?],
@@ -1151,7 +1090,7 @@ impl Compiler<'_> {
                         let parts = &parts;
                         {
                             let upstream = inputs.remove(0);
-                            path_pattern_op(path, selector, parts, upstream, graph)
+                            path_pattern_op(path, selector, parts, path_mode, match_mode, upstream, graph, ctx)
                         }
                     },
                 ))
@@ -1531,7 +1470,6 @@ pub(crate) async fn execute_with_session(
     resources: Option<&super::dag::DagSession>,
     jvm_workers: crate::ir::jvm::JvmWorkerPool,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), QueryExecutionError> {
-    validate_plan_size(&plan.root)?;
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
         crate::ir::jvm::validate_computer_plan(&plan.root)
     })?;
@@ -1569,28 +1507,14 @@ pub(crate) async fn execute_with_session(
     Ok((returned, stats))
 }
 
-// Check iteratively before any recursive runtime walk. Stack growth handles
-// normal large statements; this budget bounds recursion for untrusted plans.
-fn validate_plan_size(root: &Node) -> std::result::Result<(), String> {
-    const MAX_DEPTH: usize = 512;
-    const MAX_NODES: usize = 100_000;
-    let mut pending = vec![(root, 1usize)];
-    let mut nodes = 0usize;
-    while let Some((node, depth)) = pending.pop() {
-        nodes += 1;
-        if depth > MAX_DEPTH {
-            return Err(format!("query plan depth exceeds the execution limit of {MAX_DEPTH}"));
-        }
-        if nodes > MAX_NODES {
-            return Err(format!("query plan size exceeds the execution limit of {MAX_NODES} nodes"));
-        }
-        pending.extend(crate::ir::analysis::children(node).into_iter().map(|child| (child, depth + 1)));
-    }
-    Ok(())
-}
-
 fn has_mutating_branches(node: &Node) -> bool {
-    let children = crate::ir::analysis::children(node);
-    (children.len() > 1 && crate::ir::exec::contains_mutation(node))
-        || children.into_iter().any(has_mutating_branches)
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        let children = crate::ir::analysis::children(node);
+        if children.len() > 1 && crate::ir::exec::contains_mutation(node) {
+            return true;
+        }
+        pending.extend(children);
+    }
+    false
 }

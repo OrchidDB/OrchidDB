@@ -21,7 +21,9 @@ pub(crate) trait GraphSource: std::fmt::Debug + Send + Sync {
         types: &[String],
     ) -> Vec<Neighbor>;
     fn prefetch(&self, values: &[Value]);
+    #[cfg(feature = "duckdb")]
     fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision>{Vec::new()}
+    #[cfg(feature = "duckdb")]
     fn stats(&self) -> (usize, Vec<String>);
     fn check(&self) -> Result<(), String>;
 }
@@ -108,6 +110,7 @@ impl PropertyGraph {
             }
         }
     }
+    #[cfg(feature = "duckdb")]
     pub(crate) fn base_exists(&self, edge: bool, name: &str, id: &ElementId) -> bool {
         self.source.as_ref().map_or_else(
             || self.base_cell(edge, name, id).is_some(),

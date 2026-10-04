@@ -753,3 +753,30 @@ async fn variable_free_patterns_and_asks() {
         vec![vec![int("2")]]
     );
 }
+
+
+#[tokio::test]
+async fn audit_construct_preserves_template_literal_identity() {
+    let mut engine = engine();
+    for (lexical, datatype) in [
+        ("1.00", "decimal"),
+        ("01", "integer"),
+        ("1.0E0", "double"),
+        ("1", "boolean"),
+    ] {
+        let query = format!(
+            "{PREFIX}CONSTRUCT {{ ex:s ex:p \"{lexical}\"^^xsd:{datatype} }} WHERE {{ VALUES ?x {{ 1 }} }}"
+        );
+        let SparqlResults::Graph(triples) = engine.query(&query).await.unwrap() else {
+            panic!("graph expected")
+        };
+        assert_eq!(
+            triples,
+            vec![[
+                iri("s").unwrap(),
+                iri("p").unwrap(),
+                typed(lexical, datatype).unwrap()
+            ]]
+        );
+    }
+}

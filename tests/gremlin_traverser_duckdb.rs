@@ -10,6 +10,8 @@
 
 #[path = "common/execution.rs"]
 mod datafusion_test;
+// This binary uses only a subset of the shared corpus fixtures and helpers.
+#[allow(dead_code)]
 mod gremlin_case_runner;
 
 use std::sync::Arc;

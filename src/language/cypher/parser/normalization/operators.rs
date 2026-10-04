@@ -1,8 +1,11 @@
 //! Operator rewrites and their quote-aware scanning helpers.
 
-use super::super::expression::is_ident_continue;
-
 use super::lists::skip_space;
+
+fn is_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
 pub(super) fn normalize_spaced_unary_signs(input: &str) -> String {
     if !(input.contains('-') || input.contains('+')) {
         return input.to_string();

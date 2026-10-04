@@ -3,7 +3,7 @@ use super::estimate::{filter_probability, input_rows};
 use datafusion::{
     common::{
         Result,
-        tree_node::{Transformed, TreeNode},
+        tree_node::Transformed,
     },
     logical_expr::{Expr, LogicalPlan, Operator},
 };

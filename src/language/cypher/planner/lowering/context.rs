@@ -20,8 +20,6 @@ pub(crate) struct ScopeFrame {
 pub(crate) enum TraversalStart {
     Root,
     Correlated,
-    Imported,
-    IndependentBranch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +36,6 @@ pub(crate) enum ScopeEffect {
     AddBindings,
     Replace,
     NullableAdd,
-    BranchMerge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,14 +78,6 @@ impl CypherTraversalContract {
         }
     }
 
-    const fn branch_rows() -> Self {
-        Self {
-            start: TraversalStart::IndependentBranch,
-            output: TraversalOutput::Rows,
-            scope_effect: ScopeEffect::BranchMerge,
-        }
-    }
-
     const fn mutation() -> Self {
         Self {
             start: TraversalStart::Correlated,
@@ -104,11 +93,6 @@ pub(crate) enum CypherTraversalKind {
 
     MatchPattern,
     OptionalMatchPattern,
-    PatternPart,
-    FixedExpand,
-    VariableLengthExpand,
-    QuantifiedPath,
-    ShortestPath,
 
     WherePredicate,
     ExistsSubquery,
@@ -120,20 +104,15 @@ pub(crate) enum CypherTraversalKind {
 
     Unwind,
 
-    CallSubquery,
     ProcedureCall,
 
     ListComprehension,
     PatternComprehension,
     Quantifier,
 
-    UnionBranch,
-
     Create,
-    Merge,
     Set,
     Delete,
-    Remove,
 }
 
 impl CypherTraversalKind {
@@ -142,13 +121,7 @@ impl CypherTraversalKind {
             CypherTraversalKind::RootQuery => CypherTraversalContract::root_rows(),
 
             CypherTraversalKind::MatchPattern
-            | CypherTraversalKind::PatternPart
-            | CypherTraversalKind::FixedExpand
-            | CypherTraversalKind::VariableLengthExpand
-            | CypherTraversalKind::QuantifiedPath
-            | CypherTraversalKind::ShortestPath
             | CypherTraversalKind::Unwind
-            | CypherTraversalKind::CallSubquery
             | CypherTraversalKind::ProcedureCall => {
                 CypherTraversalContract::correlated_rows(ScopeEffect::AddBindings)
             }
@@ -177,13 +150,9 @@ impl CypherTraversalKind {
                 CypherTraversalContract::correlated_scalar(ScopeEffect::Preserve)
             }
 
-            CypherTraversalKind::UnionBranch => CypherTraversalContract::branch_rows(),
-
             CypherTraversalKind::Create
-            | CypherTraversalKind::Merge
             | CypherTraversalKind::Set
-            | CypherTraversalKind::Delete
-            | CypherTraversalKind::Remove => CypherTraversalContract::mutation(),
+            | CypherTraversalKind::Delete => CypherTraversalContract::mutation(),
         }
     }
 }
@@ -224,34 +193,6 @@ impl CypherTraversalContext {
             produced: BTreeSet::new(),
             nullable: BTreeSet::new(),
         }
-    }
-
-    pub(crate) fn kind(&self) -> CypherTraversalKind {
-        self.kind
-    }
-
-    pub(crate) fn contract(&self) -> CypherTraversalContract {
-        self.contract
-    }
-
-    pub(crate) fn parent_id(&self) -> Option<u32> {
-        self.parent
-    }
-
-    pub(crate) fn imports(&self) -> &BTreeSet<BindingId> {
-        &self.imports
-    }
-
-    pub(crate) fn correlation(&self) -> &BTreeSet<BindingId> {
-        &self.correlation
-    }
-
-    pub(crate) fn produced(&self) -> &BTreeSet<BindingId> {
-        &self.produced
-    }
-
-    pub(crate) fn nullable(&self) -> &BTreeSet<BindingId> {
-        &self.nullable
     }
 
     pub(crate) fn add_imports<I>(&mut self, bindings: I)

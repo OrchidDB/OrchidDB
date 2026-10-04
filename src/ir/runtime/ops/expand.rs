@@ -47,24 +47,23 @@ pub(crate) fn expand_op(
     graph: &PropertyGraph,
     ctx: &mut ExecutionContext,
 ) -> IrResult<Vec<Row>> {
-    // The IR allows `[..]` (unbounded upper) but a graph in the
-    // conformance corpus terminates BFS at the natural frontier when
-    // `DifferentRelationships` keeps each edge from being reused. Cap
-    // the loop at a conservative depth so the expansion kernel has a
-    // hard exit if the data picks up unexpected cycles.
-    const UNBOUNDED_MAX: u32 = 30;
-    let max_hops = length.max.unwrap_or(UNBOUNDED_MAX);
-    if length.min > max_hops {
+    // Only the query may bound the number of hops. Unbounded expansions
+    // terminate at an empty frontier or fail through the execution controls.
+    if length.max.is_some_and(|max| length.min > max) {
         return Err(RuntimeError::Unsupported(format!(
-            "expand length {}..{} invalid",
-            length.min, max_hops
+            "expand length {}..{} invalid", length.min, length.max_display()
         )));
     }
-    let rel_filter = match rel_types {
+    let enforce_edges = matches!(match_mode, MatchMode::DifferentRelationships)
+        || matches!(path_mode, PathMode::Trail | PathMode::Simple | PathMode::Acyclic);
+    let mut rel_filter = match rel_types {
         LabelExpr::Any => Vec::new(),
         LabelExpr::AnyOf(names) | LabelExpr::AllOf(names) => names.clone(),
         LabelExpr::Not(_) => Vec::new(),
     };
+    rel_filter.sort();
+    rel_filter.dedup();
+    let track_path = path_binding.is_some() || matches!(path_mode, PathMode::Simple | PathMode::Acyclic);
     let nodes=upstream.iter().filter_map(|row| match row.bindings.get(source) {Some(Value::Node{label,id})=>Some((label.clone(),id.clone())),_=>None}).collect::<Vec<_>>();
     graph.prefetch_adjacency(&nodes,dir,&rel_filter);
     let mut out = Vec::new();
@@ -74,9 +73,9 @@ pub(crate) fn expand_op(
             Some(Value::Node { label, id }) => (label.clone(), id.clone()),
             _ => continue,
         };
-        // BFS up to the bounded max, emitting rows whose hop count is in
-        // [length.min, max_hops]. `history` carries Cypher relationship
-        // uniqueness across a whole graph pattern; `path` carries the
+        // BFS until the frontier is empty or the query upper bound is reached.
+        // `history` carries relationship uniqueness across a whole pattern;
+        // `path` carries the
         // user-visible materialized path for this expansion chain.
         let initial_history = history_binding
             .and_then(|binding| row.bindings.get(binding))
@@ -97,11 +96,19 @@ pub(crate) fn expand_op(
                     id: source_node.1.clone(),
                 }]
             });
-        let mut frontier: Vec<(String, crate::ir::ElementId, Vec<Value>, Vec<Value>)> = vec![(
+        // Track relationship identity independently of user-visible paths.
+        // A trail must terminate on cycles even when no path is projected.
+        let visited = initial_history.iter().chain(&initial_path).filter_map(|value| {
+            if let Value::Edge { rel_type, id, .. } = value {
+                Some((rel_type.clone(), id.clone()))
+            } else { None }
+        }).collect::<Vec<_>>();
+        let mut frontier = vec![(
             source_node.0.clone(),
             source_node.1.clone(),
             initial_history,
             initial_path,
+            visited,
         )];
         if length.min == 0 && graph.node_matches_labels(&source_node.0, source_node.1.clone(), target_labels) {
             let emit = match target_mode {
@@ -138,10 +145,12 @@ pub(crate) fn expand_op(
                 out.push(out_row);
             }
         }
-        for hop in 1..=max_hops {
-            graph.prefetch_adjacency(&frontier.iter().map(|(label,id,_,_)|(label.clone(),id.clone())).collect::<Vec<_>>(),dir,&rel_filter);
+        let mut hop = 0_u64;
+        while !frontier.is_empty() && length.max.is_none_or(|max| hop < u64::from(max)) {
+            hop = hop.checked_add(1).ok_or_else(|| RuntimeError::ExecutionLimit("hop counter overflow".into()))?;
+            graph.prefetch_adjacency(&frontier.iter().map(|(label,id,_,_,_)|(label.clone(),id.clone())).collect::<Vec<_>>(),dir,&rel_filter);
             let mut next_frontier = Vec::new();
-            for (cur_label, cur_id, history_so_far, path_so_far) in frontier {
+            for (cur_label, cur_id, history_so_far, path_so_far, visited) in frontier {
                 ctx.charge(1)?;
                 let edges = match dir {
                     Direction::Out => graph
@@ -176,6 +185,16 @@ pub(crate) fn expand_op(
                         && match_mode == MatchMode::DifferentRelationships
                         && cur_label == other_label && cur_id == other_id { continue; }
                     ctx.charge(1)?;
+                    if !label_matches(&rel_type, rel_types) { continue; }
+                    if enforce_edges && visited.iter().any(|(ty, id)| ty == &rel_type && id == &edge_row) { continue; }
+                    if matches!(path_mode, PathMode::Simple | PathMode::Acyclic)
+                        && path_so_far.iter().any(|value| matches!(value, Value::Node { label, id } if label == &other_label && id == &other_id))
+                        && !(path_mode == PathMode::Simple && source_node == (other_label.clone(), other_id.clone())) {
+                        continue;
+                    }
+                    let closes_simple = path_mode == PathMode::Simple && source_node == (other_label.clone(), other_id.clone());
+                    let mut next_visited = visited.clone();
+                    if enforce_edges { next_visited.push((rel_type.clone(), edge_row.clone())); }
                     let mut history = history_so_far.clone();
                     let mut path = path_so_far.clone();
                     let edge_value = Value::Edge {
@@ -191,27 +210,6 @@ pub(crate) fn expand_op(
                         label: other_label.clone(),
                         id: other_id.clone(),
                     };
-                    // `match_mode` owns relationship reuse. `path_mode`
-                    // can still request stricter path classes when a
-                    // planner emits TRAIL/SIMPLE/ACYCLIC explicitly.
-                    //
-                    // Cypher history spans every segment of one MATCH
-                    // clause, including fixed and zero-or-one expansions.
-                    // Explicit repeatable/WALK traversal remains unaffected.
-                    let enforces_history = history_binding.is_some()
-                        && matches!(match_mode, MatchMode::DifferentRelationships);
-                    let enforces_path = max_hops > 1
-                        && matches!(
-                            (path_mode, match_mode),
-                            (PathMode::Trail | PathMode::Simple | PathMode::Acyclic, _)
-                                | (_, MatchMode::DifferentRelationships)
-                        );
-                    let history_contains = (enforces_history
-                        && path_contains_edge(&history, &rel_type, edge_row.clone()))
-                        || (enforces_path && path_contains_edge(&path, &rel_type, edge_row));
-                    if history_contains {
-                        continue;
-                    }
                     if history_binding.is_some() {
                         history.push(edge_value.clone());
                     }
@@ -221,10 +219,10 @@ pub(crate) fn expand_op(
                         path.push(target_node.clone());
                     } else if include_edge_in_path {
                         path.push(edge_value.clone());
-                    } else {
+                    } else if track_path {
                         path.push(target_node.clone());
                     }
-                    if hop >= length.min {
+                    if hop >= u64::from(length.min) {
                         // Target label filter.
                         if !graph.node_matches_labels(&other_label, other_id.clone(), target_labels) {
                             // Still extend frontier; just don't emit.
@@ -267,8 +265,10 @@ pub(crate) fn expand_op(
                             }
                         }
                     }
-                    ctx.charge(1)?;
-                    next_frontier.push((other_label, other_id, history, path));
+                    if !closes_simple && length.max.is_none_or(|max| hop < u64::from(max)) {
+                        ctx.charge(1)?;
+                        next_frontier.push((other_label, other_id, history, path, next_visited));
+                    }
                 }
             }
             frontier = next_frontier;
@@ -284,7 +284,7 @@ pub(crate) fn label_matches(label: &str, expr: &LabelExpr) -> bool {
     match expr {
         LabelExpr::Any => true,
         LabelExpr::AnyOf(names) => names.iter().any(|n| n == label),
-        LabelExpr::AllOf(names) => names.len() == 1 && names[0] == label,
+        LabelExpr::AllOf(names) => names.iter().all(|name| name == label),
         LabelExpr::Not(inner) => !label_matches(label, inner),
     }
 }
@@ -315,17 +315,4 @@ fn oriented_edge_dst_id(dir: Direction, current: crate::ir::ElementId, other: cr
         Direction::In => current,
         Direction::Out | Direction::Both => other,
     }
-}
-
-fn path_contains_edge(path: &[Value], rel_type: &str, id: crate::ir::ElementId) -> bool {
-    path.iter().any(|value| {
-        matches!(
-            value,
-            Value::Edge {
-                rel_type: existing_type,
-                id: existing_id,
-                ..
-            } if existing_type == rel_type && existing_id == &id
-        )
-    })
 }

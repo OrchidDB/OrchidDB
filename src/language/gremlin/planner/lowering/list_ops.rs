@@ -10,7 +10,7 @@
 //! handled here since its runtime helper is in the same family.
 
 use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
-use super::literals::{gvalue_to_expr, gvalue_to_lit};
+use super::literals::gvalue_to_expr;
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::{ApplyKind, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice};

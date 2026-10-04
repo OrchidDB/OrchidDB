@@ -22,3 +22,6 @@ pub(crate) mod unwind;
 pub(crate) mod sample;
 
 pub(crate) mod java_hashmap;
+
+#[cfg(test)]
+mod traversal_tests;

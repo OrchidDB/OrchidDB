@@ -314,7 +314,16 @@ impl<'a> LoweringContext<'a> {
                 _ => self.graph.node_property_keys_with_id(label),
             };
             for key in keys {
-                if defs.contains_key(&key) {
+                if let Some(existing) = defs.get(&key) {
+                    // A key inferred for another label is not a schema for this
+                    // label. Reject incompatible overlay types so the native
+                    // path can retain the original scalar values.
+                    if table.is_none_or(|table| table.batch.schema().field_with_name(&key).is_err()) {
+                        let data_type = infer_element_property_type(self.graph, false, label, &key, self.language)?;
+                        if existing.data_type != data_type {
+                            return Err(RelError::Unsupported(format!("property `{key}` has incompatible types across labels")));
+                        }
+                    }
                     continue;
                 }
                 let data_type = infer_element_property_type(self.graph, false, label, &key, self.language)?;
@@ -461,7 +470,13 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             for key in self.graph.edge_property_keys(rel_type) {
-                if defs.contains_key(&key) {
+                if let Some(existing) = defs.get(&key) {
+                    if tables.is_none_or(|tables| tables.iter().all(|table| table.batch.schema().field_with_name(&key).is_err())) {
+                        let data_type = infer_element_property_type(self.graph, true, rel_type, &key, self.language)?;
+                        if existing.data_type != data_type {
+                            return Err(RelError::Unsupported(format!("property `{key}` has incompatible types across relationship types")));
+                        }
+                    }
                     continue;
                 }
                 let data_type = infer_element_property_type(self.graph, true, rel_type, &key, self.language)?;

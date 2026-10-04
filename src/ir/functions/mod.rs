@@ -17,7 +17,7 @@ pub use call::{ENGINE_FUNCTION_PREFIX, native_aggregate, native_scalar};
 #[cfg(feature = "duckdb")]
 pub use duckdb::DuckDbCatalog;
 pub(crate) use typed_cast::{
-    ENGINE_CAST_FUNCTION, typed_argument_cast, typed_argument_cast_for_engine,
+    ENGINE_CAST_FUNCTION, typed_argument_cast_for_engine,
 };
 
 use arrow::datatypes::DataType;

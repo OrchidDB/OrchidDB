@@ -73,9 +73,15 @@ impl ExecutionContext {
         self.side_effect_value(label, graph)
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_step_limit(limit: u64) -> Self {
+        Self { step_limit: Some(limit), ..Self::default() }
+    }
+
     const STEP_LIMIT_ENV: &'static str = "ORCHIDDB_EXECUTION_MAX_STEPS";
 
     pub(crate) fn charge(&mut self, units: u64) -> IrResult<()> {
+        self.jvm.check()?;
         self.steps = self.steps.saturating_add(units);
         if let Some(limit) = self.step_limit {
             if self.steps > limit {

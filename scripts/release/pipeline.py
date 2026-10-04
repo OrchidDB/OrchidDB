@@ -301,7 +301,7 @@ def ensure_tags(state, path):
             save(path, state)
 
 
-def artifact_names(kind, platform):
+def artifact_names(kind, platform, available=None):
     if kind == 'native':
         return ['compiler-' + PLATFORMS[platform]]
     if kind == 'java':
@@ -314,8 +314,16 @@ def artifact_names(kind, platform):
         return ['hex-package']
     if kind == 'javascript':
         return ['npm-package']
-    systems = ['ubuntu-22.04', 'macos-14', 'macos-15-intel']
-    return [('wheels-' if kind == 'python' else 'package-') + os for os in systems + (['windows-2022'] if kind == 'python' else [])]
+    systems = ['ubuntu-22.04', 'macos-26', 'macos-26-intel']
+    prefix = 'wheels-' if kind == 'python' else 'package-'
+    names = [prefix + os for os in systems + (['windows-2022'] if kind == 'python' else [])]
+    if available is not None:
+        # Resume pre-upgrade runs without rebuilding their completed artifacts.
+        legacy = {prefix + 'macos-26': prefix + 'macos-14',
+                  prefix + 'macos-26-intel': prefix + 'macos-15-intel'}
+        names = [legacy[name] if name not in available and legacy.get(name) in available else name
+                 for name in names]
+    return names
 
 
 def check_binary(data, platform):
@@ -431,8 +439,9 @@ def collect(state, path):
             entry.update(run_id=found['databaseId'], url=found['url'])
             save(path, state)
         available = api(f'repos/{github(kind)}/actions/runs/{entry["run_id"]}/artifacts?per_page=100')['artifacts']
-        names = artifact_names(kind, platform)
-        if not set(names) <= {a['name'] for a in available if not a['expired']}:
+        available_names = {a['name'] for a in available if not a['expired']}
+        names = artifact_names(kind, platform, available_names)
+        if not set(names) <= available_names:
             continue
         destination = path.parent / 'artifacts' / kind / platform
         destination.parent.mkdir(parents=True, exist_ok=True)

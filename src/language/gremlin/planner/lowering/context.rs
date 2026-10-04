@@ -89,14 +89,11 @@ pub(super) enum ChildTraversalKind {
     BranchDispatch,
     BranchArm,
     CoalesceArm,
-    UnionArm,
     Local,
     Map,
     FlatMap,
     SideEffect,
     RepeatBody,
-    RepeatEmitPredicate,
-    RepeatUntilPredicate,
     ByModulator,
     ListRhs,
     StringRhs,
@@ -111,8 +108,6 @@ impl ChildTraversalKind {
             ChildTraversalKind::WherePredicate
             | ChildTraversalKind::NotPredicate
             | ChildTraversalKind::ChooseCondition
-            | ChildTraversalKind::RepeatEmitPredicate
-            | ChildTraversalKind::RepeatUntilPredicate
             | ChildTraversalKind::SubgraphFilter => TraversalContract::correlated_predicate(),
             ChildTraversalKind::ByModulator
             | ChildTraversalKind::BranchDispatch
@@ -121,7 +116,6 @@ impl ChildTraversalKind {
             ChildTraversalKind::SideEffect => TraversalContract::correlated_side_effect(),
             ChildTraversalKind::BranchArm
             | ChildTraversalKind::CoalesceArm
-            | ChildTraversalKind::UnionArm
             | ChildTraversalKind::Local
             | ChildTraversalKind::Map
             | ChildTraversalKind::FlatMap

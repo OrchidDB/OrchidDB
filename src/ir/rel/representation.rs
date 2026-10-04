@@ -289,7 +289,7 @@ pub fn select(plan: LogicalPlan) -> Result<SelectedPlan> {
     stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || select_connected(plan))
 }
 fn select_connected(plan: LogicalPlan) -> Result<SelectedPlan> {
-    let baseline=select_inner(plan.clone(),0)?;
+    let baseline=select_inner(plan.clone(), &mut BTreeSet::new())?;
     // Normal queries without a generated catalog retain the existing path.
     if super::statistics::explain(&baseline.plan).is_empty(){return Ok(baseline);}
     let score=|mut s:SelectedPlan| -> Result<(SelectedPlan,Option<f64>)> {
@@ -299,7 +299,7 @@ fn select_connected(plan: LogicalPlan) -> Result<SelectedPlan> {
         let cost=estimate(&s,None)?.estimated_cost.map(|c|c as f64);
         Ok((s,cost))
     };
-    let (mut best,Some(mut best_cost))=score(baseline)? else{return select_inner(plan,0);};
+    let (mut best,Some(mut best_cost))=score(baseline)? else{return select_inner(plan, &mut BTreeSet::new());};
     let original_cost=best_cost;let original=best.representation_selections.iter().map(|r|r.representation.clone()).collect::<Vec<_>>();
     let mut counts=Vec::new();
     plan.apply_with_subqueries(|p| {if let LogicalPlan::TableScan(s)=p {if let Some(p)=provider(&source_as_provider(&s.source)?){counts.push(p.definition.representations.len());}}Ok(TreeNodeRecursion::Continue)})?;
@@ -310,7 +310,7 @@ fn select_connected(plan: LogicalPlan) -> Result<SelectedPlan> {
         let mut chosen=None;
         for candidate in 0..*count {if evaluations>=32{break;}evaluations+=1;
             let mut choices=forced.clone();choices.insert(occurrence,candidate);
-            let selected=select_forced(plan.clone(),0,&choices)?;
+            let selected=select_forced(plan.clone(), &mut BTreeSet::new(), &choices)?;
             let (selected,cost)=score(selected)?;
             if let Some(cost)=cost {if cost<best_cost {best_cost=cost;best=selected;chosen=Some(candidate);}}
         }
@@ -319,11 +319,12 @@ fn select_connected(plan: LogicalPlan) -> Result<SelectedPlan> {
     if best_cost<original_cost {best.access_decisions.push(super::statistics::OptimizerDecision{optimization:"connected_representation_selection".into(),before:original,after:best.representation_selections.iter().map(|r|r.representation.clone()).collect(),estimated_work_before:original_cost,estimated_work_after:best_cost,reason:format!("whole connected plan cost after neighbor restrictions and join ordering; {evaluations} candidates considered")});}
     Ok(best)
 }
-fn select_inner(plan:LogicalPlan,depth:usize)->Result<SelectedPlan>{select_forced(plan,depth,&BTreeMap::new())}
-fn select_forced(plan: LogicalPlan, depth: usize, forced: &BTreeMap<usize,usize>) -> Result<SelectedPlan> {
-    if depth > 64 {
-        return Err(invalid("representation dependency depth exceeds 64"));
-    }
+fn select_inner(plan: LogicalPlan, active: &mut BTreeSet<usize>) -> Result<SelectedPlan> {
+    // Dependencies may be arbitrarily deep. Grow at each recursive boundary,
+    // and reject only a provider that is already on this dependency path.
+    stacker::maybe_grow(128 * 1024, 2 * 1024 * 1024, || select_forced(plan, active, &BTreeMap::new()))
+}
+fn select_forced(plan: LogicalPlan, active: &mut BTreeSet<usize>, forced: &BTreeMap<usize,usize>) -> Result<SelectedPlan> {
     let mut found = false;
     plan.apply_with_subqueries(|node| {
         if let LogicalPlan::TableScan(scan) = node {
@@ -348,6 +349,10 @@ fn select_forced(plan: LogicalPlan, depth: usize, forced: &BTreeMap<usize,usize>
             let Some(p) = provider(&p) else {
                 return Ok(Transformed::no(node));
             };
+            let identity = p as *const RepresentationProvider as usize;
+            if !active.insert(identity) {
+                return Err(invalid("cyclic representation dependency"));
+            }
             let default = p
                 .definition
                 .representations
@@ -372,7 +377,7 @@ fn select_forced(plan: LogicalPlan, depth: usize, forced: &BTreeMap<usize,usize>
                     plan = plan.filter(filter.clone())?;
                 }
                 let selected =
-                    select_inner(super::layout::push_filters(plan.build()?)?, depth + 1)?;
+                    select_inner(super::layout::push_filters(plan.build()?)?, active)?;
                 let estimate = estimate(&selected, r.average_list_length)?;
                 candidates.push(RepresentationCandidate {
                     name: r.name.clone(),
@@ -386,6 +391,7 @@ fn select_forced(plan: LogicalPlan, depth: usize, forced: &BTreeMap<usize,usize>
                 });
                 alternatives.push(Some(selected));
             }
+            active.remove(&identity);
             let mut best = default;
             if let Some(mut cost) = candidates[default].estimate.estimated_cost {
                 for (i, candidate) in candidates.iter().enumerate() {

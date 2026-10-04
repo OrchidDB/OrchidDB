@@ -3,7 +3,7 @@
 use super::datetime::normalize_interval_spec;
 use super::graph::graph_element_property;
 use super::maps::{
-    kuzu_map_entries, kuzu_map_entry, kuzu_map_first, runtime_list, union_display_value,
+    kuzu_map_entries, kuzu_map_entry, kuzu_map_first, union_display_value,
     visible_map_keys, visible_map_len,
 };
 use super::numeric::{value_as_bigint, value_as_f64};
@@ -530,10 +530,6 @@ pub(super) fn list_index(items: &[Value], index: i64) -> Value {
     } else {
         items[i as usize].clone()
     }
-}
-
-fn list_index_1_based(items: &[Value], index: i64) -> Value {
-    list_element_1_based(items, index).unwrap_or(Value::Null)
 }
 
 pub(super) fn list_extract_value(items: &[Value], index: i64) -> IrResult<Value> {

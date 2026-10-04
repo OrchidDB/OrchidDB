@@ -322,23 +322,6 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
     }
 }
 
-pub(crate) fn display_for_group_key(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Float(f) => format!("d[{}].d", format_f64_tag(*f)),
-        Value::Float32(f) => format!("d[{}].f", format_f32_tag(*f)),
-        Value::BigInt(n) => format!("d[{n}].n"),
-        Value::UInt128(n) => format!("d[{n}].u128"),
-        Value::Temporal(t) => t.to_string(),
-        Value::DateTime(s) => format!("dt[{s}]"),
-        other => display_for_tagged_container(other),
-    }
-}
-
-fn format_f32_tag(value: f32) -> String {
-    format_f64_tag(value as f64)
-}
-
 fn format_f64_tag(value: f64) -> String {
     if value.is_finite() && value.fract() == 0.0 {
         format!("{value:.1}")

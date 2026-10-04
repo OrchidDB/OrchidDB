@@ -294,7 +294,7 @@ fn roundtrip_all_value_variants() {
         ]),
     );
 
-    let mut g = PropertyGraph::new();
+    let g = PropertyGraph::new();
     g.insert_node("Rich", props);
 
     let g2 = roundtrip(&g);

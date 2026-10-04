@@ -8,7 +8,6 @@ use crate::ir::plan::ProjectionItem;
 use crate::ir::value::Value;
 
 use super::super::expr::eval;
-use super::super::scalar::display_for_group_key;
 use super::super::{RuntimeError, IrResult, Row};
 use super::distinct::{encode_key, encode_value};
 
@@ -111,10 +110,6 @@ pub(crate) fn aggregate_op_with_cypher_equivalence(
         out.push(row);
     }
     Ok(out)
-}
-
-pub(crate) fn map_key(value: &Value) -> String {
-    display_for_group_key(value)
 }
 
 pub(crate) fn unwrap_single_group_value(value: Value) -> Value {

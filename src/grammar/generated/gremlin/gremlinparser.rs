@@ -1961,6 +1961,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn queryList(&mut self) -> Result<Rc<QueryListContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = QueryListContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -2036,6 +2038,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- query ----------------
@@ -2176,6 +2179,8 @@ where
     }
 
     fn query_rec(&mut self, _p: i32) -> Result<Rc<QueryContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let recog = self;
         let _parentctx = recog.ctx.take();
         let _parentState = recog.base.get_state();
@@ -2322,6 +2327,7 @@ where
         recog.base.unroll_recursion_context(_parentctx)?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- emptyQuery ----------------
@@ -2398,6 +2404,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn emptyQuery(&mut self) -> Result<Rc<EmptyQueryContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = EmptyQueryContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -2426,6 +2434,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSource ----------------
@@ -2530,6 +2539,8 @@ where
         &mut self,
         _p: i32,
     ) -> Result<Rc<TraversalSourceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let recog = self;
         let _parentctx = recog.ctx.take();
         let _parentState = recog.base.get_state();
@@ -2638,6 +2649,7 @@ where
         recog.base.unroll_recursion_context(_parentctx)?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- transactionPart ----------------
@@ -2777,6 +2789,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn transactionPart(&mut self) -> Result<Rc<TransactionPartContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -2926,6 +2940,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- rootTraversal ----------------
@@ -3028,6 +3043,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn rootTraversal(&mut self) -> Result<Rc<RootTraversalContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -3102,6 +3119,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod ----------------
@@ -3236,6 +3254,8 @@ where
     pub fn traversalSourceSelfMethod(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethodContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -3336,6 +3356,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withBulk ----------------
@@ -3445,6 +3466,8 @@ where
     pub fn traversalSourceSelfMethod_withBulk(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withBulkContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withBulkContextExt::new(
@@ -3494,6 +3517,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withPath ----------------
@@ -3597,6 +3621,8 @@ where
     pub fn traversalSourceSelfMethod_withPath(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withPathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withPathContextExt::new(
@@ -3642,6 +3668,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withSack ----------------
@@ -3765,6 +3792,8 @@ where
     pub fn traversalSourceSelfMethod_withSack(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withSackContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withSackContextExt::new(
@@ -3855,6 +3884,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withSideEffect ----------------
@@ -3996,6 +4026,8 @@ where
     pub fn traversalSourceSelfMethod_withSideEffect(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withSideEffectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withSideEffectContextExt::new(
@@ -4104,6 +4136,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withStrategies ----------------
@@ -4232,6 +4265,8 @@ where
     pub fn traversalSourceSelfMethod_withStrategies(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withStrategiesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withStrategiesContextExt::new(
@@ -4298,6 +4333,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_withoutStrategies ----------------
@@ -4427,6 +4463,8 @@ where
     pub fn traversalSourceSelfMethod_withoutStrategies(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withoutStrategiesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withoutStrategiesContextExt::new(
@@ -4493,6 +4531,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSelfMethod_with ----------------
@@ -4616,6 +4655,8 @@ where
     pub fn traversalSourceSelfMethod_with(
         &mut self,
     ) -> Result<Rc<TraversalSourceSelfMethod_withContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSelfMethod_withContextExt::new(
@@ -4704,6 +4745,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod ----------------
@@ -4862,6 +4904,8 @@ where
     pub fn traversalSourceSpawnMethod(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethodContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -4992,6 +5036,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_addE ----------------
@@ -5107,6 +5152,8 @@ where
     pub fn traversalSourceSpawnMethod_addE(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_addEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_addEContextExt::new(
@@ -5186,6 +5233,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_addV ----------------
@@ -5301,6 +5349,8 @@ where
     pub fn traversalSourceSpawnMethod_addV(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_addVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_addVContextExt::new(
@@ -5400,6 +5450,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_E ----------------
@@ -5509,6 +5560,8 @@ where
     pub fn traversalSourceSpawnMethod_E(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_EContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -5554,6 +5607,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_V ----------------
@@ -5663,6 +5717,8 @@ where
     pub fn traversalSourceSpawnMethod_V(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_VContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -5708,6 +5764,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_inject ----------------
@@ -5817,6 +5874,8 @@ where
     pub fn traversalSourceSpawnMethod_inject(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_injectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_injectContextExt::new(
@@ -5866,6 +5925,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_io ----------------
@@ -5975,6 +6035,8 @@ where
     pub fn traversalSourceSpawnMethod_io(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_ioContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_ioContextExt::new(
@@ -6022,6 +6084,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_mergeV ----------------
@@ -6378,6 +6441,8 @@ where
     pub fn traversalSourceSpawnMethod_mergeV(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_mergeVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_mergeVContextExt::new(
@@ -6462,6 +6527,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_mergeE ----------------
@@ -6818,6 +6884,8 @@ where
     pub fn traversalSourceSpawnMethod_mergeE(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_mergeEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_mergeEContextExt::new(
@@ -6902,6 +6970,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_call ----------------
@@ -7699,6 +7768,8 @@ where
     pub fn traversalSourceSpawnMethod_call(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_callContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_callContextExt::new(
@@ -7892,6 +7963,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSourceSpawnMethod_union ----------------
@@ -8001,6 +8073,8 @@ where
     pub fn traversalSourceSpawnMethod_union(
         &mut self,
     ) -> Result<Rc<TraversalSourceSpawnMethod_unionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalSourceSpawnMethod_unionContextExt::new(
@@ -8048,6 +8122,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- chainedTraversal ----------------
@@ -8146,6 +8221,8 @@ where
         &mut self,
         _p: i32,
     ) -> Result<Rc<ChainedTraversalContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let recog = self;
         let _parentctx = recog.ctx.take();
         let _parentState = recog.base.get_state();
@@ -8230,6 +8307,7 @@ where
         recog.base.unroll_recursion_context(_parentctx)?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nestedTraversal ----------------
@@ -8321,6 +8399,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn nestedTraversal(&mut self) -> Result<Rc<NestedTraversalContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -8515,6 +8595,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- terminatedTraversal ----------------
@@ -8608,6 +8689,8 @@ where
     pub fn terminatedTraversal(
         &mut self,
     ) -> Result<Rc<TerminatedTraversalContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -8647,6 +8730,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod ----------------
@@ -9534,6 +9618,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalMethod(&mut self) -> Result<Rc<TraversalMethodContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -10914,6 +11000,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_V ----------------
@@ -11015,6 +11102,8 @@ where
     pub fn traversalMethod_V(
         &mut self,
     ) -> Result<Rc<TraversalMethod_VContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -11060,6 +11149,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_E ----------------
@@ -11161,6 +11251,8 @@ where
     pub fn traversalMethod_E(
         &mut self,
     ) -> Result<Rc<TraversalMethod_EContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -11206,6 +11298,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_addE ----------------
@@ -11549,6 +11642,8 @@ where
     pub fn traversalMethod_addE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_addEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -11628,6 +11723,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_addV ----------------
@@ -12087,6 +12183,8 @@ where
     pub fn traversalMethod_addV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_addVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -12187,6 +12285,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_aggregate ----------------
@@ -12416,6 +12515,8 @@ where
     pub fn traversalMethod_aggregate(
         &mut self,
     ) -> Result<Rc<TraversalMethod_aggregateContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -12462,6 +12563,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_all ----------------
@@ -12672,6 +12774,8 @@ where
     pub fn traversalMethod_all(
         &mut self,
     ) -> Result<Rc<TraversalMethod_allContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -12718,6 +12822,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_and ----------------
@@ -12821,6 +12926,8 @@ where
     pub fn traversalMethod_and(
         &mut self,
     ) -> Result<Rc<TraversalMethod_andContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -12866,6 +12973,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_any ----------------
@@ -13076,6 +13184,8 @@ where
     pub fn traversalMethod_any(
         &mut self,
     ) -> Result<Rc<TraversalMethod_anyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -13122,6 +13232,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_as ----------------
@@ -13241,6 +13352,8 @@ where
     pub fn traversalMethod_as(
         &mut self,
     ) -> Result<Rc<TraversalMethod_asContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -13303,6 +13416,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_asBool ----------------
@@ -13402,6 +13516,8 @@ where
     pub fn traversalMethod_asBool(
         &mut self,
     ) -> Result<Rc<TraversalMethod_asBoolContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -13443,6 +13559,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_asDate ----------------
@@ -13542,6 +13659,8 @@ where
     pub fn traversalMethod_asDate(
         &mut self,
     ) -> Result<Rc<TraversalMethod_asDateContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -13583,6 +13702,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_asNumber ----------------
@@ -13935,6 +14055,8 @@ where
     pub fn traversalMethod_asNumber(
         &mut self,
     ) -> Result<Rc<TraversalMethod_asNumberContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -14010,6 +14132,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_asString ----------------
@@ -14353,6 +14476,8 @@ where
     pub fn traversalMethod_asString(
         &mut self,
     ) -> Result<Rc<TraversalMethod_asStringContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -14428,6 +14553,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_barrier ----------------
@@ -14895,6 +15021,8 @@ where
     pub fn traversalMethod_barrier(
         &mut self,
     ) -> Result<Rc<TraversalMethod_barrierContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -14995,6 +15123,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_both ----------------
@@ -15102,6 +15231,8 @@ where
     pub fn traversalMethod_both(
         &mut self,
     ) -> Result<Rc<TraversalMethod_bothContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -15147,6 +15278,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_bothE ----------------
@@ -15254,6 +15386,8 @@ where
     pub fn traversalMethod_bothE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_bothEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -15299,6 +15433,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_bothV ----------------
@@ -15398,6 +15533,8 @@ where
     pub fn traversalMethod_bothV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_bothVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -15439,6 +15576,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_branch ----------------
@@ -15544,6 +15682,8 @@ where
     pub fn traversalMethod_branch(
         &mut self,
     ) -> Result<Rc<TraversalMethod_branchContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -15589,6 +15729,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_by ----------------
@@ -16941,6 +17082,8 @@ where
     pub fn traversalMethod_by(
         &mut self,
     ) -> Result<Rc<TraversalMethod_byContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -17243,6 +17386,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_call ----------------
@@ -17900,6 +18044,8 @@ where
     pub fn traversalMethod_call(
         &mut self,
     ) -> Result<Rc<TraversalMethod_callContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -18066,6 +18212,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_cap ----------------
@@ -18185,6 +18332,8 @@ where
     pub fn traversalMethod_cap(
         &mut self,
     ) -> Result<Rc<TraversalMethod_capContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -18247,6 +18396,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_choose ----------------
@@ -19197,6 +19347,8 @@ where
     pub fn traversalMethod_choose(
         &mut self,
     ) -> Result<Rc<TraversalMethod_chooseContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -19436,6 +19588,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_coalesce ----------------
@@ -19544,6 +19697,8 @@ where
     pub fn traversalMethod_coalesce(
         &mut self,
     ) -> Result<Rc<TraversalMethod_coalesceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -19589,6 +19744,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_coin ----------------
@@ -19694,6 +19850,8 @@ where
     pub fn traversalMethod_coin(
         &mut self,
     ) -> Result<Rc<TraversalMethod_coinContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -19739,6 +19897,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_combine ----------------
@@ -19966,6 +20125,8 @@ where
     pub fn traversalMethod_combine(
         &mut self,
     ) -> Result<Rc<TraversalMethod_combineContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -20012,6 +20173,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_concat ----------------
@@ -20383,6 +20545,8 @@ where
     pub fn traversalMethod_concat(
         &mut self,
     ) -> Result<Rc<TraversalMethod_concatContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -20480,6 +20644,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_conjoin ----------------
@@ -20707,6 +20872,8 @@ where
     pub fn traversalMethod_conjoin(
         &mut self,
     ) -> Result<Rc<TraversalMethod_conjoinContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -20753,6 +20920,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_connectedComponent ----------------
@@ -20856,6 +21024,8 @@ where
     pub fn traversalMethod_connectedComponent(
         &mut self,
     ) -> Result<Rc<TraversalMethod_connectedComponentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalMethod_connectedComponentContextExt::new(
@@ -20901,6 +21071,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_constant ----------------
@@ -21009,6 +21180,8 @@ where
     pub fn traversalMethod_constant(
         &mut self,
     ) -> Result<Rc<TraversalMethod_constantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -21054,6 +21227,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_count ----------------
@@ -21394,6 +21568,8 @@ where
     pub fn traversalMethod_count(
         &mut self,
     ) -> Result<Rc<TraversalMethod_countContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -21469,6 +21645,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_cyclicPath ----------------
@@ -21571,6 +21748,8 @@ where
     pub fn traversalMethod_cyclicPath(
         &mut self,
     ) -> Result<Rc<TraversalMethod_cyclicPathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -21612,6 +21791,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_dateAdd ----------------
@@ -21734,6 +21914,8 @@ where
     pub fn traversalMethod_dateAdd(
         &mut self,
     ) -> Result<Rc<TraversalMethod_dateAddContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -21788,6 +21970,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_dateDiff ----------------
@@ -22139,6 +22322,8 @@ where
     pub fn traversalMethod_dateDiff(
         &mut self,
     ) -> Result<Rc<TraversalMethod_dateDiffContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -22218,6 +22403,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_dedup ----------------
@@ -22584,6 +22770,8 @@ where
     pub fn traversalMethod_dedup(
         &mut self,
     ) -> Result<Rc<TraversalMethod_dedupContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -22680,6 +22868,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_difference ----------------
@@ -22909,6 +23098,8 @@ where
     pub fn traversalMethod_difference(
         &mut self,
     ) -> Result<Rc<TraversalMethod_differenceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -22955,6 +23146,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_discard ----------------
@@ -23057,6 +23249,8 @@ where
     pub fn traversalMethod_discard(
         &mut self,
     ) -> Result<Rc<TraversalMethod_discardContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -23098,6 +23292,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_disjunct ----------------
@@ -23327,6 +23522,8 @@ where
     pub fn traversalMethod_disjunct(
         &mut self,
     ) -> Result<Rc<TraversalMethod_disjunctContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -23373,6 +23570,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_drop ----------------
@@ -23472,6 +23670,8 @@ where
     pub fn traversalMethod_drop(
         &mut self,
     ) -> Result<Rc<TraversalMethod_dropContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -23513,6 +23713,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_element ----------------
@@ -23615,6 +23816,8 @@ where
     pub fn traversalMethod_element(
         &mut self,
     ) -> Result<Rc<TraversalMethod_elementContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -23656,6 +23859,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_elementMap ----------------
@@ -23766,6 +23970,8 @@ where
     pub fn traversalMethod_elementMap(
         &mut self,
     ) -> Result<Rc<TraversalMethod_elementMapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -23811,6 +24017,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_emit ----------------
@@ -24270,6 +24477,8 @@ where
     pub fn traversalMethod_emit(
         &mut self,
     ) -> Result<Rc<TraversalMethod_emitContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -24370,6 +24579,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_fail ----------------
@@ -24707,6 +24917,8 @@ where
     pub fn traversalMethod_fail(
         &mut self,
     ) -> Result<Rc<TraversalMethod_failContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -24782,6 +24994,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_filter ----------------
@@ -25132,6 +25345,8 @@ where
     pub fn traversalMethod_filter(
         &mut self,
     ) -> Result<Rc<TraversalMethod_filterContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -25211,6 +25426,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_flatMap ----------------
@@ -25319,6 +25535,8 @@ where
     pub fn traversalMethod_flatMap(
         &mut self,
     ) -> Result<Rc<TraversalMethod_flatMapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -25364,6 +25582,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_fold ----------------
@@ -25724,6 +25943,8 @@ where
     pub fn traversalMethod_fold(
         &mut self,
     ) -> Result<Rc<TraversalMethod_foldContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -25808,6 +26029,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_format ----------------
@@ -26032,6 +26254,8 @@ where
     pub fn traversalMethod_format(
         &mut self,
     ) -> Result<Rc<TraversalMethod_formatContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -26078,6 +26302,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_from ----------------
@@ -26421,6 +26646,8 @@ where
     pub fn traversalMethod_from(
         &mut self,
     ) -> Result<Rc<TraversalMethod_fromContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -26500,6 +26727,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_group ----------------
@@ -26840,6 +27068,8 @@ where
     pub fn traversalMethod_group(
         &mut self,
     ) -> Result<Rc<TraversalMethod_groupContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -26915,6 +27145,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_groupCount ----------------
@@ -27262,6 +27493,8 @@ where
     pub fn traversalMethod_groupCount(
         &mut self,
     ) -> Result<Rc<TraversalMethod_groupCountContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -27337,6 +27570,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_has ----------------
@@ -28404,6 +28638,8 @@ where
     pub fn traversalMethod_has(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -28680,6 +28916,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_hasId ----------------
@@ -29039,6 +29276,8 @@ where
     pub fn traversalMethod_hasId(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasIdContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -29135,6 +29374,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_hasKey ----------------
@@ -29501,6 +29741,8 @@ where
     pub fn traversalMethod_hasKey(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasKeyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -29597,6 +29839,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_hasLabel ----------------
@@ -29971,6 +30214,8 @@ where
     pub fn traversalMethod_hasLabel(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasLabelContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -30067,6 +30312,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_hasNot ----------------
@@ -30172,6 +30418,8 @@ where
     pub fn traversalMethod_hasNot(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasNotContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -30217,6 +30465,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_hasValue ----------------
@@ -30589,6 +30838,8 @@ where
     pub fn traversalMethod_hasValue(
         &mut self,
     ) -> Result<Rc<TraversalMethod_hasValueContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -30685,6 +30936,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_id ----------------
@@ -30782,6 +31034,8 @@ where
     pub fn traversalMethod_id(
         &mut self,
     ) -> Result<Rc<TraversalMethod_idContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -30823,6 +31077,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_identity ----------------
@@ -30925,6 +31180,8 @@ where
     pub fn traversalMethod_identity(
         &mut self,
     ) -> Result<Rc<TraversalMethod_identityContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -30966,6 +31223,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_in ----------------
@@ -31071,6 +31329,8 @@ where
     pub fn traversalMethod_in(
         &mut self,
     ) -> Result<Rc<TraversalMethod_inContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31116,6 +31376,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_inE ----------------
@@ -31221,6 +31482,8 @@ where
     pub fn traversalMethod_inE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_inEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31266,6 +31529,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_intersect ----------------
@@ -31495,6 +31759,8 @@ where
     pub fn traversalMethod_intersect(
         &mut self,
     ) -> Result<Rc<TraversalMethod_intersectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31541,6 +31807,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_inV ----------------
@@ -31638,6 +31905,8 @@ where
     pub fn traversalMethod_inV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_inVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31679,6 +31948,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_index ----------------
@@ -31778,6 +32048,8 @@ where
     pub fn traversalMethod_index(
         &mut self,
     ) -> Result<Rc<TraversalMethod_indexContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31819,6 +32091,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_inject ----------------
@@ -31924,6 +32197,8 @@ where
     pub fn traversalMethod_inject(
         &mut self,
     ) -> Result<Rc<TraversalMethod_injectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -31969,6 +32244,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_is ----------------
@@ -32296,6 +32572,8 @@ where
     pub fn traversalMethod_is(
         &mut self,
     ) -> Result<Rc<TraversalMethod_isContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -32375,6 +32653,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_key ----------------
@@ -32472,6 +32751,8 @@ where
     pub fn traversalMethod_key(
         &mut self,
     ) -> Result<Rc<TraversalMethod_keyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -32513,6 +32794,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_label ----------------
@@ -32612,6 +32894,8 @@ where
     pub fn traversalMethod_label(
         &mut self,
     ) -> Result<Rc<TraversalMethod_labelContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -32653,6 +32937,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_length ----------------
@@ -32993,6 +33278,8 @@ where
     pub fn traversalMethod_length(
         &mut self,
     ) -> Result<Rc<TraversalMethod_lengthContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -33068,6 +33355,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_limit ----------------
@@ -33430,6 +33718,8 @@ where
     pub fn traversalMethod_limit(
         &mut self,
     ) -> Result<Rc<TraversalMethod_limitContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -33518,6 +33808,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_local ----------------
@@ -33623,6 +33914,8 @@ where
     pub fn traversalMethod_local(
         &mut self,
     ) -> Result<Rc<TraversalMethod_localContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -33668,6 +33961,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_loops ----------------
@@ -34008,6 +34302,8 @@ where
     pub fn traversalMethod_loops(
         &mut self,
     ) -> Result<Rc<TraversalMethod_loopsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -34083,6 +34379,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_lTrim ----------------
@@ -34423,6 +34720,8 @@ where
     pub fn traversalMethod_lTrim(
         &mut self,
     ) -> Result<Rc<TraversalMethod_lTrimContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -34498,6 +34797,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_map ----------------
@@ -34601,6 +34901,8 @@ where
     pub fn traversalMethod_map(
         &mut self,
     ) -> Result<Rc<TraversalMethod_mapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -34646,6 +34948,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_match ----------------
@@ -34751,6 +35054,8 @@ where
     pub fn traversalMethod_match(
         &mut self,
     ) -> Result<Rc<TraversalMethod_matchContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -34796,6 +35101,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_math ----------------
@@ -34901,6 +35207,8 @@ where
     pub fn traversalMethod_math(
         &mut self,
     ) -> Result<Rc<TraversalMethod_mathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -34946,6 +35254,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_max ----------------
@@ -35274,6 +35583,8 @@ where
     pub fn traversalMethod_max(
         &mut self,
     ) -> Result<Rc<TraversalMethod_maxContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -35349,6 +35660,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_mean ----------------
@@ -35686,6 +35998,8 @@ where
     pub fn traversalMethod_mean(
         &mut self,
     ) -> Result<Rc<TraversalMethod_meanContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -35761,6 +36075,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_merge ----------------
@@ -35985,6 +36300,8 @@ where
     pub fn traversalMethod_merge(
         &mut self,
     ) -> Result<Rc<TraversalMethod_mergeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -36031,6 +36348,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_mergeV ----------------
@@ -36495,6 +36813,8 @@ where
     pub fn traversalMethod_mergeV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_mergeVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -36595,6 +36915,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_mergeE ----------------
@@ -37059,6 +37380,8 @@ where
     pub fn traversalMethod_mergeE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_mergeEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -37159,6 +37482,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_min ----------------
@@ -37487,6 +37811,8 @@ where
     pub fn traversalMethod_min(
         &mut self,
     ) -> Result<Rc<TraversalMethod_minContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -37562,6 +37888,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_none ----------------
@@ -37777,6 +38104,8 @@ where
     pub fn traversalMethod_none(
         &mut self,
     ) -> Result<Rc<TraversalMethod_noneContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -37823,6 +38152,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_not ----------------
@@ -37926,6 +38256,8 @@ where
     pub fn traversalMethod_not(
         &mut self,
     ) -> Result<Rc<TraversalMethod_notContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -37971,6 +38303,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_option ----------------
@@ -38928,6 +39261,8 @@ where
     pub fn traversalMethod_option(
         &mut self,
     ) -> Result<Rc<TraversalMethod_optionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -39163,6 +39498,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_optional ----------------
@@ -39271,6 +39607,8 @@ where
     pub fn traversalMethod_optional(
         &mut self,
     ) -> Result<Rc<TraversalMethod_optionalContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -39316,6 +39654,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_or ----------------
@@ -39419,6 +39758,8 @@ where
     pub fn traversalMethod_or(
         &mut self,
     ) -> Result<Rc<TraversalMethod_orContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -39464,6 +39805,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_order ----------------
@@ -39804,6 +40146,8 @@ where
     pub fn traversalMethod_order(
         &mut self,
     ) -> Result<Rc<TraversalMethod_orderContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -39879,6 +40223,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_otherV ----------------
@@ -39978,6 +40323,8 @@ where
     pub fn traversalMethod_otherV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_otherVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -40019,6 +40366,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_out ----------------
@@ -40124,6 +40472,8 @@ where
     pub fn traversalMethod_out(
         &mut self,
     ) -> Result<Rc<TraversalMethod_outContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -40169,6 +40519,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_outE ----------------
@@ -40276,6 +40627,8 @@ where
     pub fn traversalMethod_outE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_outEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -40321,6 +40674,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_outV ----------------
@@ -40420,6 +40774,8 @@ where
     pub fn traversalMethod_outV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_outVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -40461,6 +40817,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_pageRank ----------------
@@ -40806,6 +41163,8 @@ where
     pub fn traversalMethod_pageRank(
         &mut self,
     ) -> Result<Rc<TraversalMethod_pageRankContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -40881,6 +41240,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_path ----------------
@@ -40980,6 +41340,8 @@ where
     pub fn traversalMethod_path(
         &mut self,
     ) -> Result<Rc<TraversalMethod_pathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -41021,6 +41383,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_peerPressure ----------------
@@ -41124,6 +41487,8 @@ where
     pub fn traversalMethod_peerPressure(
         &mut self,
     ) -> Result<Rc<TraversalMethod_peerPressureContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -41165,6 +41530,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_product ----------------
@@ -41392,6 +41758,8 @@ where
     pub fn traversalMethod_product(
         &mut self,
     ) -> Result<Rc<TraversalMethod_productContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -41438,6 +41806,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_profile ----------------
@@ -41781,6 +42150,8 @@ where
     pub fn traversalMethod_profile(
         &mut self,
     ) -> Result<Rc<TraversalMethod_profileContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -41856,6 +42227,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_project ----------------
@@ -41980,6 +42352,8 @@ where
     pub fn traversalMethod_project(
         &mut self,
     ) -> Result<Rc<TraversalMethod_projectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -42042,6 +42416,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_properties ----------------
@@ -42152,6 +42527,8 @@ where
     pub fn traversalMethod_properties(
         &mut self,
     ) -> Result<Rc<TraversalMethod_propertiesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -42197,6 +42574,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_property ----------------
@@ -42890,6 +43268,8 @@ where
     pub fn traversalMethod_property(
         &mut self,
     ) -> Result<Rc<TraversalMethod_propertyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -43093,6 +43473,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_propertyMap ----------------
@@ -43203,6 +43584,8 @@ where
     pub fn traversalMethod_propertyMap(
         &mut self,
     ) -> Result<Rc<TraversalMethod_propertyMapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -43248,6 +43631,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_range ----------------
@@ -43641,6 +44025,8 @@ where
     pub fn traversalMethod_range(
         &mut self,
     ) -> Result<Rc<TraversalMethod_rangeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -43747,6 +44133,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_read ----------------
@@ -43846,6 +44233,8 @@ where
     pub fn traversalMethod_read(
         &mut self,
     ) -> Result<Rc<TraversalMethod_readContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -43887,6 +44276,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_repeat ----------------
@@ -44258,6 +44648,8 @@ where
     pub fn traversalMethod_repeat(
         &mut self,
     ) -> Result<Rc<TraversalMethod_repeatContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -44346,6 +44738,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_replace ----------------
@@ -44749,6 +45142,8 @@ where
     pub fn traversalMethod_replace(
         &mut self,
     ) -> Result<Rc<TraversalMethod_replaceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -44856,6 +45251,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_reverse ----------------
@@ -45077,6 +45473,8 @@ where
     pub fn traversalMethod_reverse(
         &mut self,
     ) -> Result<Rc<TraversalMethod_reverseContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -45119,6 +45517,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_rTrim ----------------
@@ -45459,6 +45858,8 @@ where
     pub fn traversalMethod_rTrim(
         &mut self,
     ) -> Result<Rc<TraversalMethod_rTrimContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -45534,6 +45935,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_sack ----------------
@@ -45873,6 +46275,8 @@ where
     pub fn traversalMethod_sack(
         &mut self,
     ) -> Result<Rc<TraversalMethod_sackContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -45948,6 +46352,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_sample ----------------
@@ -46310,6 +46715,8 @@ where
     pub fn traversalMethod_sample(
         &mut self,
     ) -> Result<Rc<TraversalMethod_sampleContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -46398,6 +46805,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_select ----------------
@@ -47471,6 +47879,8 @@ where
     pub fn traversalMethod_select(
         &mut self,
     ) -> Result<Rc<TraversalMethod_selectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -47756,6 +48166,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_shortestPath ----------------
@@ -47859,6 +48270,8 @@ where
     pub fn traversalMethod_shortestPath(
         &mut self,
     ) -> Result<Rc<TraversalMethod_shortestPathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -47900,6 +48313,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_sideEffect ----------------
@@ -48008,6 +48422,8 @@ where
     pub fn traversalMethod_sideEffect(
         &mut self,
     ) -> Result<Rc<TraversalMethod_sideEffectContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -48053,6 +48469,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_simplePath ----------------
@@ -48155,6 +48572,8 @@ where
     pub fn traversalMethod_simplePath(
         &mut self,
     ) -> Result<Rc<TraversalMethod_simplePathContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -48196,6 +48615,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_skip ----------------
@@ -48552,6 +48972,8 @@ where
     pub fn traversalMethod_skip(
         &mut self,
     ) -> Result<Rc<TraversalMethod_skipContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -48640,6 +49062,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_split ----------------
@@ -49002,6 +49425,8 @@ where
     pub fn traversalMethod_split(
         &mut self,
     ) -> Result<Rc<TraversalMethod_splitContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -49090,6 +49515,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_subgraph ----------------
@@ -49198,6 +49624,8 @@ where
     pub fn traversalMethod_subgraph(
         &mut self,
     ) -> Result<Rc<TraversalMethod_subgraphContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -49243,6 +49671,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_substring ----------------
@@ -49904,6 +50333,8 @@ where
     pub fn traversalMethod_substring(
         &mut self,
     ) -> Result<Rc<TraversalMethod_substringContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -50069,6 +50500,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_sum ----------------
@@ -50397,6 +50829,8 @@ where
     pub fn traversalMethod_sum(
         &mut self,
     ) -> Result<Rc<TraversalMethod_sumContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -50472,6 +50906,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_tail ----------------
@@ -51066,6 +51501,8 @@ where
     pub fn traversalMethod_tail(
         &mut self,
     ) -> Result<Rc<TraversalMethod_tailContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -51200,6 +51637,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_timeLimit ----------------
@@ -51308,6 +51746,8 @@ where
     pub fn traversalMethod_timeLimit(
         &mut self,
     ) -> Result<Rc<TraversalMethod_timeLimitContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -51353,6 +51793,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_times ----------------
@@ -51458,6 +51899,8 @@ where
     pub fn traversalMethod_times(
         &mut self,
     ) -> Result<Rc<TraversalMethod_timesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -51503,6 +51946,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_to ----------------
@@ -51980,6 +52424,8 @@ where
     pub fn traversalMethod_to(
         &mut self,
     ) -> Result<Rc<TraversalMethod_toContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -52101,6 +52547,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_toE ----------------
@@ -52220,6 +52667,8 @@ where
     pub fn traversalMethod_toE(
         &mut self,
     ) -> Result<Rc<TraversalMethod_toEContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -52282,6 +52731,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_toLower ----------------
@@ -52625,6 +53075,8 @@ where
     pub fn traversalMethod_toLower(
         &mut self,
     ) -> Result<Rc<TraversalMethod_toLowerContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -52700,6 +53152,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_toUpper ----------------
@@ -53043,6 +53496,8 @@ where
     pub fn traversalMethod_toUpper(
         &mut self,
     ) -> Result<Rc<TraversalMethod_toUpperContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -53118,6 +53573,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_toV ----------------
@@ -53221,6 +53677,8 @@ where
     pub fn traversalMethod_toV(
         &mut self,
     ) -> Result<Rc<TraversalMethod_toVContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -53266,6 +53724,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_tree ----------------
@@ -53603,6 +54062,8 @@ where
     pub fn traversalMethod_tree(
         &mut self,
     ) -> Result<Rc<TraversalMethod_treeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -53678,6 +54139,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_trim ----------------
@@ -54015,6 +54477,8 @@ where
     pub fn traversalMethod_trim(
         &mut self,
     ) -> Result<Rc<TraversalMethod_trimContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -54090,6 +54554,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_unfold ----------------
@@ -54189,6 +54654,8 @@ where
     pub fn traversalMethod_unfold(
         &mut self,
     ) -> Result<Rc<TraversalMethod_unfoldContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -54230,6 +54697,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_union ----------------
@@ -54335,6 +54803,8 @@ where
     pub fn traversalMethod_union(
         &mut self,
     ) -> Result<Rc<TraversalMethod_unionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -54380,6 +54850,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_until ----------------
@@ -54730,6 +55201,8 @@ where
     pub fn traversalMethod_until(
         &mut self,
     ) -> Result<Rc<TraversalMethod_untilContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -54809,6 +55282,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_value ----------------
@@ -54908,6 +55382,8 @@ where
     pub fn traversalMethod_value(
         &mut self,
     ) -> Result<Rc<TraversalMethod_valueContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -54949,6 +55425,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_valueMap ----------------
@@ -55327,6 +55804,8 @@ where
     pub fn traversalMethod_valueMap(
         &mut self,
     ) -> Result<Rc<TraversalMethod_valueMapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -55423,6 +55902,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_values ----------------
@@ -55530,6 +56010,8 @@ where
     pub fn traversalMethod_values(
         &mut self,
     ) -> Result<Rc<TraversalMethod_valuesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -55575,6 +56057,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_where ----------------
@@ -56056,6 +56539,8 @@ where
     pub fn traversalMethod_where(
         &mut self,
     ) -> Result<Rc<TraversalMethod_whereContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -56169,6 +56654,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_with ----------------
@@ -56552,6 +57038,8 @@ where
     pub fn traversalMethod_with(
         &mut self,
     ) -> Result<Rc<TraversalMethod_withContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -56931,6 +57419,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMethod_write ----------------
@@ -57030,6 +57519,8 @@ where
     pub fn traversalMethod_write(
         &mut self,
     ) -> Result<Rc<TraversalMethod_writeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -57071,6 +57562,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalStrategy ----------------
@@ -57199,6 +57691,8 @@ where
     pub fn traversalStrategy(
         &mut self,
     ) -> Result<Rc<TraversalStrategyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -57311,6 +57805,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- configuration ----------------
@@ -57406,6 +57901,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn configuration(&mut self) -> Result<Rc<ConfigurationContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -57762,6 +58259,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalScope ----------------
@@ -57863,6 +58361,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalScope(&mut self) -> Result<Rc<TraversalScopeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -57952,6 +58452,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalBarrier ----------------
@@ -58047,6 +58548,8 @@ where
     pub fn traversalBarrier(
         &mut self,
     ) -> Result<Rc<TraversalBarrierContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -58109,6 +58612,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalT ----------------
@@ -58189,6 +58693,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalT(&mut self) -> Result<Rc<TraversalTContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -58238,6 +58744,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTShort ----------------
@@ -58339,6 +58846,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalTShort(&mut self) -> Result<Rc<TraversalTShortContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -58381,6 +58890,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTLong ----------------
@@ -58498,6 +59008,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalTLong(&mut self) -> Result<Rc<TraversalTLongContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -58607,6 +59119,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalMerge ----------------
@@ -58724,6 +59237,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalMerge(&mut self) -> Result<Rc<TraversalMergeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -58873,6 +59388,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalOrder ----------------
@@ -58982,6 +59498,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalOrder(&mut self) -> Result<Rc<TraversalOrderContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -59101,6 +59619,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalDirection ----------------
@@ -59186,6 +59705,8 @@ where
     pub fn traversalDirection(
         &mut self,
     ) -> Result<Rc<TraversalDirectionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -59237,6 +59758,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalDirectionShort ----------------
@@ -59355,6 +59877,8 @@ where
     pub fn traversalDirectionShort(
         &mut self,
     ) -> Result<Rc<TraversalDirectionShortContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -59400,6 +59924,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalDirectionLong ----------------
@@ -59531,6 +60056,8 @@ where
     pub fn traversalDirectionLong(
         &mut self,
     ) -> Result<Rc<TraversalDirectionLongContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -59660,6 +60187,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalCardinality ----------------
@@ -59797,6 +60325,8 @@ where
     pub fn traversalCardinality(
         &mut self,
     ) -> Result<Rc<TraversalCardinalityContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -60066,6 +60596,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalColumn ----------------
@@ -60167,6 +60698,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalColumn(&mut self) -> Result<Rc<TraversalColumnContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -60256,6 +60789,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPop ----------------
@@ -60373,6 +60907,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalPop(&mut self) -> Result<Rc<TraversalPopContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPopContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -60521,6 +61057,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalOperator ----------------
@@ -60696,6 +61233,8 @@ where
     pub fn traversalOperator(
         &mut self,
     ) -> Result<Rc<TraversalOperatorContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -61055,6 +61594,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPick ----------------
@@ -61164,6 +61704,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalPick(&mut self) -> Result<Rc<TraversalPickContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -61283,6 +61825,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalDT ----------------
@@ -61399,6 +61942,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalDT(&mut self) -> Result<Rc<TraversalDTContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalDTContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -61547,6 +62092,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalGType ----------------
@@ -62064,6 +62610,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn traversalGType(&mut self) -> Result<Rc<TraversalGTypeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -63713,6 +64261,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate ----------------
@@ -63993,6 +64542,8 @@ where
         &mut self,
         _p: i32,
     ) -> Result<Rc<TraversalPredicateContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let recog = self;
         let _parentctx = recog.ctx.take();
         let _parentState = recog.base.get_state();
@@ -64343,6 +64894,7 @@ where
         recog.base.unroll_recursion_context(_parentctx)?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod ----------------
@@ -64485,6 +65037,8 @@ where
     pub fn traversalTerminalMethod(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethodContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -64595,6 +65149,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalSackMethod ----------------
@@ -64674,6 +65229,8 @@ where
     pub fn traversalSackMethod(
         &mut self,
     ) -> Result<Rc<TraversalSackMethodContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -64704,6 +65261,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalComparator ----------------
@@ -64783,6 +65341,8 @@ where
     pub fn traversalComparator(
         &mut self,
     ) -> Result<Rc<TraversalComparatorContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -64813,6 +65373,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalFunction ----------------
@@ -64896,6 +65457,8 @@ where
     pub fn traversalFunction(
         &mut self,
     ) -> Result<Rc<TraversalFunctionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -64946,6 +65509,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalBiFunction ----------------
@@ -65025,6 +65589,8 @@ where
     pub fn traversalBiFunction(
         &mut self,
     ) -> Result<Rc<TraversalBiFunctionContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -65055,6 +65621,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_eq ----------------
@@ -65176,6 +65743,8 @@ where
     pub fn traversalPredicate_eq(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_eqContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -65247,6 +65816,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_neq ----------------
@@ -65368,6 +65938,8 @@ where
     pub fn traversalPredicate_neq(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_neqContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -65439,6 +66011,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_typeOf ----------------
@@ -65569,6 +66142,8 @@ where
     pub fn traversalPredicate_typeOf(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_typeOfContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -65698,6 +66273,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_lt ----------------
@@ -65819,6 +66395,8 @@ where
     pub fn traversalPredicate_lt(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_ltContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -65890,6 +66468,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_lte ----------------
@@ -66011,6 +66590,8 @@ where
     pub fn traversalPredicate_lte(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_lteContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -66082,6 +66663,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_gt ----------------
@@ -66203,6 +66785,8 @@ where
     pub fn traversalPredicate_gt(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_gtContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -66274,6 +66858,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_gte ----------------
@@ -66395,6 +66980,8 @@ where
     pub fn traversalPredicate_gte(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_gteContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -66466,6 +67053,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_inside ----------------
@@ -66604,6 +67192,8 @@ where
     pub fn traversalPredicate_inside(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_insideContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -66684,6 +67274,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_outside ----------------
@@ -66822,6 +67413,8 @@ where
     pub fn traversalPredicate_outside(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_outsideContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -66902,6 +67495,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_between ----------------
@@ -67040,6 +67634,8 @@ where
     pub fn traversalPredicate_between(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_betweenContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -67120,6 +67716,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_within ----------------
@@ -67244,6 +67841,8 @@ where
     pub fn traversalPredicate_within(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_withinContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -67369,6 +67968,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_without ----------------
@@ -67493,6 +68093,8 @@ where
     pub fn traversalPredicate_without(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_withoutContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -67618,6 +68220,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_not ----------------
@@ -67739,6 +68342,8 @@ where
     pub fn traversalPredicate_not(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_notContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -67810,6 +68415,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_containing ----------------
@@ -67935,6 +68541,8 @@ where
     pub fn traversalPredicate_containing(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_containingContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_containingContextExt::new(
@@ -68008,6 +68616,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_notContaining ----------------
@@ -68133,6 +68742,8 @@ where
     pub fn traversalPredicate_notContaining(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_notContainingContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_notContainingContextExt::new(
@@ -68208,6 +68819,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_startingWith ----------------
@@ -68333,6 +68945,8 @@ where
     pub fn traversalPredicate_startingWith(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_startingWithContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_startingWithContextExt::new(
@@ -68406,6 +69020,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_notStartingWith ----------------
@@ -68531,6 +69146,8 @@ where
     pub fn traversalPredicate_notStartingWith(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_notStartingWithContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_notStartingWithContextExt::new(
@@ -68606,6 +69223,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_endingWith ----------------
@@ -68731,6 +69349,8 @@ where
     pub fn traversalPredicate_endingWith(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_endingWithContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_endingWithContextExt::new(
@@ -68804,6 +69424,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_notEndingWith ----------------
@@ -68929,6 +69550,8 @@ where
     pub fn traversalPredicate_notEndingWith(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_notEndingWithContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalPredicate_notEndingWithContextExt::new(
@@ -69004,6 +69627,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_regex ----------------
@@ -69128,6 +69752,8 @@ where
     pub fn traversalPredicate_regex(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_regexContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -69199,6 +69825,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalPredicate_notRegex ----------------
@@ -69323,6 +69950,8 @@ where
     pub fn traversalPredicate_notRegex(
         &mut self,
     ) -> Result<Rc<TraversalPredicate_notRegexContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -69394,6 +70023,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_explain ----------------
@@ -69497,6 +70127,8 @@ where
     pub fn traversalTerminalMethod_explain(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_explainContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_explainContextExt::new(
@@ -69540,6 +70172,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_hasNext ----------------
@@ -69643,6 +70276,8 @@ where
     pub fn traversalTerminalMethod_hasNext(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_hasNextContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_hasNextContextExt::new(
@@ -69686,6 +70321,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_iterate ----------------
@@ -69789,6 +70425,8 @@ where
     pub fn traversalTerminalMethod_iterate(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_iterateContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_iterateContextExt::new(
@@ -69832,6 +70470,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_tryNext ----------------
@@ -69935,6 +70574,8 @@ where
     pub fn traversalTerminalMethod_tryNext(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_tryNextContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_tryNextContextExt::new(
@@ -69978,6 +70619,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_next ----------------
@@ -70087,6 +70729,8 @@ where
     pub fn traversalTerminalMethod_next(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_nextContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -70160,6 +70804,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_toList ----------------
@@ -70263,6 +70908,8 @@ where
     pub fn traversalTerminalMethod_toList(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_toListContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_toListContextExt::new(
@@ -70306,6 +70953,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_toSet ----------------
@@ -70409,6 +71057,8 @@ where
     pub fn traversalTerminalMethod_toSet(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_toSetContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_toSetContextExt::new(
@@ -70452,6 +71102,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalTerminalMethod_toBulkSet ----------------
@@ -70555,6 +71206,8 @@ where
     pub fn traversalTerminalMethod_toBulkSet(
         &mut self,
     ) -> Result<Rc<TraversalTerminalMethod_toBulkSetContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = TraversalTerminalMethod_toBulkSetContextExt::new(
@@ -70600,6 +71253,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionKeys ----------------
@@ -70717,6 +71371,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn withOptionKeys(&mut self) -> Result<Rc<WithOptionKeysContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -70809,6 +71465,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- connectedComponentConstants ----------------
@@ -70911,6 +71568,8 @@ where
     pub fn connectedComponentConstants(
         &mut self,
     ) -> Result<Rc<ConnectedComponentConstantsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -70967,6 +71626,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- pageRankConstants ----------------
@@ -71058,6 +71718,8 @@ where
     pub fn pageRankConstants(
         &mut self,
     ) -> Result<Rc<PageRankConstantsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71114,6 +71776,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- peerPressureConstants ----------------
@@ -71213,6 +71876,8 @@ where
     pub fn peerPressureConstants(
         &mut self,
     ) -> Result<Rc<PeerPressureConstantsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71269,6 +71934,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants ----------------
@@ -71384,6 +72050,8 @@ where
     pub fn shortestPathConstants(
         &mut self,
     ) -> Result<Rc<ShortestPathConstantsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71458,6 +72126,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsValues ----------------
@@ -71589,6 +72258,8 @@ where
     pub fn withOptionsValues(
         &mut self,
     ) -> Result<Rc<WithOptionsValuesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71699,6 +72370,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsKeys ----------------
@@ -71780,6 +72452,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn ioOptionsKeys(&mut self) -> Result<Rc<IoOptionsKeysContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71827,6 +72501,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsValues ----------------
@@ -71916,6 +72591,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn ioOptionsValues(&mut self) -> Result<Rc<IoOptionsValuesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -71972,6 +72649,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- connectedComponentConstants_component ----------------
@@ -72075,6 +72753,8 @@ where
     pub fn connectedComponentConstants_component(
         &mut self,
     ) -> Result<Rc<ConnectedComponentConstants_componentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ConnectedComponentConstants_componentContextExt::new(
@@ -72119,6 +72799,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- connectedComponentConstants_edges ----------------
@@ -72222,6 +72903,8 @@ where
     pub fn connectedComponentConstants_edges(
         &mut self,
     ) -> Result<Rc<ConnectedComponentConstants_edgesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ConnectedComponentConstants_edgesContextExt::new(
@@ -72266,6 +72949,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- connectedComponentConstants_propertyName ----------------
@@ -72374,6 +73058,8 @@ where
     pub fn connectedComponentConstants_propertyName(
         &mut self,
     ) -> Result<Rc<ConnectedComponentConstants_propertyNameContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ConnectedComponentConstants_propertyNameContextExt::new(
@@ -72418,6 +73104,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- pageRankConstants_edges ----------------
@@ -72518,6 +73205,8 @@ where
     pub fn pageRankConstants_edges(
         &mut self,
     ) -> Result<Rc<PageRankConstants_edgesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -72558,6 +73247,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- pageRankConstants_times ----------------
@@ -72658,6 +73348,8 @@ where
     pub fn pageRankConstants_times(
         &mut self,
     ) -> Result<Rc<PageRankConstants_timesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -72698,6 +73390,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- pageRankConstants_propertyName ----------------
@@ -72799,6 +73492,8 @@ where
     pub fn pageRankConstants_propertyName(
         &mut self,
     ) -> Result<Rc<PageRankConstants_propertyNameContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = PageRankConstants_propertyNameContextExt::new(
@@ -72841,6 +73536,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- peerPressureConstants_edges ----------------
@@ -72941,6 +73637,8 @@ where
     pub fn peerPressureConstants_edges(
         &mut self,
     ) -> Result<Rc<PeerPressureConstants_edgesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -72981,6 +73679,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- peerPressureConstants_times ----------------
@@ -73081,6 +73780,8 @@ where
     pub fn peerPressureConstants_times(
         &mut self,
     ) -> Result<Rc<PeerPressureConstants_timesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -73121,6 +73822,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- peerPressureConstants_propertyName ----------------
@@ -73222,6 +73924,8 @@ where
     pub fn peerPressureConstants_propertyName(
         &mut self,
     ) -> Result<Rc<PeerPressureConstants_propertyNameContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = PeerPressureConstants_propertyNameContextExt::new(
@@ -73266,6 +73970,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants_target ----------------
@@ -73367,6 +74072,8 @@ where
     pub fn shortestPathConstants_target(
         &mut self,
     ) -> Result<Rc<ShortestPathConstants_targetContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -73407,6 +74114,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants_edges ----------------
@@ -73507,6 +74215,8 @@ where
     pub fn shortestPathConstants_edges(
         &mut self,
     ) -> Result<Rc<ShortestPathConstants_edgesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -73547,6 +74257,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants_distance ----------------
@@ -73648,6 +74359,8 @@ where
     pub fn shortestPathConstants_distance(
         &mut self,
     ) -> Result<Rc<ShortestPathConstants_distanceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ShortestPathConstants_distanceContextExt::new(
@@ -73690,6 +74403,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants_maxDistance ----------------
@@ -73791,6 +74505,8 @@ where
     pub fn shortestPathConstants_maxDistance(
         &mut self,
     ) -> Result<Rc<ShortestPathConstants_maxDistanceContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ShortestPathConstants_maxDistanceContextExt::new(
@@ -73835,6 +74551,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathConstants_includeEdges ----------------
@@ -73936,6 +74653,8 @@ where
     pub fn shortestPathConstants_includeEdges(
         &mut self,
     ) -> Result<Rc<ShortestPathConstants_includeEdgesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ShortestPathConstants_includeEdgesContextExt::new(
@@ -73980,6 +74699,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_tokens ----------------
@@ -74080,6 +74800,8 @@ where
     pub fn withOptionsConstants_tokens(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_tokensContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74120,6 +74842,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_none ----------------
@@ -74220,6 +74943,8 @@ where
     pub fn withOptionsConstants_none(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_noneContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74260,6 +74985,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_ids ----------------
@@ -74360,6 +75086,8 @@ where
     pub fn withOptionsConstants_ids(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_idsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74400,6 +75128,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_labels ----------------
@@ -74500,6 +75229,8 @@ where
     pub fn withOptionsConstants_labels(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_labelsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74540,6 +75271,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_keys ----------------
@@ -74640,6 +75372,8 @@ where
     pub fn withOptionsConstants_keys(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_keysContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74680,6 +75414,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_values ----------------
@@ -74780,6 +75515,8 @@ where
     pub fn withOptionsConstants_values(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_valuesContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74820,6 +75557,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_all ----------------
@@ -74920,6 +75658,8 @@ where
     pub fn withOptionsConstants_all(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_allContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -74960,6 +75700,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_indexer ----------------
@@ -75061,6 +75802,8 @@ where
     pub fn withOptionsConstants_indexer(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_indexerContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75101,6 +75844,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_list ----------------
@@ -75201,6 +75945,8 @@ where
     pub fn withOptionsConstants_list(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_listContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75241,6 +75987,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsConstants_map ----------------
@@ -75341,6 +76088,8 @@ where
     pub fn withOptionsConstants_map(
         &mut self,
     ) -> Result<Rc<WithOptionsConstants_mapContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75381,6 +76130,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsConstants_reader ----------------
@@ -75481,6 +76231,8 @@ where
     pub fn ioOptionsConstants_reader(
         &mut self,
     ) -> Result<Rc<IoOptionsConstants_readerContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75521,6 +76273,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsConstants_writer ----------------
@@ -75621,6 +76374,8 @@ where
     pub fn ioOptionsConstants_writer(
         &mut self,
     ) -> Result<Rc<IoOptionsConstants_writerContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75661,6 +76416,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsConstants_gryo ----------------
@@ -75761,6 +76517,8 @@ where
     pub fn ioOptionsConstants_gryo(
         &mut self,
     ) -> Result<Rc<IoOptionsConstants_gryoContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75801,6 +76559,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsConstants_graphson ----------------
@@ -75901,6 +76660,8 @@ where
     pub fn ioOptionsConstants_graphson(
         &mut self,
     ) -> Result<Rc<IoOptionsConstants_graphsonContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -75941,6 +76702,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsConstants_graphml ----------------
@@ -76041,6 +76803,8 @@ where
     pub fn ioOptionsConstants_graphml(
         &mut self,
     ) -> Result<Rc<IoOptionsConstants_graphmlContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76081,6 +76845,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- connectedComponentStringConstant ----------------
@@ -76168,6 +76933,8 @@ where
     pub fn connectedComponentStringConstant(
         &mut self,
     ) -> Result<Rc<ConnectedComponentStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ConnectedComponentStringConstantContextExt::new(
@@ -76203,6 +76970,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- pageRankStringConstant ----------------
@@ -76286,6 +77054,8 @@ where
     pub fn pageRankStringConstant(
         &mut self,
     ) -> Result<Rc<PageRankStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76317,6 +77087,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- peerPressureStringConstant ----------------
@@ -76403,6 +77174,8 @@ where
     pub fn peerPressureStringConstant(
         &mut self,
     ) -> Result<Rc<PeerPressureStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76434,6 +77207,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- shortestPathStringConstant ----------------
@@ -76520,6 +77294,8 @@ where
     pub fn shortestPathStringConstant(
         &mut self,
     ) -> Result<Rc<ShortestPathStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76551,6 +77327,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- withOptionsStringConstant ----------------
@@ -76637,6 +77414,8 @@ where
     pub fn withOptionsStringConstant(
         &mut self,
     ) -> Result<Rc<WithOptionsStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76668,6 +77447,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- ioOptionsStringConstant ----------------
@@ -76754,6 +77534,8 @@ where
     pub fn ioOptionsStringConstant(
         &mut self,
     ) -> Result<Rc<IoOptionsStringConstantContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76785,6 +77567,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- booleanArgument ----------------
@@ -76866,6 +77649,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn booleanArgument(&mut self) -> Result<Rc<BooleanArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -76916,6 +77701,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- integerArgument ----------------
@@ -76997,6 +77783,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn integerArgument(&mut self) -> Result<Rc<IntegerArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -77047,6 +77835,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringArgument ----------------
@@ -77128,6 +77917,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn stringArgument(&mut self) -> Result<Rc<StringArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -77178,6 +77969,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringNullableArgument ----------------
@@ -77265,6 +78057,8 @@ where
     pub fn stringNullableArgument(
         &mut self,
     ) -> Result<Rc<StringNullableArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -77315,6 +78109,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringNullableArgumentVarargs ----------------
@@ -77424,6 +78219,8 @@ where
     pub fn stringNullableArgumentVarargs(
         &mut self,
     ) -> Result<Rc<StringNullableArgumentVarargsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = StringNullableArgumentVarargsContextExt::new(
@@ -77487,6 +78284,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- dateArgument ----------------
@@ -77568,6 +78366,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn dateArgument(&mut self) -> Result<Rc<DateArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = DateArgumentContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -77617,6 +78417,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericArgument ----------------
@@ -77698,6 +78499,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn genericArgument(&mut self) -> Result<Rc<GenericArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -77964,6 +78767,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericArgumentVarargs ----------------
@@ -78066,6 +78870,8 @@ where
     pub fn genericArgumentVarargs(
         &mut self,
     ) -> Result<Rc<GenericArgumentVarargsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78135,6 +78941,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericMapArgument ----------------
@@ -78220,6 +79027,8 @@ where
     pub fn genericMapArgument(
         &mut self,
     ) -> Result<Rc<GenericMapArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78270,6 +79079,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericMapNullableArgument ----------------
@@ -78360,6 +79170,8 @@ where
     pub fn genericMapNullableArgument(
         &mut self,
     ) -> Result<Rc<GenericMapNullableArgumentContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78410,6 +79222,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalStrategyVarargs ----------------
@@ -78494,6 +79307,8 @@ where
     pub fn traversalStrategyVarargs(
         &mut self,
     ) -> Result<Rc<TraversalStrategyVarargsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78532,6 +79347,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- traversalStrategyExpr ----------------
@@ -78634,6 +79450,8 @@ where
     pub fn traversalStrategyExpr(
         &mut self,
     ) -> Result<Rc<TraversalStrategyExprContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78686,6 +79504,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- classTypeList ----------------
@@ -78761,6 +79580,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn classTypeList(&mut self) -> Result<Rc<ClassTypeListContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78799,6 +79620,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- classTypeExpr ----------------
@@ -78895,6 +79717,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn classTypeExpr(&mut self) -> Result<Rc<ClassTypeExprContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -78947,6 +79771,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nestedTraversalList ----------------
@@ -79026,6 +79851,8 @@ where
     pub fn nestedTraversalList(
         &mut self,
     ) -> Result<Rc<NestedTraversalListContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79074,6 +79901,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nestedTraversalExpr ----------------
@@ -79174,6 +80002,8 @@ where
     pub fn nestedTraversalExpr(
         &mut self,
     ) -> Result<Rc<NestedTraversalExprContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79226,6 +80056,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericCollectionLiteral ----------------
@@ -79347,6 +80178,8 @@ where
     pub fn genericCollectionLiteral(
         &mut self,
     ) -> Result<Rc<GenericCollectionLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79426,6 +80259,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericLiteralVarargs ----------------
@@ -79507,6 +80341,8 @@ where
     pub fn genericLiteralVarargs(
         &mut self,
     ) -> Result<Rc<GenericLiteralVarargsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79555,6 +80391,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericLiteralExpr ----------------
@@ -79655,6 +80492,8 @@ where
     pub fn genericLiteralExpr(
         &mut self,
     ) -> Result<Rc<GenericLiteralExprContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79707,6 +80546,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericMapNullableLiteral ----------------
@@ -79797,6 +80637,8 @@ where
     pub fn genericMapNullableLiteral(
         &mut self,
     ) -> Result<Rc<GenericMapNullableLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -79847,6 +80689,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericRangeLiteral ----------------
@@ -79959,6 +80802,8 @@ where
     pub fn genericRangeLiteral(
         &mut self,
     ) -> Result<Rc<GenericRangeLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -80037,6 +80882,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericSetLiteral ----------------
@@ -80151,6 +80997,8 @@ where
     pub fn genericSetLiteral(
         &mut self,
     ) -> Result<Rc<GenericSetLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -80230,6 +81078,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringNullableLiteralVarargs ----------------
@@ -80336,6 +81185,8 @@ where
     pub fn stringNullableLiteralVarargs(
         &mut self,
     ) -> Result<Rc<StringNullableLiteralVarargsContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -80398,6 +81249,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericLiteral ----------------
@@ -80581,6 +81433,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn genericLiteral(&mut self) -> Result<Rc<GenericLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -80781,6 +81635,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- genericMapLiteral ----------------
@@ -80903,6 +81758,8 @@ where
     pub fn genericMapLiteral(
         &mut self,
     ) -> Result<Rc<GenericMapLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -80992,6 +81849,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- mapKey ----------------
@@ -81142,6 +82000,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn mapKey(&mut self) -> Result<Rc<MapKeyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = MapKeyContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -81772,6 +82632,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- mapEntry ----------------
@@ -81860,6 +82721,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn mapEntry(&mut self) -> Result<Rc<MapEntryContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = MapEntryContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -81896,6 +82759,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringLiteral ----------------
@@ -81981,6 +82845,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn stringLiteral(&mut self) -> Result<Rc<StringLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -82021,6 +82887,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- stringNullableLiteral ----------------
@@ -82120,6 +82987,8 @@ where
     pub fn stringNullableLiteral(
         &mut self,
     ) -> Result<Rc<StringNullableLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -82163,6 +83032,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- integerLiteral ----------------
@@ -82240,6 +83110,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn integerLiteral(&mut self) -> Result<Rc<IntegerLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -82271,6 +83143,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- floatLiteral ----------------
@@ -82360,6 +83233,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn floatLiteral(&mut self) -> Result<Rc<FloatLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = FloatLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -82420,6 +83295,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- numericLiteral ----------------
@@ -82501,6 +83377,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn numericLiteral(&mut self) -> Result<Rc<NumericLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -82554,6 +83432,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- booleanLiteral ----------------
@@ -82639,6 +83518,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn booleanLiteral(&mut self) -> Result<Rc<BooleanLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx =
@@ -82678,6 +83559,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- dateLiteral ----------------
@@ -82784,6 +83666,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn dateLiteral(&mut self) -> Result<Rc<DateLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = DateLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -82900,6 +83784,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nullLiteral ----------------
@@ -82976,6 +83861,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn nullLiteral(&mut self) -> Result<Rc<NullLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = NullLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83006,6 +83893,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nanLiteral ----------------
@@ -83082,6 +83970,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn nanLiteral(&mut self) -> Result<Rc<NanLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = NanLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83112,6 +84002,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- infLiteral ----------------
@@ -83196,6 +84087,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn infLiteral(&mut self) -> Result<Rc<InfLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = InfLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83234,6 +84127,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- uuidLiteral ----------------
@@ -83332,6 +84226,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn uuidLiteral(&mut self) -> Result<Rc<UuidLiteralContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = UuidLiteralContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83404,6 +84300,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- nakedKey ----------------
@@ -83480,6 +84377,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn nakedKey(&mut self) -> Result<Rc<NakedKeyContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = NakedKeyContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83508,6 +84407,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- classType ----------------
@@ -83584,6 +84484,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn classType(&mut self) -> Result<Rc<ClassTypeContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = ClassTypeContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83614,6 +84516,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- variable ----------------
@@ -83690,6 +84593,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn variable(&mut self) -> Result<Rc<VariableContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = VariableContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -83718,6 +84623,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 //------------------- keyword ----------------
@@ -86178,6 +87084,8 @@ where
     I: TokenStream<'input, TF = LocalTokenFactory<'input>> + TidAble<'input>,
 {
     pub fn keyword(&mut self) -> Result<Rc<KeywordContextAll<'input>>, ANTLRError> {
+        // OrchidDB: grow at every parser rule boundary.
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = KeywordContextExt::new(_parentctx.clone(), recog.base.get_state());
@@ -86234,6 +87142,7 @@ where
         recog.base.exit_rule()?;
 
         Ok(_localctx)
+        })
     }
 }
 lazy_static! {

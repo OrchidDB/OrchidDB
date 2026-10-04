@@ -35,9 +35,6 @@ impl ScalarUDFImpl for DeclaredCast {
         ))
     }
 }
-pub(crate) fn typed_argument_cast(expr: Expr, data_type: DataType) -> Result<Expr> {
-    typed_argument_cast_for_engine(expr, data_type, "duckdb")
-}
 pub(crate) fn typed_argument_cast_for_engine(
     expr: Expr,
     data_type: DataType,

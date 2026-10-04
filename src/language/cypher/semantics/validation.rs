@@ -106,12 +106,7 @@ pub(super) fn validate_order_by_supported(
             | BindingKind::Relationship
             | BindingKind::RecursiveRelationship
             | BindingKind::Path
-            | BindingKind::InternalId
             | BindingKind::ListInt
-            | BindingKind::FixedListInt
-            | BindingKind::StructDescription
-            | BindingKind::MapStringInt
-            | BindingKind::UnionMovieGrade
     );
     if unsupported {
         return Err(CypherPlanError::Invalid(format!(

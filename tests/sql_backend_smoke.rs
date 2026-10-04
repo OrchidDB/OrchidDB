@@ -5,6 +5,8 @@
 //! lowered plan to dialect SQL, materializes the fixture graph's scan tables
 //! into DuckDB, executes the SQL there, and compares the rows against both
 //! expected values and the in-process DataFusion execution of the same plan.
+//! Residual-only cases assert that strict SQL lowering rejects the plan and
+//! verify the typed result through the production DAG runtime.
 //!
 //! A Postgres variant of the round-trip is `#[ignore]`d and only runs when
 //! the `postgres` feature is enabled and `GRAPH_PG_URL` points at a server.
@@ -22,7 +24,7 @@ use orchiddb::ir::catalog::{NodeTable, PropertyGraph, edges_from_columns, nodes_
 use orchiddb::ir::expr::Lit;
 use orchiddb::ir::plan::GraphPlan;
 use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
-use orchiddb::ir::rel::{RelBackend, RelBackendOptions, execute_lowered};
+use orchiddb::ir::rel::{RelBackend, execute_lowered};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
 use orchiddb::language::gremlin::parser::parse_traversal;
@@ -210,6 +212,16 @@ async fn duckdb_and_datafusion(
     duckdb_lines
 }
 
+/// Strict SQL reports its boundary explicitly; the normal DAG executes the
+/// residual operators and must still return the complete, typed answer.
+async fn residual_rows(plan: &GraphPlan, graph: &PropertyGraph, reason: &str) -> Vec<String> {
+    let error = RelBackend::new().lower(plan, graph).unwrap_err();
+    assert!(matches!(error, orchiddb::ir::rel::RelError::Unsupported(_)), "{error}");
+    assert!(error.to_string().contains(reason), "{error}");
+    let (returned, _) = orchiddb::ir::rel::runtime::execute(plan, graph, None).await.unwrap();
+    batch_lines(&returned.batch)
+}
+
 #[tokio::test]
 async fn cypher_match_filter_expand_order_on_duckdb() {
     let plan = cypher_plan(
@@ -315,76 +327,51 @@ async fn cypher_unbounded_varlen_is_not_silently_capped() {
 }
 
 #[tokio::test]
-async fn cypher_varlen_optional_ceiling_is_explicit() {
+async fn cypher_varlen_honors_query_upper_bound() {
     let plan = cypher_plan(
-        "MATCH (p:Person)-[:NEXT*1..]->(f) \
+        "MATCH (p:Person)-[:NEXT*1..3]->(f) \
          WHERE p.name = 'n0' RETURN count(*)",
     );
-    let backend = RelBackend::with_options(RelBackendOptions {
-        varlen_recursive_ceiling: Some(3),
-        ..RelBackendOptions::default()
-    });
+    let backend = RelBackend::new();
     let lowered = backend.lower(&plan, &long_chain_graph()).expect("lower");
     let mut executor = DuckDbExecutor::new();
     let returned = sql::execute_lowered_sql(&mut executor, &lowered)
         .await
-        .expect("execute guarded recursive path");
+        .expect("execute query-bounded recursive path");
     assert_eq!(batch_lines(&returned.batch), vec!["3"]);
 }
 
 #[tokio::test]
-async fn cypher_varlen_path_and_undirected_length_on_duckdb() {
+async fn cypher_varlen_relationship_list_and_undirected_size_with_residuals() {
     let plan = cypher_plan(
         "MATCH (p:Person)-[e:KNOWS*2..2]-(f) \
          WHERE p.name = 'alice' \
-         RETURN f.name, length(e), e ORDER BY f.name",
+         RETURN f.name, size(e), e ORDER BY f.name",
     );
-    let lowered = RelBackend::new()
-        .lower(&plan, &fixture_graph())
-        .expect("lower");
-    let prepared = sql::prepare(&lowered, SqlDialect::DuckDb)
-        .await
-        .expect("prepare sql");
-    let mut executor = DuckDbExecutor::new();
-    let returned = sql::execute_prepared(&mut executor, &prepared)
-        .unwrap_or_else(|err| panic!("duckdb execute: {err}\nquery: {}", prepared.query));
-    let rows = batch_lines(&returned.batch);
+    let rows = residual_rows(&plan, &fixture_graph(), "Cypher paths require typed SQL IR residual values").await;
     assert_eq!(rows.len(), 2);
-    assert!(rows[0].starts_with("bob|2|{_NODES: ["));
-    assert!(rows[1].starts_with("carol|2|{_NODES: ["));
-    assert!(rows.iter().all(|row| row.contains("_RELS: [")));
+    assert!(rows[0].starts_with("bob|2|["), "{:?}", rows);
+    assert!(rows[1].starts_with("carol|2|["), "{:?}", rows);
+    assert!(rows.iter().all(|row| row.matches("_LABEL: KNOWS").count() == 2), "{:?}", rows);
 }
 
 #[tokio::test]
-async fn cypher_count_distinct_varlen_paths_on_duckdb() {
+async fn cypher_count_distinct_varlen_paths_with_residuals() {
     let plan = cypher_plan(
         "MATCH (p:Person)-[e:KNOWS*1..]->(f) \
          WHERE p.name = 'alice' RETURN count(DISTINCT e)",
     );
-    let lowered = RelBackend::new()
-        .lower(&plan, &fixture_graph())
-        .expect("lower");
-    let mut executor = DuckDbExecutor::new();
-    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
-        .await
-        .expect("execute recursive paths");
-    assert_eq!(batch_lines(&returned.batch), vec!["3"]);
+    let rows = residual_rows(&plan, &fixture_graph(), "Cypher paths require typed SQL IR residual values").await;
+    assert_eq!(rows, vec!["3"]);
 }
 
 #[tokio::test]
-async fn cypher_named_path_spans_varlen_and_fixed_segments() {
+async fn cypher_named_path_spans_varlen_and_fixed_segments_with_residuals() {
     let plan = cypher_plan(
         "MATCH p = (a:Person)-[:KNOWS*1..1]->(:Person)-[:LIVES_IN]->(:City) \
          WHERE a.name = 'alice' RETURN p",
     );
-    let lowered = RelBackend::new()
-        .lower(&plan, &mixed_path_graph())
-        .expect("lower mixed path");
-    let mut executor = DuckDbExecutor::new();
-    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
-        .await
-        .expect("execute mixed path");
-    let rows = batch_lines(&returned.batch);
+    let rows = residual_rows(&plan, &mixed_path_graph(), "Cypher paths require typed SQL IR residual values").await;
     assert_eq!(rows.len(), 1);
     let path = &rows[0];
     assert_eq!(path.matches("_LABEL: Person").count(), 2, "{path}");
@@ -441,13 +428,13 @@ async fn gremlin_count_on_duckdb() {
 }
 
 #[tokio::test]
-async fn gremlin_local_length_preserves_null_on_duckdb() {
+async fn gremlin_local_length_preserves_null_with_residuals() {
     let traversal = parse_traversal(r#"g.inject("feature", "test", null).length(Scope.local)"#)
         .expect("parse Gremlin");
     let plan = AstGremlinPlanner::new()
         .plan(&traversal)
         .expect("plan Gremlin");
-    let rows = duckdb_and_datafusion(&plan, &PropertyGraph::new(), true).await;
+    let rows = residual_rows(&plan, &PropertyGraph::new(), "Gremlin scalar semantics require native values").await;
     assert_eq!(rows, vec!["7", "4", "null"]);
 }
 

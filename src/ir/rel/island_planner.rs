@@ -19,7 +19,15 @@ pub(super) struct IslandMemo {
 pub(super) type SharedMemo = Arc<Mutex<IslandMemo>>;
 impl IslandMemo {
     pub fn new(root: &Node) -> SharedMemo {
-        fn visit(node: &Node, memo: &mut IslandMemo) -> (bool, bool, GraphPlanStats) {
+        let mut memo = Self::default();
+        let mut results = BTreeMap::new();
+        let mut pending = vec![(root, false)];
+        while let Some((node, ready)) = pending.pop() {
+            if !ready {
+                pending.push((node, true));
+                pending.extend(crate::ir::analysis::children(node).into_iter().map(|child| (child, false)));
+                continue;
+            }
             let mut safe = crate::ir::analysis::node_effect(node)
                 == crate::ir::analysis::Effect::Pure
                 && !matches!(node, Node::GraphValues { bulk: Some(_), .. });
@@ -47,7 +55,7 @@ impl IslandMemo {
                     .count();
             }
             for (index, child) in crate::ir::analysis::children(node).into_iter().enumerate() {
-                let (child_safe, child_free, child_stats) = visit(child, memo);
+                let (child_safe, child_free, child_stats): (bool, bool, GraphPlanStats) = results.remove(&(child as *const Node as usize)).expect("child analyzed before parent");
                 safe &= child_safe;
                 let binds_child = index > 0
                     && matches!(
@@ -66,10 +74,8 @@ impl IslandMemo {
             let key = node as *const Node as usize;
             memo.safe.insert(key, safe && !free_correlation);
             memo.stats.insert(key, stats);
-            (safe, free_correlation, stats)
+            results.insert(key, (safe, free_correlation, stats));
         }
-        let mut memo = Self::default();
-        visit(root, &mut memo);
         // Keep operators whose key semantics differ from SQL grouping and
         // DISTINCT in the native runtime, along with every parent that would
         // otherwise absorb them into one SQL island.

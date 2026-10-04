@@ -302,7 +302,11 @@ public class UpstreamGremlin {
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
   public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(graph instanceof OrchidGraph nativeGraph)nativeGraph.closeFamily();else if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
-  public String changePathToDataFile(String path){return new File("conformance/upstream/cache/tinkerpop",path).getAbsolutePath();}
+  public String changePathToDataFile(String path){
+   String source=System.getenv("CONFORMANCE_TINKERPOP_SOURCE");
+   if(source==null||source.isEmpty())source=new File(System.getenv().getOrDefault("CONFORMANCE_UPSTREAM_CACHE","conformance/upstream/cache"),"tinkerpop").getPath();
+   return new File(source,path).getAbsolutePath();
+  }
  }
  /** Copy only upstream input data; all evaluated traversals use the native provider. */
  static void copyFixture(Graph fixture,Graph target) {

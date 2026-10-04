@@ -10,7 +10,7 @@ type Names = BTreeSet<String>;
 #[derive(Clone, Debug)]
 pub(super) enum Scalar {
     Project(ProjectMode, Vec<ProjectionItem>),
-    Filter(IrExpr),
+    Filter,
 }
 #[derive(Clone, Debug, Default)]
 pub(super) struct Contract {
@@ -135,7 +135,7 @@ pub(super) fn annotate(plan: LogicalPlan, node: &Node) -> LogicalPlan {
         Node::GraphFilter { condition, .. } => Contract {
             reads: references(condition),
             total: total(condition),
-            scalar: Some(Scalar::Filter(condition.clone())),
+            scalar: Some(Scalar::Filter),
             ..Default::default()
         },
         Node::GraphCurrentProject { expr, .. } => Contract {
@@ -189,7 +189,7 @@ pub(super) fn annotate(plan: LogicalPlan, node: &Node) -> LogicalPlan {
             Contract {
                 reads: Some(reads),
                 writes,
-                total: length.min <= length.max.unwrap_or(30),
+                total: length.max.is_none_or(|max| length.min <= max),
                 ..Default::default()
             }
         }
@@ -198,6 +198,22 @@ pub(super) fn annotate(plan: LogicalPlan, node: &Node) -> LogicalPlan {
     let Some(mut k) = as_kernel(&plan).cloned() else {
         return plan;
     };
+    k.streaming = contract.total && contract.reads.is_some() && matches!(node,
+        Node::GraphProject { .. } | Node::GraphBind { .. } | Node::GraphFilter { .. }
+        | Node::GraphCurrentProject { .. } | Node::GraphUnwind { .. } | Node::GraphExpand { .. });
+    if let Node::GraphSlice { slice, .. } = node {
+        // Early stopping is valid only across known pure streaming stages.
+        // Opaque callbacks, side effects and reducers keep whole-input behavior.
+        fn safe(plan: &LogicalPlan) -> bool {
+            as_kernel(plan).is_some_and(|k| k.streaming
+                && (k.relational_input.is_some() || k.inputs.iter().all(safe)))
+        }
+        if slice.tail.is_none() && k.inputs.iter().all(safe) {
+            k.streaming = true;
+            k.slice = Some(slice.clone());
+            k.kernel = Arc::new(|mut inputs, _| Ok(inputs.remove(0)));
+        }
+    }
     k.contract = Some(contract);
     extension(k)
 }
@@ -362,7 +378,7 @@ fn push_filters(plan: LogicalPlan) -> Result<LogicalPlan> {
             let Some(c) = &filter.contract else {
                 return Ok(Transformed::no(plan));
             };
-            if !c.total || !matches!(c.scalar, Some(Scalar::Filter(_))) || filter.inputs.len() != 1
+            if !c.total || !matches!(c.scalar, Some(Scalar::Filter)) || filter.inputs.len() != 1
             {
                 return Ok(Transformed::no(plan));
             }
@@ -379,7 +395,7 @@ fn push_filters(plan: LogicalPlan) -> Result<LogicalPlan> {
                     || c.replaces
                     || k.inputs.len() != 1
                     || !reads.is_disjoint(&c.writes)
-                    || matches!(c.scalar, Some(Scalar::Filter(_)))
+                    || matches!(c.scalar, Some(Scalar::Filter))
                 {
                     break;
                 }
@@ -484,7 +500,7 @@ pub(super) fn batchable(node: &Node) -> bool {
             input_expr, input, ..
         } => expression(input_expr) && batchable(input),
         Node::GraphExpand { input, length, .. } => {
-            length.min <= length.max.unwrap_or(30) && batchable(input)
+            length.max.is_none_or(|max| length.min <= max) && batchable(input)
         }
         _ => false,
     }

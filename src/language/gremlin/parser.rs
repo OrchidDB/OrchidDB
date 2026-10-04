@@ -10,6 +10,7 @@ mod projection;
 mod source;
 mod strategy_validation;
 mod visitor;
+mod tree;
 use literals::{option_key_text, parse_pick_key};
 
 use crate::grammar::generated::gremlin::gremlinlexer::GremlinLexer;
@@ -96,17 +97,19 @@ pub fn parse_traversal_with_bindings(
     let root = parser
         .queryList()
         .map_err(|err| GremlinError::Parse(err.to_string()))?;
+    let _tree = tree::TreeOwner(root.clone());
     errors.into_result()?;
 
     strategy_validation::verify(&tokenize(input)?)?;
     let mut visitor = LoweringVisitor::new(bindings.clone());
     visitor.literal_overrides = literal_overrides.borrow().clone();
     visitor.visit_queryList(&root);
+    let without_connective = visitor.without_connective;
     let mut traversal = visitor.finish()?;
     // `withoutStrategies(ConnectiveStrategy)` disables the infix
     // `.and()` / `.or()` rewrite; TinkerPop then fails the traversal, so
     // it yields no results. Model that as a drop-everything filter.
-    if input.contains("withoutStrategies(ConnectiveStrategy")
+    if without_connective
         && traversal
             .steps
             .iter()
@@ -134,10 +137,11 @@ pub fn parse_query_list(input: &str) -> Result<GremlinSyntax> {
     let root = parser
         .queryList()
         .map_err(|err| GremlinError::Parse(err.to_string()))?;
+    let _tree = tree::TreeOwner(root.clone());
     errors.into_result()?;
 
     Ok(GremlinSyntax {
-        parse_tree: root.to_string_tree(&*parser),
+        parse_tree: tree::format_tree(root.clone(), parser.get_rule_names()),
         tokens: tokenize(input)?,
     })
 }
@@ -236,6 +240,7 @@ where
 // enum would push the type-checking to runtime.
 
 struct LoweringVisitor {
+    without_connective: bool,
     steps: Vec<Step>,
     errors: Vec<GremlinError>,
     string_stack: Vec<String>,
@@ -252,6 +257,7 @@ struct LoweringVisitor {
 impl LoweringVisitor {
     fn new(bindings: HashMap<String, GValue>) -> Self {
         Self {
+            without_connective: false,
             bindings,
             literal_overrides: BTreeMap::new(),
             steps: Vec::new(),
@@ -530,4 +536,5 @@ mod tests {
     }
 }
 
+#[cfg(any(feature = "duckdb", test))]
 pub(crate) fn decode_callable_string(raw: &str) -> Result<String> { literals::decode_string_literal(raw) }

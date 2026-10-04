@@ -418,10 +418,14 @@ pub(crate) fn execute(
 
 /// GraphComputer results are a query-local graph view, never a durable graph mutation.
 pub fn contains_computer(node: &Node) -> bool {
-    matches!(node, Node::GraphJvm {operation, ..} if operation.mode==JvmMode::Computer)
-        || crate::ir::analysis::children(node)
-            .into_iter()
-            .any(contains_computer)
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        if matches!(node, Node::GraphJvm {operation, ..} if operation.mode==JvmMode::Computer) {
+            return true;
+        }
+        pending.extend(crate::ir::analysis::children(node));
+    }
+    false
 }
 
 /// Vertex-program traversals operate on a read snapshot. Reject ordinary graph

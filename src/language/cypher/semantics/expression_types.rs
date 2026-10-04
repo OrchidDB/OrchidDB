@@ -247,13 +247,11 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
                     | BindingKind::Int
                     | BindingKind::Float
                     | BindingKind::String
-                    | BindingKind::InternalId
                     | BindingKind::Path
                     | BindingKind::ListValue
                     | BindingKind::ListNode
                     | BindingKind::ListRelationship
                     | BindingKind::ListInt
-                    | BindingKind::FixedListInt
             ) {
                 return Err(CypherPlanError::Invalid(format!(
                     "Binder exception: {} has data type {} but (NODE,REL,STRUCT,ANY) was expected.",
@@ -403,11 +401,6 @@ pub(super) fn validate_binary_expr_kind(
         BinaryOp::Div => "/",
         _ => unreachable!(),
     };
-    if matches!(lhs_kind, BindingKind::InternalId) || matches!(rhs_kind, BindingKind::InternalId) {
-        return Err(CypherPlanError::Invalid(format!(
-            "Binder exception: Function {op_name} did not receive correct arguments:"
-        )));
-    }
     Err(CypherPlanError::Invalid(format!(
         "Binder exception: Cannot match a built-in function for given function {op_name}({},{}).",
         lhs_kind.cypher_type_name(),
@@ -438,7 +431,7 @@ pub(super) fn arithmetic_kinds_compatible(
         return true;
     }
     // List concatenation preserves arbitrary element types.
-    let list = |kind| matches!(kind,BindingKind::ListValue | BindingKind::ListInt | BindingKind::FixedListInt | BindingKind::ListNode | BindingKind::ListRelationship);
+    let list = |kind| matches!(kind,BindingKind::ListValue | BindingKind::ListInt | BindingKind::ListNode | BindingKind::ListRelationship);
     if matches!(op,BinaryOp::Add) && (list(lhs)||list(rhs)) {return true;}
     matches!(
         (op, lhs, rhs),

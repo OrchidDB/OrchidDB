@@ -34,29 +34,6 @@ pub(crate) fn values_op(
     Ok(out)
 }
 
-pub(crate) fn node_scan(
-    binding: &str,
-    labels: &LabelExpr,
-    graph: &PropertyGraph,
-) -> IrResult<Vec<Row>> {
-    let mut out = Vec::new();
-    for label in matching_labels(labels, graph) {
-        for row_id in graph.node_ids(&label)? {
-            if !graph.node_matches_labels(&label, row_id.clone(), labels) { continue; }
-            let mut row = Row::new();
-            row.bindings.insert(
-                binding.to_string(),
-                Value::Node {
-                    label: label.clone(),
-                    id: row_id,
-                },
-            );
-            out.push(row);
-        }
-    }
-    Ok(out)
-}
-
 pub(crate) fn rel_scan(
     binding: &str,
     types: &LabelExpr,
@@ -99,10 +76,10 @@ pub(crate) fn matching_labels(labels: &LabelExpr, graph: &PropertyGraph) -> Vec<
         LabelExpr::AllOf(names) if graph.mapping.is_some() => all.into_iter()
             .filter(|label| names.iter().all(|name| name == label)).collect(),
         LabelExpr::AllOf(_) => all,
-        LabelExpr::Not(inner) => {
-            let blocked = matching_labels(inner, graph);
-            all.into_iter().filter(|l| !blocked.contains(l)).collect()
-        }
+        // Candidate tables are only a superset of matches, particularly for
+        // logical AllOf labels. Complementing that superset loses valid nodes.
+        // Let node_matches_labels evaluate negation on each candidate instead.
+        LabelExpr::Not(_) => all,
     }
 }
 

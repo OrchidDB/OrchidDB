@@ -174,6 +174,7 @@ impl Compiler<'_> {
             // mutation fences retain the live overlay path.
             sql: self.sql && self.graph.source.is_some(),
             islands: self.islands.clone(),
+            lowered: Default::default(),
         };
         Ok(Subplan {
             plan: optimize::optimize(compiler.lower(node)?, None)?,
@@ -1061,8 +1062,7 @@ fn repeat_op_inner(
     //   2. `until = Some(p)` — stop when p matches a row (that row is
     //      emitted, others continue).
     //   3. Otherwise — stop when the frontier becomes empty.
-    // A resource ceiling is an error, never a successful truncated result.
-    const MAX_REPEAT_ITERATIONS: u32 = 10_000;
+    // Work budgets and cancellation are independent of traversal depth.
     let trace_metrics =
         ctx.step_state.len() == 1 && std::env::var_os("ORCHIDDB_REPEAT_METRICS").is_some();
     let mut peak_expanded = seed_rows.len();
@@ -1102,21 +1102,19 @@ fn repeat_op_inner(
             emit_matching_traversal(&frontier, seed_probe, &mut out, graph, ctx)?;
         }
     }
-    let mut iteration: u32 = 0;
+    let mut iteration: i64 = 0;
     loop {
         if frontier.is_empty() {
             break;
         }
         ctx.charge(1)?;
         if let Some(n) = times {
-            if iteration >= n {
+            if iteration >= i64::from(n) {
                 break;
             }
         }
-        if iteration >= MAX_REPEAT_ITERATIONS {
-            return Err(RuntimeError::ExecutionLimit(format!(
-                "repeat exceeded {MAX_REPEAT_ITERATIONS} iterations"
-            )));
+        if iteration == i64::MAX {
+            return Err(RuntimeError::ExecutionLimit("repeat counter overflow".into()));
         }
         let body_frontier = frontier
             .into_iter()
@@ -1160,7 +1158,7 @@ fn repeat_op_inner(
             .collect::<Vec<_>>();
         // Until/times exits take precedence over emit splitting: a terminal
         // traverser is returned once even when the emit predicate rejects it.
-        let at_bound = times.is_some_and(|n| iteration + 1 >= n);
+        let at_bound = times.is_some_and(|n| iteration + 1 >= i64::from(n));
         let mut continuing = Vec::new();
         for row in stepped {
             let done = if at_bound {
@@ -1274,14 +1272,6 @@ fn merge_op(
         }
     }
     Ok(out)
-}
-
-fn endpoint(row: &Row, binding: &str, rel_type: &str) -> IrResult<Value> {
-    row.bindings.get(binding).cloned().ok_or_else(|| {
-        RuntimeError::Type(format!(
-            "CREATE relationship `{rel_type}` endpoint `{binding}` is not bound"
-        ))
-    })
 }
 
 #[path = "groups.rs"]

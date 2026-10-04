@@ -1,9 +1,9 @@
 //! Dynamic graph values used by scalar evaluation and DataFusion kernels.
 //!
-//! Native kernels represent individual bindings as a `Value`. A typed enum
-//! (rather than Arrow scalars) lets node and edge identifiers, property maps, and lists can flow through expression
-//! evaluation cleanly. Conversion to Arrow record batches happens at
-//! `GraphReturn` boundaries.
+//! Native kernels evaluate individual bindings as `Value`s. Operator boundaries
+//! carry common scalars and graph elements in typed Arrow batches; nested
+//! language values retain a lossless compatibility encoding. `GraphReturn`
+//! converts bindings to the language-specific public result format.
 
 use super::identity::ElementId;
 use std::collections::BTreeMap;

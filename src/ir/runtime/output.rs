@@ -550,7 +550,7 @@ pub(crate) fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde
                     .collect::<Vec<_>>()
             ),
         ),
-        Value::VertexProperty {id,owner,key,value:property_value} => json!({"type":"vertex_property","id":gremlin_typed_value(&graph.element_public_id(value),graph),"owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(property_value,graph),"properties":graph.properties(value,&[]).iter().filter_map(|p|if let Value::Property{key,value,..}=p {Some(json!({"key":key,"value":gremlin_typed_value(value,graph)}))}else{None}).collect::<Vec<_>>()}),
+        Value::VertexProperty {owner,key,value:property_value,..} => json!({"type":"vertex_property","id":gremlin_typed_value(&graph.element_public_id(value),graph),"owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(property_value,graph),"properties":graph.properties(value,&[]).iter().filter_map(|p|if let Value::Property{key,value,..}=p {Some(json!({"key":key,"value":gremlin_typed_value(value,graph)}))}else{None}).collect::<Vec<_>>()}),
         Value::Property {owner,key,value} => json!({"type":"property","owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(value,graph)}),
         Value::CardinalityValue {cardinality,value} => tagged("cardinality_value", json!({"cardinality":cardinality,"value":gremlin_typed_value(value,graph)})),
         Value::MapEntry(pair) => tagged("entry", json!([gremlin_typed_value(&pair.0, graph), gremlin_typed_value(&pair.1, graph)])),

@@ -1,11 +1,10 @@
 use crate::ir::plan::{ApplyKind, Node};
 use crate::ir::policy::OptionalMissing;
 use crate::language::cypher::ast::{BinaryOp, ExistsSubquery, Expr, PatternPart, UnaryOp};
-use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
+use crate::language::cypher::planner::error::CypherPlanResult;
 use crate::language::cypher::planner::lowering::{
     Lowerer, context::CypherTraversalKind, pattern, project,
 };
-use std::collections::BTreeSet;
 
 pub(crate) fn lower_where_predicate(
     lowerer: &mut Lowerer,
@@ -171,21 +170,4 @@ pub(crate) fn validate_pattern_predicate_scope(
     // violation is raised here.
     let _ = (lowerer, patterns);
     Ok(())
-}
-
-fn collect_pattern_names(part: &PatternPart, out: &mut BTreeSet<String>) {
-    if let Some(variable) = &part.variable {
-        out.insert(variable.clone());
-    }
-    if let Some(variable) = &part.element.start.variable {
-        out.insert(variable.clone());
-    }
-    for chain in &part.element.chains {
-        if let Some(variable) = &chain.relationship.variable {
-            out.insert(variable.clone());
-        }
-        if let Some(variable) = &chain.node.variable {
-            out.insert(variable.clone());
-        }
-    }
 }

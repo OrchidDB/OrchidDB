@@ -4,10 +4,9 @@ use crate::ir::catalog::PropertyGraph;
 use crate::ir::runtime::{RuntimeError, IrResult};
 use crate::ir::runtime::expr::compare_values;
 use crate::ir::value::Value;
-use std::collections::BTreeMap;
 use super::registry;
 use super::casts::{
-    cast_list_to_string, cast_to_bigdecimal, cast_to_bigint, cast_to_bool, cast_to_byte,
+    cast_to_bigdecimal, cast_to_bigint, cast_to_bool, cast_to_byte,
     cast_to_date, cast_to_float, cast_to_float32, cast_to_gremlin_date, cast_to_gremlin_int,
     cast_to_int, cast_to_long, cast_to_number, cast_to_short, cast_to_string,
     parse_datetime_string,

@@ -8,7 +8,7 @@ use std::{
 use datafusion::{
     common::{
         DFSchemaRef,
-        tree_node::{Transformed, TreeNode, TreeNodeRecursion},
+        tree_node::{Transformed, TreeNodeRecursion},
     },
     datasource::{cte_worktable::CteWorkTable, provider_as_source, source_as_provider},
     error::Result,

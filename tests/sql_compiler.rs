@@ -131,3 +131,32 @@ async fn legacy_sparql_constant_retains_its_native_numeric_type() {
     let result=compile(json!({"version":1,"dialect":"duckdb","language":"sparql","query":"SELECT (42 AS ?answer) WHERE {}","tables":[]})).await.unwrap();
     assert!(result["sql"].as_str().unwrap().contains("BIGINT"),"{}",result["sql"]);
 }
+
+
+#[tokio::test]
+async fn audit_permission_scope_wraps_query_source() {
+    let mut r = json!({"version":1,"dialect":"duckdb","language":"cypher","query":"MATCH (p:Person) RETURN p.name AS name",
+        "authorization":{"subject_type":"user","subject_id":"alice"},
+        "tables":[{"name":"people","columns":[{"name":"id","data_type":"string"},{"name":"name","data_type":"string"}]},
+        {"name":"permissions","columns":[{"name":"resource_type","data_type":"string"},{"name":"permission","data_type":"string"},{"name":"resource_id","data_type":"string"},{"name":"subject_type","data_type":"string"},{"name":"subject_relation","data_type":"string"},{"name":"subject_id","data_type":"string"}]}],
+        "nodes":[{"label":"Person","table":"people","id":"id","properties":{"name":"name"},
+          "source_query":"SELECT id, name FROM people WHERE name <> 'hidden'",
+          "permission_scopes":[{"resource_column":"id","relation":{"table":"permissions","resource_type":"person","permission":"read","permission_column":"permission","subject_relation_column":"subject_relation"}}]}]});
+    for dialect in ["duckdb", "postgres"] {
+        r["dialect"] = json!(dialect);
+        let result = compile(r.clone()).await.unwrap();
+        #[cfg(feature = "duckdb")]
+        if dialect == "duckdb" {
+            let conn = duckdb::Connection::open_in_memory().unwrap();
+            conn.execute_batch("CREATE TABLE people(id VARCHAR, name VARCHAR); INSERT INTO people VALUES ('1','Ada'), ('2','Bob'), ('3','hidden'); CREATE TABLE permissions(resource_type VARCHAR, permission VARCHAR, resource_id VARCHAR, subject_type VARCHAR, subject_relation VARCHAR, subject_id VARCHAR); INSERT INTO permissions VALUES ('person','read','1','user','','alice'), ('person','read','3','user','','alice')").unwrap();
+            let mut stmt = conn.prepare(result["sql"].as_str().unwrap()).unwrap();
+            let names = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert_eq!(names, vec!["Ada"]);
+        }
+        assert!(result["sql"].as_str().unwrap().contains("permissions"));
+    }
+}

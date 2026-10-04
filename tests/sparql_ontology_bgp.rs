@@ -196,3 +196,37 @@ fn multiple_mapped_classes_do_not_drop_a_type_constraint() {
         .unwrap_err();
     assert!(error.to_string().contains("require class intersection"));
 }
+
+
+#[tokio::test]
+async fn audit_shared_predicate_resolves_each_subject_class() {
+    let ontology = OntologyMapping::new()
+        .class(format!("{EX}Person"), "Person")
+        .class(format!("{EX}Organization"), "Organization")
+        .property(format!("{EX}name"), "Person", "person_name")
+        .property(format!("{EX}name"), "Organization", "organization_name");
+    let planner = SparqlPlanner::default().with_ontology(ontology);
+    let graph = PropertyGraph::new();
+    use orchiddb::ir::value::Value;
+    graph.insert_node(
+        "Person",
+        [("person_name".into(), Value::String("Ada".into()))].into(),
+    );
+    graph.insert_node(
+        "Organization",
+        [("organization_name".into(), Value::String("Orchid".into()))].into(),
+    );
+    for (class, expected) in [("Person", "Ada"), ("Organization", "Orchid")] {
+        let plan = planner
+            .plan_str(&format!(
+                "PREFIX ex: <{EX}> SELECT ?name WHERE {{ ?s a ex:{class}; ex:name ?name }}"
+            ))
+            .unwrap();
+        let (rows, _) =
+            orchiddb::ir::rel::runtime::execute_rows_with_jvm(&plan, &graph, Default::default())
+                .await
+                .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].bindings["?name"], Value::String(expected.into()));
+    }
+}

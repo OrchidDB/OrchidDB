@@ -98,7 +98,7 @@ pub(super) fn lower_ontology_bgp(
             let Some(subject_label) = binding_labels.get(&subject).cloned() else {
                 return Ok(None);
             };
-            match ontology.predicate_for_iri(predicate.as_str()) {
+            match ontology.predicate_for_subject(predicate.as_str(), &subject_label) {
                 Some(PredicateMapping::Property {
                     domain_label,
                     property,

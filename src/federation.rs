@@ -513,11 +513,12 @@ pub(crate) fn json_scalar(
 ) -> Result<datafusion::common::ScalarValue, String> {
     use arrow::datatypes::DataType;
     use base64::Engine;
+    use std::sync::Arc;
     use datafusion::common::ScalarValue;
     if value.is_null() {
         return ScalarValue::try_from(ty).map_err(|e| e.to_string());
     }
-    if let DataType::List(field) = ty {
+    if let DataType::List(field) | DataType::LargeList(field) = ty {
         if let Some(text) = value.as_str() {
             return json_scalar(
                 &serde_json::from_str(text).map_err(|e| format!("invalid JSON list: {e}"))?,
@@ -530,13 +531,26 @@ pub(crate) fn json_scalar(
             .iter()
             .map(|v| json_scalar(v, field.data_type()))
             .collect::<Result<Vec<_>, _>>()?;
-        return Ok(ScalarValue::List(ScalarValue::new_list(
-            &values,
-            field.data_type(),
-            true,
-        )));
+        // Preserve the declared offset width and child field metadata.
+        let values = if values.is_empty() {
+            arrow::array::new_empty_array(field.data_type())
+        } else {
+            ScalarValue::iter_to_array(values).map_err(|e| e.to_string())?
+        };
+        return match ty {
+            DataType::LargeList(_) => Ok(ScalarValue::LargeList(Arc::new(
+                arrow::array::LargeListArray::try_new(field.clone(),
+                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]), values, None)
+                    .map_err(|e| e.to_string())?,
+            ))),
+            _ => Ok(ScalarValue::List(Arc::new(
+                arrow::array::ListArray::try_new(field.clone(),
+                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]), values, None)
+                    .map_err(|e| e.to_string())?,
+            ))),
+        };
     }
-    if *ty == DataType::Binary {
+    if matches!(ty, DataType::Binary | DataType::LargeBinary) {
         let text = value.as_str().ok_or("expected encoded binary")?;
         let bytes = if let Some(hex) = text.strip_prefix("\\x") {
             if hex.len() % 2 != 0 {
@@ -555,7 +569,7 @@ pub(crate) fn json_scalar(
                 .decode(text)
                 .map_err(|e| e.to_string())?
         };
-        return Ok(ScalarValue::Binary(Some(bytes)));
+        return Ok(if *ty == DataType::LargeBinary { ScalarValue::LargeBinary(Some(bytes)) } else { ScalarValue::Binary(Some(bytes)) });
     }
     let text = match value {
         serde_json::Value::String(s) => s.clone(),
@@ -693,4 +707,59 @@ fn exchange_scalar(
         }
     }
     value.cast_to(ty).map_err(|e| e.to_string())
+}
+
+
+#[cfg(test)]
+mod audit_regressions {
+    use super::json_scalar;
+    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::ScalarValue;
+    use serde_json::json;
+    use std::sync::Arc;
+    #[test]
+    fn audit_large_binary_decodes_bytes() {
+        for (input, expected) in [
+            (json!("\\x00ff80"), vec![0, 255, 128]),
+            (json!("AP+A"), vec![0, 255, 128]),
+            (json!("\\x"), vec![]),
+        ] {
+            assert_eq!(
+                json_scalar(&input, &DataType::LargeBinary).unwrap(),
+                ScalarValue::LargeBinary(Some(expected))
+            );
+        }
+        assert_eq!(
+            json_scalar(&json!(null), &DataType::LargeBinary).unwrap(),
+            ScalarValue::LargeBinary(None)
+        );
+    }
+    #[test]
+    fn audit_large_list_decodes_nested_empty_and_null() {
+        let inner = DataType::LargeList(Arc::new(Field::new("item", DataType::Int64, true)));
+        let outer = DataType::LargeList(Arc::new(Field::new("item", inner.clone(), true)));
+        let expected = ScalarValue::LargeList(ScalarValue::new_large_list(
+            &[
+                ScalarValue::LargeList(ScalarValue::new_large_list(
+                    &[ScalarValue::Int64(Some(1)), ScalarValue::Int64(None)],
+                    &DataType::Int64,
+                )),
+                ScalarValue::LargeList(ScalarValue::new_large_list(&[], &DataType::Int64)),
+                ScalarValue::try_from(&inner).unwrap(),
+            ],
+            &inner,
+        ));
+        assert_eq!(
+            json_scalar(&json!([[1, null], [], null]), &outer).unwrap(),
+            expected
+        );
+        assert_eq!(
+            json_scalar(&json!("[[1,null],[],null]"), &outer).unwrap(),
+            expected
+        );
+        assert_eq!(
+            json_scalar(&json!(null), &outer).unwrap(),
+            ScalarValue::try_from(&outer).unwrap()
+        );
+    }
 }

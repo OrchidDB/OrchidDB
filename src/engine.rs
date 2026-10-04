@@ -97,6 +97,30 @@ impl Drop for MappedExecutorLease<'_> {
     }
 }
 
+/// Statement cleanup must also run when the awaiting caller cancels its future.
+struct ManagedStatement<'a> {
+    engine: &'a mut GraphEngine,
+    before: Option<PropertyGraph>,
+    automatic: bool,
+}
+impl Drop for ManagedStatement<'_> {
+    fn drop(&mut self) {
+        if let Some(before) = self.before.take() {
+            self.engine.graph = before;
+            let region_session = self.engine.dag_session.region_session.clone();
+            self.engine.dag_session = crate::ir::rel::dag::DagSession::new(self.engine.sql_timeout);
+            self.engine.dag_session.region_session = region_session;
+            if self.automatic && self.engine.in_transaction {
+                if self.engine.rollback().is_err() {
+                    // Do not let later writes join a transaction that could not
+                    // be recovered. The caller must explicitly roll it back.
+                    self.engine.failed_transaction = true;
+                }
+            }
+        }
+    }
+}
+
 // Discover pre-rename graph tables by their reserved schema and validate the
 // checkpoint before renaming. This runs inside the initialization transaction.
 fn migrate_storage_namespace(storage: &Connection) -> EngineResult<()> {
@@ -685,29 +709,14 @@ impl GraphEngine {
             if automatic {
                 self.begin()?;
             }
-            // A failed statement cannot leave partially applied CREATE/SET/DELETE.
             let before = self.graph.clone();
-            let (returned, dag_stats) =
-                match self.execute_dag(plan).await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        self.graph = before;
-                        if automatic {
-                            let _ = self.rollback();
-                        }
-                        return Err(error);
-                    }
-                };
-            if let Err(error) = self.persist() {
-                self.graph = before;
-                if automatic {
-                    let _ = self.rollback();
-                }
-                return Err(error.into());
-            }
+            let mut statement = ManagedStatement { engine: self, before: Some(before), automatic };
+            let (returned, dag_stats) = statement.engine.execute_dag(plan).await?;
+            statement.engine.persist()?;
             if automatic {
-                self.finish_automatic()?;
+                statement.engine.commit()?;
             }
+            statement.before = None;
             return Ok(QueryResult {
                 returned,
                 backend: if dag_stats.duckdb_regions + dag_stats.postgres_regions > 0 {

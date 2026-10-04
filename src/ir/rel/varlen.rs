@@ -117,11 +117,7 @@ impl LoweringContext<'_> {
         let cte_name = format!("__graph_varlen_{uniq}");
         let edge_binding = format!("__w_edge_{uniq}");
         let input_columns = output_fields(&input.plan);
-        let effective_upper = match (length.max, self.options.varlen_recursive_ceiling) {
-            (Some(query), Some(ceiling)) => Some(query.min(ceiling)),
-            (Some(query), None) => Some(query),
-            (None, ceiling) => ceiling,
-        };
+        let effective_upper = length.max;
         // The accumulator holds intermediate nodes only; the endpoints are
         // already bound and are added when the full path is rendered.
         let seed_nodes = lit("");

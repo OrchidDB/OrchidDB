@@ -135,7 +135,6 @@ pub(crate) struct GroupAccumulator {
     finalizing: bool,
 }
 
-const GROUP_MEMBERS: &str = "__gremlin_group_members";
 const GROUP_KEY: &str = "__gremlin_group_key";
 const GROUP_VALUE: &str = "__gremlin_group_value";
 

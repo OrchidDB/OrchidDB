@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
@@ -32,8 +32,12 @@ const ARROW_SLICE_ROWS: usize = 2048;
 /// dropped. Override with `GRAPH_DUCKDB_SCAN_CACHE_BYTES`.
 const DEFAULT_SCAN_CACHE_BYTES: usize = 1 << 30;
 
-#[derive(Debug, Clone, Copy)]
+static NEXT_SCAN: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone)]
 struct ScanTableEntry {
+    name: String,
+    oid: i64,
     bytes: usize,
     last_used: u64,
 }
@@ -46,11 +50,12 @@ pub struct DuckDbExecutor {
     /// Content-addressed scan tables loaded into the session, by
     /// [`TableData::content_key`].
     scan_tables: BTreeMap<String, ScanTableEntry>,
-    /// Per-query scan names currently defined as views, and the content
-    /// table each one aliases plus the view's column names. Two queries can
-    /// reuse one scan name over identical content with different binding
-    /// column names, so the column list is part of the view identity.
-    scan_views: BTreeMap<String, (String, Vec<String>)>,
+    /// Aliases belong to one query, never to the caller's session namespace.
+    scan_views: BTreeMap<String, (i64, String, Vec<String>)>,
+    transient_scans: BTreeMap<String, i64>,
+    /// Cache invalidity does not end ownership. Defer drops until outside a
+    /// caller transaction, where rollback cannot resurrect forgotten tables.
+    retired_scans: BTreeMap<String, i64>,
     scan_clock: u64,
     arrow_registered: bool,
     timeout: Option<Duration>,
@@ -114,6 +119,8 @@ impl DuckDbExecutor {
             applied_setup: BTreeMap::new(),
             scan_tables: BTreeMap::new(),
             scan_views: BTreeMap::new(),
+            transient_scans: BTreeMap::new(),
+            retired_scans: BTreeMap::new(),
             scan_clock: 0,
             arrow_registered: false,
             timeout: None,
@@ -125,13 +132,24 @@ impl DuckDbExecutor {
 
     /// Return the underlying connection, opening an in-memory database on
     /// first use.
-    pub(crate) fn take_connection(&mut self) -> Option<Connection> { self.connection.take() }
+    pub(crate) fn take_connection(&mut self) -> Option<Connection> {
+        self.invalidate_setup();
+        let _ = self.clear_query_scans();
+        let _ = self.clear_retired_scans();
+        self.connection.take()
+    }
 
     pub fn connection(&mut self) -> SqlResult<&Connection> {
         self.ensure_connection()?;
         // Connection has interior mutability: callers can execute arbitrary
         // SQL, including rollback or replacing materialized tables.
         self.invalidate_setup();
+        // In a failed caller transaction even catalog reads may fail. Leave
+        // the connection available for ROLLBACK and clean up afterward.
+        if !self.in_transaction() {
+            self.clear_query_scans()?;
+            self.clear_retired_scans()?;
+        }
         Ok(self.connection.as_ref().expect("connection initialized"))
     }
 
@@ -190,6 +208,8 @@ impl DuckDbExecutor {
         conn.execute_batch("COMMIT")
             .map_err(|err| SqlError::Setup(format!("duckdb commit: {err}")))?;
         self.transaction_active = false;
+        self.clear_query_scans()?;
+        self.clear_retired_scans()?;
         Ok(())
     }
 
@@ -206,6 +226,8 @@ impl DuckDbExecutor {
             .map_err(|err| SqlError::Setup(format!("duckdb rollback: {err}")))?;
         self.transaction_active = false;
         self.invalidate_setup();
+        self.clear_query_scans()?;
+        self.clear_retired_scans()?;
         Ok(())
     }
 
@@ -213,44 +235,55 @@ impl DuckDbExecutor {
     /// whenever the session may have changed underneath the caches.
     fn invalidate_setup(&mut self) {
         self.applied_setup.clear();
-        self.scan_tables.clear();
-        self.scan_views.clear();
+        for (_, entry) in std::mem::take(&mut self.scan_tables) {
+            self.retired_scans.insert(entry.name, entry.oid);
+        }
     }
 
-    /// Load `table` once under its content key and alias it under the name
-    /// the query uses. Returns the content key.
+    /// Cache by content, materialize under a fresh temporary name, and alias
+    /// it under the query's scan name. Returns the logical content key.
     fn ensure_scan_table(&mut self, table: &TableData, cache: bool) -> SqlResult<String> {
         let key = table.content_key();
         self.scan_clock += 1;
         let conn = self.connection.as_ref().expect("connection initialized");
-        match self.scan_tables.get_mut(&key) {
-            Some(entry) if cache => entry.last_used = self.scan_clock,
+        let name = match self.scan_tables.get_mut(&key) {
+            Some(entry) if cache => {
+                entry.last_used = self.scan_clock;
+                entry.name.clone()
+            }
             _ => {
                 if !self.arrow_registered {
                     conn.register_table_function::<ArrowVTab>(ARROW_SCAN_FUNCTION)
                         .map_err(|err| SqlError::Setup(format!("duckdb arrow scan: {err}")))?;
                     self.arrow_registered = true;
                 }
-                load_scan_table(conn, &key, table, cache)?;
+                // Never use caller-visible content keys as physical table names.
+                // CREATE (without replacement) is the final ownership check even
+                // if a caller has deliberately occupied this generated name.
+                let name = format!("__orchid_scan_{}_{}", std::process::id(), NEXT_SCAN.fetch_add(1, Ordering::Relaxed));
+                load_scan_table(conn, &name, table, cache)?;
+                let oid = scan_object_oid(conn, &name, false)?.expect("created scan table");
                 if cache {
-                    self.scan_tables.insert(
-                        key.clone(),
-                        ScanTableEntry {
-                            bytes: table.byte_size(),
-                            last_used: self.scan_clock,
-                        },
-                    );
+                    self.scan_tables.insert(key.clone(), ScanTableEntry {
+                        name: name.clone(), oid, bytes: table.byte_size(), last_used: self.scan_clock,
+                    });
+                } else {
+                    self.transient_scans.insert(name.clone(), oid);
                 }
+                name
             }
-        }
+        };
         let view_columns = table
             .schema
             .fields()
             .iter()
             .map(|field| field.name().clone())
             .collect::<Vec<_>>();
-        let view_identity = (key.clone(), view_columns);
-        if !cache || self.scan_views.get(&table.name) != Some(&view_identity) {
+        if let Some((_, target, columns)) = self.scan_views.get(&table.name) {
+            if target == &name && columns == &view_columns { return Ok(key); }
+            return Err(SqlError::Setup(format!("conflicting scan alias: {}", table.name)));
+        }
+        {
             let dialect = SqlDialect::DuckDb;
             let columns = table
                 .schema
@@ -266,17 +299,43 @@ impl DuckDbExecutor {
                 })
                 .collect::<Vec<_>>();
             conn.execute_batch(&format!(
-                "CREATE OR REPLACE TEMP VIEW {} AS SELECT {} FROM {}",
+                "CREATE TEMP VIEW {} AS SELECT {} FROM temp.main.{}",
                 dialect.quote_ident(&table.name),
                 columns.join(", "),
-                dialect.quote_ident(&key)
+                dialect.quote_ident(&name)
             ))
             .map_err(|err| SqlError::Setup(format!("duckdb scan view: {err}")))?;
-            if cache {
-                self.scan_views.insert(table.name.clone(), view_identity);
-            }
+            let oid = scan_object_oid(conn, &table.name, true)?.expect("created scan view");
+            self.scan_views.insert(table.name.clone(), (oid, name, view_columns));
         }
         Ok(key)
+    }
+
+    /// Aliases and transaction-local tables are released even on query failure.
+    /// Retain failed drops so recovery can retry after a transaction rollback.
+    fn clear_query_scans(&mut self) -> SqlResult<()> {
+        if let Some(conn) = &self.connection {
+            for (name, (oid, _, _)) in self.scan_views.clone() {
+                drop_scan_object(conn, &name, oid, true)?;
+                self.scan_views.remove(&name);
+            }
+            for (name, oid) in self.transient_scans.clone() {
+                drop_scan_object(conn, &name, oid, false)?;
+                self.transient_scans.remove(&name);
+            }
+        }
+        Ok(())
+    }
+
+    fn clear_retired_scans(&mut self) -> SqlResult<()> {
+        if self.retired_scans.is_empty() || self.in_transaction() { return Ok(()); }
+        if let Some(conn) = &self.connection {
+            for (name, oid) in self.retired_scans.clone() {
+                drop_scan_object(conn, &name, oid, false)?;
+                self.retired_scans.remove(&name);
+            }
+        }
+        Ok(())
     }
 
     /// Drop least-recently-used scan tables beyond the byte budget, never
@@ -294,27 +353,21 @@ impl DuckDbExecutor {
             .scan_tables
             .iter()
             .filter(|(key, _)| !in_use.contains(*key))
-            .map(|(key, entry)| (entry.last_used, key.clone(), entry.bytes))
+            .map(|(key, entry)| (entry.last_used, key.clone(), entry.name.clone(), entry.oid, entry.bytes))
             .collect::<Vec<_>>();
         candidates.sort();
         let Some(conn) = self.connection.as_ref() else {
             return;
         };
-        for (_, key, bytes) in candidates {
+        for (_, key, name, oid, bytes) in candidates {
             if total <= budget {
                 break;
             }
-            let dropped = conn
-                .execute_batch(&format!(
-                    "DROP TABLE IF EXISTS {}",
-                    SqlDialect::DuckDb.quote_ident(&key)
-                ))
-                .is_ok();
+            let dropped = drop_scan_object(conn, &name, oid, false).is_ok();
             if !dropped {
                 continue;
             }
             self.scan_tables.remove(&key);
-            self.scan_views.retain(|_, (target, _)| *target != key);
             total -= bytes;
         }
     }
@@ -342,18 +395,28 @@ impl SqlExecutor for DuckDbExecutor {
             return self.run(setup, query);
         }
         self.ensure_connection()?;
+        self.clear_query_scans()?;
+        self.clear_retired_scans()?;
         // Tables created inside a caller's transaction vanish on rollback,
         // so they are only remembered when they commit immediately.
         let cache = !self.in_transaction();
         let mut in_use = BTreeSet::new();
         for table in tables {
-            in_use.insert(self.ensure_scan_table(table, cache)?);
+            match self.ensure_scan_table(table, cache) {
+                Ok(key) => { in_use.insert(key); }
+                Err(error) => {
+                    let _ = self.clear_query_scans();
+                    if cache { self.evict_scan_tables(&BTreeSet::new()); }
+                    return Err(error);
+                }
+            }
         }
         let result = self.run(setup, query);
+        let cleanup = self.clear_query_scans();
         if cache {
             self.evict_scan_tables(&in_use);
         }
-        result
+        result.and_then(|rows| { cleanup?; Ok(rows) })
     }
 
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
@@ -367,15 +430,28 @@ impl DuckDbExecutor {
     /// full-width scalar keys without a lossy row/string round trip.
     pub(crate) fn execute_prepared_arrow(&mut self, prepared: &super::PreparedSql) -> SqlResult<RecordBatch> {
         self.ensure_connection()?;
+        self.clear_query_scans()?;
+        self.clear_retired_scans()?;
         let cache=!self.in_transaction();
         let mut in_use=BTreeSet::new();
-        for table in &prepared.tables {in_use.insert(self.ensure_scan_table(table,cache)?);}
+        for table in &prepared.tables {
+            match self.ensure_scan_table(table, cache) {
+                Ok(key) => { in_use.insert(key); }
+                Err(error) => {
+                    let _ = self.clear_query_scans();
+                    if cache { self.evict_scan_tables(&BTreeSet::new()); }
+                    return Err(error);
+                }
+            }
+        }
         let result=self.run_query(&prepared.setup,&prepared.query,execute_arrow);
+        let cleanup = self.clear_query_scans();
         if cache {self.evict_scan_tables(&in_use);}
-        result
+        result.and_then(|batch| { cleanup?; Ok(batch) })
     }
     fn run_query<T: Send + 'static>(&mut self, setup: &[String], query: &str, execute: fn(&Connection, &str) -> SqlResult<T>) -> SqlResult<T> {
         self.ensure_connection()?;
+        self.clear_retired_scans()?;
         let conn = self.connection.as_ref().expect("connection initialized");
         let wrap_setup = !self.in_transaction();
         let mut blocks: Vec<Vec<String>> = Vec::new();
@@ -501,6 +577,23 @@ impl DuckDbExecutor {
         result
     }
 }
+// Check catalog identity as well as name: arbitrary caller SQL may have
+// replaced an object after the cache was invalidated.
+fn scan_object_oid(conn: &Connection, name: &str, view: bool) -> SqlResult<Option<i64>> {
+    let kind = if view { "view" } else { "table" };
+    conn.query_row(&format!(
+        "SELECT max({kind}_oid)::BIGINT FROM duckdb_{kind}s() WHERE database_name = 'temp' AND schema_name = 'main' AND lower({kind}_name) = lower(?)"
+    ), [name], |row| row.get(0)).map_err(|e| SqlError::Setup(format!("duckdb scan ownership: {e}")))
+}
+fn drop_scan_object(conn: &Connection, name: &str, oid: i64, view: bool) -> SqlResult<()> {
+    if scan_object_oid(conn, name, view)? == Some(oid) {
+        let kind = if view { "VIEW" } else { "TABLE" };
+        conn.execute_batch(&format!("DROP {kind} temp.main.{}", SqlDialect::DuckDb.quote_ident(name)))
+            .map_err(|e| SqlError::Setup(format!("duckdb scan cleanup: {e}")))?;
+    }
+    Ok(())
+}
+
 fn execute_arrow(conn: &Connection, query: &str) -> SqlResult<RecordBatch> {
     let mut statement=conn.prepare(query).map_err(|e|SqlError::Execution(format!("duckdb prepare: {e}")))?;
     let reader=statement.query_arrow([]).map_err(|e|SqlError::Execution(format!("duckdb query: {e}")))?;
@@ -572,11 +665,12 @@ fn load_scan_table(conn: &Connection, key: &str, table: &TableData, atomic: bool
     };
     let quoted = SqlDialect::DuckDb.quote_ident(key);
 
+    let create = create_table_sql(SqlDialect::DuckDb, &renamed)?
+        .replacen("CREATE OR REPLACE TABLE", "CREATE TEMP TABLE", 1);
+    let created = std::cell::Cell::new(false);
     let arrow_load = |conn: &Connection| -> Result<(), String> {
-        conn.execute_batch(
-            &create_table_sql(SqlDialect::DuckDb, &renamed).map_err(|e| e.to_string())?,
-        )
-        .map_err(|err| err.to_string())?;
+        conn.execute_batch(&create).map_err(|err| err.to_string())?;
+        created.set(true);
         let insert = format!("INSERT INTO {quoted} SELECT * FROM {ARROW_SCAN_FUNCTION}(?, ?)");
         for batch in &renamed.batches {
             let mut offset = 0;
@@ -597,24 +691,27 @@ fn load_scan_table(conn: &Connection, key: &str, table: &TableData, atomic: bool
     }
     let loaded = match arrow_load(conn) {
         Ok(()) => Ok(()),
-        Err(arrow_err) => {
+        Err(arrow_err) if created.get() => {
             // Undo the partial Arrow load before retrying with literal rows.
+            // If CREATE failed, the object is not ours: never replace it.
             let retry = if atomic {
                 conn.execute_batch("ROLLBACK; BEGIN TRANSACTION")
                     .map_err(|err| format!("{arrow_err}; rollback: {err}"))
             } else {
-                Ok(())
+                conn.execute_batch(&format!("DROP TABLE temp.main.{quoted}"))
+                    .map_err(|err| err.to_string())
             };
             retry.and_then(|()| {
                 let statements =
                     table_setup_sql(SqlDialect::DuckDb, &renamed).map_err(|e| e.to_string())?;
                 for statement in statements {
-                    conn.execute_batch(&statement)
+                    conn.execute_batch(&statement.replacen("CREATE OR REPLACE TABLE", "CREATE TEMP TABLE", 1))
                         .map_err(|err| format!("{err} (arrow load: {arrow_err})"))?;
                 }
                 Ok(())
             })
         }
+        Err(err) => Err(err),
     };
     match loaded {
         Ok(()) => {
@@ -822,5 +919,103 @@ mod tests {
                 SqlValue::Text("2024-06-15".into()),
             ]]
         );
+    }
+}
+
+
+#[cfg(test)]
+mod audit_regressions {
+    use super::*;
+    use arrow::array::Int64Array;
+    #[test]
+    fn audit_scan_collision_preserves_caller_table() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            arrow::datatypes::DataType::Int64,
+            false,
+        )]));
+        let table = TableData {
+            name: "audit_scan".into(),
+            schema: schema.clone(),
+            batches: vec![
+                RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![7]))]).unwrap(),
+            ],
+        };
+        for temporary in [false, true] {
+            let conn = Connection::open_in_memory().unwrap();
+            let key = SqlDialect::DuckDb.quote_ident(&table.content_key());
+            conn.execute_batch(&format!(
+                "CREATE {} TABLE {key} (value BIGINT); INSERT INTO {key} VALUES (42)",
+                if temporary { "TEMP" } else { "" }
+            ))
+            .unwrap();
+            let mut executor = DuckDbExecutor::from_connection(conn);
+            assert_eq!(
+                executor
+                    .run_with_tables(
+                        std::slice::from_ref(&table),
+                        &[],
+                        "SELECT value FROM audit_scan"
+                    )
+                    .unwrap(),
+                vec![vec![SqlValue::Int(7)]]
+            );
+            assert_eq!(
+                executor
+                    .run(&[], &format!("SELECT value FROM {key}"))
+                    .unwrap(),
+                vec![vec![SqlValue::Int(42)]],
+                "temporary={temporary}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod audit_scan_ownership {
+    use super::*;
+    use arrow::array::Int64Array;
+    fn table() -> TableData {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "v",
+            arrow::datatypes::DataType::Int64,
+            false,
+        )]));
+        TableData {
+            name: "scan_input".into(),
+            schema: schema.clone(),
+            batches: vec![
+                RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![7]))]).unwrap(),
+            ],
+        }
+    }
+    #[test]
+    fn occupied_physical_name_never_enters_replacement_fallback() {
+        for atomic in [false, true] {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(
+                "CREATE TEMP TABLE occupied (v BIGINT); INSERT INTO occupied VALUES (42)",
+            )
+            .unwrap();
+            assert!(load_scan_table(&conn, "occupied", &table(), atomic).is_err());
+            assert_eq!(
+                conn.query_row("SELECT v FROM occupied", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                42
+            );
+        }
+    }
+    #[test]
+    fn transaction_scans_are_released_after_success_and_failure() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("BEGIN").unwrap();
+        let mut executor = DuckDbExecutor::from_connection(conn);
+        for query in ["SELECT v FROM scan_input", "SELECT missing FROM scan_input"] {
+            let result = executor.run_with_tables(&[table()], &[], query);
+            assert_eq!(result.is_ok(), !query.contains("missing"));
+            let conn = executor.connection.as_ref().unwrap();
+            assert_eq!(conn.query_row("SELECT count(*) FROM duckdb_tables() WHERE starts_with(table_name, '__orchid_scan_')", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
+        }
+        executor.rollback().unwrap();
     }
 }

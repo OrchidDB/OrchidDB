@@ -69,6 +69,13 @@ again to start client packaging once every shared compiler is available.
 | Python wheel | Yes | Yes | Yes | Yes |
 | JavaScript / C++ | Yes | Yes | Yes | — |
 
+Mac release jobs use GitHub's `macos-26` (ARM64) and `macos-26-intel`
+(Intel) images and their Apple build tools. Native, JNI, and CLI builds retain
+`MACOSX_DEPLOYMENT_TARGET=11.0`; the runner OS is not the minimum supported OS.
+Rust remains pinned to 1.93.1 across release producers. The collector accepts
+both the new Python/C++ artifact names and the older `macos-14` / `macos-15-intel`
+names, so completed pre-upgrade runs remain reusable.
+
 Python, JavaScript, and C++ reuse the shared compiler's verified artifacts.
 JNI and the CLI have separate binaries. The CLI uses official, checksum-pinned
 DuckDB static libraries, avoiding a fresh DuckDB C++ compilation on each runner.

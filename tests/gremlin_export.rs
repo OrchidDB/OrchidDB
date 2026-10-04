@@ -570,3 +570,61 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
 }
 
 use crate::datafusion_test::execute_rows;
+
+
+#[test]
+fn audit_graphson_roundtrips_big_numeric_element_ids() {
+    let directory = Directory::new();
+    let file = directory.path("numeric-ids.json");
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node("a", BTreeMap::new());
+    let b = graph.insert_node("b", BTreeMap::new());
+    let aid = Value::BigInt("123456789012345678901234567890".parse().unwrap());
+    let bid = Value::BigDecimal("1.2300".parse().unwrap());
+    graph.set_element_public_id(&a, aid.clone()).unwrap();
+    graph.set_element_public_id(&b, bid.clone()).unwrap();
+    let edge = graph.insert_edge("link", &a, &b, BTreeMap::new()).unwrap();
+    let eid = Value::BigDecimal("999.001".parse().unwrap());
+    graph.set_element_public_id(&edge, eid.clone()).unwrap();
+    let prop = graph
+        .set_vertex_property(
+            &a,
+            "name",
+            Value::String("Ada".into()),
+            Cardinality::Single,
+            BTreeMap::new(),
+        )
+        .unwrap();
+    let pid = Value::BigInt("999999999999999999999999999999".parse().unwrap());
+    graph
+        .set_vertex_property_public_id(&prop, pid.clone())
+        .unwrap();
+    query(&graph, &file, ".write()").unwrap();
+    let restored = PropertyGraph::new();
+    query(&restored, &file, ".read()").unwrap();
+    for (label, expected) in [("a", aid), ("b", bid)] {
+        let vertex = Value::Node {
+            label: label.into(),
+            id: restored.node_ids(label).unwrap()[0].clone(),
+        };
+        assert_eq!(restored.element_public_id(&vertex), expected);
+        if label == "a" {
+            assert_eq!(
+                restored.element_public_id(&restored.properties(&vertex, &["name".into()])[0]),
+                pid
+            );
+        }
+    }
+    let ast = parse_traversal("g.E().id()").unwrap();
+    let plan = GremlinPlanner::new().plan(&ast).unwrap();
+    assert_eq!(
+        execute_rows(&plan, &restored).unwrap()[0].bindings["current"],
+        eid
+    );
+    let ast = parse_traversal("g.V().hasLabel('a').out('link').label()").unwrap();
+    let plan = GremlinPlanner::new().plan(&ast).unwrap();
+    assert_eq!(
+        execute_rows(&plan, &restored).unwrap()[0].bindings["current"],
+        Value::String("b".into())
+    );
+}

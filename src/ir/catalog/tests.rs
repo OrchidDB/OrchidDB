@@ -149,7 +149,7 @@ fn detach_delete_removes_edges_and_repeat_is_idempotent() {
 
 #[test]
 fn null_property_is_not_tracked_as_a_key() {
-    let mut graph = PropertyGraph::new();
+    let graph = PropertyGraph::new();
     graph.insert_node("P", BTreeMap::from([("x".to_string(), Value::Null)]));
     assert!(graph.node_property_keys("P").is_empty());
     assert_eq!(graph.node_property("P", 0.into(), "x"), Value::Null);
@@ -157,7 +157,7 @@ fn null_property_is_not_tracked_as_a_key() {
 
 #[test]
 fn set_property_to_null_does_not_register_the_key() {
-    let mut graph = PropertyGraph::new();
+    let graph = PropertyGraph::new();
     let n = graph.insert_node("P", BTreeMap::new());
     graph.set_property(&n, "x", Value::Null).unwrap();
     assert!(graph.node_property_keys("P").is_empty());

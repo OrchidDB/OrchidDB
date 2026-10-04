@@ -206,6 +206,7 @@ struct DuckDbFunction {
     signature: Signature,
 }
 
+#[cfg(feature = "duckdb")]
 pub(super) fn is_duck_function(function: &ScalarUDF) -> bool {
     function.inner().as_any().is::<DuckDbFunction>()
 }

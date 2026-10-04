@@ -151,6 +151,17 @@ impl OntologyMapping {
     pub fn predicate_for_iri(&self, iri: &str) -> Option<&PredicateMapping> {
         self.predicates.get(iri)
     }
+
+    /// Resolve shared vocabulary against the subject's mapped class. Keep
+    /// last-declaration precedence only within the same applicable domain.
+    pub fn predicate_for_subject(&self, iri: &str, label: &str) -> Option<&PredicateMapping> {
+        self.declarations.iter().rev().find(|mapping| match mapping {
+            PredicateMapping::Property { iri: candidate, domain_label, .. } =>
+                candidate == iri && domain_label == label,
+            PredicateMapping::Relationship { iri: candidate, domain_label, .. } =>
+                candidate == iri && domain_label.as_deref().is_none_or(|domain| domain == label),
+        })
+    }
 }
 
 impl OntologyMapping {

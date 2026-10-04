@@ -12,6 +12,7 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalSourceContext<'input>,
     ) {
+        stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || {
         // The grammar is left-recursive: `g.X.Y.Z` is parsed as
         // ((g.X).Y).Z so the innermost method is the deepest. Walk inward
         // first, then handle the outermost self-method on the way back so
@@ -22,6 +23,7 @@ impl LoweringVisitor {
         if let Some(method) = ctx.traversalSourceSelfMethod() {
             self.visit_traversalSourceSelfMethod_lower(&method);
         }
+        });
     }
 
     pub(super) fn visit_traversalSourceSelfMethod_lower<'input>(
@@ -36,8 +38,16 @@ impl LoweringVisitor {
         // whole traversal fails to parse).
         let errors_before = self.errors.len();
         if let Some(c) = ctx.traversalSourceSelfMethod_withoutStrategies() {
-            if c.get_text().split(|c: char| !c.is_alphanumeric()).any(|s| s == "PathRetractionStrategy") {
-                self.steps.push(Step::WithoutPathRetraction);
+            let mut classes = c.classType().into_iter().collect::<Vec<_>>();
+            if let Some(expr) = c.classTypeList().and_then(|list| list.classTypeExpr()) {
+                classes.extend(expr.classType_all());
+            }
+            for class in classes {
+                match class.get_text().rsplit('.').next() {
+                    Some("PathRetractionStrategy") => self.steps.push(Step::WithoutPathRetraction),
+                    Some("ConnectiveStrategy") => self.without_connective = true,
+                    _ => (),
+                }
             }
             return;
         }
@@ -113,6 +123,9 @@ impl LoweringVisitor {
                     .classType()
                     .map(|ct| ct.get_text())
                     .unwrap_or_default();
+                if class_name.rsplit('.').next() == Some("ConnectiveStrategy") {
+                    self.without_connective = false;
+                }
                 if class_name == "SeedStrategy" {
                     for cfg in strat.configuration_all() {
                         let key = cfg.keyword().map(|k| k.get_text())

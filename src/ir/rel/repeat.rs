@@ -25,30 +25,21 @@
 //!   `until` / `emit` see the post-step count.
 //!
 //! Unbounded loops terminate through the frontier becoming empty or `until`.
-//! A loop that is still live after
-//! [`MAX_REPEAT_ITERATIONS`] iterations fails loudly instead of returning a
-//! truncated answer: the recursive term raises a runtime error.
+//! There is no engine-imposed iteration ceiling; callers control resources
+//! through backend execution controls such as deadlines and cancellation.
 //!
 //! Bodies the recursive form cannot express (per-iteration barriers such as
 //! `order`/`limit`/`dedup`, nested recursion, bodies that would reference the
 //! work table more than once) fall back to bounded unrolling for small
 //! `times(n)` loops and decline otherwise.
 
-use std::any::Any;
-
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::datasource::cte_worktable::CteWorkTable;
-use datafusion::logical_expr::{
-    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
-};
 
 use super::varlen::case_when;
 use super::*;
 use crate::ir::plan::EmitMode;
 
-/// Loop ceiling shared with the relational control kernel; reaching it is an
-/// error, never a truncated result.
-const MAX_REPEAT_ITERATIONS: u32 = 10_000;
 /// Largest `times(n)` the unrolled fallback expands.
 const REPEAT_UNROLL_CAP: u32 = 8;
 const LOOPS_BINDING: &str = "__loops";
@@ -538,8 +529,8 @@ impl LoweringContext<'_> {
         } else {
             // Without `times`/`until` the loop only ends once the frontier
             // is empty, so nothing survives it. The recursion still runs (and
-            // still trips the iteration guard) because the filter is not a
-            // constant.
+            // remains subject to backend execution controls) because the filter
+            // is not a constant.
             Some(binary(depth(), BinaryOp::Lt, lit(0_i64)))
         };
         let mut selected = recursive_query;
@@ -1082,9 +1073,7 @@ fn build_static_term(
         .build()?)
 }
 
-/// Rows of the work table that advance into another iteration. When the
-/// loop is not bounded by a `times(n)` within the iteration ceiling, a live
-/// row at the ceiling raises an error instead of being silently dropped.
+/// Rows that advance, respecting only explicit times/until semantics.
 fn live_filter(times: Option<u32>, stop_col: Option<&str>, depth_col: &str) -> Option<Expr> {
     let mut live: Option<Expr> = None;
     if let Some(stop_col) = stop_col {
@@ -1097,28 +1086,7 @@ fn live_filter(times: Option<u32>, stop_col: Option<&str>, depth_col: &str) -> O
             None => bound,
         });
     }
-    let guarded = times.is_none_or(|times| times > MAX_REPEAT_ITERATIONS);
-    if !guarded {
-        return live;
-    }
-    let at_ceiling = binary(
-        col_exact(depth_col),
-        BinaryOp::Gte,
-        lit(i64::from(MAX_REPEAT_ITERATIONS)),
-    );
-    let live_expr = live.unwrap_or_else(|| lit(true));
-    Some(case_when(
-        Expr::and(live_expr.clone(), at_ceiling),
-        repeat_limit_error(),
-        live_expr,
-    ))
-}
-
-fn repeat_limit_error() -> Expr {
-    let udf = Arc::new(ScalarUDF::new_from_impl(RepeatLimitError::new()));
-    udf.call(vec![lit(format!(
-        "repeat exceeded {MAX_REPEAT_ITERATIONS} iterations"
-    ))])
+    live
 }
 
 /// Only row-local operators may appear in a recursive body: barriers observe
@@ -1229,54 +1197,6 @@ fn reads_work_table(plan: &LogicalPlan, cte_name: &str) -> bool {
         Ok(TreeNodeRecursion::Continue)
     });
     found
-}
-
-/// `error(message)`: raises at execution time for any row that reaches it.
-/// DuckDB provides a built-in of the same name, so the unparsed SQL keeps the
-/// behavior; it is volatile so no optimizer folds it away.
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct RepeatLimitError {
-    signature: Signature,
-}
-
-impl RepeatLimitError {
-    fn new() -> Self {
-        Self {
-            signature: Signature::exact(vec![DataType::Utf8], Volatility::Volatile),
-        }
-    }
-}
-
-impl ScalarUDFImpl for RepeatLimitError {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn name(&self) -> &str {
-        "error"
-    }
-
-    fn signature(&self) -> &Signature {
-        &self.signature
-    }
-
-    fn return_type(&self, _arg_types: &[DataType]) -> datafusion::common::Result<DataType> {
-        Ok(DataType::Boolean)
-    }
-
-    fn invoke_with_args(
-        &self,
-        args: ScalarFunctionArgs,
-    ) -> datafusion::common::Result<ColumnarValue> {
-        if args.number_rows == 0 {
-            return Ok(ColumnarValue::Scalar(ScalarValue::Boolean(None)));
-        }
-        let message = match args.args.first() {
-            Some(ColumnarValue::Scalar(ScalarValue::Utf8(Some(message)))) => message.clone(),
-            _ => "repeat iteration limit exceeded".to_string(),
-        };
-        Err(DataFusionError::Execution(message))
-    }
 }
 
 /// Follow the input side of applies first: their right-hand probes have a

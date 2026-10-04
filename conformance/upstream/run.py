@@ -38,11 +38,13 @@ def file_identity(path):
  path=Path(path).resolve()
  return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 def execution_profile(engine):
+ dialect=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))['dialect']
+ sql_engine={'duckdb':'DuckDB','postgres':'PostgreSQL'}.get(dialect,dialect)
  return {'traversal_language':'gremlin-groovy' if engine in JVM_ENGINES else 'gremlin-language',
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='orchiddb' else 'provider default',
-         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))['dialect']+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
+         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+sql_engine+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('ORCHIDDB_JVM_STORE',str(REPO/'target/debug/orchiddb-jvm-store')))

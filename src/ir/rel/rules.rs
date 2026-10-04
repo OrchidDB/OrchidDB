@@ -136,6 +136,7 @@ impl LoweringContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datafusion::prelude::SessionContext;
     use datafusion::common::{Constraint, Constraints};
 
     fn table(name: &str, values: Vec<Option<i64>>, primary: bool) -> LogicalPlan {

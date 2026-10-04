@@ -29,7 +29,7 @@ fn long_create_statement_executes_on_a_small_worker_stack() {
             runtime.block_on(async {
                 for raw_rows in [false, true] {
                     let graph = PropertyGraph::new();
-                    let ast = parse_query(&creates(500)).unwrap();
+                    let ast = parse_query(&creates(2048)).unwrap();
                     let plan = CypherPlanner::new().plan(&ast).unwrap();
                     if raw_rows {
                         execute_rows_with_jvm(&plan, &graph, Default::default())
@@ -45,7 +45,7 @@ fn long_create_statement_executes_on_a_small_worker_stack() {
                     assert_eq!(
                         arrow::util::display::array_value_to_string(returned.batch.column(0), 0)
                             .unwrap(),
-                        "500"
+                        "2048"
                     );
                 }
             });
@@ -54,7 +54,7 @@ fn long_create_statement_executes_on_a_small_worker_stack() {
 }
 
 #[test]
-fn excessive_plan_depth_returns_an_error_before_mutating_the_graph() {
+fn failure_after_a_deep_create_chain_rolls_back_the_statement() {
     on_worker_stack(2 * 1024 * 1024, || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -63,13 +63,23 @@ fn excessive_plan_depth_returns_an_error_before_mutating_the_graph() {
         runtime.block_on(async {
             let graph = PropertyGraph::new();
             let ast = parse_query(&creates(600)).unwrap();
-            let plan = CypherPlanner::new().plan(&ast).unwrap();
+            let mut plan = CypherPlanner::new().plan(&ast).unwrap();
+            plan.root = Box::new(orchiddb::ir::plan::Node::GraphCreate {
+                graph: "g".into(),
+                nodes: vec![orchiddb::ir::plan::CreateNode {
+                    bind: None,
+                    label: "Invalid".into(),
+                    labels: None,
+                    properties: Some(orchiddb::ir::expr::IrExpr::lit_int(1)),
+                }],
+                edges: vec![],
+                input: plan.root,
+            });
             let error = execute(&plan, &graph, None).await.unwrap_err();
-            assert!(error.contains("query plan depth exceeds the execution limit of 512"));
+            assert!(error.contains("map"), "{error}");
             let error = execute_rows_with_jvm(&plan, &graph, Default::default())
-                .await
-                .unwrap_err();
-            assert!(error.contains("query plan depth exceeds the execution limit of 512"));
+                .await.unwrap_err();
+            assert!(error.contains("map"), "{error}");
 
             let ast = parse_query("MATCH (n) RETURN count(n)").unwrap();
             let plan = CypherPlanner::new().plan(&ast).unwrap();

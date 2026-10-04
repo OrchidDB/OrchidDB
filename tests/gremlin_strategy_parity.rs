@@ -67,3 +67,57 @@ fn mixed_decimal_predicates_use_numberhelper_promotion() {
         ]
     );
 }
+
+
+#[test]
+fn audit_connective_strategy_literal_is_not_configuration() {
+    let graph = PropertyGraph::new();
+    for phrase in [
+        "withoutStrategies(ConnectiveStrategy",
+        "withoutStrategies(ConnectiveStrategy)",
+    ] {
+        let query = format!("g.inject(1).and().constant('{phrase}')");
+        assert_eq!(values(&query, &graph), vec![Value::String(phrase.into())]);
+    }
+    for source in [
+        "g.withoutStrategies( ConnectiveStrategy )",
+        "g.withoutStrategies(PathRetractionStrategy, ConnectiveStrategy)",
+    ] {
+        assert!(values(&format!("{source}.inject(1).and().constant('x')"), &graph).is_empty());
+    }
+    assert_eq!(
+        values(
+            "g.withoutStrategies(ConnectiveStrategy).withStrategies(ConnectiveStrategy).inject(1).and().constant('x')",
+            &graph
+        ),
+        vec![Value::String("x".into())]
+    );
+}
+#[test]
+fn audit_has_key_predicate_filters_properties() {
+    let graph = PropertyGraph::new();
+    graph.insert_node(
+        "person",
+        [
+            ("name".into(), Value::String("Ada".into())),
+            ("age".into(), Value::Int(37)),
+        ]
+        .into(),
+    );
+    for predicate in [
+        "P.eq('name')",
+        "P.within('name','missing')",
+        "P.neq('age')",
+        "P.eq('name').and(P.neq('age'))",
+    ] {
+        assert_eq!(
+            values(
+                &format!("g.V().properties().hasKey({predicate}).key()"),
+                &graph
+            ),
+            vec![Value::String("name".into())],
+            "{predicate}"
+        );
+    }
+    assert!(values("g.V().properties().hasKey(P.eq('missing')).key()", &graph).is_empty());
+}
