@@ -20,6 +20,7 @@
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 mod logical_functions;
+mod structured;
 pub(crate) mod json;
 mod json_transform;
 mod json_rows;
@@ -35,6 +36,7 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
     if let SqlDialect::Custom(adapter) = dialect {
         return adapter.exchange_literal(&value, &ty);
     }
+    if structured::is_structured(&ty) { return structured::literal(dialect, &value); }
     let target = dialect.sql_type(&ty)?;
     let literal = if value.is_null() { "NULL".into() } else {
         match value {
@@ -221,6 +223,9 @@ impl SqlDialect {
         if crate::ir::functions::domain::is_json(data_type) {
             return Ok(if self == Self::Postgres { "JSONB" } else { "JSON" }.into());
         }
+        if structured::is_structured(data_type) {
+            return if self == Self::Postgres { Ok("JSONB".into()) } else { crate::ir::functions::duckdb_type(data_type).map_err(SqlError::from) };
+        }
         // List-valued properties are ordinary graph data (a `tags` array on a
         // node), so they have to survive the round trip through the engine.
         if let DataType::List(inner)
@@ -236,6 +241,12 @@ impl SqlDialect {
             DataType::Int64 | DataType::UInt32 | DataType::UInt64 => "BIGINT",
             DataType::Float32 => "REAL",
             DataType::Float64 => self.double_type(),
+            DataType::Date32 => "DATE",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, None) => "TIMESTAMP",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None) if self == Self::DuckDb => "TIMESTAMP_NS",
+            DataType::Time32(_) | DataType::Time64(arrow::datatypes::TimeUnit::Microsecond) => "TIME",
+            DataType::Binary | DataType::LargeBinary | DataType::BinaryView => if self == Self::Postgres { "BYTEA" } else { "BLOB" },
+
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => match self {
                 Self::DuckDb => "VARCHAR",
                 Self::Postgres => "TEXT",
@@ -448,6 +459,7 @@ pub enum SqlValue {
     Text(String),
     /// A nominal value whose logical identity must survive driver transport.
     Domain(ScalarValue),
+    Binary(Vec<u8>),
     List(Vec<SqlValue>),
 }
 
@@ -469,6 +481,7 @@ fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
         value.as_ref().map_or(SqlValue::Null, render)
     }
     Ok(match scalar {
+        ScalarValue::Struct(_) | ScalarValue::Map(_) | ScalarValue::Union(_, _, _) => SqlValue::Domain(scalar.clone()),
         ScalarValue::Null => SqlValue::Null,
         ScalarValue::Boolean(v) => opt(v, |b| SqlValue::Bool(*b)),
         ScalarValue::Int8(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
@@ -487,6 +500,7 @@ fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
         },
         ScalarValue::Float32(v) => opt(v, |f| SqlValue::Float(f64::from(*f))),
         ScalarValue::Float64(v) => opt(v, |f| SqlValue::Float(*f)),
+        ScalarValue::Binary(v) | ScalarValue::LargeBinary(v) | ScalarValue::BinaryView(v) => opt(v, |b| SqlValue::Binary(b.clone())),
         ScalarValue::Decimal128(v, _precision, scale) => match v {
             Some(value) => SqlValue::ExactNumber(render_scaled_i128(*value, *scale)),
             None => SqlValue::Null,
@@ -847,7 +861,7 @@ mod tests {
     #[test]
     fn rejects_unsupported_ddl_types() {
         let err = SqlDialect::Postgres
-            .ddl_type(&DataType::Binary)
+            .ddl_type(&DataType::Duration(arrow::datatypes::TimeUnit::Microsecond))
             .unwrap_err();
         assert!(matches!(err, SqlError::Unsupported(_)));
     }

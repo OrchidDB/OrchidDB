@@ -52,7 +52,7 @@ impl SqlExecutor for PostgresExecutor {
         }
         let rows = tx
             .query(query, &[])
-            .map_err(|err| SqlError::Execution(format!("postgres query: {err}")))?;
+            .map_err(|err| SqlError::Execution(format!("postgres query: {}", err.as_db_error().map_or_else(|| err.to_string(), |e| e.message().to_owned()))))?;
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut cells = Vec::with_capacity(row.columns().len());
@@ -89,6 +89,34 @@ fn convert_cell(row: &postgres::Row, index: usize, ty: &Type) -> SqlResult<SqlVa
         get::<f32>(row, index)?.map(|v| SqlValue::Float(f64::from(v)))
     } else if *ty == Type::FLOAT8 {
         get::<f64>(row, index)?.map(SqlValue::Float)
+    } else if *ty == Type::BYTEA {
+        get::<Vec<u8>>(row, index)?.map(SqlValue::Binary)
+    } else if *ty == Type::DATE {
+        get::<chrono::NaiveDate>(row, index)?.map(|v| SqlValue::Text(v.to_string()))
+    } else if *ty == Type::TIME {
+        get::<chrono::NaiveTime>(row, index)?.map(|v| SqlValue::Text(v.to_string()))
+    } else if *ty == Type::TIMESTAMP {
+        get::<chrono::NaiveDateTime>(row, index)?.map(|v| SqlValue::Text(v.to_string()))
+    } else if *ty == Type::TIMESTAMPTZ {
+        get::<chrono::DateTime<chrono::Utc>>(row, index)?.map(|v| SqlValue::Text(v.to_rfc3339()))
+    } else if let postgres::types::Kind::Array(element) = ty.kind() {
+        macro_rules! array {
+            ($t:ty, $convert:expr) => {
+                get::<Vec<Option<$t>>>(row, index)?.map(|values| SqlValue::List(values.into_iter().map(|v| v.map_or(SqlValue::Null, $convert)).collect()))
+            };
+        }
+        match *element {
+            Type::BOOL => array!(bool, SqlValue::Bool),
+            Type::INT2 => array!(i16, |v| SqlValue::Int(i64::from(v))),
+            Type::INT4 => array!(i32, |v| SqlValue::Int(i64::from(v))),
+            Type::INT8 => array!(i64, SqlValue::Int),
+            Type::FLOAT4 => array!(f32, |v| SqlValue::Float(f64::from(v))),
+            Type::FLOAT8 => array!(f64, SqlValue::Float),
+            Type::TEXT | Type::VARCHAR => array!(String, SqlValue::Text),
+            Type::BYTEA => array!(Vec<u8>, SqlValue::Binary),
+            Type::JSON | Type::JSONB => array!(JsonCell, |v| SqlValue::Domain(v.0)),
+            _ => return Err(SqlError::Unsupported(format!("postgres array element type {element}"))),
+        }
     } else if *ty == Type::TEXT || *ty == Type::VARCHAR || *ty == Type::BPCHAR || *ty == Type::NAME
     {
         get::<String>(row, index)?.map(SqlValue::Text)

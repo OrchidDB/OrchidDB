@@ -433,11 +433,11 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         }
     }
     if name.trim_matches('"').starts_with("__orchiddb_logical_") {
-        let implementation = super::logical_functions::mapping(&name)
-            .ok_or_else(|| SqlError::Unsupported(format!("logical function {name} has no {} mapping", dialect.name())))?;
         let ast::FunctionArguments::List(arguments) = &function.args else {
             return Err(SqlError::Unsupported("invalid logical function arguments".into()));
         };
+        let implementation = super::logical_functions::mapping(&name, arguments.args.len())
+            .ok_or_else(|| SqlError::Unsupported(format!("logical function {name} has no {} mapping for {} arguments", dialect.name(), arguments.args.len())))?;
         let args = arguments.args.iter().map(|arg| match arg {
             ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(expr)) => Ok(expr.clone()),
             _ => Err(SqlError::Unsupported("logical functions require positional expressions".into())),
@@ -666,6 +666,28 @@ pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDi
     impl ast::VisitorMut for Arguments<'_> {
         type Break = SqlError;
         fn post_visit_expr(&mut self, expr: &mut ast::Expr) -> ControlFlow<Self::Break> {
+            if let ast::Expr::Array(array) = expr {
+                let mut expanded = Vec::new();
+                for element in std::mem::take(&mut array.elem) {
+                    if matches!(&element, ast::Expr::Identifier(id) if id.quote_style.is_none() && id.value == "__args") {
+                        expanded.extend(self.0.iter().cloned().map(|arg| ast::Expr::Nested(Box::new(arg))));
+                    } else { expanded.push(element); }
+                }
+                array.elem = expanded;
+            }
+            if let ast::Expr::Function(function) = expr {
+                if let ast::FunctionArguments::List(arguments) = &mut function.args {
+                    let mut expanded = Vec::new();
+                    for argument in std::mem::take(&mut arguments.args) {
+                        if matches!(&argument, ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(ast::Expr::Identifier(id))) if id.quote_style.is_none() && id.value == "__args") {
+                            expanded.extend(self.0.iter().cloned().map(|arg| ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(ast::Expr::Nested(Box::new(arg))))));
+                        } else {
+                            expanded.push(argument);
+                        }
+                    }
+                    arguments.args = expanded;
+                }
+            }
             if let ast::Expr::Identifier(ident) = expr {
                 if let Some(index) = ident.value.strip_prefix("__arg").and_then(|s|s.parse::<usize>().ok()) {
                     let Some(value) = self.0.get(index) else {

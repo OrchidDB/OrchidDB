@@ -36,6 +36,19 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
         }).collect::<SqlResult<Vec<_>>>()?;
         return if scalars.is_empty() { Ok(arrow::array::new_empty_array(field.data_type())) } else { ScalarValue::iter_to_array(scalars).map_err(SqlError::from) };
     }
+    if super::structured::is_structured(field.data_type()) {
+        let scalars = rows.iter().map(|row| {
+            let json = match &row[index] {
+                SqlValue::Null => serde_json::Value::Null,
+                SqlValue::Domain(v) if crate::ir::functions::domain::is_json(&v.data_type()) => serde_json::from_str(&crate::ir::functions::domain::json_text(v)?.unwrap_or_else(|| "null".into())).map_err(|e| SqlError::Conversion(e.to_string()))?,
+                SqlValue::Domain(v) => super::structured::encode(v)?,
+                SqlValue::Text(v) => serde_json::from_str(v).map_err(|e| SqlError::Conversion(e.to_string()))?,
+                v => return Err(mismatch(v)),
+            };
+            super::structured::decode(&json, field.data_type())
+        }).collect::<SqlResult<Vec<_>>>()?;
+        return if scalars.is_empty() { Ok(arrow::array::new_empty_array(field.data_type())) } else { Ok(ScalarValue::iter_to_array(scalars)?) };
+    }
     Ok(match field.data_type() {
         DataType::Null => new_null_array(&DataType::Null, rows.len()),
         DataType::Boolean => {
@@ -169,6 +182,34 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
                 }
             }
             Arc::new(builder.finish())
+        }
+        DataType::Binary | DataType::LargeBinary | DataType::BinaryView => {
+            let mut builder = arrow::array::BinaryBuilder::new();
+            for row in rows {
+                match &row[index] {
+                    SqlValue::Null => builder.append_null(),
+                    SqlValue::Binary(bytes) => builder.append_value(bytes),
+                    other => return Err(mismatch(other)),
+                }
+            }
+            let array: ArrayRef = Arc::new(builder.finish());
+            checked_cast(&array, field)?
+        }
+        DataType::Date32 | DataType::Date64 | DataType::Timestamp(_, _) | DataType::Time32(_) | DataType::Time64(_) => {
+            let text = build_column(&Field::new(field.name(), DataType::Utf8, true), rows, index)?;
+            checked_cast(&text, field)?
+        }
+        DataType::Dictionary(_, value) => {
+            let array = build_column(&Field::new(field.name(), value.as_ref().clone(), field.is_nullable()), rows, index)?;
+            checked_cast(&array, field)?
+        }
+        DataType::LargeUtf8 | DataType::Utf8View => {
+            let text = build_column(&Field::new(field.name(), DataType::Utf8, true), rows, index)?;
+            checked_cast(&text, field)?
+        }
+        DataType::LargeList(inner) | DataType::FixedSizeList(inner, _) => {
+            let list = build_column(&Field::new(field.name(), DataType::List(inner.clone()), true), rows, index)?;
+            checked_cast(&list, field)?
         }
         DataType::List(inner) => {
             // Rebuild the list column from the engine's per-row lists: flatten

@@ -7,6 +7,7 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
     if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
         return super::exchange_literal(value.clone(), value.data_type(), dialect);
     }
+    if super::structured::is_structured(&value.data_type()) { return super::structured::literal(dialect, value); }
     fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> String) -> String {
         match value {
             Some(inner) => render(inner),
@@ -30,6 +31,17 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
             Some(text) => string_literal(dialect, text)?,
             None => "NULL".to_string(),
         },
+        ScalarValue::Date32(_) | ScalarValue::TimestampSecond(_, None) | ScalarValue::TimestampMillisecond(_, None) | ScalarValue::TimestampMicrosecond(_, None) | ScalarValue::TimestampNanosecond(_, None) | ScalarValue::Time32Second(_) | ScalarValue::Time32Millisecond(_) | ScalarValue::Time64Microsecond(_) => {
+            if value.is_null() { "NULL".into() } else {
+                let array = value.to_array()?;
+                let text = arrow::util::display::array_value_to_string(array.as_ref(), 0)?;
+                format!("CAST({} AS {})", string_literal(dialect, &text)?, dialect.ddl_type(&value.data_type())?)
+            }
+        }
+        ScalarValue::Binary(v) | ScalarValue::LargeBinary(v) | ScalarValue::BinaryView(v) => opt(v, |bytes| {
+            let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+            if dialect == SqlDialect::Postgres { format!("decode('{hex}', 'hex')") } else { format!("from_hex('{hex}')") }
+        }),
         ScalarValue::List(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
         ScalarValue::LargeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
         ScalarValue::FixedSizeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
@@ -97,6 +109,8 @@ pub(super) fn float_literal(dialect: SqlDialect, value: f64) -> String {
         format!("CAST('Infinity' AS {})", dialect.double_type())
     } else if value == f64::NEG_INFINITY {
         format!("CAST('-Infinity' AS {})", dialect.double_type())
+    } else if value == 0.0 && value.is_sign_negative() {
+        format!("CAST('-0' AS {})", dialect.double_type())
     } else if value == value.trunc() && value.abs() < 1e15 {
         format!("{value:.1}")
     } else {

@@ -233,8 +233,17 @@ impl SqlEligibility {
             self.reasons.insert(key, reason);
             return reason;
         }
+        let mut portable_schema = datafusion::common::DFSchema::empty();
+        for input in plan.inputs() { portable_schema.merge(input.schema()); }
+        portable_schema.merge(plan.schema());
         for expr in plan.expressions() {
             let _ = expr.apply(|expr| {
+                if let Expr::Literal(value, _) = expr {
+                    if let Some(why) = crate::ir::functions::portable::literal_issue(value, self.dialect.unwrap_or(sql::SqlDialect::DuckDb).name()) {
+                        reason.get_or_insert(why);
+                        return Ok(TreeNodeRecursion::Stop);
+                    }
+                }
                 if let Expr::ScalarFunction(function) = expr {
                     if self.dialect == Some(sql::SqlDialect::Postgres) && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
                         reason.get_or_insert("native RDF scalar kernel");
@@ -243,9 +252,15 @@ impl SqlEligibility {
                     if let Some(logical) = crate::ir::functions::logical::definition(&function.func) {
                         let dialect = self.dialect.unwrap_or(sql::SqlDialect::DuckDb);
                         let adapter_mapping = match dialect { sql::SqlDialect::Custom(adapter) => adapter.function_mapping(logical.logical_name()).is_some(), _ => false };
-                        if !adapter_mapping && !logical.sql.contains_key(dialect.name()) {
+                        if !adapter_mapping && !logical.has_sql_mapping(dialect.name(), function.args.len()) {
                             reason.get_or_insert("logical function requires native execution");
                             return Ok(TreeNodeRecursion::Stop);
+                        }
+                        if !adapter_mapping && logical.portable_builtin {
+                            if let Err(why) = crate::ir::functions::portable::validate_call(logical.logical_name(), &function.args, &portable_schema, dialect.name()) {
+                                reason.get_or_insert(why);
+                                return Ok(TreeNodeRecursion::Stop);
+                            }
                         }
                         return Ok(TreeNodeRecursion::Continue);
                     }
@@ -289,7 +304,11 @@ fn partition<'a>(
         if explain && let Some(reason) = reason {
             eprintln!("DuckDB boundary: {reason}");
         }
-        if reason.is_none() {
+        // A one-row, zero-column input can be absorbed into a parent SQL
+        // projection, but cannot be emitted as a standalone SELECT * island.
+        // Native scalar projections (including calls that fail to fold) need
+        // that input to remain executable when they form a boundary.
+        if reason.is_none() && !plan.schema().fields().is_empty() {
             // The SQL unparser requires an explicit select list for roots such
             // as joins. Unique aliases also handle duplicate qualified names.
             let projected = datafusion::logical_expr::LogicalPlanBuilder::from(plan.clone())

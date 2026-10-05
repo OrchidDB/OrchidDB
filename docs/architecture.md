@@ -144,3 +144,5 @@ costing, whole-plan representation selection, and parent semijoins before
 collection expansion. Native mapped access chooses bounded scan caching or typed
 batched lookup from actual frontier cardinality. Decisions are exposed through
 `optimizer_decisions`; estimates and measured execution costs remain distinct.
+
+The [portable scalar catalog](portable-functions.md) exposes native functions with explicit DuckDB and PostgreSQL mappings through `fn.*`.

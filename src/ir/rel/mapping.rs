@@ -1622,6 +1622,7 @@ impl ContextProvider for MappingContextProvider<'_> {
         self.mapping.logical_functions.get(&lower).cloned()
             .or_else(|| crate::ir::functions::search::function(&lower))
             .or_else(|| crate::ir::functions::json::function(&lower))
+            .or_else(|| crate::ir::functions::portable::function(&lower))
             .or_else(|| function_catalog::scalar().get(&lower).cloned())
             .or_else(|| function_catalog::nested().get(&lower).cloned())
     }
@@ -1645,7 +1646,9 @@ impl ContextProvider for MappingContextProvider<'_> {
     }
 
     fn udf_names(&self) -> Vec<String> {
-        function_catalog::scalar().names()
+        let mut names = function_catalog::scalar().names();
+        names.extend(crate::ir::functions::portable::capabilities().iter().map(|f| f.name.clone()));
+        names
     }
 
     fn udaf_names(&self) -> Vec<String> {
@@ -2021,6 +2024,8 @@ mod tests {
         mapping
             .plan_sql("SELECT ChAr_LeNgTh('hello'), MeAn(3) OVER (), RoW_NuMbEr() OVER ()")
             .unwrap();
+        mapping.plan_sql("SELECT fn.sqrt(9.0), fn.char_length('hello')").unwrap();
+        assert!(provider.udf_names().contains(&"fn.sqrt".into()));
     }
 
     #[test]

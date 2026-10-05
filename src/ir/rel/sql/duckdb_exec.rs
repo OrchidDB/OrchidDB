@@ -12,7 +12,7 @@ use std::time::Duration;
 use arrow::array::RecordBatch;
 use arrow::datatypes::{Field, Schema};
 use duckdb::Connection;
-use duckdb::types::{FromSql, ListType, ValueRef};
+use duckdb::types::{ListType, ValueRef};
 use duckdb::vtab::arrow::ArrowVTab;
 use duckdb::vtab::arrow_recordbatch_to_query_params;
 
@@ -800,14 +800,33 @@ fn convert_value(value: ValueRef<'_>) -> SqlResult<SqlValue> {
         ValueRef::Double(value) => SqlValue::Float(value),
         ValueRef::Decimal(value) => SqlValue::ExactNumber(value.to_string()),
         temporal @ (ValueRef::Timestamp(..) | ValueRef::Date32(_) | ValueRef::Time64(..)) => {
-            SqlValue::Text(
-                String::column_result(temporal)
-                    .map_err(|err| SqlError::Conversion(format!("duckdb temporal value: {err}")))?,
-            )
+            use datafusion::common::ScalarValue;
+            use duckdb::types::TimeUnit;
+            // The driver's chrono conversion uses a negative remainder for
+            // pre-epoch fractional seconds and panics. Arrow handles them and
+            // preserves nanoseconds without passing through microseconds.
+            let scalar = match temporal {
+                ValueRef::Timestamp(unit, value) => match unit {
+                    TimeUnit::Second => ScalarValue::TimestampSecond(Some(value), None),
+                    TimeUnit::Millisecond => ScalarValue::TimestampMillisecond(Some(value), None),
+                    TimeUnit::Microsecond => ScalarValue::TimestampMicrosecond(Some(value), None),
+                    TimeUnit::Nanosecond => ScalarValue::TimestampNanosecond(Some(value), None),
+                },
+                ValueRef::Date32(value) => ScalarValue::Date32(Some(value)),
+                ValueRef::Time64(TimeUnit::Microsecond, value) => ScalarValue::Time64Microsecond(Some(value)),
+                ValueRef::Time64(TimeUnit::Nanosecond, value) => ScalarValue::Time64Nanosecond(Some(value)),
+                _ => return Err(SqlError::Unsupported(format!("duckdb temporal value {temporal:?}"))),
+            };
+            let array = scalar.to_array()?;
+            SqlValue::Text(arrow::util::display::array_value_to_string(array.as_ref(), 0)?.replace('T', " "))
         }
         ValueRef::Text(bytes) => SqlValue::Text(String::from_utf8_lossy(bytes).into_owned()),
+        ValueRef::Blob(bytes) => SqlValue::Binary(bytes.to_vec()),
         // List-valued graph properties come back as one Arrow list per row;
         // slice out this row's elements and convert them the same way.
+        ValueRef::Struct(a, i) => SqlValue::Domain(datafusion::common::ScalarValue::try_from_array(a, i)?),
+        ValueRef::Map(a, i) => SqlValue::Domain(datafusion::common::ScalarValue::try_from_array(a, i)?),
+        ValueRef::Union(a, i) => SqlValue::Domain(datafusion::common::ScalarValue::try_from_array(a, i)?),
         ValueRef::List(list, row) => {
             // List offsets are also present for null rows. Reading only the
             // offsets turns SQL NULL into [], losing Cypher's null semantics.

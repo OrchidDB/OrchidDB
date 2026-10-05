@@ -2,9 +2,13 @@
 use super::*;
 use crate::ir::functions::logical::{SqlFunctionMapping, definition};
 use std::{cell::RefCell, collections::BTreeMap};
-thread_local! { static MAPPINGS: RefCell<BTreeMap<String, SqlFunctionMapping>> = RefCell::new(BTreeMap::new()); }
-pub(super) fn mapping(name: &str) -> Option<SqlFunctionMapping> {
-    MAPPINGS.with(|m| m.borrow().get(name.trim_matches('"')).cloned())
+thread_local! { static MAPPINGS: RefCell<BTreeMap<(String, usize), SqlFunctionMapping>> = RefCell::new(BTreeMap::new()); }
+pub(super) fn mapping(name: &str, arity: usize) -> Option<SqlFunctionMapping> {
+    MAPPINGS.with(|m| {
+        m.borrow()
+            .get(&(name.trim_matches('"').to_owned(), arity))
+            .cloned()
+    })
 }
 pub(super) fn with_plan<T>(
     plan: &LogicalPlan,
@@ -13,6 +17,11 @@ pub(super) fn with_plan<T>(
 ) -> SqlResult<T> {
     let mut mappings = BTreeMap::new();
     plan.apply_with_subqueries(|node| {
+        let mut schema = datafusion::common::DFSchema::empty();
+        for input in node.inputs() {
+            schema.merge(input.schema());
+        }
+        schema.merge(node.schema());
         for expr in node.expressions() {
             expr.apply(|expr| {
                 if let Expr::ScalarFunction(call) = expr {
@@ -21,15 +30,23 @@ pub(super) fn with_plan<T>(
                         // entirely (for example, an ANN table function). Require
                         // scalar SQL support only if the expression survives in
                         // the emitted AST, where adapt_expression reports it.
-                        let Some(implementation) = (match dialect {
-                            SqlDialect::Custom(adapter) => adapter.function_mapping(function.logical_name()),
+                        let override_mapping = match dialect {
+                            SqlDialect::Custom(adapter) => {
+                                adapter.function_mapping(function.logical_name())
+                            }
                             _ => None,
-                        }).or_else(|| function.sql.get(dialect.name()).cloned()) else {
+                        };
+                        let Some(implementation) = (if override_mapping.is_some() {
+                            override_mapping
+                        } else {
+                            function.sql_mapping_for_call(dialect.name(), &call.args, &schema)?
+                        }) else {
                             return Ok(TreeNodeRecursion::Continue);
                         };
-                        if let Some(previous) =
-                            mappings.insert(call.func.name().to_owned(), implementation.clone())
-                        {
+                        if let Some(previous) = mappings.insert(
+                            (call.func.name().to_owned(), call.args.len()),
+                            implementation.clone(),
+                        ) {
                             if previous != implementation {
                                 return Err(DataFusionError::Plan(
                                     "conflicting logical function definitions".into(),
@@ -43,7 +60,7 @@ pub(super) fn with_plan<T>(
         }
         Ok(TreeNodeRecursion::Continue)
     })?;
-    struct Restore(Option<BTreeMap<String, SqlFunctionMapping>>);
+    struct Restore(Option<BTreeMap<(String, usize), SqlFunctionMapping>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             MAPPINGS.with(|m| *m.borrow_mut() = self.0.take().unwrap());
@@ -66,13 +83,14 @@ pub(super) fn adapt_ordering<T: datafusion::sql::sqlparser::ast::VisitMut>(
             let ast::Expr::Function(function) = &item.expr else {
                 continue;
             };
-            let Some(implementation) = mapping(&function.name.to_string()) else {
+            let ast::FunctionArguments::List(arguments) = &function.args else {
+                continue;
+            };
+            let Some(implementation) = mapping(&function.name.to_string(), arguments.args.len())
+            else {
                 continue;
             };
             let Some(order) = implementation.ordering else {
-                continue;
-            };
-            let ast::FunctionArguments::List(arguments) = &function.args else {
                 continue;
             };
             let args = arguments

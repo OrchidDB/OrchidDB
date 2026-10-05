@@ -56,6 +56,7 @@ pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
                 .collect::<Result<Vec<_>>>()?
                 .join(", ")
         ),
+        DataType::Union(fields, _) => format!("UNION({})", fields.iter().map(|(_, f)| Ok(format!("\"{}\" {}", f.name().replace('"', "\"\""), sql_type(f.data_type())?))).collect::<Result<Vec<_>>>()?.join(", ")),
         DataType::Map(field, _) => {
             let DataType::Struct(fields) = field.data_type() else {
                 return Err(unsupported(data_type));
@@ -139,11 +140,7 @@ pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
             if matches!(f.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) { "JSONB[]".into() }
             else { format!("{}[]", postgres_type(f.data_type())?) }
         }
-        DataType::Struct(_) | DataType::Map(_, _) => {
-            return Err(DataFusionError::NotImplemented(format!(
-                "PostgreSQL anonymous argument type {data_type}"
-            )));
-        }
+        DataType::Struct(_) | DataType::Map(_, _) | DataType::Union(_, _) => "JSONB".into(),
         _ => sql_type(data_type)?,
     })
 }
