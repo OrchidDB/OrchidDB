@@ -12,6 +12,6 @@
   or failed work; never restart a complete release matrix.
 - Python, JavaScript, and C++ packages reuse the shared native compiler.
   Do not rebuild that compiler separately for each client.
-- Keep Linux x86_64, macOS ARM64, and macOS x86_64 artifacts where supported.
+- Keep Linux ARM64, Linux x86_64, macOS ARM64, and macOS x86_64 artifacts.
   Do not build or package Windows artifacts.
 - Never move published tags or replace a published package with different bytes.

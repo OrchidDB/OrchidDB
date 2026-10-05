@@ -20,6 +20,7 @@ import tempfile
 import tomllib
 
 PLATFORMS = {
+    'linux-aarch64': ('aarch64-unknown-linux-gnu', 'liborchiddb_compiler.so', 'liborchiddb_java.so', 'linux_aarch64', 'linux-arm64'),
     'macos-aarch64': ('aarch64-apple-darwin', 'liborchiddb_compiler.dylib', 'liborchiddb_java.dylib', 'macosx_11_0_arm64', 'darwin-arm64'),
     'macos-x86_64': ('x86_64-apple-darwin', 'liborchiddb_compiler.dylib', 'liborchiddb_java.dylib', 'macosx_11_0_x86_64', 'darwin-x64'),
     'linux-x86_64': ('x86_64-unknown-linux-gnu', 'liborchiddb_compiler.so', 'liborchiddb_java.so', 'linux_x86_64', 'linux-x64'),
@@ -60,7 +61,7 @@ def check_binary(path, platform, core=None):
         expected = 0x0100000c if platform.endswith('aarch64') else 0x01000007
         assert data[:4] == b'\xcf\xfa\xed\xfe' and struct.unpack_from('<I', data, 4)[0] == expected, f'Wrong Mach-O architecture: {path}'
     elif platform.startswith('linux'):
-        assert data[:6] == b'\x7fELF\x02\x01' and struct.unpack_from('<H', data, 18)[0] == 62, f'Wrong ELF architecture: {path}'
+        assert data[:6] == b'\x7fELF\x02\x01' and struct.unpack_from('<H', data, 18)[0] == (183 if platform.endswith('aarch64') else 62), f'Wrong ELF architecture: {path}'
     else:
         assert data[:2] == b'MZ', f'Expected PE: {path}'
         offset = struct.unpack_from('<I', data, 60)[0]
@@ -101,7 +102,7 @@ class Package:
     def binary(self, platform, filename):
         triple = PLATFORMS[platform][0]
         cache = self.target
-        if not self.explicit_target and platform == 'linux-x86_64':
+        if not self.explicit_target and platform.startswith('linux'):
             cache = self.workspace / 'target' / 'local-linux'
         directory = cache / 'release' if platform == 'macos-aarch64' else cache / triple / 'release'
         return directory / filename
@@ -137,7 +138,7 @@ class Package:
             binary = self.binary(platform, filename)
             check_binary(binary, platform)
             jar = source / 'target/native-artifacts' / (platform + '.jar')
-            run([sys.executable, source / 'scripts/package-native.py', '--platform', platform,
+            run([sys.executable, self.workspace / 'orchiddb-java/scripts/package-native.py', '--source', source, '--platform', platform,
                  '--library', binary, '--version', self.version, '--output', jar])
         self.java_classes()
         run([sys.executable, self.workspace / 'orchiddb-java/scripts/package-github.py', '--source', source, '--output', self.dest('java')], source)
@@ -178,17 +179,18 @@ class Package:
                  '--dist-dir', self.dest('python')], stage)
         # Audit the actual ELF symbol requirements and bundle required libraries
         # locally before declaring a manylinux tag. Never just rename a wheel.
-        linux_wheel = next(self.dest('python').glob('*-linux_x86_64.whl'))
-        run(['docker', 'run', '--rm', '--platform', 'linux/amd64',
-             '-v', str(self.dest('python')) + ':/dist', 'python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3',
-             'sh', '-ec', 'apt-get update -qq && apt-get install -y -qq patchelf >/dev/null && '
-             'pip install -q auditwheel && auditwheel repair --plat manylinux_2_34_x86_64 '
-             '--wheel-dir /dist/repaired /dist/' + linux_wheel.name])
-        repaired = list((self.dest('python') / 'repaired').glob('*.whl'))
-        assert len(repaired) == 1, 'Auditwheel did not produce exactly one Linux wheel'
-        shutil.move(repaired[0], self.dest('python') / repaired[0].name)
-        linux_wheel.unlink()
-        shutil.rmtree(self.dest('python') / 'repaired')
+        for architecture, docker_arch in [('x86_64', 'amd64'), ('aarch64', 'arm64')]:
+            linux_wheel = next(self.dest('python').glob(f'*-linux_{architecture}.whl'))
+            run(['docker', 'run', '--rm', '--platform', 'linux/' + docker_arch,
+                 '-v', str(self.dest('python')) + ':/dist', 'python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3',
+                 'sh', '-ec', 'apt-get update -qq && apt-get install -y -qq patchelf >/dev/null && '
+                 'pip install -q auditwheel && auditwheel repair --plat manylinux_2_34_' + architecture +
+                 ' --wheel-dir /dist/repaired /dist/' + linux_wheel.name])
+            repaired = list((self.dest('python') / 'repaired').glob('*.whl'))
+            assert len(repaired) == 1, 'Auditwheel did not produce exactly one Linux wheel'
+            shutil.move(repaired[0], self.dest('python') / repaired[0].name)
+            linux_wheel.unlink()
+            shutil.rmtree(self.dest('python') / 'repaired')
         stage = self.staged('python')
         run([interpreter, '-m', 'build', '--sdist', '--outdir', self.dest('python')], stage)
 
@@ -321,9 +323,9 @@ class Package:
             (destination / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in sorted(files.items())))
 
     def verify(self):
-        expected = {'engine': ('.crate', 1), 'rust': ('.crate', 1), 'native': ('.tar.gz', 3),
-                    'cli': ('.tar.gz', 3), 'java': ('.zip', 1), 'python': ('.whl', 3),
-                    'javascript': ('.tgz', 1), 'elixir': ('.tar', 1), 'cpp': ('.tar.gz', 3)}
+        expected = {'engine': ('.crate', 1), 'rust': ('.crate', 1), 'native': ('.tar.gz', len(PLATFORMS)),
+                    'cli': ('.tar.gz', len(PLATFORMS)), 'java': ('.zip', 1), 'python': ('.whl', len(PLATFORMS)),
+                    'javascript': ('.tgz', 1), 'elixir': ('.tar', 1), 'cpp': ('.tar.gz', len(PLATFORMS))}
         for kind, (suffix, count) in expected.items():
             destination = self.dest(kind)
             assert len(list(destination.glob('*' + suffix))) == count, f'{kind}: missing or unexpected package count'

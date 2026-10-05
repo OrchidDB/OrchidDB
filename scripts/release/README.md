@@ -26,21 +26,37 @@ live in `.releases/X.Y.Z/`. Local build worktrees use the immutable tested
 revisions. Successful binaries and packages are reused by source revision and
 checksum; only missing or failed work is repeated.
 
+The builder assembles one Cargo workspace around the pinned source checkouts,
+with one committed `workspace.Cargo.lock` and one release profile. Each platform
+uses **one Cargo invocation** selecting the C ABI, JNI, and CLI together, so Cargo
+shares their dependency compilation. All three resolve the core from the same
+pinned local checkout. CLI C++ link settings apply only to the CLI. Source tags
+are not changed; only build manifests are generated under the release directory.
+
+A missing output resumes the same package and feature selection; Cargo reuses
+completed work. Packaging Python, Node, and C++ does not invoke Rust compilation.
+To inspect the four build commands without compiling or downloading toolchains:
+
+```sh
+make release-plan VERSION=X.Y.Z
+```
+
 On macOS, the local builder uses Xcode for both Mac architectures, cargo-zigbuild
-for Linux. Cross-tooling lives
+for Linux x86_64 and ARM64 (`aarch64-unknown-linux-gnu.2.34`). Missing Rust
+targets are installed automatically. Cross-tooling lives
 in `.releases/tooling`; persistent output and SDK caches live under `target/`.
 The CLI links checksum-pinned official DuckDB static libraries. Its Linux C++
-sysroot can be prepared locally with `scripts/release/local_linux_sdk.sh`.
+sysroots are prepared in local Docker, separately for amd64 and arm64.
+You can prepare one manually with `scripts/release/local_linux_sdk.sh /path/to/workspace aarch64`
+(or `x86_64`). Both Linux targets use glibc 2.34.
 
-Build the shared C ABI and JNI libraries for Linux x86_64, macOS ARM64/x86_64,
-only. Build the CLI for Linux and both Mac architectures. Python
-reuses all three C ABI libraries; JavaScript and C++ reuse Linux and both Mac
-libraries. No client recompiles the shared compiler for packaging. Linux wheel
+Build the shared C ABI, JNI libraries, and CLI for Linux ARM64/x86_64 and
+macOS ARM64/x86_64. Python, JavaScript, and C++ reuse all four C ABI libraries. No client recompiles the shared compiler for packaging. Linux wheel
 repair runs in local Docker.
 
 The JVM release is `orchiddb-java-X.Y.Z.zip` on GitHub Releases, containing JVM
 and Gremlin JARs, runtime dependencies, a file-based Maven repository, source and
-Javadoc JARs, and all three JNI classifiers. Do not publish to Sonatype or Maven
+Javadoc JARs, and all four JNI classifiers. Do not publish to Sonatype or Maven
 Central.
 
 Verification checks versions, architectures, source pins, and package hashes.
@@ -52,5 +68,4 @@ Never move published tags or replace published package bytes.
 `pipeline.py` remains available to read older release state and validation logs.
 Its workflow-dispatch build path is legacy and must not be used.
 
-Windows is excluded from release builds and packages. The current Linux target
-is x86_64; Linux ARM64 is not yet in the release matrix.
+Windows is excluded from release builds and packages.
