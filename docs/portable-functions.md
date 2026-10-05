@@ -1,118 +1,91 @@
 # Portable scalar functions
 
-Use `fn.<name>` for a function whose typed native implementation remains
-available when its SQL backend cannot execute it. This extends the portable
-`vector.*` and `json.*` function mechanism to the complete enabled DataFusion
-scalar and nested-function catalogs. Native aliases work too; for example,
-`fn.char_length` resolves to `fn.character_length`.
+Use `fn.<name>(...)` to call scalar functions in your queries. These functions
+cover numbers, text, dates and times, arrays, maps, and records. OrchidDB can
+execute supported calls in DuckDB or PostgreSQL and evaluate other calls in
+its query runtime when using mixed execution.
+
+Browse the [function catalog](portable-function-catalog.md) for all 165 functions
+and their DuckDB and PostgreSQL support.
+
+## Call a function
+
+In Cypher, use functions in expressions such as the values returned by a query:
+
+```cypher
+RETURN fn.sqrt(9.0) AS root, fn.upper('hello') AS greeting
+```
+
+| root | greeting |
+| --- | --- |
+| 3.0 | HELLO |
+
+Pass a property to apply a function to each matching row:
 
 ```cypher
 MATCH (d:Document)
-RETURN fn.sqrt(d.score), fn.reverse(d.title)
+RETURN d.title AS title, fn.upper(d.title) AS uppercase_title
 ```
 
-The same names work in SQL expressions in query-backed mappings and computed
-relationships. Existing language-defined functions and engine-catalog calls
-retain their names and semantics. These are scalar functions; aggregate,
-window and table functions continue to use their existing catalogs.
+Function aliases are supported. For example, `fn.char_length` and
+`fn.character_length` refer to the same function.
 
-## Execution and SQL support
+The same `fn.` names are available in SQL expressions used by query-backed
+mappings and computed relationships. Existing language-specific function names
+keep their own behavior. This catalog covers scalar functions; aggregates,
+window functions, and table functions use their existing catalogs.
 
-All 165 enabled catalog functions have a DuckDB and PostgreSQL SQL path.
-Arrow type/metadata inspection and runtime version resolve at compilation;
-Arrow casts lower to typed SQL casts. Stable query-time calls can be bound by
-query preparation. Other functions use direct built-ins or SQL rewrites.
+## Choose a function
 
-The catalog retains native argument coercion, result types, volatility and
-short-circuit behavior. Two portable native corrections are intentional:
-`fn.overlay` uses Unicode character positions, a positive start and nonnegative
-length, fixing the pinned upstream implementation's UTF-8 slicing panic and
-out-of-range behavior; `fn.map` broadcasts constant key/value lists alongside
-column arguments, fixing the upstream mixed scalar/array path.
+| Work with | Examples |
+| --- | --- |
+| Numbers | `fn.abs`, `fn.round`, `fn.sqrt` |
+| Text | `fn.upper`, `fn.lower`, `fn.character_length`, `fn.replace` |
+| Missing values | `fn.coalesce`, `fn.nullif` |
+| Arrays | `fn.array_length`, `fn.array_distinct`, `fn.array_slice` |
+| Maps and records | `fn.map`, `fn.struct`, `fn.named_struct` |
+| Hashes | `fn.md5`, `fn.sha256`, `fn.sha512` |
 
-Mappings cover arithmetic, null handling, Unicode strings, hashing/encoding,
-arrays, maps, records, unions, integer series, and selected temporal and regex
-overloads. Array rewrites preserve null elements, duplicates and ordering.
-Numeric guards preserve NaN/infinity behavior. Repeated SQL expressions bind
-arguments once, and text-to-binary coercion copies UTF-8 bytes.
+See the [function catalog](portable-function-catalog.md) for the supported
+argument types and options for each engine.
 
-Availability is checked per call, using its arity, Arrow types, and literal
-options. For example, `fn.regexp_like(title, '[a-z]+')` can run in either engine,
-while `fn.regexp_like(title, '\w+')` remains native because Unicode character
-classes differ. The portable identity survives optimization so rewriting a UDF
-into a native regex operator cannot bypass this check.
+## Where functions execute
 
-The [complete reviewed catalog](portable-function-catalog.md) records the
-supported signatures for every function. Unicode case conversion uses the
-native Rust case tables, including multi-character expansions and contextual
-Greek sigma. Translation and padding use Unicode 17 grapheme rules from the
-pinned native segmentation dependency. Edit distance counts Unicode code points.
-DuckDB's missing SHA-2 algorithms use SQL compression rounds. These rewrites
-need no database extensions; complex rewrites can cost more than a built-in.
+OrchidDB checks each call's arguments before placing it in SQL. All 165
+functions have a DuckDB and PostgreSQL SQL path, but some argument types or
+options require evaluation in OrchidDB. Functions that inspect types or
+metadata can be resolved while the query is compiled.
 
-Structured calls specialize their SQL by Arrow field names and types. DuckDB
-uses native MAP/STRUCT/UNION values. PostgreSQL uses schema-directed JSONB:
-records preserve field names, maps retain entry order, and unions retain tags
-separately from nullable payloads. Textual scalar leaves preserve exact numbers,
-non-finite floats and binary bytes. Results rebuild the original Arrow schema.
+For example, a simple, case-sensitive `fn.regexp_like` pattern such as
+`'[a-z]+'` can execute in either database. Patterns with Unicode character
+classes require evaluation in OrchidDB because the databases interpret those
+classes differently.
 
-Inspect the current catalog and per-engine availability:
+In mixed execution, a call without a compatible SQL mapping runs in OrchidDB's
+query runtime. SQL-only compilation reports an error identifying the function,
+engine, and unsupported case. It cannot use runtime evaluation to complete the
+query.
 
-```sh
-cargo run --example portable_function_catalog
-```
+SQL support preserves the function's result types and behavior. Some functions
+use SQL expressions containing several operations, so their cost can differ
+from a database's built-in function.
 
-Rust callers can use `ir::functions::portable::function("fn.sqrt")` and
-`portable::capabilities()`. Capability flags mean at least one supported SQL call or compile-time lowering;
-`preparation` identifies schema/query-state lowering. Static templates are
-available through `logical::definition(&udf).sql_mapping(dialect, arity)`.
-Use `sql_mapping_for_call(dialect, args, schema)` for type-directed mappings. `portable::validate_call(name, args, schema, dialect)` checks the
-additional call restrictions, and `duckdb_note` / `postgres_note` describe the
-reviewed scope. Both mixed execution and SQL-only compilation use the same
-checks. Unsupported calls execute natively in mixed plans; SQL-only errors name
-the function, engine, and reason.
+## Compatibility limits
 
-The SQL boundary supports binary, timezone-free dates/timestamps, time values,
-arrays, maps, records and tagged unions. PostgreSQL cannot represent arbitrary nanosecond timestamps or NUL text; precision checks
-also apply after preparation turns functions into literals.
-SQL database value ranges still apply. Regex mappings accept a case-sensitive
-literal subset without captures, alternation, Unicode classes, lazy quantifiers,
-or empty matches. More complex patterns retain native execution.
+Consult the catalog before relying on a specific SQL overload. Restrictions
+can depend on the argument types, number of arguments, and constant options.
 
-## Extending mappings
+- **Regular expressions:** SQL mappings support a case-sensitive subset of
+  constant patterns. Captures, alternation, Unicode classes, lazy quantifiers,
+  and empty matches require native evaluation.
+- **Arrays:** Many SQL mappings support flat arrays of booleans, signed
+  integers, or text. Support for nested arrays and other element types varies
+  by function.
+- **PostgreSQL values:** PostgreSQL does not support NUL characters in text
+  or arbitrary nanosecond timestamp precision. Database value ranges also apply.
+- **Text:** Unicode case conversion can produce multiple output characters for
+  one input character. Padding and translation use grapheme boundaries;
+  edit distance counts Unicode code points.
 
-`LogicalFunction.sql` supplies a dialect-wide expression template.
-`LogicalFunction.sql_overloads` supplies mappings keyed by `(dialect, arity)`;
-these take precedence. A custom engine adapter's mapping takes precedence over
-both. SQL templates are parsed and arguments substituted as AST nodes:
-
-- `__arg0`, `__arg1`, etc. substitute individual expressions.
-- A bare `__args` in a function argument list or `ARRAY[...]` expands all positional arguments.
-- `__local0`, etc. are renamed to avoid capturing caller identifiers.
-
-These placeholders do not substitute text inside SQL string literals. A single
-query may use several arities of the same function. Missing arities fail SQL
-placement independently rather than borrowing another overload's template.
-
-## Verification
-
-```sh
-cargo test --features duckdb --test portable_functions
-cargo test --features "duckdb postgres" --test portable_functions -- --include-ignored --nocapture
-```
-
-The ignored differential tests require DuckDB 1.5.2+ (`duckdb`) and `psql` on PATH and a local
-PostgreSQL database. `GRAPH_PG_URL` selects the database; the default is
-`postgres`. It creates temporary tables and compares native results with SQL
-results using actual column inputs, including NULL, empty text, Unicode,
-quotes, NaN, infinities and numeric domain boundaries. No permanent tables are
-created. The executor test also checks actual Arrow round trips through both
-backends. The ordinary tests cover complete catalog/alias lookup, an exhaustive
-audit entry for each function, typed native fallback, arity coexistence,
-expression substitution, lazy coalesce, and Cypher integration.
-
-Semantic references: [DataFusion scalar functions](https://datafusion.apache.org/user-guide/sql/scalar_functions.html),
-[PostgreSQL math functions](https://www.postgresql.org/docs/17/functions-math.html),
-and [DuckDB text functions](https://duckdb.org/docs/stable/sql/functions/text).
-The pinned native implementation and executable differential tests determine
-this catalog's behavior.
+The [function catalog](portable-function-catalog.md) lists the restrictions for
+each function so you can check whether a call can run in your selected engine.

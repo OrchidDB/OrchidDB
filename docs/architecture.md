@@ -146,3 +146,5 @@ batched lookup from actual frontier cardinality. Decisions are exposed through
 `optimizer_decisions`; estimates and measured execution costs remain distinct.
 
 The [portable scalar catalog](portable-functions.md) exposes native functions with explicit DuckDB and PostgreSQL mappings through `fn.*`.
+See [Maintaining portable scalar functions](portable-functions-contributing.md)
+for capability APIs, mapping templates, catalog generation, and regression tests.
