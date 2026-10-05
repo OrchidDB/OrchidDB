@@ -50,6 +50,9 @@ publishing so report assets and downloads are included.
 - Keep the Search overview concise; detailed search behavior lives in
   `../../docs/computed-relationships-and-search.md`.
 - Edit chapter order and section names in `content/SUMMARY.md`.
+- The portable function chapters include `../../docs/portable-functions.md`
+  and `../../docs/portable-function-catalog.md` with mdBook includes. Edit those
+  shared sources to keep the website and repository reference in sync.
 - Use relative `.md` links between chapters; mdBook converts them to `.html`.
 - Configure mdBook in `book.toml`. Keep its theme unmodified.
 - Keep `downloads/` in sync with the tutorials.

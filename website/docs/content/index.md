@@ -27,6 +27,7 @@ orchiddb --version
 | Search remote indexes and join results into the graph | [Quickwit and Elasticsearch](remote-engines.md) |
 | Create and persist a graph | [Managed graphs](managed-graphs.md) |
 | Query with an RDF vocabulary | [SPARQL](sparql.md) |
+| Use scalar functions across DuckDB and PostgreSQL | [Portable scalar functions](portable-functions.md) and [function catalog](portable-function-catalog.md) |
 | Map application columns or quad tables to RDF | [RDF datasets](rdf.md) |
 | Embed the engine in Rust | [Rust API](rust-api.md) |
 | Explore language integrations | [Client APIs](client-apis.md) |

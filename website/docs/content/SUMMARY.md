@@ -31,6 +31,11 @@
 - [Ontology mappings](ontology.md)
 - [RDF over application tables](rdf.md)
 
+# Functions
+
+- [Portable scalar functions](portable-functions.md)
+- [Function catalog](portable-function-catalog.md)
+
 # Integrate
 
 - [Parameters and values](parameters.md)
