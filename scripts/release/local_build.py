@@ -44,12 +44,50 @@ def command_for(platform, manifest):
     return command + selection()
 
 
+def parallelism(platform_count, environ=None, cpus=None):
+    environ = os.environ if environ is None else environ
+    cpus = (os.cpu_count() or 1) if cpus is None else cpus
+    try:
+        workers = int(environ.get('LOCAL_BUILD_PARALLELISM') or min(2, cpus, platform_count))
+        if workers < 1:
+            raise ValueError()
+        workers = min(workers, platform_count)
+        jobs = int(environ.get('LOCAL_BUILD_JOBS') or max(1, cpus // (2 * workers)))
+        if jobs < 1:
+            raise ValueError()
+    except ValueError:
+        raise SystemExit('LOCAL_BUILD_PARALLELISM and LOCAL_BUILD_JOBS must be positive integers')
+    return workers, jobs
+
+
 def outputs(workspace, platform):
-    cache = workspace / 'target' / ('local-linux' if platform.startswith('linux') else 'native-release')
+    # Cargo locks an entire target directory, even for different target triples.
+    # Retain the original caches for the first target in each OS family.
+    directory = {'macos-aarch64': 'native-release', 'macos-x86_64': 'native-release-x86_64',
+                 'linux-x86_64': 'local-linux', 'linux-aarch64': 'local-linux-aarch64'}[platform]
+    cache = workspace / 'target' / directory
     output = cache / (P[platform] or '') / 'release'
     extension = '.so' if platform.startswith('linux') else '.dylib'
     return cache, {'native': output / ('liborchiddb_compiler' + extension),
                    'java': output / ('liborchiddb_java' + extension), 'cli': output / 'orchiddb'}
+
+
+def prepare_cache(workspace, platform):
+    cache, _ = outputs(workspace, platform)
+    legacy = workspace / 'target' / ('local-linux' if platform.startswith('linux') else 'native-release')
+    cache.mkdir(parents=True, exist_ok=True)
+    if cache == legacy:
+        return
+    # Preserve existing target-specific compilation and driver artifacts instead
+    # of deleting them or starting those targets with an empty cache.
+    candidates = [(legacy / P[platform], cache / P[platform])]
+    for driver in (legacy / 'duckdb-static').glob('*/' + platform):
+        candidates.append((driver, cache / driver.relative_to(legacy)))
+    for previous, destination in candidates:
+        if previous.exists() and not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(previous), str(destination))
+
 
 
 def driver_setup(workspace, sources, cache, platform, env):
@@ -122,9 +160,12 @@ def main():
             raise SystemExit('Release source must match the clean tested revision: ' + str(source))
     manifest = prepare(sources, release / 'build-workspace')
     platforms = [args.platform] if args.platform else list(P)
+    workers, jobs = parallelism(len(platforms))
+    print(f'Build concurrency: {workers} platforms × {jobs} Cargo workers', flush=True)
     if args.plan:
         for platform in platforms:
-            print(platform + ': ' + ' '.join(command_for(platform, manifest)))
+            cache, _ = outputs(workspace, platform)
+            print(f'{platform}: CARGO_TARGET_DIR={cache} CARGO_BUILD_JOBS={jobs} ' + ' '.join(command_for(platform, manifest)))
         return
     receipt = release / 'local-builds'
     receipt.mkdir(exist_ok=True)
@@ -149,7 +190,7 @@ def main():
             print('Reuse all outputs: ' + platform, flush=True)
             return
         env = dict(os.environ, RUSTUP_TOOLCHAIN='1.93.1', CARGO_TARGET_DIR=str(cache),
-                   CARGO_BUILD_JOBS=os.environ.get('LOCAL_BUILD_JOBS', '2'), ORCHIDDB_RELEASE_BUILD='1')
+                   CARGO_BUILD_JOBS=str(jobs), ORCHIDDB_RELEASE_BUILD='1')
         env['PATH'] = '/opt/homebrew/bin:' + str(workspace / '.releases/tooling/bin') + ':' + env.get('PATH', '')
         toolchain = Path.home() / '.rustup/toolchains/1.93.1-aarch64-apple-darwin/bin'
         if toolchain.exists():
@@ -176,12 +217,11 @@ def main():
                 record['metadata_sha256'] = digest(metadata)
             records[kind].write_text(json.dumps(record, indent=2) + '\n')
 
-    def group(items):
-        for platform in items:
-            build(platform)
-    groups = [[args.platform]] if args.platform else [['macos-aarch64', 'macos-x86_64'], ['linux-x86_64', 'linux-aarch64']]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(groups)) as pool:
-        for _ in pool.map(group, groups):
+    # Migrate old target-specific caches before starting any workers.
+    for platform in platforms:
+        prepare_cache(workspace, platform)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        for _ in pool.map(build, platforms):
             pass
 
 

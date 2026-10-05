@@ -5,6 +5,10 @@ VERSION ?=
 PYTHON ?= python3
 RUSTUP_TOOLCHAIN ?= 1.93.1
 export RUSTUP_TOOLCHAIN
+# Empty values select CPU-aware defaults in the builder.
+LOCAL_BUILD_PARALLELISM ?=
+LOCAL_BUILD_JOBS ?=
+export LOCAL_BUILD_PARALLELISM LOCAL_BUILD_JOBS
 ifeq ($(shell uname -s),Darwin)
 JAVA_HOME ?= $(shell /usr/libexec/java_home -v 21 2>/dev/null)
 export JAVA_HOME

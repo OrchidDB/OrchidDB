@@ -41,6 +41,22 @@ To inspect the four build commands without compiling or downloading toolchains:
 make release-plan VERSION=X.Y.Z
 ```
 
+Build concurrency is configurable independently of Make's `-j`. By default,
+two platforms run concurrently and share half the available logical CPUs as
+Cargo workers (on a 12-core machine: two platforms × three workers). To run all
+four platforms with three Cargo workers each:
+
+```sh
+make release VERSION=X.Y.Z LOCAL_BUILD_PARALLELISM=4 LOCAL_BUILD_JOBS=3
+```
+
+Higher concurrency increases memory use, particularly during linking. Each
+platform has its own persistent target directory, so Cargo's target-directory
+lock does not serialize platform builds. Existing target-specific caches are
+moved to their new directories on the next build; completed work is preserved.
+All three outputs within a platform still share one compilation graph.
+`release-plan` prints both concurrency and cache paths without starting builds.
+
 On macOS, the local builder uses Xcode for both Mac architectures, cargo-zigbuild
 for Linux x86_64 and ARM64 (`aarch64-unknown-linux-gnu.2.34`). Missing Rust
 targets are installed automatically. Cross-tooling lives

@@ -19,6 +19,8 @@ import tarfile
 import tempfile
 import tomllib
 
+from local_build import outputs
+
 PLATFORMS = {
     'linux-aarch64': ('aarch64-unknown-linux-gnu', 'liborchiddb_compiler.so', 'liborchiddb_java.so', 'linux_aarch64', 'linux-arm64'),
     'macos-aarch64': ('aarch64-apple-darwin', 'liborchiddb_compiler.dylib', 'liborchiddb_java.dylib', 'macosx_11_0_arm64', 'darwin-arm64'),
@@ -100,11 +102,10 @@ class Package:
         return self.output / kind
 
     def binary(self, platform, filename):
+        if not self.explicit_target:
+            return outputs(self.workspace, platform)[1]['native'].parent / filename
         triple = PLATFORMS[platform][0]
-        cache = self.target
-        if not self.explicit_target and platform.startswith('linux'):
-            cache = self.workspace / 'target' / 'local-linux'
-        directory = cache / 'release' if platform == 'macos-aarch64' else cache / triple / 'release'
+        directory = self.target / 'release' if platform == 'macos-aarch64' else self.target / triple / 'release'
         return directory / filename
 
     def staged(self, kind):

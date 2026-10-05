@@ -29,6 +29,33 @@ class PlatformsTest(unittest.TestCase):
         self.assertEqual(set(package.PLATFORMS), required)
         self.assertEqual(package.PLATFORMS['linux-aarch64'][4], 'linux-arm64')
 
+    def test_cpu_defaults_and_explicit_concurrency(self):
+        self.assertEqual(build.parallelism(4, {}, 12), (2, 3))
+        self.assertEqual(build.parallelism(1, {}, 12), (1, 6))
+        self.assertEqual(build.parallelism(4, {}, 1), (1, 1))
+        self.assertEqual(build.parallelism(4, {'LOCAL_BUILD_PARALLELISM': '4', 'LOCAL_BUILD_JOBS': '3'}, 12), (4, 3))
+        for key in ['LOCAL_BUILD_PARALLELISM', 'LOCAL_BUILD_JOBS']:
+            for value in ['0', '-1', 'invalid']:
+                with self.assertRaises(SystemExit):
+                    build.parallelism(4, {key: value}, 12)
+
+    def test_platforms_have_distinct_cargo_lock_directories(self):
+        caches = {build.outputs(Path('/workspace'), platform)[0] for platform in build.P}
+        self.assertEqual(len(caches), 4)
+
+    def test_target_cache_migration_preserves_artifacts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            previous = root / 'target/local-linux/aarch64-unknown-linux-gnu/release/liborchiddb_compiler.so'
+            previous.parent.mkdir(parents=True)
+            previous.write_bytes(b'existing artifact')
+            build.prepare_cache(root, 'linux-aarch64')
+            destination = build.outputs(root, 'linux-aarch64')[1]['native']
+            self.assertEqual(destination.read_bytes(), b'existing artifact')
+            build.prepare_cache(root, 'linux-aarch64')
+            self.assertEqual(destination.read_bytes(), b'existing artifact')
+            self.assertFalse(previous.exists())
+
     def test_elf_architecture_is_checked_not_just_filename(self):
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / 'liborchiddb_compiler.so'
