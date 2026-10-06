@@ -40,6 +40,9 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 #[cfg(feature = "duckdb")]
 use futures::stream;
 
+#[cfg(all(test, feature = "duckdb"))]
+mod scalar_inputs;
+
 #[derive(Debug, Clone, Default)]
 pub struct DagStats {
     pub cost: crate::ir::QueryCost,
@@ -569,21 +572,29 @@ pub(crate) async fn prepare_with_extensions(
         // DataFusion operators still require type coercion and function analysis.
         query_state.analyzer().execute_and_check(initial, query_state.config_options(), |_, _| {})?
     };
-    let optimized = if resources.region_session.is_some() && !resources.optimize {
+    // Input-only native scalar calls must become typed literals before SQL
+    // eligibility and search lowering, even when optional rewrites are disabled.
+    // SimplifyExpressions respects function volatility and leaves row-dependent
+    // calls (and engine-only calls) in place. Reuse the query's execution context
+    // so stable functions see the same clock as the rest of the query.
+    let optimized = if !resources.optimize {
         datafusion::optimizer::Optimizer::with_rules(vec![
             Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
+        ]).optimize(optimized, &query_state, |_, _| {})?
+    } else { optimized };
+    let optimized = if resources.region_session.is_some() && !resources.optimize {
+        datafusion::optimizer::Optimizer::with_rules(vec![
             Arc::new(datafusion::optimizer::replace_distinct_aggregate::ReplaceDistinctWithAggregate::new()),
         ])
-            .optimize(optimized, &datafusion::optimizer::OptimizerContext::new(), |_, _| {})?
+            .optimize(optimized, &query_state, |_, _| {})?
     } else { optimized };
     let mut has_search=false;
     optimized.apply_with_subqueries(|p| {has_search |= super::search::node(p).is_some(); Ok(TreeNodeRecursion::Continue)})?;
     let optimized=if has_search && !resources.optimize {
         datafusion::optimizer::Optimizer::with_rules(vec![
-            Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
             Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()),
             Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
-        ]).optimize(optimized,&datafusion::optimizer::OptimizerContext::new(),|_,_|{})?
+        ]).optimize(optimized,&query_state,|_,_|{})?
     } else {optimized};
     let optimized=super::search::bind_seeds(optimized)?;
     let (optimized, more) = super::constraints::optimize(optimized)?;
