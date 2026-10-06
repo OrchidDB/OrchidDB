@@ -402,6 +402,9 @@ fn native_row_field(
 /// Execute a typed SQL template once for each source row, using the operation's
 /// owning engine session. Its output schema includes any source columns needed
 /// by the parent; the template explicitly projects them.
+/// Execution is incremental: the first occurrence is emitted immediately, then
+/// bounded groups amortize scheduling. A downstream limit or dropped stream can
+/// stop further requests. Blocking driver calls already in flight may finish.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DependentOperation {
     pub source: Arc<LogicalPlan>,

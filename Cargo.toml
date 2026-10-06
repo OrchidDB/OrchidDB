@@ -91,6 +91,11 @@ path = "tools/diagnostics/language_functions_bench.rs"
 required-features = ["duckdb"]
 
 [[example]]
+name = "dependent_execution_bench"
+path = "tools/diagnostics/dependent_execution_bench.rs"
+required-features = ["duckdb"]
+
+[[example]]
 name = "mapped_execution_plans"
 path = "tools/diagnostics/mapped_execution_plans.rs"
 

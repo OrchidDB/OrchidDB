@@ -440,10 +440,49 @@ impl SqlTemplate {
         if values.len() != self.parameters {
             return Err(SqlError::Conversion("SQL parameter count mismatch".into()));
         }
+        self.prepare()?.bind(values)
+    }
+
+    /// Parse the invariant statement once per execution. Only the AST is reused;
+    /// bound values and query results never survive an input occurrence.
+    pub(crate) fn prepare(&self) -> SqlResult<PreparedSqlTemplate> {
         let dialect = SqlDialect::resolve(&self.dialect)?;
         let parser = dialect.parser_dialect();
         let mut statements = Parser::parse_sql(parser.as_ref(), &self.sql)
             .map_err(|e| SqlError::Unsupported(e.to_string()))?;
+        if statements.len() != 1 {
+            return Err(SqlError::Unsupported(
+                "dependent SQL must be one statement".into(),
+            ));
+        }
+        let statement = statements.remove(0);
+        if !matches!(statement, ast::Statement::Query(_)) {
+            return Err(SqlError::Unsupported(
+                "dependent SQL must be a query statement".into(),
+            ));
+        }
+        Ok(PreparedSqlTemplate {
+            statement,
+            parameters: self.parameters,
+            dialect,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PreparedSqlTemplate {
+    statement: ast::Statement,
+    parameters: usize,
+    dialect: SqlDialect,
+}
+impl PreparedSqlTemplate {
+    pub(crate) fn bind(&self, values: &[ScalarValue]) -> SqlResult<String> {
+        if values.len() != self.parameters {
+            return Err(SqlError::Conversion("SQL parameter count mismatch".into()));
+        }
+        let dialect = self.dialect;
+        let parser = dialect.parser_dialect();
+        let mut statement = self.statement.clone();
         let literals = values
             .iter()
             .map(|v| {
@@ -455,7 +494,7 @@ impl SqlTemplate {
                     .map_err(|e| SqlError::Conversion(e.to_string()))
             })
             .collect::<SqlResult<Vec<_>>>()?;
-        let flow = ast::visit_expressions_mut(&mut statements, |expr| {
+        let flow = ast::visit_expressions_mut(&mut statement, |expr| {
             if let ast::Expr::Value(value) = expr {
                 if let ast::Value::Placeholder(name) = &value.value {
                     let index = name
@@ -477,17 +516,7 @@ impl SqlTemplate {
         if let std::ops::ControlFlow::Break(e) = flow {
             return Err(e);
         }
-        if statements.len() != 1 {
-            return Err(SqlError::Unsupported(
-                "dependent SQL must be one statement".into(),
-            ));
-        }
-        if !matches!(statements[0], ast::Statement::Query(_)) {
-            return Err(SqlError::Unsupported(
-                "dependent SQL must be a query statement".into(),
-            ));
-        }
-        Ok(statements[0].to_string())
+        Ok(statement.to_string())
     }
 }
 
