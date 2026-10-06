@@ -331,6 +331,7 @@ struct Compiler<'a> {
     graph: &'a PropertyGraph,
     policy: crate::ir::policy::GraphPlanPolicy,
     sql: bool,
+    language_functions: bool,
     islands: super::island_planner::SharedMemo,
     lowered: std::cell::RefCell<std::collections::HashMap<usize, LogicalPlan>>,
 }
@@ -394,20 +395,28 @@ impl Compiler<'_> {
             let islands = self.islands.lock().unwrap();
             islands.safe(node)
                 && !(self.policy.language == crate::ir::policy::Language::Cypher
+                    && !self.language_functions
                     && islands.requires_cypher_equality(node))
         };
+        let terminal_gremlin = self.language_functions
+            && self.policy.language == crate::ir::policy::Language::Gremlin
+            && matches!(node, Node::GraphReturn { .. })
+            && super::language_functions::terminal_gremlin(node);
         if can_lower_sql
-            && !matches!(
+            && (terminal_gremlin || !matches!(
                 node,
                 Node::GraphReturn { .. }
                     | Node::GraphValues { .. }
                     | Node::GraphOneRow
                     | Node::GraphEmpty
-            )
+            ))
         {
-            let lowered = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), ..Default::default() })
-                .preserving_traverser_state()
-                .lower_island(&self.policy, node, self.graph, self.islands.clone());
+            let backend = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), language_functions: self.language_functions, ..Default::default() });
+            // A complete terminal traversal needs only its returned values.
+            // Partial islands must retain state for downstream graph operators.
+            let backend = if terminal_gremlin { backend } else { backend.preserving_traverser_state() };
+            let memo = if terminal_gremlin { super::island_planner::IslandMemo::new(node) } else { self.islands.clone() };
+            let lowered = backend.lower_island(&self.policy, node, self.graph, memo);
             if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some()
                 && let Err(error) = &lowered {
                 eprintln!("SQL IR lowering boundary: {error}");
@@ -507,6 +516,7 @@ async fn execute_rows_inner(
         let compiler = Compiler {
             graph,
             policy: plan.policy.clone(),
+            language_functions: resources.is_some_and(|r| r.language_functions_enabled()),
             sql: !has_mutating_branches(&plan.root)
                 && !(graph.mapping.is_some() && graph.has_mutations()),
             islands: super::island_planner::IslandMemo::new(&plan.root),

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha384, Sha512};
 use std::sync::Arc;
 use crate::ir::runtime::scalar::preparation::RegexMemo;
 
-pub(super) struct SparqlScalar;
+pub(crate) struct SparqlScalar;
 
 impl VArrowScalar for SparqlScalar {
     type State = ();

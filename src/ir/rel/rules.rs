@@ -105,6 +105,9 @@ impl LoweringContext<'_> {
             return self.lower_node(node);
         }
         let mut keys = distinct_partition(&lowered.plan, keys);
+        if self.options.language_functions && self.language == Language::Cypher {
+            keys = keys.into_iter().map(|e| language_functions::key(e, &lowered.plan)).collect::<RelResult<Vec<_>>>()?;
+        }
         let mut unique = Vec::new();
         for key in keys.drain(..) {
             if !unique.contains(&key) {

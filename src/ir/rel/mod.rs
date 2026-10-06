@@ -55,6 +55,7 @@ mod collections;
 mod gremlin;
 mod gremlin_state;
 mod gremlin_strings;
+pub(crate) mod language_functions;
 pub mod search;
 
 pub mod dependent;
@@ -139,6 +140,8 @@ pub struct RelBackend {
 
 #[derive(Debug, Clone)]
 pub struct RelBackendOptions {
+    /// Emit calls to opt-in DuckDB language functions (also executable by DataFusion).
+    pub language_functions: bool,
     /// Internal path-maintenance expressions are ignored when the path is not
     /// projected to the user. This lets ordinary Gremlin traversals lower to
     /// relational plans while path-returning traversals still surface gaps as
@@ -156,6 +159,7 @@ impl Default for RelBackendOptions {
     fn default() -> Self {
         Self {
             tolerate_internal_path_state: true,
+            language_functions: false,
             mapping: None,
             rdf_datasets: None,
         }
@@ -235,6 +239,11 @@ struct LoweringContext<'a> {
 }
 
 impl RelBackend {
+    pub fn with_language_functions(mut self, enabled: bool) -> Self {
+        self.options.language_functions = enabled;
+        self
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

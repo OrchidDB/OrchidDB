@@ -144,6 +144,7 @@ impl MappedGraphEngine {
     fn backend(&self) -> RelBackend {
         RelBackend::with_options(RelBackendOptions {
             mapping: Some(self.mapping.clone()),
+            language_functions: self.executor.language_functions_enabled(),
             ..RelBackendOptions::default()
         })
     }

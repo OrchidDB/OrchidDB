@@ -410,6 +410,15 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    if dialect == SqlDialect::DuckDb && name.trim_matches('"') == "first_value" && function.over.is_none() {
+        function.name = ast::ObjectName::from(vec![ast::Ident::new("first")]);
+        return Ok(());
+    }
+    if crate::ir::rel::language_functions::supported(name.trim_matches('"')) {
+        return if dialect == SqlDialect::DuckDb { Ok(()) } else {
+            Err(SqlError::Unsupported("registered language functions require DuckDB".into()))
+        };
+    }
     if let Some(lowered) = dialect.lower_function(function)? {
         *expr = lowered;
         return Ok(());

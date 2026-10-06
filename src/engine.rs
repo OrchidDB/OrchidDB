@@ -60,6 +60,7 @@ pub struct QueryResult {
 /// One graph and one transaction at a time. Separate engine instances use
 /// DuckDB snapshot isolation; conflicting writes fail during persistence or commit.
 pub struct GraphEngine {
+    language_functions: bool,
     storage: Connection,
     mapping: Option<Arc<GraphMapping>>,
     database: Option<sql::SharedDatabase>,
@@ -172,10 +173,11 @@ impl GraphEngine {
         let mut engine = Self {
             storage, mapping: Some(mapping), database: None, graph: PropertyGraph::new(),
             loaded_revision: None, in_transaction, failed_transaction: false,
-            read_mode: ReadMode::Hybrid, backend: RelBackend::new(), sql_timeout: None,
+            read_mode: ReadMode::Hybrid, backend: RelBackend::new().with_language_functions(true), sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
             dag_session: crate::ir::rel::dag::DagSession::new(None),
             jvm_workers: Default::default(),
+            language_functions: true,
         };
         engine.refresh()?;
         Ok(engine)
@@ -308,14 +310,25 @@ impl GraphEngine {
             in_transaction: false,
             failed_transaction: false,
             read_mode: ReadMode::Hybrid,
-            backend: RelBackend::new(),
+            backend: RelBackend::new().with_language_functions(true),
             sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
             dag_session: crate::ir::rel::dag::DagSession::new(None),
             jvm_workers: Default::default(),
+            language_functions: true,
         };
         engine.refresh()?;
         Ok(engine)
+    }
+
+    /// Control in-process language UDFs and their SQL lowering (default: enabled).
+    pub fn set_language_functions(&mut self, enabled: bool) -> EngineResult<()> {
+        self.strict_executor.set_language_functions(enabled).map_err(|e| e.to_string())?;
+        self.dag_session.executor()?.set_language_functions(enabled).map_err(|e| e.to_string())?;
+        if enabled && !self.language_functions { sql::language_functions::register(&self.storage).map_err(|e| e.to_string())?; }
+        self.backend = self.backend.clone().with_language_functions(enabled);
+        self.language_functions = enabled;
+        Ok(())
     }
 
     pub fn set_read_mode(&mut self, mode: ReadMode) {
@@ -689,6 +702,8 @@ impl GraphEngine {
 
     /// Execute through the same SQL IR DAG, retaining structured runtime errors.
     pub async fn execute_plan_with_diagnostics(&mut self, plan: &GraphPlan) -> Result<QueryResult, QueryExecutionError> {
+        // Sessions may have been rebuilt after a timeout or rollback.
+        self.set_language_functions(self.language_functions)?;
         if self.failed_transaction {
             return Err("transaction failed; roll it back".into());
         }
@@ -696,6 +711,7 @@ impl GraphEngine {
             let placeholder = Connection::open_in_memory().map_err(|e|e.to_string())?;
             let storage = std::mem::replace(&mut self.storage, placeholder);
             let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
+            lease.executor.set_language_functions(self.language_functions).map_err(|e| e.to_string())?;
             if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
             if self.in_transaction {self.failed_transaction=true;}
             let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone(), self.dag_session.region_session.clone()).await;

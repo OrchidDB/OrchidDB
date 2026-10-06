@@ -42,8 +42,10 @@ struct ScanTableEntry {
     last_used: u64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DuckDbExecutor {
+    language_functions: bool,
+    language_functions_registered: bool,
     connection: Option<Connection>,
     database: Option<super::SharedDatabase>,
     applied_setup: BTreeMap<String, Vec<String>>,
@@ -64,7 +66,48 @@ pub struct DuckDbExecutor {
     transaction_active: bool,
 }
 
+impl Default for DuckDbExecutor {
+    fn default() -> Self {
+        Self {
+            language_functions: true,
+            language_functions_registered: false,
+            connection: None,
+            database: None,
+            applied_setup: BTreeMap::new(),
+            scan_tables: BTreeMap::new(),
+            scan_views: BTreeMap::new(),
+            transient_scans: BTreeMap::new(),
+            retired_scans: BTreeMap::new(),
+            scan_clock: 0,
+            arrow_registered: false,
+            timeout: None,
+            setup_timeout: None,
+            lost_connection: false,
+            transaction_active: false,
+        }
+    }
+}
+
 impl DuckDbExecutor {
+    /// Control language UDF registration and expanded SQL lowering (default: enabled).
+    /// Disabling leaves registered functions available to raw SQL, but stops
+    /// the graph planner from emitting new calls to them.
+    pub fn set_language_functions(&mut self, enabled: bool) -> SqlResult<()> {
+        if self.language_functions == enabled { return if enabled { self.ensure_connection() } else { Ok(()) }; }
+        if enabled {
+            self.ensure_connection()?;
+            if !self.language_functions_registered {
+                super::language_functions::register(self.connection.as_ref().unwrap())
+                    .map_err(|e| SqlError::Setup(format!("language functions: {e}")))?;
+                self.language_functions_registered = true;
+            }
+        }
+        self.language_functions = enabled;
+        Ok(())
+    }
+
+    pub fn language_functions_enabled(&self) -> bool { self.language_functions }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -114,6 +157,8 @@ impl DuckDbExecutor {
     pub fn from_connection(connection: Connection) -> Self {
         let transaction_active = detect_transaction(&connection).unwrap_or(true);
         Self {
+            language_functions: true,
+            language_functions_registered: false,
             connection: Some(connection),
             database: None,
             applied_setup: BTreeMap::new(),
@@ -136,6 +181,7 @@ impl DuckDbExecutor {
         self.invalidate_setup();
         let _ = self.clear_query_scans();
         let _ = self.clear_retired_scans();
+        self.language_functions_registered = false;
         self.connection.take()
     }
 
@@ -150,6 +196,8 @@ impl DuckDbExecutor {
             self.clear_query_scans()?;
             self.clear_retired_scans()?;
         }
+        // The caller can roll back transactional registration or drop functions.
+        self.language_functions_registered = false;
         Ok(self.connection.as_ref().expect("connection initialized"))
     }
 
@@ -161,10 +209,20 @@ impl DuckDbExecutor {
                 ));
             }
             self.arrow_registered = false;
+            self.language_functions_registered = false;
             self.connection = Some(
                 Connection::open_in_memory()
                     .map_err(|err| SqlError::Setup(format!("duckdb open: {err}")))?,
             );
+        }
+        if self.language_functions && !self.language_functions_registered
+            && self.connection.as_ref().and_then(detect_transaction).is_some() {
+            // Register in healthy caller transactions too, but leave aborted
+            // transactions accessible for ROLLBACK.
+            // Borrowing the connection invalidates this cache, as does rollback.
+            super::language_functions::register(self.connection.as_ref().unwrap())
+                .map_err(|e| SqlError::Setup(format!("language functions: {e}")))?;
+            self.language_functions_registered = true;
         }
         Ok(())
     }
@@ -224,6 +282,7 @@ impl DuckDbExecutor {
         let conn = self.connection()?;
         conn.execute_batch("ROLLBACK")
             .map_err(|err| SqlError::Setup(format!("duckdb rollback: {err}")))?;
+        self.language_functions_registered = false;
         self.transaction_active = false;
         self.invalidate_setup();
         self.clear_query_scans()?;

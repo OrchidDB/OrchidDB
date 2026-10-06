@@ -1,0 +1,161 @@
+{
+  "comparisons": [
+    {
+      "after": {
+        "median_ms": 113.64370799999999,
+        "native_kernel_calls": 0,
+        "residual_operators": 1,
+        "result_rows": 100,
+        "sql": [
+          "WITH \"__w_sql_cte_aggregate_1\" AS (\n  SELECT \"p__id\", \"p__label\", \"p__prop__name\", \"p__prop__x\", 1 AS \"__w_cte_guard_1\" FROM (SELECT \"id\" AS \"p__id\", 'P' AS \"p__label\", \"name\" AS \"p__prop__name\", \"x\" AS \"p__prop__x\" FROM \"people\")\n)\nSELECT \"p.x\" AS \"__region_0\", \"count(*)\" AS \"__region_1\" FROM (SELECT \"p.x\" AS \"p.x\", \"count(*)\" AS \"count(*)\" FROM (SELECT count(CASE WHEN \"p__id\" IS NOT NULL THEN \"p__id\" ELSE 0 END) AS \"count(*)\", first(\"p__prop__x\") AS \"p.x\" FROM \"__w_sql_cte_aggregate_1\" GROUP BY __orchiddb_lang_cypher_key(\"p__prop__x\")))"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          113.090917,
+          113.539,
+          113.64370799999999,
+          115.819959,
+          116.30291600000001
+        ]
+      },
+      "before": {
+        "median_ms": 279.479625,
+        "native_kernel_calls": 2,
+        "residual_operators": 3,
+        "result_rows": 100,
+        "sql": [
+          "SELECT \"p__id\" AS \"__region_0\", \"p__label\" AS \"__region_1\", \"p__prop__name\" AS \"__region_2\", \"p__prop__x\" AS \"__region_3\" FROM (SELECT \"id\" AS \"p__id\", 'P' AS \"p__label\", \"name\" AS \"p__prop__name\", \"x\" AS \"p__prop__x\" FROM \"people\")"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          277.525625,
+          279.206083,
+          279.479625,
+          281.12683300000003,
+          281.2425
+        ]
+      },
+      "language": "cypher",
+      "query": "MATCH (p:P) RETURN p.x, count(*)"
+    },
+    {
+      "after": {
+        "median_ms": 111.217625,
+        "native_kernel_calls": 0,
+        "residual_operators": 1,
+        "result_rows": 1,
+        "sql": [
+          "SELECT \"count(DISTINCT p.x)\" AS \"__region_0\" FROM (SELECT count(DISTINCT __orchiddb_lang_cypher_key(\"p__prop__x\")) AS \"count(DISTINCT p.x)\" FROM (SELECT \"id\" AS \"p__id\", 'P' AS \"p__label\", \"name\" AS \"p__prop__name\", \"x\" AS \"p__prop__x\" FROM \"people\"))"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          110.59962499999999,
+          110.599958,
+          111.217625,
+          112.623958,
+          113.290584
+        ]
+      },
+      "before": {
+        "median_ms": 270.200916,
+        "native_kernel_calls": 2,
+        "residual_operators": 3,
+        "result_rows": 1,
+        "sql": [
+          "SELECT \"p__id\" AS \"__region_0\", \"p__label\" AS \"__region_1\", \"p__prop__name\" AS \"__region_2\", \"p__prop__x\" AS \"__region_3\" FROM (SELECT \"id\" AS \"p__id\", 'P' AS \"p__label\", \"name\" AS \"p__prop__name\", \"x\" AS \"p__prop__x\" FROM \"people\")"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          267.42120800000004,
+          268.486625,
+          270.200916,
+          273.7925,
+          274.565833
+        ]
+      },
+      "language": "cypher",
+      "query": "MATCH (p:P) RETURN count(DISTINCT p.x)"
+    },
+    {
+      "after": {
+        "median_ms": 179.76820800000002,
+        "native_kernel_calls": 0,
+        "residual_operators": 1,
+        "result_rows": 10000,
+        "sql": [
+          "WITH \"__w_sql_cte_unwind_input_0\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", 1 AS \"__w_sql_cte_unwind_input_0_guard\" FROM (SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", CASE WHEN \"current__prop__name\" IS NOT NULL THEN [\"current__prop__name\"] ELSE [] END AS \"property_value_0\" FROM (SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", true AS \"__bulk_enabled\", false AS \"__gremlin_bulk_safe\" FROM (SELECT \"id\" AS \"current__id\", 'P' AS \"current__label\", \"name\" AS \"current__prop__name\", \"x\" AS \"current__prop__x\" FROM \"people\")))\n),\n\"__w_sql_cte_unnest_operator_1\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", UNNEST(\"property_value_0\") AS \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\" FROM \"__w_sql_cte_unwind_input_0\"\n),\n\"__w_sql_cte_unwind_0\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\", 1 AS \"__w_sql_cte_unwind_0_guard\" FROM \"__w_sql_cte_unnest_operator_1\"\n)\nSELECT \"current\" AS \"__region_0\" FROM (SELECT \"current\" FROM (SELECT \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\", \"__w_sql_cte_unwind_0_guard\", __orchiddb_lang_text('trim', {\"a0\": \"current\"}) AS \"current\", NULL AS \"__path\" FROM (SELECT \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\", \"__w_sql_cte_unwind_0_guard\", __orchiddb_lang_text('ucase', {\"a0\": \"current\"}) AS \"current\", NULL AS \"__path\" FROM (SELECT \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\", \"__w_sql_cte_unwind_0_guard\", \"property_value_0\" AS \"current\", NULL AS \"__path\" FROM \"__w_sql_cte_unwind_0\"))))"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          177.811041,
+          178.012,
+          179.76820800000002,
+          181.233834,
+          181.97470800000002
+        ]
+      },
+      "before": {
+        "median_ms": 692.0610839999999,
+        "native_kernel_calls": 3,
+        "residual_operators": 4,
+        "result_rows": 10000,
+        "sql": [
+          "WITH \"__w_sql_cte_unwind_input_0\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", 1 AS \"__w_sql_cte_unwind_input_0_guard\" FROM (SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", CASE WHEN \"current__prop__name\" IS NOT NULL THEN [\"current__prop__name\"] ELSE [] END AS \"property_value_0\" FROM (SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", true AS \"__bulk_enabled\", false AS \"__gremlin_bulk_safe\" FROM (SELECT \"id\" AS \"current__id\", 'P' AS \"current__label\", \"name\" AS \"current__prop__name\", \"x\" AS \"current__prop__x\" FROM \"people\")))\n),\n\"__w_sql_cte_unnest_operator_1\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", UNNEST(\"property_value_0\") AS \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\" FROM \"__w_sql_cte_unwind_input_0\"\n),\n\"__w_sql_cte_unwind_0\" AS (\n  SELECT \"current__id\", \"current__label\", \"current__prop__name\", \"current__prop__x\", \"__bulk_enabled\", \"__gremlin_bulk_safe\", \"property_value_0\", \"__w_sql_cte_unwind_input_0_guard\", 1 AS \"__w_sql_cte_unwind_0_guard\" FROM \"__w_sql_cte_unnest_operator_1\"\n)\nSELECT \"current__id\" AS \"__region_0\", \"current__label\" AS \"__region_1\", \"current__prop__name\" AS \"__region_2\", \"current__prop__x\" AS \"__region_3\", \"__bulk_enabled\" AS \"__region_4\", \"__gremlin_bulk_safe\" AS \"__region_5\", \"property_value_0\" AS \"__region_6\", \"__w_sql_cte_unwind_input_0_guard\" AS \"__region_7\", \"__w_sql_cte_unwind_0_guard\" AS \"__region_8\" FROM \"__w_sql_cte_unwind_0\""
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          688.394541,
+          690.774625,
+          692.0610839999999,
+          692.985,
+          710.093792
+        ]
+      },
+      "language": "gremlin",
+      "query": "g.V().values('name').toUpper().trim()"
+    },
+    {
+      "after": {
+        "median_ms": 49.725041,
+        "native_kernel_calls": 0,
+        "residual_operators": 0,
+        "result_rows": 2,
+        "sql": [
+          "SELECT \"?x\" AS \"__region_0\", \"__rdf:term:kind:?x\" AS \"__region_1\", \"__rdf:term:datatype:?x\" AS \"__region_2\", \"__rdf:term:language:?x\" AS \"__region_3\" FROM (SELECT \"?x\" AS \"?x\", \"__rdf:term:kind:?x\" AS \"__rdf:term:kind:?x\", \"__rdf:term:datatype:?x\" AS \"__rdf:term:datatype:?x\", \"__rdf:term:language:?x\" AS \"__rdf:term:language:?x\" FROM (SELECT \"?x\" AS \"?x\", \"__rdf:term:kind:?x\" AS \"__rdf:term:kind:?x\", \"__rdf:term:datatype:?x\" AS \"__rdf:term:datatype:?x\", \"__rdf:term:language:?x\" AS \"__rdf:term:language:?x\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__sq1_t\" END AS \"?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:kind:__sq1_t\" END AS \"__rdf:term:kind:?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:datatype:__sq1_t\" END AS \"__rdf:term:datatype:?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:language:__sq1_t\" END AS \"__rdf:term:language:?x\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__sq0_raw\" END AS \"__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:kind:__sq0_raw\" END AS \"__rdf:term:kind:__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:datatype:__sq0_raw\" END AS \"__rdf:term:datatype:__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:language:__sq0_raw\" END AS \"__rdf:term:language:__sq1_t\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN __orchiddb_lang_sparql('encode_for_uri', \"?v\", '', '', '') END AS \"__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN 'LITERAL' END AS \"__rdf:term:kind:__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN 'http://www.w3.org/2001/XMLSchema#string' END AS \"__rdf:term:datatype:__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN NULL END AS \"__rdf:term:language:__sq0_raw\" FROM \"__graph_rel_sparql_values_0\")))))"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          49.522667,
+          49.62275,
+          49.725041,
+          51.116833,
+          53.396834
+        ]
+      },
+      "before": {
+        "median_ms": 45.850125,
+        "native_kernel_calls": 0,
+        "residual_operators": 0,
+        "result_rows": 2,
+        "sql": [
+          "SELECT \"?x\" AS \"__region_0\", \"__rdf:term:kind:?x\" AS \"__region_1\", \"__rdf:term:datatype:?x\" AS \"__region_2\", \"__rdf:term:language:?x\" AS \"__region_3\" FROM (SELECT \"?x\" AS \"?x\", \"__rdf:term:kind:?x\" AS \"__rdf:term:kind:?x\", \"__rdf:term:datatype:?x\" AS \"__rdf:term:datatype:?x\", \"__rdf:term:language:?x\" AS \"__rdf:term:language:?x\" FROM (SELECT \"?x\" AS \"?x\", \"__rdf:term:kind:?x\" AS \"__rdf:term:kind:?x\", \"__rdf:term:datatype:?x\" AS \"__rdf:term:datatype:?x\", \"__rdf:term:language:?x\" AS \"__rdf:term:language:?x\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__sq1_t\" END AS \"?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:kind:__sq1_t\" END AS \"__rdf:term:kind:?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:datatype:__sq1_t\" END AS \"__rdf:term:datatype:?x\", CASE WHEN ((\"__sq1_t\" IS NULL) OR (\"__rdf:term:kind:__sq1_t\" IS NULL)) THEN NULL ELSE \"__rdf:term:language:__sq1_t\" END AS \"__rdf:term:language:?x\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__sq0_raw\" END AS \"__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:kind:__sq0_raw\" END AS \"__rdf:term:kind:__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:datatype:__sq0_raw\" END AS \"__rdf:term:datatype:__sq1_t\", CASE WHEN ((\"__sq0_raw\" IS NULL) OR (\"__rdf:term:kind:__sq0_raw\" IS NULL)) THEN NULL ELSE \"__rdf:term:language:__sq0_raw\" END AS \"__rdf:term:language:__sq1_t\" FROM (SELECT \"?v\", \"__rdf:term:kind:?v\", \"__rdf:term:datatype:?v\", \"__rdf:term:language:?v\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN __orchiddb_sparql_scalar('encode_for_uri', \"?v\", '', '', '') END AS \"__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN 'LITERAL' END AS \"__rdf:term:kind:__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN 'http://www.w3.org/2001/XMLSchema#string' END AS \"__rdf:term:datatype:__sq0_raw\", CASE WHEN ((\"__rdf:term:kind:?v\" = 'LITERAL') AND ((\"__rdf:term:datatype:?v\" = 'http://www.w3.org/2001/XMLSchema#string') OR (\"__rdf:term:datatype:?v\" = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString'))) THEN NULL END AS \"__rdf:term:language:__sq0_raw\" FROM \"__graph_rel_sparql_values_0\")))))"
+        ],
+        "sql_executions": 1,
+        "trials_ms": [
+          45.548625,
+          45.827416,
+          45.850125,
+          46.281083,
+          46.333417000000004
+        ]
+      },
+      "language": "sparql",
+      "query": "SELECT (ENCODE_FOR_URI(?v) AS ?x) WHERE { VALUES ?v { \"a b\" \"é\" } }"
+    }
+  ],
+  "duckdb_threads": 1,
+  "profile": "unoptimized dev",
+  "result_parity": true,
+  "rows": 10000,
+  "trials": 5
+}

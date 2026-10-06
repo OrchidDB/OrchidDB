@@ -82,3 +82,7 @@ parquet = { version = "58.2.0", features = ["arrow"] }
 [[example]]
 name = "managed_graph"
 required-features = ["duckdb"]
+
+[[example]]
+name = "language_functions_bench"
+required-features = ["duckdb"]

@@ -19,6 +19,10 @@
 //!   `duckdb`, explicitly enabled) runs everything in-memory; [`PostgresExecutor`]
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
+#[cfg(feature = "duckdb")]
+pub mod language_functions;
+#[cfg(feature = "duckdb")]
+mod language_vectors;
 mod logical_functions;
 mod structured;
 pub(crate) mod json;

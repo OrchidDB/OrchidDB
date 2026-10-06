@@ -352,6 +352,9 @@ pub(super) fn distinct_partition(plan: &LogicalPlan, keys: &[String]) -> Vec<Exp
 
 pub(super) fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usize) -> RelResult<LogicalPlan> {
     let partition = distinct_partition(&plan, keys);
+    keyed_distinct_partition(plan, partition, barrier_id)
+}
+pub(super) fn keyed_distinct_partition(plan: LogicalPlan, partition: Vec<Expr>, barrier_id: usize) -> RelResult<LogicalPlan> {
     if let Some(plan) = rules::eliminate_redundant_distinct(&plan, &partition) {
         return Ok(plan);
     }

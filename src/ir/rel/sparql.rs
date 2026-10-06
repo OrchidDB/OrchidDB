@@ -105,6 +105,17 @@ pub(super) fn lower_plan(
         next: 0,
     };
     let (plan, fields, result_form) = lowerer.lower_root(&plan.root, plan.policy.result_form)?;
+    let plan = if lowerer.ctx.options.language_functions {
+        use datafusion::common::tree_node::{TreeNode, Transformed};
+        plan.transform_up(|node| node.map_expressions(|expr| expr.transform_up(|expr| {
+            if let Expr::ScalarFunction(call) = &expr {
+                if call.func.name() == "__orchiddb_sparql_scalar" {
+                    return Ok(Transformed::yes(duck_str(super::language_functions::SPARQL, call.args.clone())));
+                }
+            }
+            Ok(Transformed::no(expr))
+        })))?.data
+    } else { plan };
     Ok(LoweredPlan {
         plan,
         fields,
@@ -249,7 +260,7 @@ impl ScalarUDFImpl for DuckDbFunction {
         args: ScalarFunctionArgs,
     ) -> datafusion::common::Result<ColumnarValue> {
         #[cfg(feature = "duckdb")]
-        if self.name == "__orchiddb_sparql_scalar" {
+        if self.name == "__orchiddb_sparql_scalar" || self.name == super::language_functions::SPARQL {
             use arrow::array::{Array, StringArray};
             let columns = args.args.iter().map(|arg| {
                 let array = arg.clone().into_array(args.number_rows)?;

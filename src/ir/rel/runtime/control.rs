@@ -169,6 +169,7 @@ impl Compiler<'_> {
         let compiler = Compiler {
             graph: self.graph,
             policy: self.policy.clone(),
+            language_functions: self.language_functions,
             // Mapped reads share the statement connection. Independent scans
             // inside a correlated body remain eligible for SQL pushdown;
             // mutation fences retain the live overlay path.

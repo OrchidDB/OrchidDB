@@ -73,6 +73,12 @@ pub(crate) struct DagSession {
     pub(crate) region_session: Option<sql::region::SharedRegionSession>,
 }
 impl DagSession {
+    pub(crate) fn language_functions_enabled(&self) -> bool {
+        #[cfg(feature = "duckdb")]
+        { self.region_session.is_none() && self.executor.lock().is_ok_and(|e| e.language_functions_enabled()) }
+        #[cfg(not(feature = "duckdb"))]
+        { false }
+    }
     pub(crate) fn new(_timeout: Option<std::time::Duration>) -> Self {
         let session = super::optimizer::session(
             SessionConfig::new().with_target_partitions(1),
@@ -201,6 +207,7 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
 struct SqlEligibility {
     reasons: std::collections::HashMap<usize, Option<&'static str>>,
     dialect: Option<sql::SqlDialect>,
+    language_functions: bool,
 }
 #[cfg(feature = "duckdb")]
 impl SqlEligibility {
@@ -245,6 +252,13 @@ impl SqlEligibility {
                     }
                 }
                 if let Expr::ScalarFunction(function) = expr {
+                    if super::language_functions::supported(function.func.name()) {
+                        if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb) {
+                            return Ok(TreeNodeRecursion::Continue);
+                        }
+                        reason.get_or_insert("language functions disabled on SQL session");
+                        return Ok(TreeNodeRecursion::Stop);
+                    }
                     if self.dialect == Some(sql::SqlDialect::Postgres) && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
                         reason.get_or_insert("native RDF scalar kernel");
                         return Ok(TreeNodeRecursion::Stop);
@@ -386,7 +400,7 @@ fn partition<'a>(
             }
             Some(RelationLowering::Rewrite(rewritten)) => {
                 if &rewritten == plan { return Err(DataFusionError::Plan("relational rewrite made no progress".into())); }
-                return partition(&rewritten, stats, &mut SqlEligibility {dialect:Some(dialect), ..Default::default()}, external, dialect, bind_inputs, source_executor).await;
+                return partition(&rewritten, stats, &mut SqlEligibility {dialect:Some(dialect), language_functions: eligibility.language_functions, ..Default::default()}, external, dialect, bind_inputs, source_executor).await;
             }
             Some(RelationLowering::Sql(_)) => return Err(DataFusionError::Plan("required relational operation could not form a SQL island".into())),
             None => {},
@@ -602,6 +616,8 @@ pub(crate) async fn prepare_with_extensions(
             None => sql::SqlDialect::DuckDb,
         };
         eligibility.dialect = Some(dialect);
+        eligibility.language_functions = resources.region_session.is_none()
+            && resources.executor.lock().map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?.language_functions_enabled();
         partition(&optimized, &mut stats, &mut eligibility,&resources.external,dialect,resources.region_session.is_some(),&resources.executor).await?
     };
     #[cfg(not(feature = "duckdb"))]

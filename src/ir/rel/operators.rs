@@ -8,6 +8,14 @@ impl LoweringContext<'_> {
     }
     pub(super) fn lower_node_inner(&mut self, node: &Node) -> RelResult<LoweredNode> {
         use Node::*;
+        if self.options.language_functions && self.language == Language::Cypher {
+            // These need a lossless heterogeneous union/aggregate representation
+            // before the equality fence can be lifted.
+            if matches!(node, GraphUnion { all: false, .. }) || matches!(node,
+                GraphAggregate { aggs, .. } if aggs.iter().any(|a| a.distinct && a.kind != AggKind::CountDistinct)) {
+                return Err(RelError::Unsupported("Cypher distinct aggregate/union requires native values".into()));
+            }
+        }
         let lowered = match node {
             GraphReturn {
                 fields,
@@ -241,12 +249,26 @@ impl LoweringContext<'_> {
                         })
                         .collect::<RelResult<Vec<_>>>()?,
                 );
+                let cypher_keys = self.options.language_functions && self.language == Language::Cypher;
+                let mut representatives = Vec::new();
+                let mut hidden_keys = BTreeSet::new();
+                if cypher_keys {
+                    let correlation_count = group_exprs.len() - group.len();
+                    for (i, item) in group.iter().enumerate() {
+                        let original = self.lower_expr(&input.plan, &item.expr)?;
+                        let alias = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_group_{}_{}", self.scan_counter, i));
+                        hidden_keys.insert(alias.clone());
+                        group_exprs[correlation_count + i] = language_functions::key(original.clone(), &input.plan)?.alias(alias);
+                        representatives.push(datafusion::functions_aggregate::first_last::first_value(original, vec![]).alias(&item.alias));
+                    }
+                    self.scan_counter += 1;
+                }
                 let agg_calls = aggs;
                 let needs_row_count_barrier = aggs.iter().any(|agg| {
                     (matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
                         || matches!((&agg.kind, &agg.arg), (AggKind::EngineFunction, Some(IrExpr::Call { args, .. })) if args.is_empty())
                 });
-                let aggs = aggs
+                let mut aggs = aggs
                     .iter()
                     .map(|agg| {
                         let expr = match agg.kind {
@@ -267,8 +289,9 @@ impl LoweringContext<'_> {
                                         "count distinct without an argument".into(),
                                     ));
                                 };
+                                let operand = self.lower_distinct_count_operand(&input.plan, arg)?;
                                 datafusion::functions_aggregate::count::count_distinct(
-                                    self.lower_distinct_count_operand(&input.plan, arg)?,
+                                    if cypher_keys { language_functions::key(operand, &input.plan)? } else { operand },
                                 )
                             }
                             AggKind::CountIf => {
@@ -357,6 +380,7 @@ impl LoweringContext<'_> {
                         Ok(expr.alias(agg.alias.clone()))
                     })
                     .collect::<RelResult<Vec<_>>>()?;
+                aggs.extend(representatives);
                 // The DataFusion unparser can incorrectly discard the FROM
                 // side of COUNT(*) when it contains an UNWIND/cross join.
                 // Give that input a real SQL CTE boundary; the SQL wrapper
@@ -395,6 +419,10 @@ impl LoweringContext<'_> {
                 } else {
                     plan
                 };
+                let plan = if hidden_keys.is_empty() { plan } else {
+                    let columns = existing_columns_by_name(&plan, &hidden_keys);
+                    LogicalPlanBuilder::from(plan).project(columns)?.build()?
+                };
                 input.with_plan(plan)
             }
             GraphDistinct { keys, input, .. } => {
@@ -419,7 +447,11 @@ impl LoweringContext<'_> {
                 }
                 let mut distinct_keys = keys.clone();
                 distinct_keys.extend(identity_keys);
-                let plan = keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)?;
+                let plan = if self.options.language_functions && self.language == Language::Cypher {
+                    let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
+                        .map(|e| language_functions::key(e, &input.plan)).collect::<RelResult<Vec<_>>>()?;
+                    keyed_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                } else { keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)? };
                 input.with_plan(plan)
             }
             GraphSort { keys, input } => {

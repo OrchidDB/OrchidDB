@@ -34,6 +34,7 @@ impl RdfGraphEngine {
         dataset: impl Into<String>,
     ) -> Self {
         let timeout = executor.query_timeout();
+        let language_functions = executor.language_functions_enabled();
         let engine = executor
             .connection()
             .map(|_| ())
@@ -50,11 +51,12 @@ impl RdfGraphEngine {
                     ),
                 )
             })
-            .map(|mut engine| {
+            .and_then(|mut engine| {
                 if let Some(timeout) = timeout {
                     engine.set_sql_timeout(timeout);
                 }
-                engine
+                engine.set_language_functions(language_functions)?;
+                Ok(engine)
             });
         Self {
             engine,
@@ -180,6 +182,7 @@ impl RdfSession<'_> {
         } else { self.mapping.clone() };
         let lowered = RelBackend::with_options(RelBackendOptions {
             rdf_datasets: Some(mapping),
+            language_functions: self.resources.language_functions_enabled(),
             ..Default::default()
         })
         .lower(plan, &PropertyGraph::new())
@@ -254,6 +257,7 @@ impl RdfSession<'_> {
             .map_err(|error| error.to_string())?;
         let backend = RelBackend::with_options(RelBackendOptions {
             rdf_datasets: Some(Arc::clone(&self.mapping)),
+            language_functions: self.resources.language_functions_enabled(),
             ..RelBackendOptions::default()
         });
         backend

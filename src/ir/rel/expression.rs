@@ -38,6 +38,12 @@ impl<'a> LoweringContext<'a> {
     }
 
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if self.options.language_functions
+            && let IrExpr::Call { name, args } = expr
+            && name.starts_with("gremlin_string_") {
+            let args = args.iter().map(|arg| self.lower_expr(plan, arg)).collect::<RelResult<Vec<_>>>()?;
+            return super::language_functions::gremlin(name, args, plan);
+        }
         if let IrExpr::Call { name, args } = expr
             && matches!(name.as_str(), "gremlin_string_length" | "gremlin_string_substring")
         {
