@@ -106,6 +106,11 @@ def build_one(version, commit, target):
         run([sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
              '--skip-load-check', '--extension-version', version, '--duckdb-platform', target,
              '--rust-target', triple], env)
+        # --skip-rust is only for the wrapper step: cargo-zigbuild just built
+        # this target above as part of the same release build.
+        record = read(build / 'build-manifest.json')
+        record.update(reused_rust=False, rust_build=rust)
+        write(build / 'build-manifest.json', record)
     if not reusable(build, version, commit, target):
         raise SystemExit(f'{target}: build provenance/platform mismatch or checkout changed during the build')
 
