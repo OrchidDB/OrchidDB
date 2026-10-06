@@ -6,6 +6,7 @@ DuckDB. Downloads are cached; Rust dependencies are pinned in Cargo.lock.
 """
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -39,7 +40,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--skip-rust", action="store_true", help="reuse the previously built compiler archive")
+    parser.add_argument("--extension-version", default="0.1.0", help="version stored in the extension metadata")
     args = parser.parse_args()
+    if not args.extension_version or len(args.extension_version.encode()) > 31:
+        parser.error("extension version must contain 1–31 bytes")
+    def source_state():
+        return {
+            "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT.parent, text=True).strip(),
+            "working_tree_modified": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT.parent, text=True)),
+        }
+    source_revision = source_state()
     system = {"Darwin": "osx", "Linux": "linux"}.get(platform.system())
     arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine())
     if not system or not arch:
@@ -89,7 +99,7 @@ def main():
         link += ["-ldl", "-lpthread", "-lm"]
     run(link)
     duck_platform = subprocess.check_output([cli, "-csv", "-noheader", "-c", "PRAGMA platform"], text=True).strip()
-    fields = ["4", duck_platform, VERSION, "0.1.0", "CPP", "", "", ""]
+    fields = ["4", duck_platform, VERSION, args.extension_version, "CPP", "", "", ""]
     metadata = b"".join(f.encode().ljust(32, b"\0") for f in reversed(fields)) + bytes(256)
     extension = build / "orchid.duckdb_extension"
     # Same custom section and metadata format as DuckDB's append_metadata.cmake.
@@ -98,6 +108,13 @@ def main():
     pending.write_bytes(binary.read_bytes() + b"\0\x93\x04\x10duckdb_signature\x80\x04" + metadata)
     pending.replace(extension)
     run([cli, "-unsigned", "-c", f"LOAD '{extension}'; SELECT 'Orchid extension loaded' AS status;"])
+    # Record the source at build time, rather than relabeling old binaries with
+    # the checkout revision when they are packaged later.
+    if source_state() != source_revision:
+        source_revision["working_tree_modified"] = True
+    receipt = dict(source_revision, sha256=hashlib.sha256(extension.read_bytes()).hexdigest(),
+                   profile=profile, reused_rust=args.skip_rust)
+    (build / "build-manifest.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"\nBuilt {extension}\nCLI: {cli}")
 
 
