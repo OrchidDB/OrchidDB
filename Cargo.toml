@@ -8,7 +8,7 @@ autobins = false
 description = "Shared graph language compiler and kernels for the Orchid DuckDB extension"
 repository = "https://github.com/OrchidDB/OrchidDB"
 homepage = "https://orchiddb.com"
-documentation = "https://docs.orchiddb.com"
+documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
@@ -76,9 +76,50 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 parquet = { version = "58.2.0", features = ["arrow"] }
 
 [[example]]
-name = "managed_graph"
-required-features = ["duckdb"]
+name = "collection_table_plans"
+path = "tools/diagnostics/collection_table_plans.rs"
+
+[[example]]
+name = "cypher_corpus_probe"
+path = "tools/diagnostics/cypher_corpus_probe.rs"
+
+[[example]]
+name = "cypher_dbg"
+path = "tools/diagnostics/cypher_dbg.rs"
 
 [[example]]
 name = "language_functions_bench"
+path = "tools/diagnostics/language_functions_bench.rs"
 required-features = ["duckdb"]
+
+[[example]]
+name = "mapped_execution_plans"
+path = "tools/diagnostics/mapped_execution_plans.rs"
+
+[[example]]
+name = "partition_layout_plans"
+path = "tools/diagnostics/partition_layout_plans.rs"
+
+[[example]]
+name = "portable_function_catalog"
+path = "tools/diagnostics/portable_function_catalog.rs"
+
+[[example]]
+name = "representation_plans"
+path = "tools/diagnostics/representation_plans.rs"
+
+[[example]]
+name = "sparql_coverage"
+path = "tools/diagnostics/sparql_coverage.rs"
+
+[[example]]
+name = "statistics_access_plans"
+path = "tools/diagnostics/statistics_access_plans.rs"
+
+[[example]]
+name = "statistics_join_plans"
+path = "tools/diagnostics/statistics_join_plans.rs"
+
+[[example]]
+name = "statistics_plans"
+path = "tools/diagnostics/statistics_plans.rs"

@@ -1,7 +1,7 @@
 //! `GraphPlanPolicy` — the semantic contract attached to every plan.
 //!
 //! The policy is part of the logical semantics; later rewrites must preserve
-//! it. See `docs/architecture.md` for the compiler and runtime boundaries.
+//! it. See `README.md` for the compiler and runtime boundaries.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {

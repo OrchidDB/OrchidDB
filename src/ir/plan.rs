@@ -1,7 +1,7 @@
 //! Logical Graph IR plan tree.
 //!
 //! Operator variants are defined here and correspond to the extension structs
-//! under `crate::ir::df`. See `docs/architecture.md` for lowering boundaries.
+//! under `crate::ir::df`. See `README.md` for lowering boundaries.
 //!
 //! Every operator family from §11 is present so that plans for every
 //! supported language (Cypher, GQL, Gremlin, SPARQL) can be represented

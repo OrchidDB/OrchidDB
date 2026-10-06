@@ -1,6 +1,6 @@
 //! Graph IR: logical operators, graph catalog and DataFusion-backed execution.
 //!
-//! Reference: `docs/architecture.md`.
+//! Reference: `README.md`.
 
 pub mod analysis;
 pub mod bridge;

@@ -4,10 +4,10 @@ __pycache__/
 *.pyc
 *.pdf
 
-# Generated mdBook guides and conformance evidence
+# Retired documentation build cache
 /website/docs/dist/
 
-# Standalone caller-owned driver example
+# Retired client example build cache
 /examples/duckdb-client/target/
 
 # Isolated ArcadeDB provider runtime

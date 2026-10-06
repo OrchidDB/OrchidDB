@@ -1,9 +1,8 @@
-//! OrchidDB graph IR.
+//! Shared graph compiler and kernels for the Orchid DuckDB extension.
 //!
-//! Compile graph queries to SQL with [`compiler`]; callers own execution through
-//! their driver or the optional [`execution`] interface. See `docs/architecture.md`.
-//! Graph IR is lowered to SQL or DataFusion plans; shared runtime kernels
-//! supply scalar semantics without a recursive Graph IR interpreter.
+//! Language frontends lower through Graph IR and relational/kernel programs.
+//! The extension hosts execution in DuckDB; retained library adapters support
+//! internal reuse and regression coverage. See `README.md` for the product interface.
 
 
 pub mod spargebra;
