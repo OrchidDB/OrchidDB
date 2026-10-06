@@ -8,8 +8,8 @@ import shutil
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def package(root=ROOT):
-    artifact = root / 'extension/build/orchid.duckdb_extension'
+def package(root=ROOT, build=None):
+    artifact = (build or root / 'extension/build') / 'orchid.duckdb_extension'
     if not artifact.is_file():
         raise SystemExit('Build the extension first: python3 extension/scripts/build.py --release')
     payload = artifact.read_bytes()

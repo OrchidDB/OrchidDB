@@ -9,7 +9,8 @@ import re
 import subprocess
 import tarfile
 
-from package_extension import ROOT, package
+from package_extension import ROOT
+from matrix import validated_packages
 
 
 def output(*args):
@@ -76,18 +77,23 @@ def main():
     if args.check:
         print(f'Ready to release {tag} from {revision} to {args.repo}')
         return
-    directory = package()
-    archive, checksum, metadata = bundle(directory, args.version, revision)
+    directories = validated_packages(args.version, revision)
+    assets = []
+    platforms = []
+    for directory in directories:
+        archive, checksum, metadata = bundle(directory, args.version, revision)
+        assets.extend([str(archive), str(checksum)])
+        platforms.append(metadata['platform'])
     notes = args.notes_file
     if notes is None:
-        notes = directory / 'release-notes.md'
+        notes = directories[0] / 'release-notes.md'
         notes.write_text(
             f"Orchid DuckDB extension {args.version}\n\n"
-            f"DuckDB: {metadata['duckdb_version']}\nPlatform: {metadata['platform']}\nSource: {revision}\n\n"
+            f"DuckDB: {metadata['duckdb_version']}\nPlatforms: {', '.join(platforms)}\nSource: {revision}\n\n"
             'Extract the archive and load orchid.duckdb_extension in a matching DuckDB installation. '
             'This extension is unsigned; start DuckDB with -unsigned (or allow_unsigned_extensions=true).\n'
         )
-    command = ['gh', 'release', 'create', tag, str(archive), str(checksum), '--repo', args.repo,
+    command = ['gh', 'release', 'create', tag, *assets, '--repo', args.repo,
                '--target', revision, '--title', f'Orchid extension {args.version}', '--notes-file', str(notes)]
     if '-' in args.version:
         command.append('--prerelease')

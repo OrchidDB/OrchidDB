@@ -28,9 +28,8 @@ can override that cache.
 The artifact is an **unsigned development extension**, specific to its DuckDB
 version and platform. Load Orchid before submitting graph statements. Loading
 enables DuckDB's parser extension fallback for native `CYPHER` and `GREMLIN` syntax.
-Local validation covers macOS ARM64. Other Linux/macOS build routes still need
-platform validation before distribution. Signed extension distribution is not
-configured yet.
+The release pipeline builds and validates macOS ARM64, Linux ARM64, and Linux
+x86-64. Signed extension distribution is not configured yet.
 
 ## End-to-end examples
 
@@ -711,8 +710,10 @@ The RDF runner reports its full catalog, including the existing exclusions.
 
 ## Package and release the extension
 
-Run release commands from the repository root. Install the test environment shown
-above, install the [GitHub CLI](https://cli.github.com/), and authenticate with
+Run the complete release on a **macOS ARM64 host**. Linux binaries are
+cross-compiled locally with Zig through `cargo-zigbuild`. Install Rust through
+rustup, Zig, `cargo-zigbuild`, and the
+[GitHub CLI](https://cli.github.com/), then authenticate with
 `gh auth login` using an account with release access to `OrchidDB/OrchidDB`.
 Commit and push the intended source revision first; publication requires a clean
 checkout and verifies that the commit exists in the destination repository.
@@ -720,65 +721,74 @@ checkout and verifies that the commit exists in the destination repository.
 Choose an unused extension version and run:
 
 ```sh
-make -f scripts/release/Makefile release VERSION=0.1.0
+make -f scripts/release/Makefile release VERSION=0.4.0
 ```
 
 With the workspace Makefile at `~/orchiddb/Makefile` and the repository at
 `~/orchiddb/orchiddb`, the equivalent command is:
 
 ```sh
-make -C ~/orchiddb release VERSION=0.1.0
+make -C ~/orchiddb release VERSION=0.4.0
 ```
 
 That entry point changes into the repository before invoking its release targets.
-`make -C ~/orchiddb release-plan VERSION=0.1.0` previews the commands without
+`make -C ~/orchiddb release-plan VERSION=0.4.0` previews the commands without
 building or publishing. The workspace also forwards `build`, `test`, `package`,
 `release-check`, and `publish`.
 
-The release target checks publication prerequisites, builds the optimized extension for the
-current host, runs the compiler and extension tests (including Iceberg/Lance),
-packages that binary, and publishes a GitHub release tagged `extension-v0.1.0`.
-The stages run sequentially even with `make -j`; a build or test failure stops
-publication. Set `ORCHID_SPICEDB_BINARY` as described above to include live
-authorization tests. Only the extension is released; builds and tests run locally.
+The release target checks prerequisites, builds optimized extensions in parallel for exactly
+**macOS ARM64 (`osx_arm64`), Linux ARM64 (`linux_arm64`), and Linux x86-64
+(`linux_amd64`)**, packages all three, and publishes them in one GitHub release
+tagged `extension-v0.4.0`. Builds use three workers by default and reuse Rust
+and DuckDB source caches. For speed, this target does not run tests or load checks.
+The standalone `test` target remains available separately. Only the extension is
+released; compilation and publication run locally, with no GitHub Actions or
+worktrees.
 
-The release contains a platform-specific archive such as
-`orchid-0.1.0-duckdb-v1.5.6-osx_arm64.tar.gz` and its SHA-256 checksum. Inside are
+The release contains three platform-specific archives such as
+`orchid-0.4.0-duckdb-v1.5.6-osx_arm64.tar.gz`, each with its SHA-256 checksum. Inside are
 `orchid.duckdb_extension`, `LICENSE.md`, `manifest.json`, and `SHA256SUMS`.
 The manifest records the binary checksum, build-time source revision, extension
 version, DuckDB version, and platform. These are **unsigned** binaries: extract
 the archive and load the extension using `duckdb -unsigned` or a connection with
-`allow_unsigned_extensions=true`. Signing and multi-platform builds are not
-performed by this target; validate each Linux/macOS target before distribution.
+`allow_unsigned_extensions=true`. Linux adapters target glibc 2.28 using Zig.
 
 Optional settings:
 
 ```sh
-make -f scripts/release/Makefile release VERSION=0.1.1 \
+make -f scripts/release/Makefile release VERSION=0.4.0 \
   REPO=OrchidDB/OrchidDB NOTES_FILE=/absolute/path/to/release-notes.md
 ```
 
 Without `NOTES_FILE`, notes describe the artifact and how to load it. Versions
-such as `0.1.1-rc.1` create GitHub prereleases. Existing tags/releases are never
+such as `0.4.0-rc.1` create GitHub prereleases. Existing tags/releases are never
 overwritten. The tag points to the exact build revision, not a moving branch.
 
-For separate local steps or to publish an already validated build:
+For separate local steps or to publish an existing complete three-platform build:
 
 ```sh
-make -f scripts/release/Makefile release-check VERSION=0.1.0
-make -f scripts/release/Makefile build VERSION=0.1.0
-make -f scripts/release/Makefile test
-make -f scripts/release/Makefile package
-make -f scripts/release/Makefile publish VERSION=0.1.0
+make -f scripts/release/Makefile release-check VERSION=0.4.0
+make -f scripts/release/Makefile release-build VERSION=0.4.0
+make -f scripts/release/Makefile release-verify VERSION=0.4.0
+make -f scripts/release/Makefile release-package VERSION=0.4.0
+make -f scripts/release/Makefile publish VERSION=0.4.0
 ```
 
-`package` only copies the local artifact into `target/packages/<sha256>`; it makes
-no GitHub changes. `publish` reuses the binary without rebuilding or rerunning
-tests, so run it only after validating that unchanged binary. Publication rejects
+Completed builds live in `target/releases/extension-v<version>/<commit>`.
+Rerunning `release` reuses completed builds whose checksums still match; Cargo,
+Zig, and downloaded dependencies are cached separately. To retry one target,
+use `release-build` with `PLATFORM=linux_amd64` (or either of
+the other two platform identifiers). `release` and `publish` always require all
+three, regardless of `PLATFORM`.
+
+`release-package` assembles the three built artifacts under
+`target/packages/<sha256>` without GitHub changes. `publish` reuses them without
+rebuilding. Publication rejects
 stale binaries, version mismatches, dirty-source builds, debug builds, and builds
-made with `--skip-rust`. Older binaries without build provenance can still be
-packaged locally but must be rebuilt before publication. Caches and previous
-packages are preserved. If a failed upload leaves a GitHub draft, inspect and
+made manually with `--skip-rust`. The plain `build`, `test`, and `package` targets
+remain available for host-only development. Older binaries without build
+provenance can be packaged locally but must be rebuilt before publication.
+If a failed upload leaves a GitHub draft, inspect and
 complete that draft with `gh release upload` / `gh release edit`; do not replace
 published assets or move the tag.
 

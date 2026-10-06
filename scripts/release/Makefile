@@ -3,8 +3,10 @@ TEST_PYTHON ?= extension/vendor/test-env/bin/python
 VERSION ?=
 REPO ?= OrchidDB/OrchidDB
 NOTES_FILE ?=
+PLATFORM ?=
 RELEASE_ARGS = --version "$(VERSION)" --repo "$(REPO)" $(if $(NOTES_FILE),--notes-file "$(NOTES_FILE)")
-.PHONY: build test test-release package release-check release publish
+MATRIX_ARGS = --version "$(VERSION)" $(if $(PLATFORM),--platform "$(PLATFORM)")
+.PHONY: build test test-release package release-check release release-build release-verify release-package release-test release-publish publish
 build:
 	$(PYTHON) extension/scripts/build.py --release $(if $(VERSION),--extension-version "$(VERSION)")
 
@@ -20,12 +22,22 @@ package:
 
 release-check:
 	$(PYTHON) scripts/release/publish_extension.py $(RELEASE_ARGS) --check
+	$(PYTHON) scripts/release/matrix.py check $(MATRIX_ARGS)
 
-# Keep stages ordered even with make -j. Publish only after local tests pass.
+release-build:
+	$(PYTHON) scripts/release/matrix.py build $(MATRIX_ARGS)
+
+release-package:
+	$(PYTHON) scripts/release/matrix.py package --version "$(VERSION)"
+
+release-verify: release-package
+release-test: test
+release-publish: publish
+
+# Builds run concurrently inside matrix.py; publish after all three finish.
 release:
 	+$(MAKE) -f scripts/release/Makefile release-check
-	+$(MAKE) -f scripts/release/Makefile build
-	+$(MAKE) -f scripts/release/Makefile test
+	+$(MAKE) -f scripts/release/Makefile release-build PLATFORM=
 	+$(MAKE) -f scripts/release/Makefile publish
 
 # Reuse an already built and validated artifact without repeating build/tests.

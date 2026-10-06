@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import package_extension as packaging
 import publish_extension as publishing
+import matrix
 
 
 class ReleaseTests(unittest.TestCase):
@@ -86,7 +87,7 @@ class ReleaseTests(unittest.TestCase):
         directory = packaging.package(self.root)
         with patch.object(sys, 'argv', ['publish', '--version', '0.1.0']), \
              patch.object(publishing, 'preflight', return_value=(self.receipt['revision'], 'extension-v0.1.0')), \
-             patch.object(publishing, 'package', return_value=directory), \
+             patch.object(publishing, 'validated_packages', return_value=[directory]), \
              patch.object(publishing.subprocess, 'run') as run:
             publishing.main()
         command = run.call_args.args[0]
@@ -103,15 +104,54 @@ class ReleaseTests(unittest.TestCase):
         log = self.root / 'calls'
         stub.write_text('import sys\nfrom pathlib import Path\n'
                         f'with Path({str(log)!r}).open("a") as f: f.write(" ".join(sys.argv[1:])+"\\n")\n'
-                        'sys.exit(1 if "discover" in sys.argv else 0)\n')
+                        'sys.exit(1 if "verify" in sys.argv else 0)\n')
         result = subprocess.run(['make', '-j4', '-f', 'scripts/release/Makefile', 'release',
                                  'VERSION=0.1.0', f'PYTHON={sys.executable} {stub}'],
                                 cwd=packaging.ROOT, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         calls = log.read_text().splitlines()
         self.assertIn('--check', calls[0])
-        self.assertIn('build.py --release --extension-version 0.1.0', calls[1])
-        self.assertEqual(len(calls), 3, result.stdout + result.stderr)
+        self.assertIn('matrix.py check', calls[1])
+        self.assertIn('matrix.py build', calls[3])
+        self.assertIn('matrix.py verify', calls[4])
+        self.assertEqual(len(calls), 5, result.stdout + result.stderr)
+
+    def test_publication_requires_exactly_three_validated_platforms(self):
+        commit = self.receipt['revision']
+        directory = matrix.location('0.1.0', commit, self.root)
+        matrix.write(directory / 'compiler-validation.json', dict(revision=commit))
+        self.assertEqual(set(matrix.PLATFORMS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
+        with self.assertRaisesRegex(SystemExit, 'all three'):
+            matrix.validated_packages('0.1.0', commit, self.root)
+        import shutil
+        for target in matrix.PLATFORMS:
+            build = directory / target
+            shutil.copytree(self.build, build)
+            artifact = build / 'orchid.duckdb_extension'
+            payload = artifact.read_bytes()
+            # DuckDB metadata stores platform in the seventh 32-byte field.
+            payload = payload[:-320] + target.encode().ljust(32, b'\0') + payload[-288:]
+            artifact.write_bytes(payload)
+            checksum = matrix.digest(artifact)
+            record = dict(self.receipt, extension_version='0.1.0', platform=target, sha256=checksum)
+            matrix.write(build / 'build-manifest.json', record)
+            matrix.write(build / 'validation.json', dict(revision=commit, sha256=checksum,
+                                                       platform=target, external_storage=True))
+        self.assertEqual(len(matrix.validated_packages('0.1.0', commit, self.root)), 3)
+        matrix.write(directory / 'linux_amd64/validation.json', {'sha256': 'stale'})
+        with self.assertRaisesRegex(SystemExit, 'Missing validation for linux_amd64'):
+            matrix.validated_packages('0.1.0', commit, self.root)
+
+    def test_reuse_requires_the_same_revision_version_platform_and_binary(self):
+        self.receipt.update(platform='osx_arm64', extension_version='0.1.0')
+        self.write_receipt()
+        self.assertTrue(matrix.reusable(self.build, '0.1.0', self.receipt['revision'], 'osx_arm64'))
+        for version, commit, target in [('0.2.0', self.receipt['revision'], 'osx_arm64'),
+                                       ('0.1.0', 'old', 'osx_arm64'),
+                                       ('0.1.0', self.receipt['revision'], 'linux_arm64')]:
+            self.assertFalse(matrix.reusable(self.build, version, commit, target))
+        (self.build / 'orchid.duckdb_extension').write_bytes(b'changed')
+        self.assertFalse(matrix.reusable(self.build, '0.1.0', self.receipt['revision'], 'osx_arm64'))
 
 
 if __name__ == '__main__':

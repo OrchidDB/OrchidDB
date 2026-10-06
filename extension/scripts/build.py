@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import subprocess
 import tarfile
 import zipfile
@@ -41,6 +42,10 @@ def main():
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--skip-rust", action="store_true", help="reuse the previously built compiler archive")
     parser.add_argument("--extension-version", default="0.1.0", help="version stored in the extension metadata")
+    parser.add_argument("--rust-target", help="Rust target subdirectory when linking a cross-compiled archive")
+    parser.add_argument("--duckdb-platform", choices=("osx_arm64", "linux_arm64", "linux_amd64"),
+                        help="DuckDB platform metadata for a cross-compiled extension")
+    parser.add_argument("--skip-load-check", action="store_true", help="package without running the extension")
     args = parser.parse_args()
     if not args.extension_version or len(args.extension_version.encode()) > 31:
         parser.error("extension version must contain 1–31 bytes")
@@ -50,14 +55,16 @@ def main():
             "working_tree_modified": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT.parent, text=True)),
         }
     source_revision = source_state()
-    system = {"Darwin": "osx", "Linux": "linux"}.get(platform.system())
-    arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine())
-    if not system or not arch:
+    host_system = {"Darwin": "osx", "Linux": "linux"}.get(platform.system())
+    host_arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine())
+    target_platform = args.duckdb_platform or (f'{host_system}_{host_arch}' if host_system and host_arch else '')
+    if target_platform not in ("osx_arm64", "linux_arm64", "linux_amd64"):
         raise SystemExit("Supported build hosts: Linux/macOS, ARM64/x86_64")
-    vendor = ROOT / "vendor"
-    build = ROOT / "build"
-    vendor.mkdir(exist_ok=True)
-    build.mkdir(exist_ok=True)
+    system, arch = target_platform.split('_')
+    vendor = Path(os.environ.get("ORCHID_VENDOR_DIR", str(ROOT / "vendor"))).resolve()
+    build = Path(os.environ.get("ORCHID_BUILD_DIR", str(ROOT / "build"))).resolve()
+    vendor.mkdir(parents=True, exist_ok=True)
+    build.mkdir(parents=True, exist_ok=True)
     source_tar = vendor / f"duckdb-{VERSION}.tar.gz"
     source = vendor / f"duckdb-{VERSION[1:]}"
     download(f"https://github.com/duckdb/duckdb/archive/refs/tags/{VERSION}.tar.gz", source_tar, SOURCE_SHA)
@@ -65,29 +72,44 @@ def main():
         with tarfile.open(source_tar) as archive:
             archive.extractall(vendor, filter="data")
     download("https://raw.githubusercontent.com/nlohmann/json/v3.12.0/single_include/nlohmann/json.hpp", vendor / "json.hpp", JSON_SHA)
-    cli_zip = vendor / f"duckdb-cli-{system}-{arch}.zip"
-    download(f"https://github.com/duckdb/duckdb/releases/download/{VERSION}/duckdb_cli-{system}-{arch}.zip", cli_zip,
-             "8e0f6825653f8d057922e6147db920bebf072cb41f4b041fd35521c18d7d126e" if (system, arch) == ("osx", "arm64") else None)
-    cli = vendor / "cli" / "duckdb"
-    if not cli.exists():
-        with zipfile.ZipFile(cli_zip) as archive:
-            archive.extractall(cli.parent)
-    cli.chmod(0o755)
-    version = subprocess.check_output([cli, "-csv", "-noheader", "-c", "SELECT version()"], text=True).strip()
-    if version != VERSION:
-        raise SystemExit(f"Expected {VERSION}, found {version}")
+    cli = None
+    if system == 'osx':
+        cli_zip = vendor / f"duckdb-cli-{system}-{arch}.zip"
+        download(f"https://github.com/duckdb/duckdb/releases/download/{VERSION}/duckdb_cli-{system}-{arch}.zip", cli_zip,
+                 "8e0f6825653f8d057922e6147db920bebf072cb41f4b041fd35521c18d7d126e")
+        cli = vendor / "cli" / "duckdb"
+        if not cli.exists():
+            with zipfile.ZipFile(cli_zip) as archive:
+                archive.extractall(cli.parent)
+        cli.chmod(0o755)
+        duckdb_version = subprocess.check_output([cli, "-csv", "-noheader", "-c", "SELECT version()"], text=True).strip()
+        if duckdb_version != VERSION:
+            raise SystemExit(f"Expected {VERSION}, found {duckdb_version}")
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT.parent / "target"))).resolve()
     profile = "release" if args.release else "debug"
-    archive = target / profile / "liborchid_duckdb_compiler.a"
+    archive = target / (args.rust_target or "") / profile / "liborchid_duckdb_compiler.a"
     if not args.skip_rust:
         env = dict(os.environ, CARGO_TARGET_DIR=str(target))
         env.setdefault("CARGO_BUILD_JOBS", "4")
-        run(["cargo", "build", "--locked", "--manifest-path", ROOT / "compiler/Cargo.toml"] + (["--release"] if args.release else []), env=env)
+        run(["cargo", "build", "--locked", "--manifest-path", ROOT / "compiler/Cargo.toml"]
+            + (["--target", args.rust_target] if args.rust_target else [])
+            + (["--release"] if args.release else []), env=env)
     obj = build / "orchid_extension.o"
-    run([os.environ.get("CXX", "c++"), "-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DDUCKDB_BUILD_LOADABLE_EXTENSION",
+    compiler = [os.environ.get("CXX", "c++")]
+    if system == 'linux':
+        rust_target = args.rust_target or {"linux_arm64": "aarch64-unknown-linux-gnu",
+                                          "linux_amd64": "x86_64-unknown-linux-gnu"}[target_platform]
+        zig = os.environ.get('ZIG', 'zig')
+        target = rust_target.replace('-unknown-', '-') + '.2.28'
+        compiler = [zig, 'c++']
+        compiler += ['-target', target]
+    else:
+        target = None
+    run([*compiler, "-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DDUCKDB_BUILD_LOADABLE_EXTENSION",
+         *shlex.split(os.environ.get("CXXFLAGS", "")),
          "-I" + str(source / "src/include"), "-I" + str(vendor), "-c", ROOT / "src/orchid_extension.cpp", "-o", obj])
     binary = build / "orchid.unfooted"
-    link = [os.environ.get("CXX", "c++")]
+    link = [*compiler]
     if system == "osx":
         link += ["-dynamiclib", "-undefined", "dynamic_lookup", "-Wl,-exported_symbol,_orchid_duckdb_cpp_init"]
     else:
@@ -98,7 +120,8 @@ def main():
     else:
         link += ["-ldl", "-lpthread", "-lm"]
     run(link)
-    duck_platform = subprocess.check_output([cli, "-csv", "-noheader", "-c", "PRAGMA platform"], text=True).strip()
+    duck_platform = target_platform if target is not None else subprocess.check_output(
+        [cli, "-csv", "-noheader", "-c", "PRAGMA platform"], text=True).strip()
     fields = ["4", duck_platform, VERSION, args.extension_version, "CPP", "", "", ""]
     metadata = b"".join(f.encode().ljust(32, b"\0") for f in reversed(fields)) + bytes(256)
     extension = build / "orchid.duckdb_extension"
@@ -107,13 +130,17 @@ def main():
     pending = extension.with_suffix('.pending')
     pending.write_bytes(binary.read_bytes() + b"\0\x93\x04\x10duckdb_signature\x80\x04" + metadata)
     pending.replace(extension)
-    run([cli, "-unsigned", "-c", f"LOAD '{extension}'; SELECT 'Orchid extension loaded' AS status;"])
+    if not args.skip_load_check:
+        if cli is None:
+            parser.error("Linux cross builds require --skip-load-check")
+        run([cli, "-unsigned", "-c", f"LOAD '{extension}'; SELECT 'Orchid extension loaded' AS status;"])
     # Record the source at build time, rather than relabeling old binaries with
     # the checkout revision when they are packaged later.
     if source_state() != source_revision:
         source_revision["working_tree_modified"] = True
     receipt = dict(source_revision, sha256=hashlib.sha256(extension.read_bytes()).hexdigest(),
-                   profile=profile, reused_rust=args.skip_rust)
+                   profile=profile, reused_rust=args.skip_rust, platform=duck_platform,
+                   extension_version=args.extension_version, duckdb_version=VERSION)
     (build / "build-manifest.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"\nBuilt {extension}\nCLI: {cli}")
 
