@@ -5,9 +5,9 @@ import unittest
 
 from test_extension import connect
 
-SCRIPT = (Path(__file__).resolve().parents[2] / 'examples/07_parameterized_rag.sql').read_text()
-QUERY = SCRIPT[SCRIPT.index('CYPHER knowledge'):SCRIPT.index(';\n-- Detailed guide')]
-PARAMETERIZED = QUERY.replace("'duckdb'", '$query_text').replace('[1.0,0.0], c.embedding', '$query_embedding, c.embedding').replace('[[1.0,0.0],[0.0,1.0]]', '$query_tokens')
+EXAMPLES = Path(__file__).resolve().parents[2] / 'examples'
+SCRIPT = (EXAMPLES / '07_rag_setup.sql').read_text()
+PARAMETERIZED = (EXAMPLES / '07_parameterized_rag.sql').read_text()
 PARAMETERS = dict(query_text='duckdb', query_embedding=[1., 0.], query_tokens=[[1., 0.], [0., 1.]])
 
 
@@ -72,7 +72,7 @@ class CypherRetrievalTests(unittest.TestCase):
         # An edge type may share a vertex label; it must not borrow that
         # vertex's corpus based solely on the spelling of the label.
         self.db.execute("ALTER TABLE has_chunk ADD COLUMN text VARCHAR DEFAULT 'duckdb'")
-        ddl = SCRIPT[SCRIPT.index('CREATE PROPERTY GRAPH'):SCRIPT.index('CYPHER knowledge')]
+        ddl = SCRIPT[SCRIPT.index('CREATE PROPERTY GRAPH'):]
         self.db.execute(ddl.replace('GRAPH knowledge','GRAPH mixed').replace('LABEL HAS_CHUNK','LABEL Chunk PROPERTIES(text)'))
         with self.assertRaisesRegex(Exception, 'requires a mapped vertex text property'):
             self.db.execute("CYPHER mixed MATCH ()-[e:Chunk]->() RETURN text.bm25($q,e.text)", {'q':'duckdb'}).fetchall()

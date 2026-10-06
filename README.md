@@ -51,7 +51,7 @@ In the DuckDB shell opened above, run these against a fresh database:
 | [04_iceberg_lance.sql](examples/04_iceberg_lance.sql) | Graph queries across existing Iceberg and Lance sources; replace the example paths first |
 | [05_rag.sql](examples/05_rag.sql) | Computed RAG edge: tenant filtering, BM25 candidates, MaxSim reranking, and traversal to authors |
 | [06_authorization.sql](examples/06_authorization.sql) | Optional SpiceDB channel permissions, implicit session identity, chunks, and computed edges |
-| [07_parameterized_rag.sql](examples/07_parameterized_rag.sql) | Ordinary Cypher hybrid search, MaxSim reranking, and traversal to source documents |
+| [07_rag_setup.sql](examples/07_rag_setup.sql) + [07_parameterized_rag.sql](examples/07_parameterized_rag.sql) | Ordinary Cypher hybrid search, MaxSim reranking, and traversal to source documents |
 
 The local examples create their own data; SPARQL uses the `people` table from
 the first example. The RAG example is self-contained. The storage example expects
@@ -447,8 +447,9 @@ continues to use the index selected by its DuckDB search function.
 
 Search inputs are query parameters. Use `MATCH`, scoring expressions, and successive
 `WITH ... ORDER BY ... LIMIT` stages to select candidates, rerank them, and traverse
-their relationships. [The complete SQL example](examples/07_parameterized_rag.sql)
-creates a small chunk/document graph and returns `Detailed guide | duckdb | 2.0`.
+their relationships. Run [the setup](examples/07_rag_setup.sql), then execute
+[the query file](examples/07_parameterized_rag.sql) with named parameters through
+DuckDB. It returns `Detailed guide | duckdb | 2.0`.
 
 Against that graph, an application binds text, an embedding, and a matrix of token
 vectors through its ordinary DuckDB connection:
