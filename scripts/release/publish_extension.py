@@ -21,8 +21,10 @@ def preflight(version, repo):
         raise SystemExit('Set VERSION to a new extension version, e.g. VERSION=0.1.0 (no v prefix)')
     if not re.fullmatch(r'[\w.-]+/[\w.-]+', repo):
         raise SystemExit('REPO must be a GitHub OWNER/REPO')
-    if output('git', 'status', '--porcelain'):
-        raise SystemExit('Commit the intended release source before publishing; the checkout must be clean')
+    changes = output('git', 'status', '--porcelain', '--untracked-files=all')
+    if changes:
+        raise SystemExit('Commit the intended release source before publishing; the checkout must be clean.\n'
+                         f'Blocking changes in {ROOT}:\n{changes}')
     revision = output('git', 'rev-parse', 'HEAD')
     # A failed API request is never treated as an absent tag. Also verify that
     # the exact source revision has been pushed before spending time building.

@@ -72,7 +72,7 @@ class ReleaseTests(unittest.TestCase):
                 publishing.preflight('', 'OrchidDB/OrchidDB')
             output.assert_not_called()
             output.return_value = ' M file'
-            with self.assertRaisesRegex(SystemExit, 'clean'):
+            with self.assertRaisesRegex(SystemExit, r'(?s)clean.*Blocking changes.*M file'):
                 publishing.preflight('0.1.0', 'OrchidDB/OrchidDB')
         with patch.object(publishing, 'output', side_effect=['', 'a'*40, 'a'*40,
                    '[{"ref":"refs/tags/extension-v0.1.0"}]']):
