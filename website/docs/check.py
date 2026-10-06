@@ -55,5 +55,6 @@ for slug, title in PAGES:
     assert f'{slug}.html' in indexed, f'Missing from search: {title}'
     page = (OUT / f'{slug}.html').read_text()
     assert 'assets/docs.css' not in page and 'assets/docs.js' not in page
-assert (OUT / 'downloads/conformance/upstream-comparison.csv').is_file()
+for name in ('summary.json', 'cypher.json.gz', 'gremlin.json.gz', 'rdf.json.gz'):
+    assert (OUT / 'downloads/conformance' / name).is_file()
 print(f'Checked {len(pages)} HTML documents, {count} local links/assets, and all {len(PAGES)} chapters in mdBook search.')

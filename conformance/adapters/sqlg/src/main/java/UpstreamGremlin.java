@@ -308,7 +308,7 @@ public class UpstreamGremlin {
        var translator=new io.orchiddb.gremlin.OrchidBytecodeTranslator(callbacks);
        String script=GroovyTranslator.of("g", translator).translate(bytecode).getScript();
        var response=bridge.send(Map.of("op","gremlin","query",script,"bindings",translator.bindings));
-       queryTransports.add(Map.of("step",currentStep,"phase",costPhase(currentStep),"query",script,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"native_rows",response.hasNonNull("native_rows"),"query_cost",response.path("query_cost"),"error",response.path("error").asText("")));
+       queryTransports.add(Map.of("step",currentStep,"phase",costPhase(currentStep),"query",script,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"extension_artifact_sha256",response.path("extension_artifact_sha256").asText(""),"native_rows",response.hasNonNull("native_rows"),"query_cost",response.path("query_cost"),"error",response.path("error").asText("")));
        if(response.has("error"))throw new RemoteConnectionException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
        boolean nativeRows=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();for(var row:response.get(nativeRows?"native_rows":"typed_rows")){values.add(nativeRows?nativeValue(row.get(0)):typedValue(row.get(0)));}
        return CompletableFuture.completedFuture(orderedResults((List<E>)(List<?>)values));
@@ -481,7 +481,7 @@ public class UpstreamGremlin {
   var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
   String updated=(String)path.invoke(def,script);
   JsonNode response=bridge.send(Map.of("op","gremlin","query",updated,"bindings",context(def).nativeBindings));
-  context(def).queryTransports.add(Map.of("step",context(def).currentStep,"phase",costPhase(context(def).currentStep),"query",updated,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"typed_parameters",true,"query_cost",response.path("query_cost")));
+  context(def).queryTransports.add(Map.of("step",context(def).currentStep,"phase",costPhase(context(def).currentStep),"query",updated,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"extension_artifact_sha256",response.path("extension_artifact_sha256").asText(""),"typed_parameters",true,"query_cost",response.path("query_cost")));
   if(response.has("error"))throw new IllegalStateException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
   boolean typed=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();
   for(JsonNode row:response.get(typed?"native_rows":"typed_rows"))values.add(typed?nativeValue(row.get(0)):typedValue(row.get(0)));

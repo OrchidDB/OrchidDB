@@ -234,20 +234,20 @@ pub enum UnionAlign {
     ByVariableName,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SortDir {
     Asc,
     Desc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NullsOrder {
     First,
     Last,
     ProviderDefined,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SortKey {
     pub expr: IrExpr,
     pub dir: SortDir,
@@ -403,7 +403,7 @@ pub enum ProcedureMode {
     Write,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProcedureArg {
     /// `Some` for keyword-style args (Gremlin `with('key', value)`),
     /// `None` for positional Cypher args.

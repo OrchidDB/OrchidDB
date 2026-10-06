@@ -194,7 +194,48 @@ fn tag(value: &Value) -> usize {
         _ => 15,
     }
 }
+/// DuckDB accepts Arrow sparse unions. The codec remains identical; only the
+/// physical placement of child slots changes at its C Data Interface boundary.
+pub(super) fn host_schema() -> SchemaRef {
+    static SCHEMA: OnceLock<SchemaRef> = OnceLock::new();
+    SCHEMA.get_or_init(|| host_schema_for(&schema())).clone()
+}
+pub(super) fn host_schema_for(schema: &Schema) -> SchemaRef {
+    fn field(value: &Field) -> Field {
+        value.clone().with_data_type(kind(value.data_type()))
+    }
+    fn kind(value: &DataType) -> DataType {
+        match value {
+            DataType::Union(fields, _) => DataType::Union(
+                UnionFields::try_new(
+                    fields.iter().map(|(id, _)| id),
+                    fields.iter().map(|(_, f)| field(f)),
+                )
+                .expect("existing union tags remain valid"),
+                UnionMode::Sparse,
+            ),
+            DataType::Struct(fields) => {
+                DataType::Struct(fields.iter().map(|f| field(f)).collect::<Vec<_>>().into())
+            }
+            DataType::Map(f, sorted) => DataType::Map(Arc::new(field(f)), *sorted),
+            DataType::List(f) => DataType::List(Arc::new(field(f))),
+            DataType::LargeList(f) => DataType::LargeList(Arc::new(field(f))),
+            DataType::FixedSizeList(f, n) => DataType::FixedSizeList(Arc::new(field(f)), *n),
+            other => other.clone(),
+        }
+    }
+    Arc::new(Schema::new_with_metadata(
+        schema.fields().iter().map(|f| field(f)).collect::<Vec<_>>(),
+        schema.metadata().clone(),
+    ))
+}
+pub(super) fn encode_host_rows(rows: Vec<Row>) -> Result<RecordBatch> {
+    encode_rows_with_mode(rows, UnionMode::Sparse)
+}
 pub(super) fn encode_rows(rows: Vec<Row>) -> Result<RecordBatch> {
+    encode_rows_with_mode(rows, UnionMode::Dense)
+}
+fn encode_rows_with_mode(rows: Vec<Row>, mode: UnionMode) -> Result<RecordBatch> {
     let mut keys = StringBuilder::new();
     let mut offsets = vec![0_i32];
     let mut bulk = Vec::with_capacity(rows.len());
@@ -298,21 +339,40 @@ pub(super) fn encode_rows(rows: Vec<Row>) -> Result<RecordBatch> {
         Arc::new(edges),
         Arc::new(opaque.finish()),
     ];
-    let values = UnionArray::try_new(
-        value_fields(),
-        type_ids.into(),
-        Some(value_offsets.into()),
-        children,
-    )?;
+    let (children, value_offsets) = if mode == UnionMode::Sparse {
+        let children = children
+            .into_iter()
+            .enumerate()
+            .map(|(tag, child)| {
+                let indices = UInt32Array::from(
+                    type_ids
+                        .iter()
+                        .zip(&value_offsets)
+                        .map(|(kind, offset)| (*kind as usize == tag).then_some(*offset as u32))
+                        .collect::<Vec<_>>(),
+                );
+                arrow::compute::take(child.as_ref(), &indices, None).map_err(Into::into)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        (children, None)
+    } else {
+        (children, Some(value_offsets.into()))
+    };
+    let values = UnionArray::try_new(value_fields(), type_ids.into(), value_offsets, children)?;
+    let entries_fields: Fields = vec![
+        Field::new("key", DataType::Utf8, false),
+        Field::new("value", values.data_type().clone(), true),
+    ]
+    .into();
     let entries = StructArray::new(
-        entries_fields(),
+        entries_fields.clone(),
         vec![Arc::new(keys.finish()), Arc::new(values)],
         None,
     );
     let bindings = MapArray::try_new(
         Arc::new(Field::new(
             "entries",
-            DataType::Struct(entries_fields()),
+            DataType::Struct(entries_fields),
             false,
         )),
         OffsetBuffer::new(offsets.into()),
@@ -320,11 +380,17 @@ pub(super) fn encode_rows(rows: Vec<Row>) -> Result<RecordBatch> {
         None,
         false,
     )?;
+    let schema = if mode == UnionMode::Sparse {
+        host_schema()
+    } else {
+        schema()
+    };
     Ok(RecordBatch::try_new(
-        schema(),
+        schema,
         vec![Arc::new(bindings), Arc::new(UInt64Array::from(bulk))],
     )?)
 }
+
 fn array<T: Array + 'static>(value: &dyn Array) -> Result<&T> {
     value
         .as_any()
@@ -402,13 +468,57 @@ fn decode_value(values: &UnionArray, index: usize) -> Result<Value> {
         _ => return Err(failure("Unknown native value type")),
     })
 }
+// DuckDB exports sparse unions, relaxes field nullability, and represents the
+// SQLNULL member as an all-null Int32 array. Tags and values remain identical.
+fn compatible_type(actual: &DataType, expected: &DataType) -> bool {
+    match (actual, expected) {
+        (DataType::Struct(a), DataType::Struct(b)) => {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(a, b)| {
+                    a.name() == b.name() && compatible_type(a.data_type(), b.data_type())
+                })
+        }
+        (DataType::Map(a, _), DataType::Map(b, _)) => compatible_type(a.data_type(), b.data_type()),
+        (DataType::Union(a, _), DataType::Union(b, _)) => {
+            a.len() == b.len()
+                && a.iter().zip(b.iter()).all(|((ai, a), (bi, b))| {
+                    ai == bi
+                        && a.name() == b.name()
+                        && (compatible_type(a.data_type(), b.data_type())
+                            // DuckDB exports SQLNULL as an all-null Int32 array.
+                            // Only this codec's named null member may use it;
+                            // decode_rows additionally validates its contents.
+                            || (ai == 0
+                                && a.name() == "null"
+                                && b.data_type() == &DataType::Null
+                                && a.data_type() == &DataType::Int32))
+                })
+        }
+        _ => actual == expected,
+    }
+}
 pub(super) fn decode_rows(batch: &RecordBatch) -> Result<Vec<Row>> {
-    if batch.schema().as_ref() != schema().as_ref() {
+    let expected = schema();
+    if batch.num_columns() != expected.fields().len()
+        || !batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(expected.fields())
+            .all(|(a, b)| a.name() == b.name() && compatible_type(a.data_type(), b.data_type()))
+    {
+        if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
+            eprintln!("Host traverser schema: {:?}", batch.schema());
+        }
         return Err(failure("Invalid traverser batch schema"));
     }
     let bindings = array::<MapArray>(batch.column(0).as_ref())?;
     let keys = array::<StringArray>(bindings.keys().as_ref())?;
     let values = array::<UnionArray>(bindings.values().as_ref())?;
+    let nulls = values.child(0);
+    if nulls.data_type() == &DataType::Int32 && nulls.null_count() != nulls.len() {
+        return Err(failure("Non-null value in traverser null member"));
+    }
     let bulk = array::<UInt64Array>(batch.column(1).as_ref())?;
     (0..batch.num_rows())
         .map(|i| {
@@ -556,5 +666,68 @@ mod tests {
             bytes(decode_rows(&decoded).unwrap()),
             bytes(decode_rows(&batch).unwrap())
         );
+    }
+    #[test]
+    fn transport_accepts_host_sparse_unions_and_nullable_schema_fields() {
+        let rows = vec![
+            Row::new().with("x", Value::Int(7)).with("n", Value::Null),
+            Row {
+                bindings: [("x".into(), Value::String("seven".into()))].into(),
+                bulk: 4,
+            },
+        ];
+        let emitted = encode_host_rows(rows.clone()).unwrap();
+        assert_eq!(emitted.schema(), host_schema());
+        assert_eq!(bytes(decode_rows(&emitted).unwrap()), bytes(rows.clone()));
+        let batch = encode_rows(rows.clone()).unwrap();
+        let bindings = array::<MapArray>(batch.column(0).as_ref()).unwrap();
+        let dense = array::<UnionArray>(bindings.values().as_ref()).unwrap();
+        let mut children = value_fields()
+            .iter()
+            .map(|(tag, _)| {
+                let indices = UInt32Array::from(
+                    (0..dense.len())
+                        .map(|i| (dense.type_id(i) == tag).then(|| dense.value_offset(i) as u32))
+                        .collect::<Vec<_>>(),
+                );
+                arrow::compute::take(dense.child(tag).as_ref(), &indices, None).unwrap()
+            })
+            .collect::<Vec<_>>();
+        children[0] = Arc::new(Int32Array::from(vec![None; dense.len()]));
+        let fields = UnionFields::try_new(
+            0..16,
+            value_fields().iter().map(|(tag, field)| {
+                if tag == 0 {
+                    field.as_ref().clone().with_data_type(DataType::Int32)
+                } else {
+                    field.as_ref().clone()
+                }
+            }),
+        )
+        .unwrap();
+        let sparse = UnionArray::try_new(fields, dense.type_ids().clone(), None, children).unwrap();
+        let entries = StructArray::new(
+            vec![
+                Arc::new(Field::new("key", DataType::Utf8, false)),
+                Arc::new(Field::new("value", sparse.data_type().clone(), true)),
+            ]
+            .into(),
+            vec![bindings.keys().clone(), Arc::new(sparse)],
+            None,
+        );
+        let map = MapArray::new(
+            Arc::new(Field::new("entries", entries.data_type().clone(), false)),
+            bindings.offsets().clone(),
+            entries,
+            None,
+            false,
+        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("bindings", map.data_type().clone(), true),
+            Field::new("bulk", DataType::UInt64, true),
+        ]));
+        let host =
+            RecordBatch::try_new(schema, vec![Arc::new(map), batch.column(1).clone()]).unwrap();
+        assert_eq!(bytes(decode_rows(&host).unwrap()), bytes(rows));
     }
 }

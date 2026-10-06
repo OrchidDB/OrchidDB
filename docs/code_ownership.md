@@ -1,5 +1,17 @@
 # Working on independent features
 
+## DuckDB extension
+
+- `extension/src`: DuckDB parser/binder, physical host operators, Arrow transport.
+- `extension/compiler`: Rust C ABI, existing compiler integration, host programs.
+- `src/ir/rel/host`: shared mapped/managed storage and persistence boundary.
+- `src/ir/rel/runtime/{program,host}.rs`: shared kernel descriptors and host services.
+- `src/ir/rel/native_values*`: shared value/identity transport.
+- `extension/tests` and `extension/conformance`: real host checks and upstream adapters.
+
+The retained modules below remain shared implementation or internal compatibility
+surfaces. Standalone Orchid client packages and public CLI release wiring are retired.
+
 The module boundaries follow likely change ownership, not file-size targets.
 Use this map to locate a feature and its tests. Most work should stay
 inside that feature's implementation files; shared facades keep existing public

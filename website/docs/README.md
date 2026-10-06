@@ -1,28 +1,7 @@
-# OrchidDB documentation
+# Documentation
 
-The guides at https://docs.orchiddb.com/ use **mdBook 0.5.4 with the stock
-theme**. No custom guide templates, stylesheets, or JavaScript are loaded.
-mdBook supplies the sidebar, search, themes, code copying, and print view.
-
-The detailed conformance explorer is a separate static report at
-`conformance-report.html`, linked from the book. It retains the existing
-feature filters, individual results, and evidence downloads. Its CSS and
-JavaScript do not load in the book.
-
-## Install, build, and preview
-
-Install the pinned mdBook binary on macOS or Linux:
-
-```sh
-bash website/docs/install-mdbook.sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Alternatively, run `cargo install mdbook --version 0.5.4 --locked`.
-Python 3.10+ is needed to package the evidence report; no Python packages
-are required.
-
-From the repository root:
+The book uses stock mdBook 0.5.4. Install with `bash website/docs/install-mdbook.sh`
+or set `MDBOOK` to an existing executable. From the repository root:
 
 ```sh
 python3 website/docs/build.py
@@ -30,74 +9,18 @@ python3 website/docs/check.py
 python3 -m http.server 5321 --directory website/docs/dist
 ```
 
-Open http://localhost:5321/. Set `MDBOOK` to an executable path if mdBook is not
-on `PATH`. The wrapper runs `mdbook build`, packages tutorial downloads and the
-conformance report, and writes the sitemap and plain-text index. It does not
-execute any conformance engines.
+Edit chapters in `content/` and navigation in `content/SUMMARY.md`. Keep the standard
+mdBook theme. The wrapper copies tutorial downloads and committed extension
+conformance evidence, then writes a sitemap and text index. It runs no test engines.
+The checker validates local links, anchors, downloads, and search coverage.
+With a local preview running, `node website/docs/browser-check.mjs` checks desktop
+and mobile navigation, search, and code copying; `node website/docs/conformance-check.mjs`
+validates evidence downloads and artifact attribution. Set `PLAYWRIGHT_MODULE` and
+`CHROME_PATH` when using an existing local Playwright/Chrome installation.
 
-For automatic guide-only rebuilds while editing:
-
-```sh
-mdbook serve website/docs --port 5321
-```
-
-This command builds the book alone. Use `build.py` again before checking or
-publishing so report assets and downloads are included.
-
-## Editing
-
-- Edit chapters in `content/`; each file has its own `# Title`.
-- Keep the Search overview concise; detailed search behavior lives in
-  `../../docs/computed-relationships-and-search.md`.
-- Edit chapter order and section names in `content/SUMMARY.md`.
-- The portable function chapters include `../../docs/portable-functions.md`
-  and `../../docs/portable-function-catalog.md` with mdBook includes. Edit those
-  shared sources to keep the website and repository reference in sync.
-- Use relative `.md` links between chapters; mdBook converts them to `.html`.
-- Configure mdBook in `book.toml`. Keep its theme unmodified.
-- Keep `downloads/` in sync with the tutorials.
-- Preserve the existing chapter filenames so published guide URLs stay stable.
-
-`conformance.html` is now the book's conformance guide. Its language anchors
-remain available and point to the corresponding sections of the detailed
-report. `conformance_page.py` and `leaderboard.py` generate that report from
-committed evidence. Raw download paths remain unchanged.
-
-## Browser checks
-
-With the local preview running and Playwright/Chromium installed:
-
-```sh
-node website/docs/browser-check.mjs
-node website/docs/conformance-check.mjs
-```
-
-Set `PLAYWRIGHT_MODULE` to an existing Playwright `index.mjs`, `CHROME_PATH` to
-an installed Chrome executable, or `DOCS_URL` to another preview origin.
-The book check visits every chapter at desktop and mobile widths, checks
-search and code copying, and exercises navigation with and without JavaScript.
-Book screenshots are written to `target/site-review/`; the report checker
-writes screenshots to `/tmp/conformance-explorer-{desktop,mobile}.png`.
-
-`check.py` verifies generated links, fragments, assets, downloads, and coverage
-of all chapters in the mdBook search index.
-
-## Hosting and publishing
-
-- Public output: `website/docs/dist/` (ignored by Git).
-- Private S3 prefix: `s3://orchiddb-landing-846199521923/documentation/`.
-- CloudFront distribution: `EV4E7ROH7WATO`.
-- CloudFront hostname: `d1lmeetba2mo8q.cloudfront.net`.
-- DNS: Route 53 A and AAAA aliases for `docs.orchiddb.com`.
-- TLS: the `orchiddb.com` wildcard ACM certificate, also covering legacy domains.
-
-The site uses `.html` URLs and needs no application server or routing function.
-GitHub Actions installs pinned mdBook, then uses [deploy.sh](deploy.sh) to publish only documentation. The workflow is `.github/workflows/docs.yml`; its existing AWS secrets stay in `OrchidDB/OrchidDB`.
-
-Manual publication from the core repository:
-
-```sh
-AWS_PROFILE=personal bash website/docs/deploy.sh
-```
-
-The landing page and installer are maintained/deployed independently from the private [OrchidDB/OrchidDB-landing](https://github.com/OrchidDB/OrchidDB-landing) repository. Docs builds need no checkout or assets from that repository. The docs publishing job writes only `documentation/` and invalidates only the docs distribution.
+All builds and checks run locally. The generated `dist/` is ignored by Git.
+Publication is separate: `AWS_PROFILE=personal bash website/docs/deploy.sh` uploads
+the locally built documentation. Do not deploy as part of an ordinary docs edit.
+The landing page is maintained separately. Legacy comparison renderer sources and
+historical peer evidence remain developer references; the current book reports the
+DuckDB extension's own pinned conformance results.

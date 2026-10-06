@@ -1,5 +1,9 @@
 # Quickwit and Elasticsearch
 
+This is a retained internal library reference. The current product is the
+[DuckDB extension](../extension/README.md), which uses only its host DuckDB executor.
+The legacy adapters documented below are not the extension execution path.
+
 ```cypher
 MATCH (question:Question {id: $id})-[match:SIMILAR_TO]->(document:Document)
 MATCH (document)-[:WRITTEN_BY]->(author:Person)
@@ -60,7 +64,7 @@ g.V().has('Question', 'id', 7).
 
 ## Register an index as an engine-owned table
 
-In the [compiler request](sql-compiler.md), register the engine and assign the
+In the [compiler request](compiler.md), register the engine and assign the
 index table to it. This excerpt uses Quickwit; replace `quickwit` with
 `elasticsearch` to select Elasticsearch.
 
@@ -179,7 +183,7 @@ application configuration, never in the compiled query.
 
 ## Compose retrieval and reranking
 
-Use the [candidate-stage relationship syntax](search.md#retrieve-candidates-then-rerank-with-maxsim)
+Use the [candidate-stage relationship syntax](computed-relationships-and-search.md#candidate-retrieval-followed-by-colbert-scoring)
 to retrieve candidates from either engine and rerank their token embeddings with
 MaxSim. The candidate stage keeps the indexed BM25 score, while the final stage
 selects the highest reranked scores. Token embeddings must be available from the

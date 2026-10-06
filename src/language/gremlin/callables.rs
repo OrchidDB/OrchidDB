@@ -1,9 +1,7 @@
 //! Callable argument lowering in the production frontend. Only explicitly typed
 //! lambdas (or Lambda constructors) contain executable code; string values do not.
 use super::semantics::GValue;
-#[cfg(any(feature = "duckdb", test))]
 use super::parser::{GremlinParseError, Result, tokenize};
-#[cfg(any(feature = "duckdb", test))]
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,7 +18,6 @@ pub enum GremlinBinding {
 // Encode data as grammar literals without evaluating it. Numeric suffixes and
 // typed map keys retain Gremlin's value identity. Single quotes also keep bound
 // strings inert if a vertex-program option is subsequently parsed by Groovy.
-#[cfg(any(feature = "duckdb", test))]
 fn literal_source(value: &GValue) -> Option<String> {
     fn quote(value: &str) -> String {
         let mut out = String::from("'");
@@ -120,7 +117,6 @@ fn literal_source(value: &GValue) -> Option<String> {
     })
 }
 
-#[cfg(any(feature = "duckdb", test))]
 pub(crate) fn prepare(
     input: &str,
     bindings: &HashMap<String, GremlinBinding>,
@@ -185,7 +181,6 @@ pub(crate) fn prepare(
     Ok((lower(&input, &expanded)?, values))
 }
 
-#[cfg(any(feature = "duckdb", test))]
 pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> Result<String> {
     let tokens = tokenize(input)?;
     let mut output = Vec::new();

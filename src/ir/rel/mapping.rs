@@ -132,7 +132,6 @@ impl KeyColumns {
         })
     }
     /// A typed SQL tuple. Field names are positional, not source column names.
-    #[cfg(feature = "duckdb")]
     pub(crate) fn sql(&self, qualifier: Option<&str>) -> String {
         let columns = self
             .0
@@ -156,7 +155,6 @@ impl KeyColumns {
             )
         }
     }
-    #[cfg(feature = "duckdb")]
     pub(crate) fn present_sql(&self) -> String {
         self.0
             .iter()
@@ -933,7 +931,6 @@ impl GraphMapping {
     pub fn representation_source(&self, name: &str) -> Option<&super::representation::RepresentationSource> {
         self.representation_sources.get(name)
     }
-    #[cfg(feature = "duckdb")]
     pub(crate) fn source_access_cost(&self, source:&MappedSource, keys:&KeyColumns)->Option<(f64,f64,f64,f64)> {
         self.statistics()?;
         let selected=super::representation::select(self.source_plan(source).ok()?).ok()?;

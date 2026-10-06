@@ -170,6 +170,17 @@ impl<'a> LoweringContext<'a> {
         bindings: &[String],
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
+        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) && !rows.is_empty()
+            && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()) {
+            let mut plans = rows.iter().map(|row| {
+                let expressions = row.iter().zip(bindings).map(|(v,b)| native_values::literal(v).map(|e|e.alias(b)))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(LogicalPlanBuilder::empty(true).project(expressions)?.build()?)
+            }).collect::<RelResult<Vec<_>>>()?.into_iter();
+            let first=plans.next().expect("nonempty rows");
+            let plan=plans.try_fold(first,|left,right|LogicalPlanBuilder::from(left).union(right)?.build())?;
+            return Ok(LoweredNode::new(plan));
+        }
         if matches!(self.language, Language::Gremlin | Language::Cypher) {
             // Arrow columns have a single physical type. Mixed graph-language values,
             // nested collections and arbitrary-precision numbers must remain native;
@@ -224,6 +235,33 @@ impl<'a> LoweringContext<'a> {
             .first()
             .map(RecordBatch::schema)
             .unwrap_or_else(|| Arc::new(Schema::empty()));
+        if self.options.mapping.is_some() && !schema.fields().is_empty() {
+            // These are compiler-owned constants (VALUES and empty scans),
+            // not mapped source data. Keep them in the relational plan so the
+            // owning SQL engine executes them without installing a MemTable.
+            let rows = batches.iter().flat_map(|batch| {
+                (0..batch.num_rows()).map(|row| {
+                    batch.columns().iter().map(|column| {
+                        ScalarValue::try_from_array(column, row).map(lit)
+                    }).collect::<datafusion::common::Result<Vec<_>>>()
+                })
+            }).collect::<datafusion::common::Result<Vec<_>>>()?;
+            let plan = if rows.is_empty() {
+                LogicalPlanBuilder::empty(true).filter(lit(false))?.project(schema.fields().iter().map(|field| {
+                    Ok(lit(ScalarValue::try_from(field.data_type())?).alias(field.name()))
+                }).collect::<datafusion::common::Result<Vec<_>>>()?)?.build()?
+            } else {
+                // The upstream SQL unparser cannot place VALUES under joins.
+                // Constant SELECTs use its existing UNION ALL support instead.
+                let mut plans = rows.into_iter().map(|row| {
+                    LogicalPlanBuilder::empty(true).project(row.into_iter().zip(schema.fields())
+                        .map(|(value, field)| value.alias(field.name())).collect::<Vec<_>>())?.build()
+                }).collect::<datafusion::common::Result<Vec<_>>>()?.into_iter();
+                let first = plans.next().expect("nonempty constant rows");
+                plans.try_fold(first, |left, right| LogicalPlanBuilder::from(left).union(right)?.build())?
+            };
+            return Ok(LoweredNode::new(plan));
+        }
         // Catalog scans generate identity as (row id, label/type). Mapped
         // sources use their own lowering and do not receive an assumed key.
         let constraints = if primary_key.is_empty() {
@@ -359,6 +397,13 @@ impl<'a> LoweringContext<'a> {
                 }
             }
         };
+        if let Some(mapping)=&self.options.mapping {
+            match shape {
+                BindingShape::Node => for label in mapping.labels() {push_keys(mapping.node(&label).unwrap().properties.keys().cloned().collect());},
+                BindingShape::Edge => for label in mapping.rel_types() {push_keys(mapping.edge(&label).unwrap().properties.keys().cloned().collect());},
+            }
+            return keys;
+        }
         match shape {
             BindingShape::Node => {
                 let mut labels = self.graph.node_label_order().to_vec();

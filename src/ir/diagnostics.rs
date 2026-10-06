@@ -1,7 +1,7 @@
 //! Structured execution diagnoses retained across DataFusion and public APIs.
 use std::error::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RuntimeDiagnosis {
     ArgumentType,
     NumberOutOfRange,

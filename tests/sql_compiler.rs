@@ -28,6 +28,30 @@ async fn constant_query_needs_no_internal_table() {
     assert!(r["sql"].as_str().unwrap().contains("42"));
     assert!(!r["sql"].as_str().unwrap().contains("one_row_"));
 }
+
+#[tokio::test]
+async fn signed_integer_widths_compare_without_lossy_numeric_promotion() {
+    for dialect in ["duckdb", "postgres"] {
+        for ty in ["int8", "int16", "int32", "int64"] {
+            let mut r = request("MATCH (p:Person) WHERE p.age > 35 RETURN p.age");
+            r["dialect"] = json!(dialect);
+            r["tables"][0]["columns"].as_array_mut().unwrap()
+                .push(json!({"name":"age", "data_type":ty}));
+            r["nodes"][0]["properties"]["age"] = json!("age");
+            compile(r).await.unwrap();
+        }
+        // This relaxation must not admit uint64/int64 or float/int64 promotion,
+        // where values can be rounded or exceed the other operand's range.
+        for ty in ["uint64", "float64"] {
+            let mut r = request("MATCH (p:Person) WHERE p.age = 9007199254740993 RETURN p.age");
+            r["dialect"] = json!(dialect);
+            r["tables"][0]["columns"].as_array_mut().unwrap()
+                .push(json!({"name":"age", "data_type":ty}));
+            r["nodes"][0]["properties"]["age"] = json!("age");
+            assert!(compile(r).await.unwrap_err().contains("lossless runtime values"));
+        }
+    }
+}
 #[tokio::test]
 async fn validates_protocol_dialect_and_schema() {
     let mut r = request("RETURN 1");
@@ -159,4 +183,20 @@ async fn audit_permission_scope_wraps_query_source() {
         }
         assert!(result["sql"].as_str().unwrap().contains("permissions"));
     }
+}
+
+#[tokio::test]
+async fn compiler_owned_constant_relations_do_not_require_materialization() {
+    for query in [
+        "UNWIND [1,2,3] AS x RETURN x",
+        "UNWIND range(3,1,-1) AS x RETURN x",
+        "MATCH (n:Missing) RETURN count(n)",
+    ] {
+        let result = compile(request(query)).await.unwrap();
+        assert!(!result["sql"].as_str().unwrap().contains("__graph_rel_"));
+    }
+    let mut r = request("g.inject(x)");
+    r["language"] = json!("gremlin");
+    r["bindings"] = json!({"x":{"type":"string","value":"x'); DROP TABLE people; //"}});
+    compile(r).await.unwrap();
 }

@@ -1,5 +1,9 @@
 # PostgreSQL and mixed SQL engines
 
+This is a retained internal library reference. The current product is the
+[DuckDB extension](../extension/README.md), which uses only its host DuckDB executor.
+The legacy adapters documented below are not the extension execution path.
+
 The shared JSON compiler accepts `duckdb` and `postgres`. Cypher, Gremlin and
 SPARQL use the same lowering and dialect adapters. Connections, credentials and
 transactions belong to the application.

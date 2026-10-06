@@ -1,0 +1,71 @@
+{
+  "engine": "DuckDB extension",
+  "duckdb": "1.5.6",
+  "platform": "osx_arm64",
+  "extension_sha256": "6f01a4c9dd2115b5218dd4899c1366ce9a73ac2bd1eed13ac9e0c44ea946164d",
+  "scope": "Pinned Cypher and Gremlin suites; existing embedded SPARQL baseline",
+  "reports": {
+    "cypher": {
+      "path": "cypher.json.gz",
+      "sha256": "05175ea3411e337a2a3bb6531364f85b9ea0fa810ef28e3e5495c314ffc5eb7e",
+      "counts": {
+        "pass": 3897
+      },
+      "coverage": {
+        "catalog_cases": 3897,
+        "recorded_cases": 3897,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-06T03:47:29.396344+00:00"
+    },
+    "gremlin": {
+      "path": "gremlin.json.gz",
+      "sha256": "5413c65e1aa37fc6b2fe6316d25cd556ebc76e371baddff760131b8bedcc287e",
+      "counts": {
+        "pass": 1511
+      },
+      "coverage": {
+        "catalog_cases": 1511,
+        "recorded_cases": 1511,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-06T03:45:35.416230+00:00"
+    },
+    "rdf": {
+      "path": "rdf.json.gz",
+      "sha256": "cc8bfceca9f1ab4a38b0eefa13fcc76ec55e31291df36044f09d82082e40a206",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "coverage": {
+        "catalog_cases": 1125,
+        "recorded_cases": 1125,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "finished_at": "2026-10-06T03:47:59.263321+00:00"
+    }
+  }
+}

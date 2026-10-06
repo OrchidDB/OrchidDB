@@ -22,9 +22,11 @@ use super::{LoweredNode, LoweringContext, RelError, RelResult, col_exact, resolv
 /// An existing table or view containing RDF quads. Without typed term columns,
 /// the subject, predicate, and object fields are treated as IRIs. The optional
 /// graph column is nullable: NULL denotes the default graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IriQuadSource {
     /// Writes are opt-in and address this exact source table and columns.
+    #[serde(default)]
     pub writable: bool,
     /// Optional predicate partition, used identically by scans and writes.
     pub predicate_iri: Option<String>,
@@ -44,7 +46,8 @@ pub struct IriQuadSource {
 /// the XSD string datatype, language literals use rdf:langString plus a tag,
 /// and other typed literals carry their datatype IRI. The value column is the
 /// lexical value returned to SPARQL clients.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RdfTermColumns {
     pub value: String,
     pub kind: String,
@@ -56,7 +59,7 @@ const IDENTITY_PREFIX: &str = "__rdf:term:";
 
 /// Reserved output aliases used internally to carry the non-lexical identity
 /// of a SPARQL variable between adjacent quad patterns.
-pub(crate) fn binding_identity_columns(binding: &str) -> [String; 3] {
+pub fn binding_identity_columns(binding: &str) -> [String; 3] {
     ["kind", "datatype", "language"].map(|part| format!("{IDENTITY_PREFIX}{part}:{binding}"))
 }
 
@@ -157,12 +160,10 @@ impl RdfDatasetMapping {
     pub(crate) fn registered_tables(&self)->BTreeMap<String,Arc<dyn TableProvider>> {self.tables.clone()}
     pub fn is_empty(&self)->bool {self.sources.is_empty() && self.relational.is_empty()}
 
-    #[cfg(feature = "duckdb")]
     pub(crate) fn dataset_sources(&self, dataset: &str) -> &[IriQuadSource] {
         self.sources.get(dataset).map(Vec::as_slice).unwrap_or_default()
     }
 
-    #[cfg(feature = "duckdb")]
     pub(crate) fn writable_graph_table(&self, dataset: &str) -> Option<&(String, String)> {
         self.writable_graph_tables.contains(dataset).then(|| self.graph_tables.get(dataset)).flatten()
     }

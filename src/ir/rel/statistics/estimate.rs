@@ -757,7 +757,6 @@ pub(super) fn input_rows(plan: &LogicalPlan) -> Option<f64> {
 }
 
 /// Source cost and frontier-key NDV for the native access selector. Hints only.
-#[cfg(feature = "duckdb")]
 pub(crate) fn source_access_cost(
     plan: &LogicalPlan,
     keys: &[String],

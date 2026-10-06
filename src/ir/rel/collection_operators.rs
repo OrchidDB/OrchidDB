@@ -13,6 +13,14 @@ impl<'a> LoweringContext<'a> {
         let input = self
             .lower_node(input)
             .map_err(|err| RelError::Unsupported(format!("GraphUnwind input: {err}")))?;
+        if self.options.native_values && self.language == Language::Cypher {
+            if let IrExpr::Call { name, args } = input_expr
+                && (name.eq_ignore_ascii_case("range") || name == "cypher_range")
+                && args.iter().all(|arg|literal_i64(arg).is_some()) {
+                return self.lower_range_unwind(input,args,bind,outer);
+            }
+            return self.lower_unwind_dynamic(input,input_expr,bind,outer);
+        }
         if let IrExpr::Call { name, args } = input_expr {
             if name.eq_ignore_ascii_case("range") || name == "cypher_range" {
                 return self.lower_range_unwind(input, args, bind, outer);
@@ -21,7 +29,9 @@ impl<'a> LoweringContext<'a> {
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
             return self.lower_unwind_dynamic(input, input_expr, bind, outer);
         };
-        if let Some(plan) = rules::fold_singleton_unwind(&input.plan, bind, &values)? {
+        if let Some(plan) = rules::fold_singleton_unwind(&input.plan, bind, &values).or_else(|error| {
+            if self.options.native_values { Ok(None) } else { Err(error) }
+        })? {
             return Ok(input.with_plan(plan));
         }
         let value_rows = values
@@ -56,7 +66,7 @@ impl<'a> LoweringContext<'a> {
         output: &str,
         input: &Node,
     ) -> RelResult<LoweredNode> {
-        if self.language == Language::Gremlin && !self.options.tolerate_internal_path_state {
+        if self.language == Language::Gremlin && !self.options.native_values && !self.options.tolerate_internal_path_state {
             return Err(RelError::Unsupported("Gremlin group map requires native runtime values".into()));
         }
         use crate::ir::plan::GroupValue;
@@ -65,11 +75,17 @@ impl<'a> LoweringContext<'a> {
         let key_type = key_expr
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("group key type: {err}")))?;
-        let key_text = gremlin_tagged_text_expr(key_expr, &key_type);
+        let key_text = if self.options.native_values {key_expr} else {gremlin_tagged_text_expr(key_expr, &key_type)};
         let value_alias = "__gm_value";
         let mut collected_value = false;
+        let native_aggregate=|agg:&AggCall| -> RelResult<Expr> {
+            let arg=match &agg.arg {Some(arg)=>self.lower_expr(&input.plan,arg)?,None=>lit(1_i64)};
+            native_values::aggregate_expr(agg,arg,false)
+        };
         let value_agg = match value {
+            GroupValue::Aggregate(agg) if self.options.native_values => native_aggregate(agg)?,
             GroupValue::Traversal { traversal, .. } => match traversal.as_ref() {
+                Node::GraphAggregate{group,aggs,input:body,..} if self.options.native_values && group.is_empty() && aggs.len()==1 && matches!(body.as_ref(),Node::GraphCorrelate{..})=>native_aggregate(&aggs[0])?,
                 Node::GraphAggregate { group, aggs, input: body, .. }
                     if group.is_empty() && aggs.len() == 1
                         && matches!(body.as_ref(), Node::GraphCorrelate { .. })
@@ -158,12 +174,27 @@ impl<'a> LoweringContext<'a> {
                 }
             },
         };
-        let grouped = LogicalPlanBuilder::from(input.plan.clone())
-            .aggregate(
-                vec![key_text.alias("__gm_key")],
-                vec![value_agg.alias(value_alias)],
-            )?
-            .build()?;
+        let grouped = if self.options.native_values {
+            // Group identity belongs to the language, not the carrier's
+            // serialized property context. Retain a representative key value.
+            LogicalPlanBuilder::from(input.plan.clone()).aggregate(
+                vec![native_values::key_expr(key_text.clone(), false).alias("__gm_identity")],
+                vec![value_agg.alias(value_alias), datafusion::functions_aggregate::first_last::first_value(key_text, vec![]).alias("__gm_key")],
+            )?.build()?
+        } else {
+            LogicalPlanBuilder::from(input.plan.clone()).aggregate(
+                vec![key_text.alias("__gm_key")], vec![value_agg.alias(value_alias)],
+            )?.build()?
+        };
+        if self.options.native_values {
+        let scope=format!("__w_sql_cte_group_{}",self.scan_counter);self.scan_counter+=1;
+        let plan=collections::unnest_scope(grouped,scope)?;
+        let plan=LogicalPlanBuilder::from(plan).aggregate(Vec::<Expr>::new(),vec![df_array_agg(col_exact("__gm_key")).alias("__gm_keys"),df_array_agg(col_exact("__gm_value")).alias("__gm_values")])?.build()?;
+        let list=|binding:&str|IrExpr::Call{name:"coalesce".into(),args:vec![IrExpr::binding(binding),IrExpr::List(vec![])]};
+        let map=IrExpr::Call{name:"map_literal".into(),args:vec![list("__gm_keys"),list("__gm_values")]};
+        let result=self.native_expr(&plan,&map)?;
+        return Ok(input.with_plan(LogicalPlanBuilder::from(plan).project(vec![result.alias(output)])?.build()?));
+        }
         let value_text = if collected_value {
             concat_exprs(vec![
                 lit("l["),
@@ -410,7 +441,7 @@ impl<'a> LoweringContext<'a> {
             .build()?;
         let expanded =
             collections::unnest_scope(expanded, format!("__w_sql_cte_quantifier_items_{suffix}"))?;
-        let predicate = self.lower_expr(&expanded, predicate)?;
+        let predicate = self.lower_case_condition(&expanded, predicate)?;
         let predicate_col = format!("__w_quantifier_predicate_{suffix}");
         let mut evaluated = existing_columns(&expanded, &BTreeSet::new());
         // Empty/null lists have a synthetic outer-UNNEST row. Do not evaluate
@@ -546,16 +577,15 @@ impl<'a> LoweringContext<'a> {
         bind: &str,
         outer: bool,
     ) -> RelResult<LoweredNode> {
-        let list_expr = if let IrExpr::List(items) = input_expr {
-            datafusion::functions_nested::expr_fn::make_array(
-                items
-                    .iter()
-                    .map(|item| self.lower_expr(&input.plan, item))
-                    .collect::<RelResult<Vec<_>>>()?,
-            )
+        let list_expr = if let IrExpr::List(_) = input_expr {
+            self.lower_list_operand(&input.plan, input_expr)?
         } else {
             self.lower_list_operand(&input.plan, input_expr)?
         };
+        let list_expr=if self.options.native_values && self.language==Language::Cypher
+            && !matches!(list_expr.get_type(input.plan.schema())?,DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
+            native_values::list(list_expr)
+        } else {list_expr};
         let data_type = list_expr
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("unwind expression type: {err}")))?;

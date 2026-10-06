@@ -43,6 +43,7 @@ impl PropertyGraph {
         let Value::Node { label, id } = owner else {
             return;
         };
+        self.hydrate_native_state(false,label,id);
         let address = (label.clone(), id.clone());
         if self
             .overlay
@@ -58,7 +59,7 @@ impl PropertyGraph {
         let records = if value == Value::Null {
             vec![]
         } else {
-            let property_id = if let Some(source) = &self.source {
+            let property_id = if let Some(source) = self.source.as_ref().filter(|source|!source.supports_dynamic_schema()) {
                 source.property_handle(label, id, key)
             } else {
                 let id = ov.next_property_id;
@@ -90,6 +91,7 @@ impl PropertyGraph {
     }
 
     fn properties_inner(&self, owner: &Value, keys: &[String], jvm_user_keys: bool) -> Vec<Value> {
+        match owner {Value::Node{label,id}=>self.hydrate_native_state(false,label,id),Value::Edge{rel_type,id,..}=>self.hydrate_native_state(true,rel_type,id),_=>{}}
         match owner {
             Value::Node { label, id } => {
                 if !self.node_is_live(label, id.clone()) {
@@ -419,6 +421,7 @@ impl PropertyGraph {
     }
 
     pub fn element_public_id(&self, element: &Value) -> Value {
+        match element {Value::Node{label,id}=>self.hydrate_native_state(false,label,id),Value::Edge{rel_type,id,..}=>self.hydrate_native_state(true,rel_type,id),_=>{}}
         if let Some(id) = self.source_identity(element) { return id; }
         let address = match element {
             Value::Node { label, id } => (false, label.clone(), id.clone()),
@@ -539,6 +542,7 @@ impl PropertyGraph {
     }
 
     pub fn set_element_public_id(&self, element: &Value, public_id: Value) -> CatalogResult<()> {
+        match element {Value::Node{label,id}=>self.hydrate_native_state(false,label,id),Value::Edge{rel_type,id,..}=>self.hydrate_native_state(true,rel_type,id),_=>{}}
         if let Some(key)=self.source_identity(element) {
             return if key.three_valued_eq(&public_id)==Some(true) {Ok(())} else {Err(CatalogError::Schema("mapped identities are the source primary keys".into()))};
         }
@@ -589,7 +593,7 @@ impl PropertyGraph {
     }
 
     pub fn find_element_by_public_id(&self, public_id: &Value, edge: bool) -> Option<Value> {
-        let mut addresses = Vec::new();
+        let mut addresses = self.source.as_ref().map(|source|source.public_addresses(public_id,edge)).unwrap_or_default();
         if self.source.is_some() {
             if let Ok(id)=ElementId::try_from(public_id) {
                 for name in if edge {self.rel_types()}else{self.labels()} {
@@ -856,7 +860,7 @@ mod tests {
     }
 }
 
-fn public_id_key(value: &Value) -> String {
+pub(crate) fn public_id_key(value: &Value) -> String {
     use bigdecimal::{BigDecimal, FromPrimitive};
     let number = match value {
         Value::Byte(v) => Some(BigDecimal::from(*v)),

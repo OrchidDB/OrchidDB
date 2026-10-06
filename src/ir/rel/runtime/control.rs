@@ -1,5 +1,5 @@
 //! Correlated relational subplans. Branches and loop bodies are lowered before
-//! execution and run through DataFusion with their own frontier relation.
+//! execution and run through the statement host with their own frontier relation.
 use super::*;
 use crate::ir::runtime::ops;
 use crate::ir::{
@@ -11,7 +11,7 @@ use crate::ir::{
 #[derive(Debug, Clone)]
 struct Subplan {
     plan: LogicalPlan,
-    prepared: Arc<Mutex<Option<PreparedSubplan>>>,
+    prepared: super::legacy::SubplanCache,
     observable: bool,
     batchable: bool,
     batch_names: std::collections::BTreeSet<String>,
@@ -20,107 +20,22 @@ struct Subplan {
     group_split: Option<(Box<Subplan>, Box<Subplan>)>,
     writer_split: Option<(Box<Subplan>, Box<Subplan>, crate::ir::expr::AggKind)>,
 }
-#[derive(Debug)]
-struct PreparedSubplan {
-    physical: Arc<dyn ExecutionPlan>,
-    state: Arc<Mutex<State>>,
-    task: Arc<TaskContext>,
-    stats: super::super::dag::DagStats,
-    cost: Arc<Mutex<crate::ir::QueryCost>>,
-}
 impl Subplan {
-    fn run(
-        &self,
-        frontier: Vec<Row>,
-        graph: &PropertyGraph,
-        ctx: &mut ExecutionContext,
-    ) -> IrResult<Vec<Row>> {
+    fn run(&self, frontier: Vec<Row>, graph: &PropertyGraph, ctx: &mut ExecutionContext) -> IrResult<Vec<Row>> {
         self.run_internal(frontier, graph, ctx, None)
     }
-    fn run_internal(
-        &self, frontier: Vec<Row>, graph: &PropertyGraph,
-        ctx: &mut ExecutionContext, batch_key: Option<String>,
-    ) -> IrResult<Vec<Row>> {
-        let runtime = tokio::runtime::Handle::current();
-        let error = |e: DataFusionError| RuntimeError::Runtime(e.to_string());
-        // A query-local slot caches the physical operators, never their output.
-        // Taking the slot permits reentrant calls to prepare another instance.
-        let cached = self
-            .prepared
-            .lock()
-            .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))?
-            .take();
-        let live = State {
-            graph: graph.clone(),
-            context: std::mem::take(ctx),
-            frontier,
-            batch_key,
+    fn run_internal(&self, frontier: Vec<Row>, graph: &PropertyGraph, ctx: &mut ExecutionContext, batch_key: Option<String>) -> IrResult<Vec<Row>> {
+        let runner = ctx.subplan_runner.clone();
+        let mut state = State { graph: graph.clone(), context: std::mem::take(ctx), frontier, batch_key };
+        let result = match runner {
+            Some(runner) => runner.run(&self.plan, &mut state),
+            None => super::legacy::run(&self.plan, &self.prepared, &mut state),
         };
-        let prepared = if let Some(prepared) = cached {
-            *prepared
-                .state
-                .lock()
-                .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))? = live;
-            prepared
-        } else {
-            let state = Arc::new(Mutex::new(live));
-            #[cfg(feature = "duckdb")]
-            let resources = graph.source.as_ref().zip(graph.mapping.as_ref()).map(|(source, mapping)|
-                super::super::dag::DagSession::with_shared(source.executor(), mapping.physical_table_names()));
-            #[cfg(not(feature = "duckdb"))]
-            let resources = None;
-            let cost = Arc::new(Mutex::new(crate::ir::QueryCost::default()));
-            let result = if let Some(resources) = resources {
-                runtime.block_on(super::super::dag::prepare_with_extensions(
-                    &self.plan, vec![Arc::new(KernelPlanner { state: state.clone() })], &resources, cost.clone()))
-            } else {
-                let session = datafusion::prelude::SessionContext::new_with_config(
-                    datafusion::prelude::SessionConfig::new().with_target_partitions(1));
-                let planner = datafusion::physical_planner::DefaultPhysicalPlanner::with_extension_planners(
-                    vec![Arc::new(KernelPlanner { state: state.clone() })]);
-                runtime.block_on(planner.create_physical_plan(&self.plan, &session.state()))
-                    .map(|physical| (physical, session.task_ctx(), Default::default()))
-                    .map_err(super::super::RelError::from)
-            };
-            let (physical, task, stats) = match result {
-                Ok(plan) => plan,
-                Err(failure) => {
-                    *ctx = std::mem::take(&mut state.lock().unwrap().context);
-                    return Err(RuntimeError::Runtime(failure.to_string()));
-                }
-            };
-            PreparedSubplan { physical, state, task, stats, cost }
-        };
-        if graph.source.is_some() {
-            prepared.state.lock().map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?
-                .context.nested_dag_stats.merge_execution(&prepared.stats);
-        }
-        let result = runtime.block_on(datafusion::physical_plan::collect(
-            prepared.physical.clone(),
-            prepared.task.clone(),
-        ));
-        let mut finished = std::mem::take(
-            &mut *prepared
-                .state
-                .lock()
-                .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?,
-        );
-        finished.context.query_cost.add_work(&std::mem::take(&mut *prepared.cost.lock()
-            .map_err(|_| RuntimeError::Runtime("Query cost poisoned".into()))?));
-        *ctx = std::mem::take(&mut finished.context);
-        // Empty query state prevents cache cycles through named group reducers,
-        // and prevents one frontier's writes or bindings leaking into the next.
-        *self
-            .prepared
-            .lock()
-            .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))? =
-            Some(prepared);
-        let mut rows = Vec::new();
-        for batch in result.map_err(error)? {
-            rows.extend(decode_rows(&batch).map_err(error)?);
-        }
-        graph.restore_execution_overlay(&finished.graph);
-        Ok(rows)
+        // Return statement state even after an operator fails. The owning host
+        // decides whether its transaction and execution overlay are published.
+        *ctx = std::mem::take(&mut state.context);
+        graph.restore_execution_overlay(&state.graph);
+        result
     }
 }
 
@@ -170,10 +85,11 @@ impl Compiler<'_> {
             graph: self.graph,
             policy: self.policy.clone(),
             language_functions: self.language_functions,
+            native_values: self.native_values,
             // Mapped reads share the statement connection. Independent scans
             // inside a correlated body remain eligible for SQL pushdown;
             // mutation fences retain the live overlay path.
-            sql: self.sql && self.graph.source.is_some(),
+            sql: self.sql && (self.graph.source.is_some() || (self.native_values && self.graph.mapping.is_some())),
             islands: self.islands.clone(),
             lowered: Default::default(),
         };
@@ -1349,3 +1265,41 @@ fn write_side_effect(
 
 #[path = "bounded.rs"]
 mod bounded;
+
+#[cfg(test)]
+mod host_boundary_tests {
+    use super::*;
+    #[derive(Debug)]
+    struct FrontierRunner { fail: bool }
+    impl SubplanRunner for FrontierRunner {
+        fn run(&self, _plan: &LogicalPlan, state: &mut KernelState) -> IrResult<Vec<Row>> {
+            assert_eq!(state.batch_key.as_deref(), Some("correlation"));
+            state.context.side_effects.insert("visited".into(), Value::Bool(true));
+            if self.fail { return Err(RuntimeError::Runtime("host failure".into())); }
+            Ok(state.frontier.clone())
+        }
+    }
+    fn body() -> Subplan {
+        Subplan {
+            plan: kernel("TestFrontier", vec![], |_, state| Ok(state.frontier.clone())),
+            prepared: Default::default(), observable: false, batchable: false,
+            batch_names: Default::default(), barrier: false, group_barrier: false,
+            group_split: None, writer_split: None,
+        }
+    }
+    #[test]
+    fn injected_runner_keeps_empty_frontier_distinct_and_restores_state_on_error() {
+        let graph = PropertyGraph::new();
+        for fail in [false, true] {
+            let mut state = KernelState::for_host(graph.clone(), Arc::new(FrontierRunner { fail }));
+            for frontier in [vec![], vec![Row::new()]] {
+                let expected = frontier.len();
+                let result = body().run_internal(frontier, &graph, &mut state.context, Some("correlation".into()));
+                if fail { assert_eq!(result.unwrap_err().to_string(), "host failure"); }
+                else { assert_eq!(result.unwrap().len(), expected); }
+                assert!(matches!(state.context.side_effects["visited"], Value::Bool(true)));
+                assert!(state.context.subplan_runner.is_some());
+            }
+        }
+    }
+}

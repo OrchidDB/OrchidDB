@@ -1,8 +1,9 @@
-# Function catalog
+# Function reference
 
-All 165 portable scalar functions have a DuckDB and PostgreSQL SQL path.
-The table describes the supported scope for each engine; availability is
-checked for each call's argument types and options. See
-[Portable scalar functions](portable-functions.md) for usage and native fallback.
+The shared [function catalog](https://github.com/OrchidDB/OrchidDB/blob/main/docs/portable-function-catalog.md)
+records compiler functions and backend mappings. It includes retained library
+backends for development; the extension executes only on its host DuckDB.
 
-{{#include ../../../docs/portable-function-catalog.md}}
+Language frontends and scalar kernels are the authoritative source for semantics.
+[Conformance results](conformance.md) report the pinned language assertions executed
+through the extension.

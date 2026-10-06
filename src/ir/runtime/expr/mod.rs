@@ -31,6 +31,13 @@ fn owned_runtime_list(source: Value) -> Result<Vec<Value>, Value> {
 }
 
 pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
+    // Host executor threads may have small stacks. Check before entering the
+    // evaluator's large frame, including every recursive expression call.
+    stacker::maybe_grow(256 * 1024, 16 * 1024 * 1024, || eval_inner(expr, row, graph))
+}
+
+#[inline(never)]
+fn eval_inner(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
     match expr {
         IrExpr::Lit(lit) => Ok(match lit {
             Lit::Scalar(value) => Value::Scalar(value.clone()),
@@ -285,6 +292,22 @@ mod tests {
     use super::*;
     use crate::ir::expr::BinaryOp;
     use crate::ir::runtime::Row;
+
+    #[test]
+    fn nested_values_evaluate_on_small_host_thread_stack() {
+        std::thread::Builder::new().stack_size(64 * 1024).spawn(|| {
+            let mut expression = IrExpr::List(vec![]);
+            for _ in 0..40 { expression = IrExpr::List(vec![expression]); }
+            let value = eval(&expression, &Row::new(), &PropertyGraph::new()).unwrap();
+            let mut nested = &value;
+            for _ in 0..40 {
+                let Value::List(items) = nested else { panic!("Missing nested list"); };
+                assert_eq!(items.len(), 1);
+                nested = &items[0];
+            }
+            assert_eq!(nested, &Value::List(vec![]));
+        }).unwrap().join().unwrap();
+    }
 
     fn empty_graph() -> PropertyGraph {
         PropertyGraph::new()

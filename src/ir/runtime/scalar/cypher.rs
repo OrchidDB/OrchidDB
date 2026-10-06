@@ -89,6 +89,10 @@ pub(super) fn cypher_call(
     // Resolve aliases (`tofloat` / `to_float` / `float`, etc.) to a
     // single canonical spelling so every arm below sees one name.
     if let Some(kind) = name.strip_prefix("cypher_temporal.") {
+        let (kind, clock) = match kind.rsplit_once('.') {
+            Some((kind, clock @ ("transaction" | "statement" | "realtime"))) => (kind, clock),
+            _ => (kind, "statement"),
+        };
         let value = match (kind, args) {
             (name, [left, right]) if name.starts_with("duration.") =>
                 crate::ir::temporal::between(name.trim_start_matches("duration."), left, right),
@@ -100,7 +104,7 @@ pub(super) fn cypher_call(
             ("datetime.fromepochmillis", [millis]) => crate::ir::temporal::construct("datetime", &Value::Map(std::collections::BTreeMap::from([("epochMillis".into(),millis.clone())]))),
             (kind, [value]) => crate::ir::temporal::construct(kind, value),
             (kind, []) => {
-                let now = graph.statement_time();
+                let now = match clock { "transaction" => graph.transaction_time(), "realtime" => chrono::Utc::now(), _ => graph.statement_time() };
                 let text = match kind { "date" => now.date_naive().to_string(), "localtime" => now.time().to_string(),
                     "localdatetime" => now.naive_utc().to_string().replace(' ', "T"),
                     "time" => format!("{}Z", now.time()), _ => now.to_rfc3339() };

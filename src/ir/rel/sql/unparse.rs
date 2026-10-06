@@ -154,7 +154,15 @@ pub(super) fn encode_expression_literals(
     dialect: SqlDialect,
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
+        if let Expr::Cast(cast)=&inner
+            && dialect==SqlDialect::DuckDb
+            && matches!(cast.data_type,DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
+            return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
+        }
         if let Expr::Literal(value, _) = &inner {
+            if dialect==SqlDialect::DuckDb && value.is_null() && matches!(value.data_type(),DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(lit(ScalarValue::Null),value.data_type(),dialect.name())?));
+            }
             if super::structured::is_structured(&value.data_type()) && matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect).map_err(|e| DataFusionError::Plan(e.to_string()))?));
             }

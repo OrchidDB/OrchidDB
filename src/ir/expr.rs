@@ -4,21 +4,22 @@
 //! `GraphFilter`, `GraphProject`, `GraphAggregate.aggs`, etc.
 
 use crate::ir::policy::PropertyMissing;
+use serde::{Serialize, Deserialize};
 
 /// Reference to a logical binding produced by upstream operators.
 pub type BindingId = String;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Lit {
-    Scalar(datafusion::common::ScalarValue),
+    Scalar(#[serde(with = "crate::ir::rel::native_values::scalar_codec")] datafusion::common::ScalarValue),
     Null,
     Bool(bool),
     Int(i64),
-    Float(f64),
+    Float(#[serde(with = "crate::ir::rel::native_values::float_codec")] f64),
     String(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BinaryOp {
     Eq,
     Neq,
@@ -34,14 +35,14 @@ pub enum BinaryOp {
     Or,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StringOp {
     StartsWith,
     EndsWith,
     Contains,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IrExpr {
     Lit(Lit),
     /// Refers to a column / binding in the current row.
@@ -169,7 +170,7 @@ impl IrExpr {
 }
 
 /// Aggregate function instance used in `GraphAggregate.aggs`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AggCall {
     pub kind: AggKind,
     /// Output binding name.
@@ -180,7 +181,7 @@ pub struct AggCall {
     pub distinct: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AggKind {
     /// Catalog-resolved engine aggregate. `arg` holds an `IrExpr::Call` with all arguments.
     EngineFunction,

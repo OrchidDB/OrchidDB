@@ -1,131 +1,119 @@
 # OrchidDB
 
-An embedded graph query engine written in Rust. Compile Cypher, Gremlin and
-SPARQL over mapped tables to SQL, then run it with your own database connection.
+**Cypher, Gremlin, and SPARQL in DuckDB.** Query existing tables, Iceberg data,
+and Lance datasets as graphs, using DuckDB's execution engine and storage extensions.
 
-Use [PostgreSQL, DuckDB, or both](docs/sql-engines.md) through JSON-configured
-SQL islands and caller-owned connections. Mixed execution creates no tables.
+Orchid is a DuckDB extension. Define relationships once, then write native graph
+queries through your existing DuckDB connection. No separate server, Orchid CLI,
+or language-specific Orchid client is required.
 
-[Documentation](https://docs.orchiddb.com/) · [Website](https://orchiddb.com/) ·
-[Java client](https://github.com/OrchidDB/OrchidDB-java) ·
-[Examples](examples/) · [Conformance](https://docs.orchiddb.com/conformance.html)
+[Extension guide](extension/README.md) · [Documentation source](website/docs/content/index.md) ·
+[Architecture](docs/architecture.md) · [Conformance](conformance/README.md)
 
-## Install the CLI
+## Build and load
 
-Version 0.3.0 is released. Install the macOS ARM64 CLI with bundled DuckDB:
-
-```sh
-curl -fsSL https://install.orchiddb.com | bash
-export PATH="$HOME/.local/bin:$PATH"
-orchiddb --version
-```
-
-The installer verifies release checksums. Follow the
-[quickstart](https://docs.orchiddb.com/quickstart.html) to query tables without a
-Rust toolchain or source checkout. See [installation](https://docs.orchiddb.com/installation.html)
-for pinned versions, source builds, and published Rust, Python, JavaScript,
-Java, Elixir, and C++ packages.
-
-## Compile to SQL
-
-```toml
-[dependencies]
-orchiddb = { version = "=0.3.0", default-features = false }
-```
-
-The default library build has no DuckDB or PostgreSQL driver dependency. Supply
-schema metadata and graph mappings to `compiler::compile`, or use the versioned
-`compiler::compile_json` interface. The result contains SQL and output field
-names. DuckDB and PostgreSQL SQL rendering are supported; unsupported operations
-fail before execution. SPARQL `SERVICE`, including `SERVICE SILENT`, is
-unsupported; OrchidDB does not make remote SPARQL HTTP requests.
+The extension targets **DuckDB 1.5.6**. Build locally with Python 3.12+, Rust
+(edition 2024), curl, and a C++17 compiler:
 
 ```sh
-cargo run --example compile_sql
+python3 extension/scripts/build.py
+extension/vendor/cli/duckdb -unsigned graph.duckdb \
+  -cmd "LOAD 'extension/build/orchid.duckdb_extension'"
 ```
 
-[The runnable example](examples/compile_sql.rs) maps a `people` table to `Person`
-nodes and prints SQL. [The compiler guide](docs/compiler.md) documents requests,
-parameters, functions and limitations.
+This produces an unsigned development extension. Applications can load the same
+artifact using a matching DuckDB client with `allow_unsigned_extensions=true`.
+See the [build guide](extension/README.md#build-locally) for details.
 
-## Bring your own engine
+## Tables become a graph with one statement
 
-Pass generated SQL directly to your driver, or implement
-`execution::SqlSession` for a checked hand-off. Results can be driver-native rows,
-Arrow batches or a cursor borrowing the session. Your application owns connection
-setup, extensions, UDFs, transactions, schema discovery and caching. OrchidDB does
-not install plugins or copy source tables in this path.
+```sql
+CREATE TABLE people(id BIGINT PRIMARY KEY, name VARCHAR, age INTEGER);
+CREATE TABLE follows(id BIGINT, src BIGINT, dst BIGINT, since INTEGER);
+INSERT INTO people VALUES (1, 'Alice', 30), (2, 'Bob', 40);
+INSERT INTO follows VALUES (10, 1, 2, 2020);
 
-[The caller-owned DuckDB example](examples/duckdb-client/) demonstrates a streaming
-cursor, a SQL function, and transaction ownership. DuckDB is that application’s
-dependency.
+CREATE PROPERTY GRAPH social
+VERTEX TABLES (people KEY (id) LABEL Person PROPERTIES (name, age))
+EDGE TABLES (
+    follows KEY (id)
+    SOURCE KEY (src) REFERENCES people (id)
+    DESTINATION KEY (dst) REFERENCES people (id)
+    LABEL FOLLOWS PROPERTIES (since)
+);
 
-For cross-engine reads, register named DuckDB and Postgres sessions and assign
-tables to their owning engines. The compiler emits source SQL islands and a final
-query; `federation::execute` binds source results into that query as typed SQL
-values. Transfers are buffered. Connections and transactions remain caller-owned;
-no distributed snapshot or transaction is provided. See
-[mixed SQL engines](docs/sql-engines.md). ClickHouse SQL is not implemented.
+CYPHER social
+MATCH (a:Person)-[e:FOLLOWS]->(b:Person)
+RETURN a.name AS person, b.name AS friend, e.since AS since;
 
-## Search
-
-Compose vector and BM25 retrieval with ordinary Cypher and Gremlin traversal.
-Computed relationships declare scores, eligibility predicates, per-source top-k,
-and optional candidate stages for ColBERT-style MaxSim reranking. The planner
-maps functions and ordering to native execution or SQL islands, including indexed
-pgvector and duckdb-lance search. Lance uses the DuckDB extension without a Lance
-SDK dependency. Failed backend searches propagate their errors.
-
-See the [Search guide](website/docs/content/search.md) and
-[full feature reference](docs/computed-relationships-and-search.md) for declarations,
-backend setup, generated SQL, and extension compatibility requirements.
-
-Register an [engine adapter](website/docs/content/engine-adapters.md) to add a SQL
-dialect, typed value codecs, and Rust transformations over expressions and
-relations. Search and table functions use the same SQL-island and dependent
-execution interfaces.
-
-## Shared graph execution
-
-Enable `duckdb` to use `GraphEngine` with either managed graph records or
-application tables via `GraphEngine::mapped`. Cypher, Gremlin, and RDF queries
-and updates share the mapping catalog, connection, and transaction owner.
-`MappedGraphEngine` and `RdfGraphEngine` remain compatibility facades.
-Graph IR is lowered to a DataFusion relational execution plan, with eligible SQL
-regions running in DuckDB. There is no standalone Graph IR interpreter or
-interpreter fallback.
-
-```sh
-cargo run --features duckdb --example managed_graph
-cargo run --features duckdb --bin orchiddb -- --query 'RETURN 1 AS value'
+GREMLIN social g.V().hasLabel('Person').out('FOLLOWS').values('name');
 ```
 
-See [RDF mappings](website/docs/content/rdf.md),
-[logical tables and collections](website/docs/content/mapping-reference.md),
-the [query runtime](docs/runtime.md), [native JVM provider](docs/jvm.md),
-and [release packaging guide](scripts/release/README.md).
+DuckDB discovers the source schemas. You declare element keys, labels, properties,
+and relationship endpoints; Orchid validates their columns and types. Graph
+metadata persists in the database, while source rows stay in their original tables.
+
+Use attached Iceberg and Lance tables directly, or expose their scans and indexed
+search functions through DuckDB views. Their extensions continue to perform
+storage access and search. See the [Iceberg and Lance example](extension/README.md#iceberg-and-lance).
+
+## Or let Orchid manage the graph
+
+```sql
+CREATE PROPERTY GRAPH workspace;
+CYPHER workspace CREATE (:Person {name: 'Ada', age: 37});
+CYPHER workspace MATCH (p:Person) RETURN p.name, p.age;
+GREMLIN workspace g.V().hasLabel('Person').values('name');
+```
+
+Managed graphs support mutations, dynamic properties, and Gremlin multi-properties
+and meta-properties. Queries and writes use the calling DuckDB transaction.
+Native Cypher accepts ordinary DuckDB named parameters. For SQL composition, use
+`orchid_cypher(graph, query)` or `orchid_gremlin(graph, query)` as table functions.
+
+SPARQL retains the existing RDF query and update implementation through
+`orchid_query(request_json)` and `orchid_sparql_update(request_json)`.
+See [RDF mappings and examples](extension/README.md#gremlin-and-sparql-through-the-shared-compiler).
+
+## One compiler, DuckDB execution
+
+Orchid reuses its language frontends, graph IR, relational lowering, value codecs,
+and graph kernels. DuckDB optimizes and executes relational operations and hosts
+residual graph kernels. The extension neither runs DataFusion's executor nor
+includes a PostgreSQL driver; DataFusion remains a compiler dependency.
+
+`EXPLAIN CYPHER ...` and `EXPLAIN GREMLIN ...` expose the execution plan. Source
+scans remain visible to DuckDB, including those supplied by Iceberg and Lance.
+
+## Verified against pinned upstream suites
+
+| Suite | Result |
+| --- | ---: |
+| openCypher TCK 2024.3 | **3,897 / 3,897 passed** |
+| TinkerPop 3.7.4 | **1,511 / 1,511 passed** |
+| Existing SPARQL baseline | **974 passed**, 77 skipped, 74 not applicable |
+
+These are results for the pinned corpora, not a claim of universal language
+coverage. Gremlin includes the original 15 Java provider assertions. SPARQL scope
+is unchanged. [Evidence and reproduction](conformance/README.md).
+
+Local integration tests cover actual Iceberg and Lance scans, indexed Lance
+search, transaction rollback, prepared queries, cancellation, and native values.
+Validated on macOS ARM64; artifacts are specific to the DuckDB version and platform.
 
 ## Development
 
 ```sh
-cargo test --locked --test sql_compiler --test execution
-cargo check --locked --lib
+make -f scripts/release/Makefile test
+python3 website/docs/build.py
+python3 website/docs/check.py
 ```
 
-[Architecture](docs/architecture.md) · [Module ownership](docs/code_ownership.md) ·
-[Verification](docs/verification.md) · [Roadmap](docs/roadmap.md)
-
-The mdBook stays in [`website/docs`](website/docs/). The landing page and installer
-are maintained separately in the private `OrchidDB/OrchidDB-landing` repository.
-Pinned corpora, conformance evidence, production JVM modules and vendored parser
-sources are intentional repository contents.
+See [verification](docs/verification.md), [local packaging](scripts/release/README.md),
+and the [implementation plan](extension/IMPLEMENTATION_PLAN.md). All builds and
+tests run locally. Existing shared library and JVM modules remain implementation
+components; this repository no longer packages standalone clients.
 
 ## License
 
-See [LICENSE.md](LICENSE.md) for the applicable terms.
-
-[Optional one-time statistics](website/docs/content/statistics.md) let the shared
-optimizer choose cheaper equivalent sources and order supported pure filters.
-Clients generate and cache a bounded snapshot; queries reuse it automatically.
-Run `cargo run --features duckdb --example statistics_plans` for mappings, before/after
-plans, costs and equal-result checks across Cypher, Gremlin and SPARQL.
+[GPL-3.0-only](LICENSE.md).

@@ -2,9 +2,10 @@
 use crate::ir::value::Value;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProcedureField {
     pub name: String,
+    #[serde(rename = "type")]
     pub type_name: String,
     pub nullable: bool,
 }
@@ -36,7 +37,7 @@ impl ProcedureField {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProcedureSignature {
     pub inputs: Vec<ProcedureField>,
     pub outputs: Vec<ProcedureField>,

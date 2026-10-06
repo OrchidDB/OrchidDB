@@ -41,13 +41,12 @@ use std::{
     },
 };
 
-#[derive(Debug, Default)]
-pub(crate) struct State {
-    pub graph: PropertyGraph,
-    pub context: ExecutionContext,
-    pub frontier: Vec<Row>,
-    pub batch_key: Option<String>,
-}
+pub mod host;
+pub mod program;
+pub use host::{CompileOptions, KernelState, SubplanRunner, compile_for_host};
+pub type CompiledKernel = RowKernel;
+type State = KernelState;
+mod legacy;
 mod optimize;
 
 type Kernel = dyn Fn(Vec<Vec<Row>>, &mut State) -> IrResult<Vec<Row>> + Send + Sync;
@@ -61,7 +60,7 @@ use execution::{Source, source_kernel};
 use transport::{schema, encode_rows, decode_rows};
 
 #[derive(Clone)]
-pub(crate) struct RowKernel {
+pub struct RowKernel {
     id: u64,
     name: String,
     inputs: Vec<LogicalPlan>,
@@ -332,6 +331,7 @@ struct Compiler<'a> {
     policy: crate::ir::policy::GraphPlanPolicy,
     sql: bool,
     language_functions: bool,
+    native_values: bool,
     islands: super::island_planner::SharedMemo,
     lowered: std::cell::RefCell<std::collections::HashMap<usize, LogicalPlan>>,
 }
@@ -411,7 +411,7 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             ))
         {
-            let backend = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), language_functions: self.language_functions, ..Default::default() });
+            let backend = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, ..Default::default() });
             // A complete terminal traversal needs only its returned values.
             // Partial islands must retain state for downstream graph operators.
             let backend = if terminal_gremlin { backend } else { backend.preserving_traverser_state() };
@@ -506,36 +506,15 @@ async fn execute_rows_inner(
     prune_return: bool,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), QueryExecutionError> {
     #[cfg(feature = "duckdb")]
-    let mapped_resources = if resources.is_none() { graph.source.as_ref().zip(graph.mapping.as_ref()).map(|(source,mapping)| super::dag::DagSession::with_shared(source.executor(),mapping.physical_table_names())) } else {None};
+    let mapped_resources = if resources.is_none() { graph.source.as_ref().zip(graph.mapping.as_ref()).and_then(|(source,mapping)| source.executor().map(|executor| super::dag::DagSession::with_shared(executor,mapping.physical_table_names()))) } else {None};
     #[cfg(feature = "duckdb")]
     let resources = resources.or(mapped_resources.as_ref());
     graph.begin_statement();
-    // Compiler and optimizer walks recurse through the input chain. A valid
-    // statement with many CREATE clauses can exhaust an ordinary worker stack.
-    let logical = stacker::maybe_grow(64 * 1024 * 1024, 64 * 1024 * 1024, || {
-        let compiler = Compiler {
-            graph,
-            policy: plan.policy.clone(),
-            language_functions: resources.is_some_and(|r| r.language_functions_enabled()),
-            sql: !has_mutating_branches(&plan.root)
-                && !(graph.mapping.is_some() && graph.has_mutations()),
-            islands: super::island_planner::IslandMemo::new(&plan.root),
-            lowered: Default::default(),
-        };
-        let needed = if prune_return {
-            match plan.root.as_ref() {
-                Node::GraphReturn { fields, .. } => Some(fields.iter().cloned().collect()),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        let logical = optimize::optimize(
-            compiler.lower(&plan.root).map_err(QueryExecutionError::from_error)?,
-            needed.as_ref(),
-        ).map_err(QueryExecutionError::from_error)?;
-        // Release abandoned candidate sources before I/O; the DAG owns its sources.
-        Ok::<_, QueryExecutionError>(logical)
+    let logical = compile_for_host(plan, graph, CompileOptions {
+        sql_islands: true,
+        language_functions: resources.is_some_and(|r| r.language_functions_enabled()),
+        native_values: false,
+        prune_return,
     })?;
     let mut context = ExecutionContext::default();
     context.jvm = jvm;

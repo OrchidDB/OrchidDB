@@ -13,3 +13,5 @@ pub mod semantics;
 pub use ast::{CypherProgram, Query};
 pub use parser::{CypherParseError, CypherSyntax, CypherToken, parse_cypher, parse_query};
 pub use planner::{CypherPlanError, CypherPlanResult, CypherPlanner};
+
+pub mod preparation;

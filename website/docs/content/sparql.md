@@ -1,85 +1,26 @@
 # SPARQL
 
-Query application tables with RDF vocabulary through the common `GraphEngine`.
+The existing SPARQL query implementation runs through the shared mapping protocol.
+Using the `people` table from the quickstart:
 
-## Choose the data model
+```python
+import json
 
-For a property graph, define an `OntologyMapping` that maps class and predicate IRIs to graph labels and properties. Use it with `GraphEngine::sparql`. The older `MappedGraphEngine::sparql` method remains available on the compatibility facade.
-
-For explicit column, identity, and named-graph mappings, add `RdfMapping` rules to `GraphMapping` and call `GraphEngine::sparql_query`. The [RDF guide](rdf.md) covers ordinary tables, composite foreign keys, and updates. On mapped engines, existing ontology builders translate to these same rules; patterns do not require an explicit type root.
-
-## Define a vocabulary
-
-This vocabulary describes the people and social relationships in the [mapped tutorial](mapped-graphs.md):
-
-```rust
-use orchiddb::ir::plan::Direction;
-use orchiddb::language::sparql::OntologyMapping;
-
-let ontology = OntologyMapping::new()
-    .class("https://example.com/Person", "Person")
-    .property("https://example.com/name", "Person", "name")
-    .property("https://example.com/age", "Person", "age")
-    .relationship_between(
-        "https://example.com/follows", "FOLLOWS", Direction::Out,
-        "Person", "Person",
-    );
-```
-
-The [ontology guide](ontology.md) explains identity properties and the builder methods.
-
-## Select properties
-
-```sparql
-PREFIX ex: <https://example.com/>
-SELECT ?name ?age WHERE {
-  ?person a ex:Person ; ex:name ?name ; ex:age ?age .
-  FILTER(?age >= 30)
+request = {
+    "version": 1,
+    "language": "sparql",
+    "query": "SELECT ?name WHERE { ?person <urn:name> ?name }",
+    "tables": [{"name": "people"}],
+    "rdf": [{
+        "table": "people",
+        "subject": {"kind": "template", "prefix": "urn:person:", "columns": ["id"]},
+        "predicate": {"kind": "constant", "value": "urn:name"},
+        "object": {"kind": "literal", "column": "name"},
+    }],
 }
-ORDER BY ?name
+rows = connection.execute("SELECT * FROM orchid_query(?)", [json.dumps(request)]).fetchall()
 ```
 
-The prefix abbreviates IRIs. `a` expresses an RDF type. Variables begin with `?`, and `FILTER` applies a condition to the matched bindings.
-
-Run the query through a mapped engine:
-
-```rust
-let result = graph.sparql(
-    "PREFIX ex: <https://example.com/> \
-     SELECT ?name WHERE { ?p a ex:Person ; ex:name ?name . } ORDER BY ?name",
-    ontology.clone(),
-).await?;
-```
-
-`result.returned.batch` contains Arrow data, and `result.returned.fields` contains output binding names. The ontology convenience method returns legacy scalar columns. For typed RDF terms, use `sparql_query(query, dataset)`; for Arrow RDF term metadata and execution statistics, use `sparql_dataset(query, dataset)`.
-
-## Join relationships
-
-```sparql
-PREFIX ex: <https://example.com/>
-SELECT ?name WHERE {
-  ?person a ex:Person ; ex:name "alice" ; ex:follows ?friend .
-  ?friend ex:name ?name .
-}
-ORDER BY ?name
-```
-
-Shared variables connect patterns. The ontology resolves `ex:follows` to the mapped `FOLLOWS` relationship.
-
-## Shape a result
-
-Use `SELECT DISTINCT` to remove repeated projected bindings. Use `ORDER BY` for result ordering and `LIMIT` with `OFFSET` for a result window.
-
-```sparql
-PREFIX ex: <https://example.com/>
-SELECT DISTINCT ?name WHERE {
-  ?person a ex:Person ; ex:name ?name .
-}
-ORDER BY ?name
-LIMIT 20
-OFFSET 0
-```
-
-## Query named graphs
-
-RDF datasets can include a graph column. Use `GRAPH` to choose a named graph and `FROM` or `FROM NAMED` to define the active dataset for a query. See [RDF datasets](rdf.md#default-and-named-graphs) for the source mapping and examples.
+The existing baseline passes 974 applicable assertions; 77 cases remain skipped and
+74 are not applicable. This migration does not add SERVICE execution, reasoning,
+or a remote SPARQL protocol. See [RDF storage](rdf.md) for typed term mappings.

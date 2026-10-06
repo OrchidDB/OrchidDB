@@ -17,3 +17,5 @@ pub use parser::{
     parse_traversal_with_bindings,
 };
 pub use planner::{GremlinPlanError, GremlinPlanResult, GremlinPlanner};
+
+pub mod bindings;

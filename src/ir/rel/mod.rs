@@ -8,6 +8,7 @@
 //! DataFusion can execute directly.
 
 pub mod dag;
+pub mod host;
 pub mod layout;
 pub mod collection_source;
 pub mod representation;
@@ -43,7 +44,7 @@ mod operators;
 use aggregates::*;
 mod branches;
 mod collection_operators;
-mod range;
+pub(crate) mod range;
 mod expansion;
 mod plan_walk;
 mod projection;
@@ -56,6 +57,7 @@ mod gremlin;
 mod gremlin_state;
 mod gremlin_strings;
 pub(crate) mod language_functions;
+pub mod native_values;
 pub mod search;
 
 pub mod dependent;
@@ -140,6 +142,8 @@ pub struct RelBackend {
 
 #[derive(Debug, Clone)]
 pub struct RelBackendOptions {
+    /// Preserve graph-language scalar values using the host native value functions.
+    pub native_values: bool,
     /// Emit calls to opt-in DuckDB language functions (also executable by DataFusion).
     pub language_functions: bool,
     /// Internal path-maintenance expressions are ignored when the path is not
@@ -160,6 +164,7 @@ impl Default for RelBackendOptions {
         Self {
             tolerate_internal_path_state: true,
             language_functions: false,
+            native_values: false,
             mapping: None,
             rdf_datasets: None,
         }
@@ -265,7 +270,7 @@ impl RelBackend {
     }
 
     fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
-        validate_read_capabilities(plan, ReadCapabilities::LOCAL_DUCKDB)?;
+        validate_read_capabilities(plan, ReadCapabilities {read_procedures:self.options.native_values,..ReadCapabilities::LOCAL_DUCKDB})?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin
             && graph_stats.bidirectional_expands >= 2

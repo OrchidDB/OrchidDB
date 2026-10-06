@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the standard mdBook guides and the separate committed-evidence report."""
+"""Build the standard mdBook guides with committed extension evidence."""
 from pathlib import Path
 from html import escape
 import os
@@ -25,40 +25,18 @@ def build():
     shutil.copytree(ROOT / 'downloads', OUT / 'downloads', dirs_exist_ok=True)
     shutil.copyfile(ROOT / 'assets/favicon.svg', OUT / 'favicon.svg')
 
-    # The large evidence explorer stays outside the book and its search index.
-    from conformance_page import render
-    article, _ = render(OUT)
-    assets = OUT / 'assets'
-    assets.mkdir(exist_ok=True)
-    for name in ('conformance.css', 'conformance.js', 'report.css'):
-        shutil.copyfile(ROOT / 'assets' / name, assets / name)
-    (OUT / 'conformance-report.html').write_text('''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conformance report · OrchidDB</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/conformance.css">
-<link rel="stylesheet" href="assets/report.css">
-<script src="assets/conformance.js" defer></script></head>
-<body class="comparison-page"><a class="skip-link" href="#content">Skip to content</a>
-<header class="report-header"><a href="conformance.html">← Back to the book</a>
-<a href="https://orchiddb.com/">OrchidDB</a>
-<a href="https://github.com/OrchidDB/OrchidDB">GitHub</a></header>
-<main id="content"><h1>Conformance report</h1>
-<p>Recorded upstream scenarios, individual outcomes, and reproducible evidence.</p>
-''' + article + '\n</main></body></html>\n')
+    shutil.copytree(ROOT.parents[1] / 'conformance/extension-results',
+                    OUT / 'downloads/conformance', dirs_exist_ok=True)
 
     urls = ['/' if slug == 'index' else f'/{slug}.html' for slug, _ in PAGES]
-    urls.append('/conformance-report.html')
     (OUT / 'robots.txt').write_text(f'User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n')
     (OUT / 'sitemap.xml').write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         ''.join(f'<url><loc>{BASE}{escape(url)}</loc></url>' for url in urls) + '</urlset>\n')
     (OUT / 'llms.txt').write_text('# OrchidDB documentation\n\n' + ''.join(
-        f'- [{title}]({BASE}/{slug}.html)\n' for slug, title in PAGES) +
-        f'- [Full conformance report]({BASE}/conformance-report.html)\n')
-    print(f'Built {len(PAGES)} mdBook chapters and the conformance report in {OUT}')
+        f'- [{title}]({BASE}/{slug}.html)\n' for slug, title in PAGES))
+    print(f'Built {len(PAGES)} mdBook chapters and extension evidence in {OUT}')
 
 
 if __name__ == '__main__':

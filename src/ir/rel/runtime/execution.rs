@@ -20,7 +20,7 @@ pub(super) enum Source {
         types: LabelExpr,
     },
 }
-struct SourceCursor {
+pub(super) struct SourceCursor {
     source: Source,
     offset: usize,
     labels: Option<std::vec::IntoIter<String>>,
@@ -28,7 +28,7 @@ struct SourceCursor {
     ids: std::vec::IntoIter<ElementId>,
 }
 impl SourceCursor {
-    fn new(source: Source) -> Self {
+    pub(super) fn new(source: Source) -> Self {
         Self {
             source,
             offset: 0,
@@ -37,7 +37,7 @@ impl SourceCursor {
             ids: vec![].into_iter(),
         }
     }
-    fn next(&mut self, size: usize, state: &mut State) -> Result<Option<Vec<Row>>> {
+    pub(super) fn next(&mut self, size: usize, state: &mut State) -> Result<Option<Vec<Row>>> {
         state.context.jvm.check().map_err(failure)?;
         if let Source::Values {
             bindings,
@@ -128,7 +128,7 @@ pub(super) fn source_kernel(name: &str, source: Source) -> LogicalPlan {
     LogicalPlan::Extension(Extension { node: Arc::new(k) })
 }
 
-fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
+pub(super) fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
     if let Some(fields) = &kernel.relational_input {
         let returned = ReturnedBatches {
             fields: fields.clone(),
@@ -148,7 +148,7 @@ fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
         decode_rows(&batch)
     }
 }
-fn run(kernel: &RowKernel, inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
+pub(super) fn run(kernel: &RowKernel, inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
     let preparation = state.context.scalar_preparation.clone();
     crate::ir::runtime::scalar::preparation::with_preparation(&preparation, || run_prepared(kernel, inputs, state))
 }
@@ -186,7 +186,7 @@ fn run_prepared(kernel: &RowKernel, mut inputs: Vec<Vec<Row>>, state: &mut State
     Ok(rows)
 }
 
-fn take_range(rows: Vec<Row>, slice: &mut crate::ir::plan::Slice) -> Vec<Row> {
+pub(super) fn take_range(rows: Vec<Row>, slice: &mut crate::ir::plan::Slice) -> Vec<Row> {
     let mut out = Vec::new();
     for mut row in rows {
         if slice.fetch == Some(0) {

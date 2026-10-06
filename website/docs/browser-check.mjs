@@ -18,15 +18,16 @@ try {
     for (const {slug,title} of chapters) {
       const response = await page.goto(`${base}/${slug}.html`);
       assert.equal(response.status(), 200, slug);
-      assert.equal(await page.locator('main h1').innerText(), title);
+      const heading = readFileSync(new URL(`./content/${slug}.md`, import.meta.url), 'utf8').match(/^# (.+)$/m)[1];
+      assert.equal(await page.locator('main h1').innerText(), heading);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}: ${slug}`);
     }
   }
   await page.setViewportSize({width:1440,height:1000});
-  await page.goto(`${base}/mapped-graphs.html`);
+  await page.goto(`${base}/quickstart.html`);
   await page.locator('pre').first().hover();
   await page.locator('.clip-button').first().click();
-  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /CREATE TABLE users/);
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /CREATE TABLE people/);
   await page.locator('#mdbook-search-toggle').click();
   await page.locator('#mdbook-searchbar').pressSequentially('transactions');
   await page.locator('#mdbook-searchresults a').first().waitFor();
@@ -50,7 +51,7 @@ try {
   const nojs = await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
   const plain = await nojs.newPage();
   await plain.goto(`${base}/index.html`);
-  assert.equal(await plain.locator('main h1').innerText(), 'Introduction');
+  assert.equal(await plain.locator('main h1').innerText(), 'OrchidDB in DuckDB');
   if (!await plain.locator('#mdbook-sidebar-toggle-anchor').isChecked()) await plain.locator('#mdbook-sidebar-toggle').click();
   // Allow the stock CSS sidebar transition to finish before entering its no-JS iframe.
   await plain.waitForTimeout(500);

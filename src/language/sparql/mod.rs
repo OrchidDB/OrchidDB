@@ -355,3 +355,14 @@ fn join_typed(left: Lowered, right: Lowered, kind: JoinKind, condition: Option<I
         projection: left.projection.or(right.projection),
     }
 }
+
+pub mod scalar;
+
+pub mod results;
+pub mod update;
+mod relational_update;
+
+/// Order row effects using the execution host's declared FK dependencies.
+pub fn order_mutations(effects: &mut [crate::ir::rel::sql::mutation::MappedMutation], dependencies: &[(String, String)]) -> Result<(), String> {
+    relational_update::order(effects, dependencies)
+}

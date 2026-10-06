@@ -6,7 +6,6 @@ mod optimize;
 mod protocol;
 mod provider;
 pub use collect::{CollectionRequest, Generator};
-#[cfg(feature = "duckdb")]
 pub(crate) use estimate::source_access_cost;
 pub use estimate::{PlanEstimate, estimate, explain};
 pub use optimize::{OptimizerDecision, optimize};

@@ -103,7 +103,9 @@ pub(super) fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
             }
         }
         IrExpr::Call { name, args } => {
-            constant_foldable_function(name) && args.iter().all(|arg| expr_is_constant(arg, bound))
+            constant_foldable_function(name)
+                && !(name.starts_with("cypher_temporal.") && (args.is_empty() || name.ends_with(".transaction") || name.ends_with(".statement") || name.ends_with(".realtime")))
+                && args.iter().all(|arg| expr_is_constant(arg, bound))
         }
         _ => false,
     }

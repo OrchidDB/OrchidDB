@@ -1,180 +1,23 @@
-# Query execution runtime
+# Extension runtime
 
-Enable Cargo feature `duckdb` to execute through `GraphEngine`. SQL generation
-and execution share the same language planners and relational lowering; the
-feature supplies the DuckDB driver and runtime APIs.
+DuckDB schedules compiled relational operations and Orchid's existing graph kernels
+in the calling connection. The shared runtime compiler produces immutable kernel
+programs; the C++ extension binds their SQL regions and supplies a typed Arrow
+boundary. Apply, branch, repeat, merge, group, and mutation kernels use the same
+subplan runner and statement state.
 
-`GraphEngine` lowers queries over managed or mapped storage before execution:
+Multi-input kernel sources execute children in declared order before passing tagged
+inputs to the existing kernel. This preserves side effects and keeps mutable host
+state on its owning execution thread. Cancellation uses a separately owned atomic
+token; its watcher joins before query state is destroyed.
 
-```text
-language parser and planner
-        |
-     Graph IR                 frontend only
-        |
-DataFusion relational LogicalPlan DAG
-        |
-physical planning
-        +-- DuckDbExec        eligible SQL regions
-        +-- DataFusion        relational operators and native kernels
-                +-- JvmExec   explicit native JVM fragment
-```
+Nested subplans reuse prepared DuckDB plans within a query. Each invocation attaches
+its current kernel context temporarily. Query-end cleanup removes cached plans and
+borrowed pointers. PREPARE and EXPLAIN compile without executing writes.
 
-Graph IR is a compiler representation, not an executable interpreter tree.
-DataFusion owns physical execution and input scheduling. Scalar evaluation,
-aggregation, graph access, and result-formatting kernels live in `ir::runtime`;
-there is no standalone Graph IR interpreter or legacy island-rewrite fallback.
-SPARQL `SERVICE`, including `SERVICE SILENT`, is rejected before execution;
-the runtime does not issue remote SPARQL HTTP requests.
+Mapped and managed reads/writes go through `src/ir/rel/host`, extracted from the
+existing storage implementation. Graph values reuse native codecs. Existing JVM
+algorithms and callbacks remain kernel operations rather than whole-query delegation.
 
-## Lowering and placement
-
-`ir::rel::runtime` compiles frontend operators into relational plans. SQL-compatible
-regions use the existing relational compiler. Residual operators become
-DataFusion logical extensions with compiled scalar metadata and relational
-inputs. They retain no executable Graph IR subtree.
-
-`ir::rel::dag` partitions the resulting relational plan. DuckDB regions are
-explicit sources in the physical DAG; their inputs are registered Arrow tables.
-DataFusion executes the remaining joins, expressions, and extension kernels.
-Extension nodes, volatile or unknown scalar UDFs, and empty relations producing
-no rows are excluded from SQL regions. Constant one-row relations can form SQL
-islands. Explicitly bound DuckDB-native functions retain their native
-placement, including native volatility and null semantics. SQL execution errors propagate; execution is never retried in
-another engine.
-
-Correlated branches and repeat bodies are compiled before execution. Their
-frontiers are query-local relations, and their physical plans execute through
-DataFusion. Physical subplans are cached within a query, with fresh frontier and
-state for every invocation; neither rows nor effects are cached. A loop preserves shared traversal state, bulk, named loop counters,
-barrier scope, and cancellation across iterations. Group reducers split their
-insertion prefix and finalizer during compilation, so reading a group does not
-repeat its writes. Bounded lazy side-effect pipelines retain bounded consumption.
-
-Inputs with observable effects run in dependency order. A statement containing
-mutating branches uses live native scans so a later branch sees earlier writes.
-Mapped correlated subplans retain SQL-eligible reads on the same statement
-connection; native correlation and traversal kernels consume their results.
-Mutation fences retain live overlay reads. Ordinary read regions and a pure
-prefix before a JVM operation remain eligible for DuckDB.
-
-## Arrow boundary
-
-Relational scans and SQL regions use ordinary Arrow columns. The boundary adapter
-reconstructs graph identities and declared scalar types. Native extension kernels
-exchange a fixed Arrow schema:
-
-| Column | Type | Meaning |
-| --- | --- | --- |
-| `bindings` | non-null Binary | Tagged native value map |
-| `bulk` | non-null UInt64 | Traverser multiplicity |
-
-The tagged encoding preserves integer widths, arbitrary-precision numbers, graph
-and property identities, paths, maps, sets, nulls, and hidden traverser bindings.
-It does not infer a schema from the first JVM result. This representation trades
-columnar scalar performance for exact language semantics at native boundaries;
-ordinary relational regions keep their typed columns.
-
-## JVM fragments
-
-The frontend emits `GraphJvm`, which is compiled to a relational `Jvm` extension
-and a DataFusion physical operator. The JVM receives only the fragment and typed
-arguments. Native graph callbacks operate on the statement's current overlay.
-The outer query owns commit and rollback.
-
-```groovy
-g.V().call('orchiddb.jvm', [
-  'script': 'current.value("name").toUpperCase()',
-  'mode': 'map'
-])
-```
-
-Supported fragment modes are `map`, `flatMap`, and Boolean `filter`. Configure
-`ORCHIDDB_JVM_CLASSPATH` with the production JVM artifact and dependencies;
-`ORCHIDDB_JAVA` selects Java (Java 21 is used for local verification). Fragment
-text is trusted application code; binding values are transported separately.
-
-GraphComputer NEW results use private native graph stores. Project their elements
-to values before returning across the fragment boundary. The source graph remains
-unchanged by a NEW result graph.
-
-## Atomicity and cancellation
-
-Execution uses a private statement overlay, including uncommitted caller writes.
-Only successful execution and successful result conversion publish that overlay.
-A native, SQL, JVM, or result-conversion error leaves the caller's graph unchanged.
-Managed transactions retain their existing durable commit/rollback behavior.
-
-JVM execution shares a cancellation token and deadline across fragments and
-nested subplans. Worker I/O is bounded, and failed or cancelled workers are killed
-and reaped. A JVM fragment cannot commit, roll back, or close the caller's native
-transaction. DuckDB retains the engine's configured SQL timeout.
-
-## Local verification
-
-With Java 21 selected through `JAVA_HOME`, run:
-
-```sh
-bash conformance/run-relational-gremlin.sh
-```
-
-This builds the native runner, JVM provider, codec module, and upstream adapter;
-runs the focused regression suites; then records the complete pinned Gremlin
-suite under `target/conformance-datafusion/`. An optional first argument selects
-the output JSON path. It refuses to execute in GitHub Actions.
-
-
-`tests/jvm_ir.rs` verifies physical placement, typed transport, bulk and hidden
-bindings, correlated JVM repeat, GraphComputer result ownership, cancellation,
-and transaction rollback. Its JVM tests require the production classpath and
-must be run with `--include-ignored`.
-
-The pinned Apache TinkerPop scenarios run through `GraphEngine` using
-`conformance/upstream/run.py --engine orchiddb --suite tinkerpop`. That exercises
-the production DataFusion relational executor. GitHub Actions
-publishes committed static results only; it does not execute these tests.
-
-## Typed Gremlin callbacks
-
-`GraphEngine::gremlin_with_bindings` accepts `GremlinBinding::Value`,
-`GremlinBinding::Predicate`, and trusted `GremlinBinding::Lambda` arguments.
-The frontend lowers callbacks and vertex programs into operators in the SQL IR
-DAG. The conformance adapter submits every traversal to this same API; it does
-not choose a different executor for individual scenarios.
-
-JVM workers are shared within a query, including correlated and repeated
-operators. Each operator borrows the statement's native graph overlay. Failure
-invalidates the worker and rolls back the statement. Comparator operators reorder
-original rows, retaining their labels, paths, and bulk. Vertex-program properties
-are visible to later operators in the query without being committed to the graph.
-
-Enable JVM operators by setting `ORCHIDDB_JVM_CLASSPATH` to the built production
-JVM classes and dependencies, and optionally `ORCHIDDB_JAVA` to the Java executable.
-
-### Write storage
-
-Mutations, including JVM callback writes, use the shared `PropertyGraph` overlay.
-For managed storage, `GraphEngine` persists incremental records in
-`__orchiddb_records` and checkpoints in `__orchiddb_state`. With
-`GraphEngine::mapped`, the source-table adapter writes changed records directly
-to mapped DuckDB tables in the statement's transaction. Unmapped data and
-unsupported storage capabilities are rejected; no overflow table is created.
-Mapped scans remain references to the user's DuckDB tables throughout relational
-lowering and SQL island placement. Schema binding uses zero-row queries; it does
-not load graph data. Residual kernels fetch referenced records in typed-key
-batches and adjacency for the current frontier on the same connection. Their
-query-scoped cache contains only accessed records. Write batches flush the
-statement overlay to the mapped tables without a full-graph reload. Island
-results cross the execution boundary as Arrow arrays, preserving scalar types.
-`QueryResult.stats` exposes island SQL, native source SQL, and fetched source
-row counts for execution-plan regression checks.
-
-Scalar source keys remain typed identities throughout execution. The legacy
-`MappedGraphEngine` API delegates to this same runtime. See the
-[unified graph engine design](unified-graph-engine.md) for the contract and
-verification results.
-
-RDF mappings on `GraphMapping` use the same connection and transaction owner.
-`GraphEngine::sparql_dataset` returns Arrow results with execution statistics;
-`sparql_query` decodes typed RDF results. `RdfGraphEngine` is a compatibility
-facade, and its session context borrows runtime resources. See the
-[RDF guide](../website/docs/content/rdf.md) for query/update APIs.
+The extension never invokes the retained DataFusion execution adapter or GraphEngine
+as a fallback. See [architecture](architecture.md) and [verification](verification.md).

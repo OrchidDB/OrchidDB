@@ -71,6 +71,8 @@ impl LoweringContext<'_> {
                 object,
                 outputs,
             )?,
+            GraphProcedureCall {name,args,yields,mode:crate::ir::plan::ProcedureMode::Read,input} if self.options.native_values =>
+                self.native_procedure(name,args,yields,input.as_deref())?,
             GraphValues {
                 bindings,
                 rows,
@@ -129,7 +131,7 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 if self.language == Language::Cypher
-                    && path.is_some()
+                    && path.is_some() && (!self.options.native_values || length.is_variable_length())
                 {
                     return Err(RelError::Unsupported(
                         "Cypher paths require typed SQL IR residual values".into(),
@@ -171,14 +173,15 @@ impl LoweringContext<'_> {
                     )?
                 }
             }
+            GraphPathFilter {condition,input,..} if self.options.native_values => self.lower_node(&GraphFilter{condition:condition.clone(),input:input.clone()})?,
             GraphFilter { condition, input } => {
                 let input = self.lower_node(input)?;
-                let condition = self.lower_expr(&input.plan, condition)?;
+                let condition = self.lower_case_condition(&input.plan, condition)?;
                 // The filter reads projection outputs. SQL WHERE reads input
                 // columns, so flattening an alias that shadows an input name
                 // changes its meaning (e.g. edge current -> vertex current).
                 let filter_input = if matches!(input.plan, LogicalPlan::Projection(_)) {
-                    let alias = format!("__graph_filter_input_{}", self.scan_counter);
+                    let alias = format!("__w_sql_cte_graph_filter_input_{}", self.scan_counter);
                     self.scan_counter += 1;
                     LogicalPlanBuilder::from(input.plan.clone()).alias(alias)?.build()?
                 } else { input.plan.clone() };
@@ -201,7 +204,7 @@ impl LoweringContext<'_> {
                 if let Some(lowered) = self.lower_weighted_repeat_count(group, aggs, input)? {
                     return Ok(lowered);
                 }
-                if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Avg)) {
+                if !self.options.native_values && self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Avg)) {
                     return Err(RelError::Unsupported("Gremlin aggregate requires native values and empty-stream semantics".into()));
                 }
                 if self.language == Language::Gremlin && !self.options.tolerate_internal_path_state
@@ -249,7 +252,8 @@ impl LoweringContext<'_> {
                         })
                         .collect::<RelResult<Vec<_>>>()?,
                 );
-                let cypher_keys = self.options.language_functions && self.language == Language::Cypher;
+                let cypher_keys = (self.options.language_functions && self.language == Language::Cypher)
+                    || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin));
                 let mut representatives = Vec::new();
                 let mut hidden_keys = BTreeSet::new();
                 if cypher_keys {
@@ -258,19 +262,32 @@ impl LoweringContext<'_> {
                         let original = self.lower_expr(&input.plan, &item.expr)?;
                         let alias = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_group_{}_{}", self.scan_counter, i));
                         hidden_keys.insert(alias.clone());
-                        group_exprs[correlation_count + i] = language_functions::key(original.clone(), &input.plan)?.alias(alias);
+                        group_exprs[correlation_count + i] = if self.options.native_values {
+                            native_values::key_expr(original.clone(), self.language == Language::Cypher)
+                        } else { language_functions::key(original.clone(), &input.plan)? }.alias(alias);
                         representatives.push(datafusion::functions_aggregate::first_last::first_value(original, vec![]).alias(&item.alias));
                     }
                     self.scan_counter += 1;
                 }
                 let agg_calls = aggs;
-                let needs_row_count_barrier = aggs.iter().any(|agg| {
+                let native_drop_empty=self.options.native_values && self.language==Language::Gremlin && group.is_empty()
+                    && !aggs.is_empty() && aggs.iter().all(|a|matches!(a.kind,AggKind::Sum|AggKind::Min|AggKind::Max|AggKind::Avg));
+                let empty_guard=format!("__orchid_aggregate_count_{}",self.scan_counter);
+                let needs_row_count_barrier = native_drop_empty || aggs.iter().any(|agg| {
                     (matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
                         || matches!((&agg.kind, &agg.arg), (AggKind::EngineFunction, Some(IrExpr::Call { args, .. })) if args.is_empty())
                 });
                 let mut aggs = aggs
                     .iter()
                     .map(|agg| {
+                        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
+                            && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction|AggKind::StDev|AggKind::StDevP|AggKind::PercentileCont|AggKind::PercentileDisc)
+                            && let Some(arg)=&agg.arg {
+                            let lowered=self.lower_expr(&input.plan,arg)?;
+                            if self.language==Language::Gremlin || agg.kind==AggKind::CollectNonNull || matches!(&lowered,Expr::Literal(v,_) if v.is_null()) || native_values::is_value(&lowered.get_type(input.plan.schema())?) {
+                                return Ok(native_values::aggregate_expr(agg,lowered,self.language==Language::Cypher)?.alias(&agg.alias));
+                            }
+                        }
                         let expr = match agg.kind {
                             AggKind::EngineFunction
                             | AggKind::StDev
@@ -381,6 +398,7 @@ impl LoweringContext<'_> {
                     })
                     .collect::<RelResult<Vec<_>>>()?;
                 aggs.extend(representatives);
+                if native_drop_empty {aggs.push(count_all().alias(&empty_guard));hidden_keys.insert(empty_guard.clone());}
                 // The DataFusion unparser can incorrectly discard the FROM
                 // side of COUNT(*) when it contains an UNWIND/cross join.
                 // Give that input a real SQL CTE boundary; the SQL wrapper
@@ -409,6 +427,7 @@ impl LoweringContext<'_> {
                 let plan = LogicalPlanBuilder::from(aggregate_input)
                     .aggregate(group_exprs, aggs)?
                     .build()?;
+                let plan=if native_drop_empty {LogicalPlanBuilder::from(plan).filter(col_exact(&empty_guard).gt(lit(0_i64)))?.build()?} else {plan};
                 let plan = if group.is_empty() {
                     gremlin::with_empty_count_defaults(
                         self.correlate_plan.as_ref(),
@@ -447,7 +466,11 @@ impl LoweringContext<'_> {
                 }
                 let mut distinct_keys = keys.clone();
                 distinct_keys.extend(identity_keys);
-                let plan = if self.options.language_functions && self.language == Language::Cypher {
+                let plan = if self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin) {
+                    let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
+                        .map(|e| native_values::key_expr(e, self.language == Language::Cypher)).collect();
+                    keyed_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                } else if self.options.language_functions && self.language == Language::Cypher {
                     let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
                         .map(|e| language_functions::key(e, &input.plan)).collect::<RelResult<Vec<_>>>()?;
                     keyed_distinct_partition(input.plan.clone(), partition, barrier_id)?
@@ -468,6 +491,10 @@ impl LoweringContext<'_> {
                     )
                 {
                     return Ok(input);
+                }
+                if self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin)
+                    && input.plan.schema().fields().iter().any(|field| native_values::is_value(field.data_type())) {
+                    return self.native_sort(input, keys);
                 }
                 let mut sorts = Vec::new();
                 for key in keys {
@@ -541,6 +568,7 @@ impl LoweringContext<'_> {
                 input,
             } => self.lower_unwind(input_expr, bind, *outer, input)?,
             GraphSideEffect { reducer, input, .. } if reducer == "register" && self.options.tolerate_internal_path_state => self.lower_node(input)?,
+            GraphGroupMap {key,value,output,input} if self.options.native_values => self.lower_group_map(key,value,output,input)?,
             GraphGroupMap { .. } => return Err(RelError::Unsupported("Intermediate group maps require typed relational values".into())),
             GraphCollect {
                 value,

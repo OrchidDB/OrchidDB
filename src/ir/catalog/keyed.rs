@@ -62,7 +62,7 @@ impl PropertyGraph {
 
 impl PropertyGraph {
     pub fn source_identity(&self, value: &Value) -> Option<Value> {
-        if self.mapping.is_none() && !self.source_keys {
+        if self.write_mapping().is_none() && !self.source_keys {
             return None;
         }
         match value {
@@ -81,7 +81,7 @@ impl PropertyGraph {
         properties: &mut BTreeMap<String, Value>,
         supplied: Option<&Value>,
     ) -> CatalogResult<Option<ElementId>> {
-        let Some(mapping) = &self.mapping else {
+        let Some(mapping) = self.write_mapping() else {
             if self.source_keys {
                 return Err(CatalogError::Schema(
                     "inserting into a keyed catalog requires a writable mapping".into(),
@@ -155,9 +155,8 @@ impl PropertyGraph {
     }
 }
 impl PropertyGraph {
-    #[cfg(feature = "duckdb")]
     pub(crate) fn validate_mapped_changes(&self) -> Result<(), String> {
-        let Some(mapping) = &self.mapping else {
+        let Some(mapping) = self.write_mapping() else {
             return Ok(());
         };
         let overlay = self.overlay.borrow();

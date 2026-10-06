@@ -8,6 +8,7 @@ impl<'a> LoweringContext<'a> {
     /// engines such as PostgreSQL that do not coerce VARCHAR to a predicate.
     pub(super) fn lower_case_condition(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         let lowered = self.lower_expr(plan, expr)?;
+        if self.options.native_values && native_values::is_value(&lowered.get_type(plan.schema())?) {return Ok(native_values::predicate(lowered));}
         if matches!(&lowered, Expr::Literal(value, _) if value.is_null()) {
             Ok(lit(ScalarValue::Boolean(None)))
         } else {
@@ -38,6 +39,32 @@ impl<'a> LoweringContext<'a> {
     }
 
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
+            // These functions return predicates, although the generic scalar
+            // function catalog exposes an opaque value. Their shared runtime
+            // implementation owns promotion, NaN and heterogeneous equality.
+            if self.language == Language::Gremlin
+                && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(), "gremlin_compare" | "gremlin_within")) {
+                return self.native_expr(plan, expr);
+            }
+            if matches!(expr,IrExpr::Call{name,..} if name.starts_with("path_") || name.starts_with("select_history_")) {return self.native_expr(plan,expr);}
+            if !matches!(expr, IrExpr::Binding(_) | IrExpr::Lit(_))
+                && plan.schema().fields().iter().any(|f| native_values::is_value(f.data_type()))
+                && let Ok(native) = self.native_expr(plan, expr) {
+                return Ok(native);
+            }
+            match self.lower_sql_expr(plan, expr) {
+                Ok(value) => return Ok(value),
+                Err(error) => return self.native_expr(plan, expr).map_err(|native| {
+                    if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {eprintln!("Native scalar boundary: {native}; expression: {expr:?}");}
+                    error
+                }),
+            }
+        }
+        self.lower_sql_expr(plan, expr)
+    }
+
+    fn lower_sql_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         if self.options.language_functions
             && let IrExpr::Call { name, args } = expr
             && name.starts_with("gremlin_string_") {
@@ -107,6 +134,7 @@ impl<'a> LoweringContext<'a> {
                 if let Some(column) = resolve_column_name(plan, binding) {
                     Ok(col_exact(column))
                 } else if let Some(shape) = has_binding_shape(plan, binding) {
+                    if self.options.native_values {return self.native_element(plan,binding);}
                     if self.language == Language::Gremlin {
                         gremlin_element_display_expr(plan, binding)
                     } else if self.language == Language::Cypher && self.options.mapping.is_none() {
@@ -203,7 +231,7 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             IrExpr::Binary { op, lhs, rhs } => self.lower_comparison_or_binary(plan, lhs, *op, rhs),
-            IrExpr::Not(inner) => Ok(Expr::Not(Box::new(self.lower_expr(plan, inner)?))),
+            IrExpr::Not(inner) => Ok(Expr::Not(Box::new(self.lower_case_condition(plan, inner)?))),
             IrExpr::StringPredicate {
                 op,
                 target,
@@ -658,8 +686,8 @@ impl<'a> LoweringContext<'a> {
                 ))
             }
             IrExpr::Call { name, args } if name.eq_ignore_ascii_case("xor") && args.len() == 2 => {
-                let lhs = self.lower_expr(plan, &args[0])?;
-                let rhs = self.lower_expr(plan, &args[1])?;
+                let lhs = self.lower_case_condition(plan, &args[0])?;
+                let rhs = self.lower_case_condition(plan, &args[1])?;
                 Ok(Expr::or(
                     Expr::and(lhs.clone(), Expr::Not(Box::new(rhs.clone()))),
                     Expr::and(Expr::Not(Box::new(lhs)), rhs),
@@ -947,6 +975,11 @@ impl<'a> LoweringContext<'a> {
                 if lt != rt && lt.is_numeric() && rt.is_numeric()
                     && !exact_float_literal(&lhs, &rt)
                     && !exact_float_literal(&rhs, &lt)
+                    // Widening within the signed integer family is lossless.
+                    // In particular, mapped INTEGER columns must compare with
+                    // Cypher's BIGINT literals without requiring a runtime kernel.
+                    && !(matches!(lt, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64)
+                        && matches!(rt, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64))
                     && !(matches!(lt, DataType::Float32 | DataType::Float64)
                         && matches!(rt, DataType::Float32 | DataType::Float64)) {
                     // SQL numeric promotion can round an integer before it is
@@ -1176,6 +1209,8 @@ impl<'a> LoweringContext<'a> {
                 }
                 native(&Value::List(items)).map(Some)
             }
+            Ok(value @ (Value::List(_) | Value::Map(_) | Value::TypedMap(_) | Value::Token(_) | Value::Direction(_) | Value::BigInt(_) | Value::BigDecimal(_)))
+                if self.options.native_values && self.language == Language::Gremlin => native_values::literal(&value).map(Some),
             Ok(
                 Value::List(_)
                 | Value::Map(_)
@@ -1191,6 +1226,7 @@ impl<'a> LoweringContext<'a> {
                     "Gremlin constant requires native values".into(),
                 ))
             }
+            Ok(value @ Value::Temporal(_)) if self.options.native_values => native_values::literal(&value).map(Some),
             Ok(Value::Temporal(_)) => Err(RelError::Unsupported("Typed Cypher temporal value requires native value transport".into())),
             Ok(value) => Ok(Some(constant_fold_result_expr(&value, self.language))),
             Err(err) => {
@@ -1491,8 +1527,12 @@ impl LoweringContext<'_> {
                 return Ok(if op == BinaryOp::Neq { Expr::Not(Box::new(equal)) } else { equal });
             }
         }
-        let lhs = self.lower_expr(plan, left)?;
-        let rhs = self.lower_expr(plan, right)?;
+        let mut lhs = self.lower_expr(plan, left)?;
+        let mut rhs = self.lower_expr(plan, right)?;
+        if self.options.native_values && matches!(op, BinaryOp::And | BinaryOp::Or) {
+            if native_values::is_value(&lhs.get_type(plan.schema())?) { lhs = native_values::predicate(lhs); }
+            if native_values::is_value(&rhs.get_type(plan.schema())?) { rhs = native_values::predicate(rhs); }
+        }
         if self.language == Language::Gremlin && matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
             let lt = lhs.get_type(plan.schema())?;
             let rt = rhs.get_type(plan.schema())?;

@@ -536,5 +536,4 @@ mod tests {
     }
 }
 
-#[cfg(any(feature = "duckdb", test))]
 pub(crate) fn decode_callable_string(raw: &str) -> Result<String> { literals::decode_string_literal(raw) }

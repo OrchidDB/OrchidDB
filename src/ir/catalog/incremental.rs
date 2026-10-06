@@ -946,3 +946,39 @@ mod tests {
         }
     }
 }
+
+impl PropertyGraph {
+    /// Normalize touched source-backed entities into complete incremental records.
+    /// Storage hosts share the durable codec; source baselines are read only for
+    /// touched entities, and ordinary query scans never decode the whole graph.
+    pub(crate) fn durable_records(&self)->Result<Vec<IncrementalRecord>,String>{
+        let pending=self.pending_changes();
+        for (edge,keys) in [(false,&pending.nodes),(true,&pending.edges)] {
+            for (name,id) in keys {self.hydrate_native_state(edge,name,id);}
+        }
+        let graph=self.clone();
+        for (name,id) in &pending.nodes {
+            if !self.node_is_live(name,id.clone()){continue;}
+            let properties=self.node_property_keys_with_id(name).into_iter().filter_map(|key|{
+                let value=self.node_property(name,id.clone(),&key);
+                (value!=Value::Null).then_some((key,value))
+            }).collect();
+            let mut overlay=graph.overlay.borrow_mut();
+            overlay.inserted_nodes.insert((name.clone(),id.clone()),properties);
+            overlay.node_property_overrides.remove(&(name.clone(),id.clone()));
+            overlay.replaced_node_properties.remove(&(name.clone(),id.clone()));
+        }
+        for (name,id) in &pending.edges {
+            let Some((src_label,src_id,dst_label,dst_id))=self.live_edge_endpoints(name,id.clone())else{continue;};
+            let properties=self.edge_property_keys(name).into_iter().filter_map(|key|{
+                let value=self.edge_property(name,id.clone(),&key);(value!=Value::Null).then_some((key,value))
+            }).collect();
+            let mut overlay=graph.overlay.borrow_mut();let key=(name.clone(),id.clone());
+            overlay.inserted_edges.insert(key.clone(),InsertedEdge{src_label:src_label.clone(),src_id:src_id.clone(),dst_label:dst_label.clone(),dst_id:dst_id.clone(),properties});
+            for adjacent in [&mut overlay.inserted_out_adj] {let values=adjacent.entry((src_label.clone(),src_id.clone())).or_default();if !values.contains(&key){values.push(key.clone());}}
+            let values=overlay.inserted_in_adj.entry((dst_label,dst_id)).or_default();if !values.contains(&key){values.push(key.clone());}
+            overlay.edge_property_overrides.remove(&key);overlay.replaced_edge_properties.remove(&key);
+        }
+        graph.incremental_records(&pending.nodes,&pending.edges)
+    }
+}

@@ -16,12 +16,11 @@
 - [Views and SQL sources](views.md)
 - [Managed graphs](managed-graphs.md)
 - [Transactions and storage](transactions.md)
-- [Update mapped tables](updates.md)
+- [Graph and RDF updates](updates.md)
 
 # Search
 
 - [Vector and full-text search](search.md)
-- [Quickwit and Elasticsearch](remote-engines.md)
 
 # Query languages
 
@@ -39,16 +38,12 @@
 # Integrate
 
 - [Parameters and values](parameters.md)
-- [Arrow results](results.md)
+- [Results and native values](results.md)
 - [Execution and plans](execution.md)
-- [SQL generation and execution](sql-compiler.md)
-- [Engine adapters](engine-adapters.md)
-- [Client APIs](client-apis.md)
-- [Rust API](rust-api.md)
-- [CLI reference](cli.md)
+- [Advanced mapping protocol](sql-compiler.md)
 
 # Resources
 
-- [Conformance comparison](conformance.md)
+- [Conformance](conformance.md)
 - [Configuration](configuration.md)
 - [Glossary](glossary.md)

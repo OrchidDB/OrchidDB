@@ -3,8 +3,9 @@ name = "orchiddb"
 version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
-publish = ["crates-io"]
-description = "An embedded graph query engine written in Rust"
+publish = false
+autobins = false
+description = "Shared graph language compiler and kernels for the Orchid DuckDB extension"
 repository = "https://github.com/OrchidDB/OrchidDB"
 homepage = "https://orchiddb.com"
 documentation = "https://docs.orchiddb.com"
@@ -13,11 +14,6 @@ include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 [workspace]
 members = []
 resolver = "2"
-
-[[bin]]
-name = "orchiddb"
-path = "src/bin/orchiddb.rs"
-required-features = ["duckdb"]
 
 [[bin]]
 name = "orchiddb-jvm-store"

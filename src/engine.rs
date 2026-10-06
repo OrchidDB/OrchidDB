@@ -6,7 +6,7 @@
 
 mod mapped_storage;
 mod rdf;
-mod mapped_source;
+pub(crate) mod mapped_source;
 mod snapshot;
 mod checkpoint;
 pub use snapshot::CypherStateSnapshot;
@@ -862,13 +862,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
 
 /// Shared frontend preparation for every DuckDB storage layout.
 pub(crate) fn plan_cypher(query: &str, parameters: &BTreeMap<String, Value>, catalog: &crate::ir::procedures::ProcedureCatalog) -> EngineResult<GraphPlan> {
-        let mut parsed = cypher::parser::parse_query(query).map_err(|e| e.to_string())?;
-        cypher::procedures::prepare(&mut parsed,catalog).map_err(|e|e.to_string())?;
-        cypher::parameters::bind_parameters(&mut parsed, parameters)?;
-        cypher::procedures::prepare(&mut parsed,catalog).map_err(|e|e.to_string())?;
-        cypher::planner::CypherPlanner::new()
-            .plan(&parsed)
-            .map_err(|e| e.to_string())
+        cypher::preparation::prepare(query, parameters, Some(catalog)).map_err(|e| e.to_string())
 }
 
 pub(crate) fn plan_gremlin(query: &str, bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>) -> EngineResult<GraphPlan> {

@@ -1,299 +1,50 @@
-# Upstream graph conformance comparison
+# DuckDB extension conformance
 
-Published report: https://docs.orchiddb.net/conformance.html
+| Pinned corpus | Outcome |
+| --- | ---: |
+| openCypher TCK 2024.3 | 3,897 / 3,897 passed |
+| TinkerPop 3.7.4 | 1,511 / 1,511 passed |
+| Existing SPARQL 1.0/1.1 baseline | 974 passed; 77 skipped; 74 not applicable |
 
-Compare **OrchidDB, Neo4j Community, SQLg, PuppyGraph, JanusGraph, ArcadeDB and Apache Jena**, using free editions. The primary
-corpus is the original upstream test data and assertions:
+[Committed evidence](extension-results/summary.json) describes one immutable DuckDB
+extension artifact. Compressed full reports retain individual outcomes, catalog
+identities, and assertion evidence. SPARQL's preexisting embedded scope is unchanged;
+excluded profiles are not counted as passes. This is pinned-corpus conformance,
+not certification of every language feature.
 
-| Suite | Pinned version | Scenarios | Compared interfaces |
-| --- | --- | ---: | --- |
-| openCypher TCK | 2024.3 | 3,897 | OrchidDB, Neo4j Community, PuppyGraph, ArcadeDB |
-| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | OrchidDB, SQLg, PuppyGraph, JanusGraph, ArcadeDB |
-| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | OrchidDB, Apache Jena TDB2 |
+Gremlin runs on one extension instance, including the original 15 Java provider
+assertions. The adapter does not execute asserted traversals in another graph
+engine or merge historical results. Existing JVM algorithms remain compiled kernels.
 
-The 6,533 scenarios are grouped by language, with outcomes for the compared interfaces.
-An absent language interface is not counted as a query failure. The report also
-contains 51 sourced capability rows, with paid features marked separately.
-This is a compatibility comparison for these versions and profiles, not a
-certification or a claim to cover every product feature.
+## Reproduce locally
 
-Runner engine selectors and evidence keys use `orchiddb`. Recorded outcomes
-are historical; identity normalization is documented in the conformance guide.
-
-## One OrchidDB execution
-
-The production matrix and leaderboard read `upstream-results/orchiddb-tinkerpop.json`.
-Each scenario has one outcome from one suite invocation against one persistent
-`GraphEngine`. Typed values and callbacks enter the production Gremlin frontend,
-which lowers queries to the SQL IR DAG. DuckDB executes eligible SQL regions;
-DataFusion executes residual operators, including JVM callback and graph-computer
-kernels. The adapter does not choose executors by scenario, syntax, or prior outcome,
-and it never restarts the engine after a crash. Results record the instance identity,
-source revision, native binary, adapter classes, and JVM classpath hashes.
-
-Historical provider and GraphComputer runs remain diagnostic evidence. Their passes
-are never merged into the product outcome. The 15 Gherkin placeholders run their
-pinned, unmodified Java assertions in the suite adapter. Those tests submit every
-traversal to the same `GraphEngine`, including fixture lookups. Their evidence
-records the original class/method, source hashes, JUnit invocation counts, and
-engine identity. Java callbacks are registered as query-scoped handles and invoked
-by JVM operators in the SQL IR DAG; no whole traversal is executed by the adapter.
-
-## Run locally
-
-**Tests run only on the local workstation. GitHub Actions only builds and
-publishes static documentation and committed results.**
-
-Requires Python 3.12, Java 21, Maven, Docker Compose, and Rust. These adapters
-replace data in their disposable fixture databases; use the dedicated local
-containers, not an application database. Run suites sequentially: PuppyGraph
-suites share a mapped fixture schema.
+Build the extension and Python test environment as described in
+[verification](../docs/verification.md). Fetch pinned corpora and build the existing
+Java assertion adapter and kernel dependencies (Java 21 and Maven required):
 
 ```sh
-python3.12 -m venv .venv-conformance
-. .venv-conformance/bin/activate
-pip install -r conformance/requirements.txt
-python conformance/upstream/fetch.py
-python conformance/upstream/catalog.py
-bash conformance/build-orchiddb.sh
-export ORCHIDDB_JVM_STORE="$PWD/target/release/orchiddb-jvm-store"
-export CONFORMANCE_ORCHIDDB_BINARY="$PWD/target/release/upstream"
-export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
+extension/vendor/test-env/bin/python conformance/upstream/fetch.py
+extension/vendor/test-env/bin/python conformance/upstream/catalog.py
 mvn -q -f jvm-codecs/pom.xml install
 mvn -q -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
-docker compose -f conformance/compose.yml up -d
-python conformance/wait_ready.py
-# PostgreSQL address as seen from the PuppyGraph container:
-export PUPPY_JDBC=jdbc:postgresql://postgres:5432/conformance
-python conformance/run.py --engine reference --suite tinkerpop
-for engine in orchiddb sqlg puppygraph; do
-  for suite in opencypher tinkerpop rdf; do
-    python conformance/run.py --engine "$engine" --suite "$suite"
-  done
-done
-python -m unittest discover -s conformance/upstream -p 'test_*.py'
-python conformance/validate.py
-python website/docs/build.py
-python website/docs/check.py
 ```
 
-Set `JAVA_HOME` to Java 21 for Maven; optionally set `CONFORMANCE_JAVA` to the
-Java executable. `CONFORMANCE_UPSTREAM_CACHE` overrides the upstream source
-cache. `fetch.py` checks the exact immutable revisions and unmodified upstream
-trees. Licenses and notices are in `upstream/licenses/`.
-
-`build-orchiddb.sh` only builds executables; it never starts conformance. It and
-`run-relational-gremlin.sh` default to the optimized `release` profile. Set
-`CONFORMANCE_CARGO_PROFILE=dev` for a development build and point the binary
-environment variables at `target/debug/` instead. `CARGO_TARGET_DIR` overrides
-the build directory. Direct Python invocations honor `CONFORMANCE_ORCHIDDB_BINARY`
-and `ORCHIDDB_JVM_STORE`; export the paths above to select the optimized binaries.
-
-### Independent DuckDB and PostgreSQL execution
-
-After the local setup above, run all three languages on both SQL engines:
+Run suites sequentially against the same unchanged artifact:
 
 ```sh
-export ORCHIDDB_TEST_PG_URL='host=localhost dbname=postgres'
-python conformance/upstream/engine_matrix.py
+CONFORMANCE_JAVA=/path/to/java extension/vendor/test-env/bin/python extension/conformance/run.py \
+  --suite tinkerpop --output target/conformance/extension/gremlin.json
+extension/vendor/test-env/bin/python extension/conformance/run.py \
+  --suite opencypher --output target/conformance/extension/cypher.json
+extension/vendor/test-env/bin/python extension/conformance/run.py \
+  --suite rdf --output target/conformance/extension/rdf.json
 ```
 
-Reports are written separately under `target/conformance/sql-engines/`.
-The matrix requires full catalog coverage and no failed applicable cases on
-**each** backend. Region counters verify that a PostgreSQL run does not delegate
-SQL regions to DuckDB. The existing DataFusion residual operators remain part of
-both execution profiles. PostgreSQL SQL regions bind inputs using read-only CTEs;
-they create no tables or views. Existing managed fixture storage is unchanged.
-Use `--engine postgres` or `--suite rdf` to select a complete backend or language.
+Reports record the artifact SHA-256, DuckDB version, pinned catalogs, adapter and
+assertion source identities, and actual case outcomes. Run without filters for a
+complete acceptance report. The runner rejects incomplete catalog coverage.
 
-### Reusing resources across distinct cases
-
-Cypher side-effect assertions use two exact native state snapshots instead of
-ten observation queries. Each snapshot includes element identities, labels, and
-property values; replacement and deletion checks retain the same set comparison.
-Cases without a side-effect assertion do not request a snapshot. Snapshot time
-is recorded as observation work, separate from the tested query's cost.
-
-The native Gremlin adapter caches immutable standard fixture payloads and the
-runner keeps isolated pristine graph checkpoints with preencoded storage payloads.
-Restoring them still writes the checkpoint and advances the storage revision;
-it avoids rebuilding and serializing the fixture. Subsequent cases send a small
-`fixture-reset` request, restoring the checkpoint even after writes. Null-property
-policies have separate cache keys; public IDs, property cardinality and metadata
-are preserved. Missing cache entries are errors, never permission to reuse the
-previous case's graph.
-
-Internal JVM compute workers are owned by the engine and start lazily. Distinct
-statements reuse the process with fresh execution controls and cleared Groovy
-state. Failed workers are discarded. These changes do not cache tested-query
-results or relax upstream assertions. RDF fixture loading is unchanged.
-
-### Neo4j and Jena
-
-Neo4j Community **2026.09.0** is pinned by image digest in `compose.yml` and
-queried in **Cypher 5** mode through Bolt. The dedicated fixture database is
-reset between scenarios. Do not run its comparison concurrently with PuppyGraph
-fixture setup, which uses the same disposable Neo4j instance.
-
-Apache Jena **6.2.0** uses **TDB2**, a temporary local database, and the unmodified
-ARQ query/update implementation. It is licensed under
-[Apache 2.0](https://github.com/apache/jena/blob/jena-6.2.0/LICENSE).
-Neo4j Community uses [GPLv3](https://neo4j.com/licensing/).
-
-```sh
-docker compose -f conformance/compose.yml up -d neo4j
-python conformance/upstream/run.py --engine neo4j --suite opencypher
-mvn -q -f conformance/adapters/jena/pom.xml package dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-python conformance/upstream/run.py --engine jena --suite rdf
-```
-
-`CONFORMANCE_NEO4J_URI` and `CONFORMANCE_NEO4J_PASSWORD` override the dedicated
-local defaults. Jena's adapter reads only fixture inputs; the shared Python
-adapter compares results to the original W3C artifacts, including complete update
-datasets. Both engines retain adapter limitations as separate outcomes.
-
-For installations using the earlier database container, apply the query bound:
-
-```sh
-docker compose -f conformance/compose.yml exec -T postgres psql -U conformance -d conformance -c "ALTER DATABASE conformance SET statement_timeout='10s'"
-```
-
-Subset runs require a separate output, keeping the published full run intact:
-
-```sh
-python conformance/run.py --engine sqlg --suite tinkerpop --filter Count --output /tmp/sqlg-count.json
-```
-
-`--resume` continues an interrupted JSONL journal. Only resume with unchanged
-binaries, harness, source pins and runtime configuration. Completed `.json`
-artifacts are committed; caches, logs, temporary journals and compiled adapters
-are ignored. The static site renders these artifacts without starting engines.
-
-## Assertions and fixtures
-
-- **Gremlin:** Cucumber compiles the original Apache feature files, including
-  Scenario Outlines. Unmodified `gremlin-test` `StepDefinition` methods execute
-  their assertions. Fixtures come from `TinkerFactory`. The TinkerGraph
-  reference run checks the same harness. Standard non-GraphComputer/non-null
-  profiles and upstream skips are preserved. PuppyGraph fixture mappings retain
-  upstream integer widths; OrchidDB transports native graph objects, paths, numeric widths,
-  typed map keys, sets and bulk sets. The JVM structure and
-  GraphComputer test suites are outside this Gherkin comparison.
-- **Cypher:** the adapter executes original GIVEN/WHEN/THEN steps, result
-  tables and side-effect assertions. It preserves duplicates and ordered-result
-  requirements. Expected error type/detail/phase must be classified before an
-  error assertion can pass: an arbitrary exception is insufficient. PuppyGraph
-  fixtures use Neo4j solely to materialize GIVEN statements, then map that graph
-  into PostgreSQL. Neo4j supplies no expected answers; its own comparison executes
-  the original statements directly. PuppyGraph declares openCypher 9; the newer TCK can exercise semantics
-  beyond that declared version.
-- **SPARQL:** original W3C manifests supply queries, data, named graphs and
-  expected artifacts. Syntax tests use the engine parser. Result comparison
-  preserves RDF term identity, duplicates, unbound variables and blank-node
-  mappings; graph results use RDF isomorphism. Update APIs, protocol tests,
-  entailment and remote-service fixtures have explicit applicability outcomes.
-
-Typed graph transport, fixture property types or unavailable service fixtures
-can prevent an assertion from being evaluated faithfully. Those outcomes are
-recorded separately from semantic failures. The adapters do not rewrite upstream
-expectations to match a product. Archived bespoke probes are available in [Git history](../docs/verification.md#historical-records)
-and contribute no primary-suite passes or failures.
-
-## Evidence and timing
-
-Each result includes a stable upstream ID, case hash, outcome, elapsed time,
-and available actual output/diagnostic. The catalog preserves original steps,
-expectations and pinned source links. Runs record source revisions, runtime
-information and engine version or OrchidDB binary hash. OrchidDB conformance
-builds default to the optimized release profile. These are local scenario
-measurements, not controlled cross-product benchmarks.
-
-Outcomes: `pass`, `fail`, `unsupported`, `skipped`, `not-applicable`,
-`adapter-error`, `timeout`. The page additionally detects missing/stale evidence.
-A failed assertion is an investigation lead; it can involve an engine, adapter
-or version mismatch. Unsupported transport is never silently counted as a pass.
-
-Times are one local execution per scenario, including fixture/adapter work.
-Gremlin step and Cypher query measurements are included where available.
-Gremlin scenario deadlines are 45 seconds (90 for grateful fixtures), OrchidDB
-SQL regions have an 8-second bound, JVM execution has a 30-second query bound,
-and the native transport allows 40 seconds to return its result. PostgreSQL statements have a 10-second bound, and
-PuppyGraph queries 30 seconds. These are diagnostic timings, not controlled
-cross-product performance rankings.
-
-## Updating the report
-
-1. Change source pins deliberately, fetch sources and regenerate the catalog.
-2. Rebuild the adapters and run the suites locally against recorded versions.
-3. Validate evidence locally; investigate differences using linked cases and
-   raw outputs. Keep adapter limitations distinct from product defects.
-4. Commit the catalog, source pins and `upstream-results/*.json` with docs changes.
-   The publication workflow renders and uploads static files only.
-
-The one-page report supports outcome/suite/search filters and deep links.
-Individual evidence panels fetch static JSON files; all rows, source links and
-JSON downloads remain available without JavaScript.
-
-## Leaderboard and progress
-
-The static report ranks recorded passes separately for each language, with only
-engines that expose that language. `data/parity-baseline.json` preserves the
-starting results. The leaderboard shows passed totals and the exact cases
-passed by a peer but not by the current engine; its JSON download includes those
-case IDs. Updating complete local result artifacts updates the leaderboard during
-the next documentation publication. No test suite runs in GitHub Actions.
-
-### Historical Java counterpart diagnostics
-
-This diagnostic adapter is excluded from the product comparison.
-The `orchiddb-jvm` adapter executes the 15 pinned Java counterparts when it
-encounters Apache's non-executable Gherkin placeholders. Set
-`CONFORMANCE_TINKERPOP_SOURCE` to the pinned TinkerPop checkout, or use the
-`CONFORMANCE_UPSTREAM_CACHE/tinkerpop` checkout created by `upstream/fetch.py`.
-Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
-and `ORCHIDDB_JVM_STORE` are required. The adapter verifies source hashes and
-runs the original JUnit methods locally. It records per-test timings, assertion
-source and native/provider binary provenance. Failed assertions, assumptions,
-and incomplete runs never become passing results. The production report counts each scenario once from its single engine run.
-
-## JanusGraph Gremlin comparison
-
-JanusGraph 1.1.0 runs locally with its free in-memory storage backend and TinkerPop
-3.7.4. The same pinned Gherkin assertions are used, plus the 15 original Java
-assertions for upstream placeholders. Fixtures retain property cardinality and
-metadata; JanusGraph assigns its own element identifiers. The recorded execution
-profile identifies language/profile exclusions separately from failures.
-
-```sh
-mvn -q -f conformance/adapters/sqlg/pom.xml -Pjanusgraph package dependency:build-classpath -Dmdep.outputFile=target/janusgraph-classpath.txt
-export CONFORMANCE_GREMLIN_CLASSPATH="$PWD/conformance/adapters/sqlg/target/classes:$(cat conformance/adapters/sqlg/target/janusgraph-classpath.txt)"
-python conformance/run.py --engine janusgraph --suite tinkerpop
-```
-
-Backend reference: https://docs.janusgraph.org/storage-backend/inmemorybackend/
-
-## SQL engine conformance
-
-PostgreSQL and DuckDB SQL compilation have a separate profile that reuses the
-original TCK empty-graph read assertions, plus a dynamic Cypher/Gremlin/SPARQL
-matrix with tables split between real PostgreSQL and DuckDB sessions. See
-[SQL engines](../docs/sql-engines.md) for configuration and commands. These runs
-record unsupported SQL-only cases; they do not replace the managed executor's
-full language report.
-
-## ArcadeDB Cypher and Gremlin comparison
-
-An embedded **ArcadeDB 26.9.1** harness is available for both upstream suites.
-It uses fresh temporary fixture databases, records reproducible dependency and
-adapter evidence, and preserves the original assertions. Gremlin runs the pinned
-3.7.4 assertions through gremlin-groovy on ArcadeDB's 3.8.1 provider runtime with isolated parser
-versions. See [setup, local checks, and profile limitations](adapters/arcadedb/README.md).
-
-```sh
-bash conformance/build-arcadedb.sh
-CONFORMANCE_PYTHON=python bash conformance/test-arcadedb.sh
-python conformance/run.py --engine arcadedb --suite opencypher
-python conformance/run.py --engine arcadedb --suite tinkerpop
-```
+The [historical comparison harness](LEGACY_COMPARISON.md) and `upstream-results/`
+remain developer evidence for older library and peer runs. They are not combined
+with the current extension outcome. No builds or tests run in GitHub Actions.

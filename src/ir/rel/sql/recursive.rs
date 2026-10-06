@@ -166,6 +166,10 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
     let mut seen = BTreeSet::new();
     let mut plain_versions = std::collections::BTreeMap::<String, Vec<usize>>::new();
     let transformed = plan.transform_up(|node| match node {
+        LogicalPlan::Filter(mut filter) if matches!(filter.input.as_ref(),LogicalPlan::Projection(p) if p.schema.fields().iter().any(|f|crate::ir::rel::native_values::is_value(f.data_type()))) => {
+            filter.input=Arc::new(hoist_operator(filter.input.as_ref().clone(),"native_projection",&mut plain_ctes,&mut seen)?.data);
+            Ok(Transformed::yes(LogicalPlan::Filter(filter)))
+        }
         LogicalPlan::SubqueryAlias(mut alias)
             if repair_scopes && matches!(alias.input.as_ref(), LogicalPlan::Filter(_))
                 && !alias.alias.table().starts_with("__w_sql_cte_") =>

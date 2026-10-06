@@ -209,6 +209,22 @@ impl<'a> LoweringContext<'a> {
         target: &str,
         rel: &str,
     ) -> RelResult<LoweredNode> {
+        if self.options.native_values {
+            let previous=if has_exact_col(&expanded.plan,path){IrExpr::binding(path)}else{IrExpr::Lit(Lit::Null)};
+            let source=IrExpr::binding(source);
+            use crate::ir::runtime::ops::expand::{path_step,PathStep};
+            let step=path_step(Some(path),true,target);
+            let history=if !matches!(step,PathStep::EdgeAndNode) {previous} else {
+                IrExpr::Call{name:"path_extend_after".into(),args:vec![previous,source.clone(),IrExpr::binding(rel)]}
+            };
+            let last=if matches!(step,PathStep::Edge){rel}else{target};
+            let expression=IrExpr::Call{name:"path_extend_after".into(),args:vec![history,source,IrExpr::binding(last)]};
+            let value=self.native_expr(&expanded.plan,&expression)?;
+            let mut columns=existing_columns(&expanded.plan,&BTreeSet::from([path.to_owned()]));
+            columns.push(value.alias(path));
+            let plan=LogicalPlanBuilder::from(expanded.plan.clone()).project(columns)?.build()?;
+            return Ok(expanded.with_plan(plan));
+        }
         let source_display =
             self.cypher_element_display_expr(&expanded.plan, source, BindingShape::Node)?;
         let target_display =

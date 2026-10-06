@@ -3,7 +3,7 @@ title = "OrchidDB documentation"
 authors = ["OrchidDB contributors"]
 language = "en"
 src = "content"
-description = "Use OrchidDB from Rust or the command line to query graphs and mapped tables."
+description = "Query graphs in DuckDB with Cypher, Gremlin, and SPARQL."
 
 [build]
 build-dir = "dist"

@@ -10,6 +10,13 @@ use super::super::expr::eval;
 use super::super::context::ExecutionContext;
 use super::super::{RuntimeError, IrResult, Row};
 
+pub(crate) enum PathStep { Node, Edge, EdgeAndNode }
+pub(crate) fn path_step(path:Option<&str>, has_edge_binding:bool, target:&str)->PathStep {
+    if path.is_some_and(|binding|binding!="__path") {PathStep::EdgeAndNode}
+    else if has_edge_binding && target=="__edge_other" {PathStep::Edge}
+    else {PathStep::Node}
+}
+
 pub(crate) fn bind_op(
     bind: &str,
     _kind: BindKind,
@@ -213,14 +220,11 @@ pub(crate) fn expand_op(
                     if history_binding.is_some() {
                         history.push(edge_value.clone());
                     }
-                    let include_edge_in_path = rel_binding.is_some() && target == "__edge_other";
-                    if path_binding.is_some_and(|binding| binding != "__path") {
-                        path.push(edge_value.clone());
-                        path.push(target_node.clone());
-                    } else if include_edge_in_path {
-                        path.push(edge_value.clone());
-                    } else if track_path {
-                        path.push(target_node.clone());
+                    match path_step(path_binding,rel_binding.is_some(),target) {
+                        PathStep::EdgeAndNode=>{path.push(edge_value.clone());path.push(target_node.clone());}
+                        PathStep::Edge=>path.push(edge_value.clone()),
+                        PathStep::Node if track_path=>path.push(target_node.clone()),
+                        PathStep::Node=>{}
                     }
                     if hop >= u64::from(length.min) {
                         // Target label filter.

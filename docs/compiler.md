@@ -1,5 +1,11 @@
 # SQL generation API
 
+The product entry point is the [DuckDB extension](../extension/README.md). Its binder
+discovers source schemas and invokes this existing compiler. `orchid_query` accepts
+the version-1 request described below, restricted to the host DuckDB. Driver,
+PostgreSQL, and standalone Rust examples below are retained internal compiler
+references, not separately packaged Orchid clients.
+
 The maintained protocol and examples are in the [SQL API reference](../website/docs/content/sql-compiler.md).
 It covers `compile`/`compile_json`, typed schemas, graph and RDF rules, logical
 physical-layout sources, collection tables, parameters, functions, result fields,

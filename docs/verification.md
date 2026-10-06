@@ -1,47 +1,36 @@
-# Verification and evidence
+# Local verification
 
-The source of public conformance numbers is the committed data under
-[`conformance/upstream-results`](../conformance/upstream-results), with pinned
-catalogs and source provenance under [`conformance/upstream`](../conformance/upstream).
-The [runner guide](../conformance/README.md) documents reproduction and reporting.
-The mdBook generates the public comparison from those artifacts.
-
-Keep execution profiles separate. Managed-runtime language results, native JVM
-provider tests, SQL-only compiler checks and supplemental regressions are not
-interchangeable. Do not count skips, placeholders, unsupported operations or
-planning-only checks as successful query execution. Historical per-profile
-results must not be combined into a synthetic pass total.
-
-## Local checks
+Build one artifact, then keep it unchanged while running its checks. All builds and
+tests run locally. Run commands from the repository root.
 
 ```sh
-cargo test --locked --test sql_compiler --test execution
-cargo run --locked --example compile_sql
-cargo test --locked --features duckdb --test mapped_engine
-bash conformance/run-relational-gremlin.sh
+python3 extension/scripts/build.py
+python3 -m venv extension/vendor/test-env
+extension/vendor/test-env/bin/pip install -r extension/tests/requirements.txt
+extension/vendor/test-env/bin/pip install -r conformance/requirements.txt
+CARGO_TARGET_DIR="$PWD/target" cargo test --locked --manifest-path extension/compiler/Cargo.toml --lib
+PYTHONPATH=extension/tests ORCHID_EXTERNAL_TESTS=1 \
+  extension/vendor/test-env/bin/python -m unittest discover -s extension/tests -v
+cargo test --locked --features duckdb --lib
+cargo test --locked --features duckdb --test foreign_key_relationships --test scalar_primary_keys
 ```
 
-The final command needs Java 21 and the production JVM classpath; see
-[runtime verification](runtime.md#local-verification). Full conformance is run
-locally; publishing committed reports does not rerun the suite.
+The 53 extension integrations cover graph DDL, managed state, native syntax,
+parameters, Arrow/native values, ordered branches, rollback, prepared execution,
+cancellation, and actual Iceberg/Lance storage. There are 5 compiler unit tests,
+305 passing core tests (3 existing ignored), and 9 mapped storage/key checks.
 
-The harvested `.case` harness and corpus have been removed. Active conformance
-uses the pinned upstream suites under `conformance/`. `jvm/` and `jvm-codecs/`
-are production modules, not copies of the standalone Java client.
-`src/spargebra` embeds the modified SPARQL parser and its upstream license notices. Keep all of them.
+For pinned upstream assertions and Java setup, see [conformance](../conformance/README.md).
+Current recorded results are 3,897/3,897 Cypher, 1,511/1,511 Gremlin, and 974 existing
+SPARQL cases, with 77 skipped and 74 not applicable. Excluded cases are never passes.
+Reports retain catalog, assertion, and loaded artifact identities.
 
-## Performance
+Build the documentation separately:
 
-[`performance/`](performance/) retains before/after measurements, revisions,
-binary identities and per-scenario timing. These are historical measurements,
-not current performance promises. Compare the same build profile, unchanged
-assertions and deadlines, one engine instance, and no concurrent compilation.
-Report full-suite wall time separately from passed-scenario totals.
+```sh
+python3 website/docs/build.py
+python3 website/docs/check.py
+```
 
-## Historical records
-
-Superseded handoffs, plans and `conformance/legacy` probes are preserved in
-[the pre-cleanup revision](https://github.com/OrchidDB/OrchidDB/tree/374977f985869f795ef628e2e37c566dafefe19a).
-A local archive was also saved to
-`~/orchiddb/archives/orchiddb-maintainer-history-374977f.tar.gz` with a SHA-256 sidecar.
-Those probes are not part of the active conformance denominator.
+Validation covers macOS ARM64 with DuckDB 1.5.6. Source integration tests are not
+cross-platform or distributed transaction certification.

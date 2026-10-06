@@ -19,6 +19,7 @@ impl<'a> LoweringContext<'a> {
             } else if let Some(star_cols) = star_expansion_columns(plan, field) {
                 projections.extend(star_cols);
             } else if let Some(shape) = has_binding_shape(plan, field) {
+                if self.options.native_values {projections.push(self.native_element(plan,field)?.alias(field));continue;}
                 if self.language == Language::Cypher && self.options.mapping.is_none() {
                     return Err(RelError::Unsupported("Cypher returned graph values require native identity".into()));
                 }
@@ -111,6 +112,10 @@ impl<'a> LoweringContext<'a> {
         alias: &str,
         expr: &IrExpr,
     ) -> RelResult<Vec<Expr>> {
+        if self.options.native_values && self.language==Language::Gremlin
+            && (alias=="__path" || alias=="__path_labels" || alias.starts_with("__gremlin_select_history_")) {
+            return Ok(vec![self.native_expr(plan,expr)?.alias(alias)]);
+        }
         if self.language == Language::Gremlin
             && alias.starts_with("__gremlin_select_history_")
             && let IrExpr::Call { name, args } = expr
@@ -198,6 +203,9 @@ impl<'a> LoweringContext<'a> {
                 .chunks(2)
                 .all(|pair| matches!(pair[0], IrExpr::Lit(Lit::String(_))))
         {
+            if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
+                return Ok(vec![self.native_expr(plan,expr)?.alias(alias)]);
+            }
             if matches!(self.language, Language::Cypher | Language::Gremlin) {
                 return Err(RelError::Unsupported(
                     "Map projection requires native runtime values".into(),
@@ -402,10 +410,31 @@ impl LoweringContext<'_> {
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
         let alias = fields.first().map(String::as_str).unwrap_or("current");
-        let mut projections = apply_correlation_key_columns(&input.plan)
-            .iter()
-            .map(col_exact)
-            .collect::<Vec<_>>();
+        if self.options.native_values {
+            let projected = self.native_current_projection(&input.plan, expr)?;
+            let temporary = format!("__orchid_projection_{}", self.scan_counter);
+            self.scan_counter += 1;
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(projected.alias(&temporary));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            let plan = collections::unnest_scope(plan, format!("__w_sql_cte_projection_{}", self.scan_counter))?;
+            let plan = collections::unnest_input(plan)?;
+            let plan = LogicalPlanBuilder::from(plan).unnest_column(Column::new_unqualified(&temporary))?.build()?;
+            let plan = collections::unnest_scope(plan, format!("__w_sql_cte_projected_{}", self.scan_counter))?;
+            let mut columns = existing_columns_excluding_binding(&input.plan, alias, &BTreeSet::from([alias.to_owned()]));
+            // Direct element aliases retain their SQL identity/property shape
+            // so subsequent adjacency joins stay visible to DuckDB. The list
+            // boundary already applied the shared productivity decision.
+            if matches!(expr, IrExpr::Binding(binding) if has_binding_shape(&input.plan, binding).is_some()) {
+                columns.extend(self.project_item_exprs(&input.plan, alias, expr)?);
+            } else {
+                columns.push(col_exact(&temporary).alias(alias));
+            }
+            return Ok(input.with_plan(LogicalPlanBuilder::from(plan).project(columns)?.build()?));
+        }
+        let mut projections = if self.options.native_values {
+            existing_columns_excluding_binding(&input.plan,alias,&BTreeSet::from([alias.to_owned()]))
+        } else { apply_correlation_key_columns(&input.plan).iter().map(col_exact).collect::<Vec<_>>() };
         let item_projections = self.project_item_exprs(&input.plan, alias, expr)?;
         if item_projections.is_empty() {
             return Err(RelError::Unsupported(

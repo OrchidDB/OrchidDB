@@ -1,5 +1,9 @@
 # One graph engine, mapping-driven DuckDB storage
 
+This is a retained internal library reference. The current product is the
+[DuckDB extension](../extension/README.md), which uses only its host DuckDB executor.
+The legacy adapters documented below are not the extension execution path.
+
 ## Contract
 
 OrchidDB has one language planner and one execution engine. DuckDB is the only

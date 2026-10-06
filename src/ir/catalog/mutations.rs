@@ -10,6 +10,7 @@ impl PropertyGraph {
             Value::Edge { rel_type, id, .. } => (true, rel_type, id.clone()),
             _ => return None,
         };
+        self.hydrate_native_state(edge,name,&id);
         if let Some(id) = self.overlay.borrow().cypher_ids.get(&(edge, name.clone(), id.clone())) { return Some(id.clone()); }
         // Older checkpoints predate numeric Cypher IDs. Fill their insertion
         // slots deterministically, retaining any IDs already persisted by newer writes.
@@ -54,6 +55,7 @@ impl PropertyGraph {
 
     /// Logical Cypher labels do not participate in the physical element address.
     pub fn node_labels(&self, storage: &str, id: ElementId) -> Vec<String> {
+        self.hydrate_native_state(false,storage,&id);
         self.overlay.borrow().node_label_sets.get(&(storage.to_string(), id.clone()))
             .map(|labels| labels.iter().cloned().collect())
             .unwrap_or_else(|| vec![storage.to_string()])
@@ -115,7 +117,8 @@ impl PropertyGraph {
             )));
         }
         let declared = self.rel_endpoint_labels(&rel_type);
-        if !declared.is_empty()
+        if !self.source.as_ref().is_some_and(|source|source.supports_dynamic_schema())
+            && !declared.is_empty()
             && !declared
                 .iter()
                 .any(|(s, d)| s == &src_label && d == &dst_label)
@@ -129,8 +132,7 @@ impl PropertyGraph {
         // An FK edge is identified by its child row. Graph callers supply the
         // endpoints, not a second primary key for the relationship.
         let child_id = self
-            .mapping
-            .as_ref()
+            .write_mapping()
             .and_then(|m| m.edge(&rel_type))
             .and_then(|m| m.foreign_key)
             .map(|child| match child {
@@ -266,6 +268,7 @@ impl PropertyGraph {
     }
 
     pub fn set_property(&self, target: &Value, key: impl Into<String>, value: Value) -> CatalogResult<()> {
+        match target {Value::Node{label,id}=>self.hydrate_native_state(false,label,id),Value::Edge{rel_type,id,..}=>self.hydrate_native_state(true,rel_type,id),_=>{}}
         if value.contains_cardinality_value() {
             return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
         }
@@ -370,6 +373,7 @@ impl PropertyGraph {
         properties: BTreeMap<String, Value>,
         replace: bool,
     ) -> CatalogResult<()> {
+        match target {Value::Node{label,id}=>self.hydrate_native_state(false,label,id),Value::Edge{rel_type,id,..}=>self.hydrate_native_state(true,rel_type,id),_=>{}}
         if properties.values().any(Value::contains_cardinality_value) {
             return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
         }

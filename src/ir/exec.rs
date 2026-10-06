@@ -248,7 +248,9 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
     if row >= array.len() || array.is_null(row) {
         return Some(Value::Null);
     }
-    if crate::ir::functions::domain::descriptor(array.data_type()).is_some() {
+    if crate::ir::functions::domain::descriptor(array.data_type()).is_some()
+        || crate::ir::rel::native_values::is_value(array.data_type())
+    {
         return datafusion::common::ScalarValue::try_from_array(array, row).ok().map(Value::Scalar);
     }
     match array.data_type() {

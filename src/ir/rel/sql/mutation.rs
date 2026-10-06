@@ -1,6 +1,8 @@
 //! Effects on existing mapped tables. Values are bound parameters; identifiers
 //! come from mapping metadata. The caller owns the transaction boundary.
-use super::{DuckDbExecutor, SqlDialect};
+use super::SqlDialect;
+#[cfg(feature = "duckdb")]
+use super::DuckDbExecutor;
 
 #[derive(Debug, Clone)]
 pub enum RowCondition {
@@ -35,8 +37,26 @@ pub enum MappedMutation {
     },
 }
 
+pub trait MutationHost {
+    fn count(&mut self, sql: &str, parameters: Vec<Option<String>>) -> Result<i64, String>;
+    fn execute(&mut self, sql: &str, parameters: Vec<Option<String>>) -> Result<(), String>;
+}
+#[cfg(feature = "duckdb")]
+impl MutationHost for DuckDbExecutor {
+    fn count(&mut self, sql: &str, parameters: Vec<Option<String>>) -> Result<i64, String> {
+        self.connection().map_err(|e| e.to_string())?
+            .query_row(sql, duckdb::params_from_iter(parameters), |row| row.get(0)).map_err(|e| e.to_string())
+    }
+    fn execute(&mut self, sql: &str, parameters: Vec<Option<String>>) -> Result<(), String> {
+        self.connection().map_err(|e| e.to_string())?
+            .execute(sql, duckdb::params_from_iter(parameters)).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
 impl MappedMutation {
-    pub fn execute(&self, executor: &mut DuckDbExecutor) -> Result<(), String> {
+    #[cfg(feature = "duckdb")]
+    pub fn execute(&self, executor: &mut DuckDbExecutor) -> Result<(), String> { self.execute_in(executor) }
+    pub fn execute_in(&self, host: &mut impl MutationHost) -> Result<(), String> {
         let quote = |name: &str| SqlDialect::DuckDb.quote_ident(name);
         let table = |name: &str| {
             datafusion::common::TableReference::from(name)
@@ -60,15 +80,8 @@ impl MappedMutation {
                     .map(|(c, _)| format!("{} IS NOT DISTINCT FROM ?", quote(c)))
                     .collect::<Vec<_>>()
                     .join(" AND ");
-                let conn = executor.connection().map_err(|e| e.to_string())?;
                 let params = key.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
-                let count: i64 = conn
-                    .query_row(
-                        &format!("SELECT count(*) FROM {} WHERE {predicates}", table(name)),
-                        duckdb::params_from_iter(params.clone()),
-                        |r| r.get(0),
-                    )
-                    .map_err(|e| e.to_string())?;
+                let count = host.count(&format!("SELECT count(*) FROM {} WHERE {predicates}", table(name)), params.clone())?;
                 if count > 1 {
                     return Err(format!("Declared RDF key is not unique in {name}"));
                 }
@@ -97,15 +110,7 @@ impl MappedMutation {
                             quote(column),
                             quote(column)
                         );
-                        let mismatch: i64 = conn
-                            .query_row(
-                                &sql,
-                                duckdb::params_from_iter(
-                                    params.iter().cloned().chain(std::iter::once(value.clone())),
-                                ),
-                                |r| r.get(0),
-                            )
-                            .map_err(|e| e.to_string())?;
+                        let mismatch = host.count(&sql, params.iter().cloned().chain(std::iter::once(value.clone())).collect())?;
                         if mismatch > 0 {
                             return Err(format!(
                                 "RDF insert would assign multiple values to {name}.{column}; delete the old value first"
@@ -267,11 +272,7 @@ impl MappedMutation {
                 )
             }
         };
-        executor
-            .connection()
-            .map_err(|e| e.to_string())?
-            .execute(&sql, duckdb::params_from_iter(parameters))
-            .map_err(|e| e.to_string())?;
+        host.execute(&sql, parameters)?;
         Ok(())
     }
 }

@@ -22,14 +22,15 @@ use num_bigint::BigInt;
 use crate::ir::value::Value;
 use crate::ir::ElementId;
 
-#[cfg(any(feature = "duckdb", test))]
 pub(crate) mod incremental;
 pub(crate) mod snapshot;
-mod properties;
+pub(crate) mod properties;
+pub mod import;
 pub use properties::Cardinality;
 mod builders;
 mod mutations;
 mod keyed;
+mod detached;
 pub(crate) mod source;
 mod values;
 
@@ -87,7 +88,9 @@ pub struct PropertyGraph {
     /// One timestamp per statement, shared by scalar kernels and SQL planning.
     /// Execution context only; never persisted as graph data.
     statement_clock: SnapshotCell<Option<chrono::DateTime<chrono::Utc>>>,
+    transaction_clock: SnapshotCell<Option<chrono::DateTime<chrono::Utc>>>,
     pub(crate) source_keys: bool,
+    native_hydrated: SnapshotCell<BTreeSet<(bool,String,ElementId)>>,
     pub(crate) source: Option<Arc<dyn source::GraphSource>>,
     pub(crate) mapping: Option<Arc<crate::ir::rel::mapping::GraphMapping>>,
     pub nodes: HashMap<String, NodeTable>,
@@ -252,18 +255,17 @@ impl GraphOverlay {
 }
 
 impl PropertyGraph {
-    #[cfg(feature = "duckdb")]
     pub(crate) fn pending_changes(&self) -> PendingChanges {
         self.pending.borrow().clone()
     }
 
-    #[cfg(feature = "duckdb")]
     pub(crate) fn clear_pending_changes(&self) {
         *self.pending.borrow_mut() = PendingChanges::default();
     }
 
     /// Whether writes have changed the immutable Arrow catalog.
     pub fn has_mutations(&self) -> bool {
+        if self.source.as_ref().is_some_and(|source|source.supports_dynamic_schema()) {let pending=self.pending.borrow();return !pending.nodes.is_empty()||!pending.edges.is_empty();}
         let overlay = self.overlay.borrow();
         !overlay.node_label_sets.is_empty()
             || !overlay.inserted_node_counts.is_empty()
@@ -282,6 +284,14 @@ impl PropertyGraph {
 
     pub(crate) fn begin_statement(&self) {
         *self.statement_clock.borrow_mut() = Some(chrono::Utc::now());
+    }
+
+    pub(crate) fn set_host_clocks(&self, statement: chrono::DateTime<chrono::Utc>, transaction: chrono::DateTime<chrono::Utc>) {
+        *self.statement_clock.borrow_mut() = Some(statement);
+        *self.transaction_clock.borrow_mut() = Some(transaction);
+    }
+    pub(crate) fn transaction_time(&self) -> chrono::DateTime<chrono::Utc> {
+        self.transaction_clock.borrow().unwrap_or_else(|| self.statement_time())
     }
 
     pub(crate) fn statement_time(&self) -> chrono::DateTime<chrono::Utc> {
@@ -734,7 +744,8 @@ impl PropertyGraph {
     pub fn node_ids(&self, label: &str) -> CatalogResult<Vec<ElementId>> {
         let mut out = self.source.as_ref().map(|s| s.ids(false, label)).unwrap_or_else(|| self.node_keys.get(label).cloned().unwrap_or_default());
         let overlay = self.overlay.borrow();
-        out.retain(|id| !overlay.deleted_nodes.contains(&(label.to_string(), id.clone().into())));
+        out.retain(|id| !overlay.deleted_nodes.contains(&(label.to_string(), id.clone()))
+            && !overlay.inserted_nodes.contains_key(&(label.to_string(),id.clone())));
         out.extend(
             overlay
                 .inserted_nodes
@@ -855,5 +866,9 @@ impl PropertyGraph {
     pub(crate) fn restore_execution_overlay(&self, checkpoint: &Self) {
         self.overlay.share_from(&checkpoint.overlay);
         self.pending.share_from(&checkpoint.pending);
+        // Native metadata belongs to this overlay checkpoint. Forgetting which
+        // records a child hydrated would let a later source read overwrite its
+        // property mutations with the old durable state.
+        self.native_hydrated.share_from(&checkpoint.native_hydrated);
     }
 }

@@ -46,72 +46,12 @@ fn typed_cell(a:&dyn Array,i:usize)->Value {
  _=>cell(a,i)
  }
 }
-fn param(v:&Value)->GValue{match v{Value::Null=>GValue::Null,Value::Bool(x)=>GValue::Bool(*x),Value::Number(x)=>if let Some(i)=x.as_i64(){GValue::Int(i)}else{GValue::Float(x.as_f64().unwrap())},Value::String(s)=>GValue::String(s.clone()),Value::Array(a)=>GValue::List(a.iter().map(param).collect()),Value::Object(m)=>GValue::Map(m.iter().map(|(k,v)|(k.clone(),param(v))).collect())}}
-fn fixture_property(value:&Value,declared:Option<&str>)->Result<GValue,String>{
- let invalid=||format!("Fixture value {value} does not match declared type {declared:?}");
- match declared {
-  None=>Ok(param(value)),
-  Some("Integer")=>value.as_i64().filter(|v|i32::try_from(*v).is_ok()).map(GValue::Int).ok_or_else(invalid),
-  Some("Long")=>value.as_i64().map(GValue::Long).ok_or_else(invalid),
-  Some("Byte")=>value.as_i64().and_then(|v|i8::try_from(v).ok()).map(GValue::Byte).ok_or_else(invalid),
-  Some("Short")=>value.as_i64().and_then(|v|i16::try_from(v).ok()).map(GValue::Short).ok_or_else(invalid),
-  Some("Float")=>value.as_f64().map(|v|GValue::Float32(v as f32)).ok_or_else(invalid),
-  Some("Double")=>value.as_f64().map(GValue::Float).ok_or_else(invalid),
-  Some("String")=>value.as_str().map(|v|GValue::String(v.to_owned())).ok_or_else(invalid),
-  Some("Boolean")=>value.as_bool().map(GValue::Bool).ok_or_else(invalid),
-  Some(other)=>Err(format!("Unmapped fixture property type {other}")),
- }
-}
-fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
- fn properties(item:&Value)->Result<BTreeMap<String,GValue>,String>{
-  item["properties"].as_object().ok_or("Fixture properties must be an object")?.iter()
-   .map(|(key,value)|fixture_property(value,item["property_types"][key].as_str()).map(|v|(key.clone(),v))).collect()
- }
- let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));let mut nodes=BTreeMap::new();
- for n in req["nodes"].as_array().ok_or("Fixture nodes must be an array")?{
-  let v=graph.insert_node(n["label"].as_str().ok_or("Fixture node label missing")?,if n["property_records"].is_array(){BTreeMap::new()}else{properties(n)?});
-  graph.set_element_public_id(&v,fixture_property(&n["id"],n["id_type"].as_str())?).map_err(|e|e.to_string())?;
-  if let Some(records)=n["property_records"].as_array(){for record in records {
-    let key=record["key"].as_str().ok_or("Fixture property key missing")?;
-    let value=fixture_property(&record["value"],record["type"].as_str())?;
-    let mut meta=BTreeMap::new();
-    if let Some(entries)=record["meta"].as_object(){for (key,value) in entries{meta.insert(key.clone(),fixture_property(value,record["meta_types"][key].as_str())?);}}
-    let property=graph.set_vertex_property(&v,key,value,orchiddb::ir::catalog::Cardinality::List,meta).map_err(|e|e.to_string())?;
-    if !record["id"].is_null(){graph.set_vertex_property_public_id(&property,fixture_property(&record["id"],record["id_type"].as_str())?).map_err(|e|e.to_string())?;}
-  }}
-  nodes.insert(n["id"].to_string(),v);
- }
- for e in req["edges"].as_array().ok_or("Fixture edges must be an array")?{
-  let src=nodes.get(&e["src"].to_string()).ok_or("Fixture edge source missing")?;
-  let dst=nodes.get(&e["dst"].to_string()).ok_or("Fixture edge target missing")?;
-  let edge=graph.insert_edge(e["label"].as_str().ok_or("Fixture edge label missing")?,src,dst,properties(e)?).map_err(|e|e.to_string())?;
-  graph.set_element_public_id(&edge,fixture_property(&e["id"],e["id_type"].as_str())?).map_err(|e|e.to_string())?;
- }
-
- Ok(graph)
-}
+use orchiddb::ir::catalog::import::{parameter as param,typed_property as fixture_property,import_graph as fixture_graph};
 // Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.
 // Capture typed planner diagnostics before its public String error boundary.
 fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&orchiddb::ir::procedures::ProcedureCatalog)->Result<orchiddb::ir::plan::GraphPlan,(String,Option<Value>)>{
- use orchiddb::language::cypher;
- let mut parsed=cypher::parser::parse_query(query).map_err(|e|{
-  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
-  (e.to_string(),classification)
- })?;
- let plan_error=|e:cypher::planner::CypherPlanError| {
-  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
-  (e.to_string(),classification)
- };
- cypher::procedures::prepare(&mut parsed,catalog).map_err(plan_error)?;
- cypher::parameters::bind_parameters_with_diagnostics(&mut parsed,params).map_err(|e|{
-  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
-  (e.to_string(),classification)
- })?;
- cypher::procedures::prepare(&mut parsed,catalog).map_err(plan_error)?;
- cypher::planner::CypherPlanner::new().plan(&parsed).map_err(|e|{
-  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
-  (e.to_string(),classification)
- })
+ orchiddb::language::cypher::preparation::prepare(query,params,Some(catalog))
+  .map_err(|error| (error.message, error.classification.map(|value| serde_json::to_value(value).unwrap())))
 }
 fn term(t:RdfTermValue)->Value{match t{RdfTermValue::Iri(v)=>json!({"type":"uri","value":v}),RdfTermValue::BlankNode(v)=>json!({"type":"bnode","value":v}),RdfTermValue::Literal{lexical,datatype,language}=>json!({"type":"literal","value":lexical,"datatype":datatype,"lang":language})}}
 async fn rdf(req:&Value)->Result<Value,String>{

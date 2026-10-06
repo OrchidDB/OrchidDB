@@ -222,7 +222,10 @@ impl LoweringContext<'_> {
             None if is_encoded_property(plan, expr) => Err(RelError::Unsupported(
                 "list operation over an encoded property without a uniform native list type".into(),
             )),
-            None => self.lower_expr(plan, expr),
+            None => {
+                let lowered=self.lower_expr(plan,expr)?;
+                if self.options.native_values && native_values::is_value(&lowered.get_type(plan.schema())?) {Ok(native_values::list(lowered))} else {Ok(lowered)}
+            },
         }
     }
 }

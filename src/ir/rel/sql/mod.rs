@@ -97,7 +97,6 @@ mod database;
 mod duckdb_exec;
 #[cfg(feature = "duckdb")]
 pub mod program;
-#[cfg(feature = "duckdb")]
 pub mod mutation;
 #[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
