@@ -574,6 +574,11 @@ impl LoweringContext<'_> {
                 }
                 IrExpr::List(items) => items.iter().all(|e| captures(e, bound, free)),
                 IrExpr::Call { name, args } => {
+                    // Search scores use the existing typed UDF kernels. BM25
+                    // additionally needs mapped corpus provenance at planning.
+                    if crate::ir::functions::search::function(name).is_some() {
+                        return false;
+                    }
                     (constant_foldable_function(name)
                         || name.starts_with("path_")
                         || name.starts_with("select_history_")

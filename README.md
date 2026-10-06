@@ -51,6 +51,7 @@ In the DuckDB shell opened above, run these against a fresh database:
 | [04_iceberg_lance.sql](examples/04_iceberg_lance.sql) | Graph queries across existing Iceberg and Lance sources; replace the example paths first |
 | [05_rag.sql](examples/05_rag.sql) | Computed RAG edge: tenant filtering, BM25 candidates, MaxSim reranking, and traversal to authors |
 | [06_authorization.sql](examples/06_authorization.sql) | Optional SpiceDB channel permissions, implicit session identity, chunks, and computed edges |
+| [07_parameterized_rag.sql](examples/07_parameterized_rag.sql) | Ordinary Cypher hybrid search, MaxSim reranking, and traversal to source documents |
 
 The local examples create their own data; SPARQL uses the `people` table from
 the first example. The RAG example is self-contained. The storage example expects
@@ -441,6 +442,66 @@ with Iceberg relationships. Computed relationships can also rank candidates per 
 That declaration currently uses relational scoring over mapped sources; it does not
 automatically register Lance search-index bindings. A mapped Lance search view
 continues to use the index selected by its DuckDB search function.
+
+## Retrieval with ordinary Cypher
+
+Search inputs are query parameters. Use `MATCH`, scoring expressions, and successive
+`WITH ... ORDER BY ... LIMIT` stages to select candidates, rerank them, and traverse
+their relationships. [The complete SQL example](examples/07_parameterized_rag.sql)
+creates a small chunk/document graph and returns `Detailed guide | duckdb | 2.0`.
+
+Against that graph, an application binds text, an embedding, and a matrix of token
+vectors through its ordinary DuckDB connection:
+
+```python
+rows = connection.execute("""
+    CYPHER knowledge
+    MATCH (c:Chunk)
+    WITH c,
+         text.bm25($query_text, c.text) AS lexical,
+         vector.cosine_similarity($query_embedding, c.embedding) AS semantic
+    WITH c, lexical / (1 + lexical) + (semantic + 1) / 2 AS candidate_score
+    ORDER BY candidate_score DESC
+    LIMIT 2
+    WITH c, vector.maxsim($query_tokens, c.token_vectors) AS score
+    ORDER BY score DESC
+    LIMIT 1
+    MATCH (document:Content)-[:HAS_CHUNK]->(c)
+    RETURN document.title AS title, c.text AS text, score
+    ORDER BY score DESC
+""", {
+    "query_text": "duckdb",
+    "query_embedding": [1.0, 0.0],
+    "query_tokens": [[1.0, 0.0], [0.0, 1.0]],
+}).fetchall()
+```
+
+The fixture uses two candidates and one result; choose larger limits for your
+application. Each limit applies at its position in the query. Traversals and filters
+after a limit do not refill the candidate set. Add an ID as a secondary ordering key
+when you need deterministic ties. Embeddings and token vectors come from the
+application's models.
+
+`text.bm25(query, node.text)` uses all rows of the mapped vertex source for its corpus,
+after graph authorization and before query filters, joins, or limits. `WITH` aliases
+preserve this source association; duplicated traversal rows do not duplicate corpus
+documents. The text argument must retain its mapped vertex property provenance.
+To score a transformed text field, expose the transformation in a mapped DuckDB view.
+The existing scorer uses case-insensitive ASCII alphanumeric terms, `k1=1.2` and
+`b=0.75`. Empty queries score zero; null input documents score null. Empty and null
+documents still participate in corpus statistics.
+
+`vector.cosine_similarity`, `vector.dot`, `vector.l2_distance`, and `vector.maxsim`
+reuse the same scoring implementations as computed edges. MaxSim sums each query
+token's best document-token inner product. Supply normalized token vectors for cosine
+scoring. Cosine similarity returns null for a zero-norm vector; incompatible vector
+dimensions fail the query.
+
+Session SpiceDB policies apply automatically to candidate scans, BM25 statistics,
+and subsequent graph traversal. These queries also work over mapped Lance tables
+and Iceberg views. This path performs exact scoring with DuckDB; the example does
+not provision a full-text or approximate-nearest-neighbor index. BM25 corpus
+aggregation and vector scans must be considered when sizing large deployments.
 
 ## Computed RAG edges
 

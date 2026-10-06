@@ -141,6 +141,18 @@ class ComputedEdgeStorageTests(unittest.TestCase):
                 plan = str(db.execute('EXPLAIN '+QUERY).fetchall()).upper()
                 self.assertIn('LANCE',plan)
                 self.assertTrue('ICEBERG' in plan or 'PARQUET' in plan,plan)
+                # The same physical sources also support request parameters and
+                # ordinary Cypher ranking, without a computed relationship.
+                retrieval = '''CYPHER rag MATCH (d:Document) WHERE d.tenant_id=$tenant
+                  WITH d, text.bm25($query_text,d.body) AS lexical
+                  ORDER BY lexical DESC LIMIT 2
+                  WITH d, vector.maxsim($query_tokens,d.tokens) AS score
+                  ORDER BY score DESC LIMIT 1
+                  MATCH (d)-[:WRITTEN_BY]->(a:Author)
+                  RETURN d.title,a.name,score'''
+                parameters = dict(tenant=10,query_text='duckdb',query_tokens=[[1.,0.],[0.,1.]])
+                self.assertEqual(db.execute(retrieval,parameters).fetchall(), [('Detailed guide','Bob',2.)])
+                self.assertEqual(db.execute(retrieval,dict(parameters,tenant=20)).fetchall(), [('Other tenant','Bob',20.)])
             finally:
                 db.close()
 

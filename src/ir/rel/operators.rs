@@ -266,6 +266,19 @@ impl LoweringContext<'_> {
                             native_values::key_expr(original.clone(), self.language == Language::Cypher)
                         } else { language_functions::key(original.clone(), &input.plan)? }.alias(alias);
                         representatives.push(datafusion::functions_aggregate::first_last::first_value(original, vec![]).alias(&item.alias));
+                        if self.language == Language::Cypher && self.options.mapping.is_some()
+                            && let IrExpr::Binding(binding) = &item.expr
+                            && has_binding_shape(&input.plan, binding).is_some()
+                        {
+                            // Retain typed properties alongside the native
+                            // representative for subsequent scoring/traversal.
+                            for column in binding_column_names(&input.plan, binding)? {
+                                let suffix = column.strip_prefix(binding).expect("binding prefix");
+                                representatives.push(datafusion::functions_aggregate::first_last::first_value(
+                                    col_exact(&column), vec![],
+                                ).alias(format!("{}{suffix}", item.alias)));
+                            }
+                        }
                     }
                     self.scan_counter += 1;
                 }

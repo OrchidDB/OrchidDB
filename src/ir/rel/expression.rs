@@ -1113,18 +1113,26 @@ impl<'a> LoweringContext<'a> {
                 Ok(result.unwrap_or_else(||make_array(vec![])))
             }
             IrExpr::Call { name, args } => {
-                let args = args
+                let scoring = crate::ir::functions::search::function(name).is_some();
+                let mut args = args
                     .iter()
                     .map(|arg| {
                         if matches!(arg, IrExpr::List(_)) {
                             self.lower_native_list(plan, arg)
                         } else if let Some(native) = collections::native_list_property(plan, arg) {
                             Ok(native)
+                        } else if scoring {
+                            self.lower_sql_expr(plan, arg)
                         } else {
                             self.lower_expr(plan, arg)
                         }
                     })
                     .collect::<RelResult<Vec<_>>>()?;
+                if name.eq_ignore_ascii_case("text.bm25") && args.len() == 2 {
+                    let mapping = self.options.mapping.as_ref().ok_or_else(||
+                        RelError::Unsupported(mapping::BM25_CORPUS_ERROR.into()))?;
+                    args.push(mapping.bm25_corpus(plan, &args[1])?);
+                }
                 Ok(crate::ir::functions::native_scalar(
                     name,
                     args,

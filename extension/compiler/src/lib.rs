@@ -137,6 +137,11 @@ fn compile(input: Value, inspect: bool) -> Result<Value, String> {
     let compiled = match runtime.block_on(orchiddb::compiler::compile(request)) {
         Ok(compiled) => compiled,
         Err(error) => {
+            // Invalid corpus provenance cannot be repaired by splitting the
+            // query into row kernels, which no longer own the mapped corpus.
+            if error.contains(orchiddb::ir::rel::mapping::BM25_CORPUS_ERROR) {
+                return Err(error);
+            }
             match program::compile_request_json(input) {
                 Ok(compiled) => return Ok(compiled),
                 Err(_) => {},

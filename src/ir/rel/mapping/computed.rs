@@ -77,7 +77,7 @@ fn error(message: impl Into<String>) -> RelError {
 fn key(side: &str, i: usize) -> String {
     format!("__relationship_{side}_key_{i}")
 }
-fn prop(side: &str, name: &str) -> String {
+pub(super) fn prop(side: &str, name: &str) -> String {
     format!(
         "__relationship_{side}_{}",
         name.as_bytes()
@@ -223,7 +223,7 @@ fn columns(plan: &LogicalPlan) -> Vec<Expr> {
         .map(Expr::Column)
         .collect()
 }
-fn endpoint(mapping: &GraphMapping, node: &NodeMapping, side: &str) -> RelResult<LogicalPlan> {
+pub(super) fn endpoint(mapping: &GraphMapping, node: &NodeMapping, side: &str) -> RelResult<LogicalPlan> {
     let mut plan = LogicalPlanBuilder::from(mapping.source_plan(&node.source)?);
     for column in node.id_column.columns() {
         plan = plan.filter(col_exact(column).is_not_null())?;
@@ -241,6 +241,17 @@ fn endpoint(mapping: &GraphMapping, node: &NodeMapping, side: &str) -> RelResult
             .map(|(p, c)| col_exact(c).alias(prop(side, p))),
     );
     Ok(plan.project(projection)?.build()?)
+}
+
+/// Shared corpus aggregation for computed edges and ordinary query expressions.
+pub(super) fn corpus(plan: LogicalPlan, document: Expr, name: &str) -> RelResult<LogicalPlan> {
+    let aggregate = datafusion::functions_aggregate::array_agg::array_agg_udaf()
+        .call(vec![document])
+        .alias(name);
+    Ok(LogicalPlanBuilder::from(plan)
+        .aggregate(Vec::<Expr>::new(), vec![aggregate])?
+        .project(vec![col_exact(name)])?
+        .build()?)
 }
 /// Expand only the relationship's property projections; keep endpoint columns
 /// intact for native evaluation and backend access-path recognition.
@@ -677,12 +688,7 @@ pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelRe
             expressions.corpora.insert(column, None);
             continue;
         }
-        let aggregate = datafusion::functions_aggregate::array_agg::array_agg_udaf()
-            .call(vec![col_exact(&column)])
-            .alias(&name);
-        let corpus = LogicalPlanBuilder::from(target.clone())
-            .aggregate(Vec::<Expr>::new(), vec![aggregate])?
-            .project(vec![col_exact(&name)])?
+        let corpus = LogicalPlanBuilder::from(corpus(target.clone(), col_exact(&column), &name)?)
             .alias(format!(
                 "__w_sql_cte_{}",
                 prop("corpus", &format!("{}:{doc}", rule.target))

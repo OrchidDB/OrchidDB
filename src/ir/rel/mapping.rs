@@ -54,6 +54,9 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use crate::ir::plan::LabelExpr;
 
 pub mod computed;
+mod retrieval;
+/// A corpus binding error is final: a row kernel cannot infer corpus scope.
+pub const BM25_CORPUS_ERROR: &str = "two-argument text.bm25 requires a mapped vertex text property (or its WITH alias)";
 pub use computed::{ComputedRelationship, RelationshipOrder, RelationshipStage, SortDirection, NullOrder, RetrievalMode};
 use super::{
     LoweredNode, LoweringContext, RelError, RelResult, col_exact, dst_id_col,
