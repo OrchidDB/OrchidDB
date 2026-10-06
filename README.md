@@ -723,7 +723,19 @@ Choose an unused extension version and run:
 make -f scripts/release/Makefile release VERSION=0.1.0
 ```
 
-This checks publication prerequisites, builds the optimized extension for the
+With the workspace Makefile at `~/orchiddb/Makefile` and the repository at
+`~/orchiddb/orchiddb`, the equivalent command is:
+
+```sh
+make -C ~/orchiddb release VERSION=0.1.0
+```
+
+That entry point changes into the repository before invoking its release targets.
+`make -C ~/orchiddb release-plan VERSION=0.1.0` previews the commands without
+building or publishing. The workspace also forwards `build`, `test`, `package`,
+`release-check`, and `publish`.
+
+The release target checks publication prerequisites, builds the optimized extension for the
 current host, runs the compiler and extension tests (including Iceberg/Lance),
 packages that binary, and publishes a GitHub release tagged `extension-v0.1.0`.
 The stages run sequentially even with `make -j`; a build or test failure stops
