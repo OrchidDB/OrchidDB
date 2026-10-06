@@ -87,6 +87,17 @@ fn prop(side: &str, name: &str) -> String {
     )
 }
 impl GraphMapping {
+    /// Validate every computed source with the existing relational planner.
+    /// Hosts use this at definition time without scanning or executing sources.
+    pub fn validate_computed_relationships(&self) -> RelResult<()> {
+        for edge in self.edges.values() {
+            if let MappedSource::Computed(rule) = &edge.source {
+                plan(self, rule)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Custom functions carry native execution and optional SQL implementations.
     pub fn register_logical_function(
         &mut self,

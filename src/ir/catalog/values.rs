@@ -96,6 +96,12 @@ pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) 
             }
             value
         }),
+        // Source properties may be vectors or token matrices even though keys
+        // cannot be collections. Preserve the Arrow value and its nested type
+        // so updating another property never replaces it with NULL.
+        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) =>
+            datafusion::common::ScalarValue::try_from_array(array, row)
+                .map(Value::Scalar).unwrap_or(Value::Null),
         kind if crate::ir::rel::mapping::is_identity_type(kind) => datafusion::common::ScalarValue::try_from_array(array,row).map(Value::Scalar).unwrap_or(Value::Null),
         _ => Value::Null,
     }

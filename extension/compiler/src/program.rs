@@ -78,12 +78,17 @@ impl Program {
         let prepared = Arc::new(orchiddb::compiler::prepare_graph(&request)?);
         orchiddb::ir::jvm::validate_computer_plan(&prepared.plan.root)?;
         let computer = orchiddb::ir::jvm::contains_computer(&prepared.plan.root);
+        let mutating = !computer && orchiddb::ir::exec::contains_mutation(&prepared.plan.root);
+        // Computed-edge writes must retain source-backed element identities and
+        // use the shared catalog's read-only enforcement. Partial SQL islands
+        // do not preserve that contract across mutation operators.
+        let computed_mutation = mutating && !request.computed_relationships.is_empty();
         let logical = with_operator_table(prepared.operators.clone(), || {
             compile_for_host(
                 &prepared.plan,
                 &prepared.graph,
                 CompileOptions {
-                    sql_islands: prepared.managed_table.is_none(),
+                    sql_islands: prepared.managed_table.is_none() && !computed_mutation,
                     ..Default::default()
                 },
             )
@@ -101,7 +106,6 @@ impl Program {
             Node::GraphAsk { field, .. } => (vec![field.clone()], ResultForm::Boolean),
             _ => (vec![], ResultForm::RowSet),
         };
-        let mutating = !computer && orchiddb::ir::exec::contains_mutation(&prepared.plan.root);
         let policy = prepared.plan.policy.clone();
         let prepared = Arc::new(prepared.bindings());
         Ok(Self {

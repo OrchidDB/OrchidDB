@@ -40,6 +40,7 @@ In the DuckDB shell opened above, run these against a fresh database:
 .read examples/01_social.sql
 .read examples/02_managed.sql
 .read examples/03_sparql.sql
+.read examples/05_rag.sql
 ```
 
 | Example | What it demonstrates |
@@ -48,9 +49,11 @@ In the DuckDB shell opened above, run these against a fresh database:
 | [02_managed.sql](examples/02_managed.sql) | Managed graph creation, mutations, transactions, typed results |
 | [03_sparql.sql](examples/03_sparql.sql) | Existing RDF mappings and SPARQL through DuckDB |
 | [04_iceberg_lance.sql](examples/04_iceberg_lance.sql) | Graph queries across existing Iceberg and Lance sources; replace the example paths first |
+| [05_rag.sql](examples/05_rag.sql) | Computed RAG edge: tenant filtering, BM25 candidates, MaxSim reranking, and traversal to authors |
 
-The first three create their own local data; SPARQL uses the `people` table from
-the first example. The storage example expects existing external datasets.
+The local examples create their own data; SPARQL uses the `people` table from
+the first example. The RAG example is self-contained. The storage example expects
+existing external datasets.
 
 ## Define a graph over tables
 
@@ -267,8 +270,98 @@ external binding can fetch metadata. This is not a distributed storage snapshot.
 Expose an existing `lance_vector_search(...)` invocation through a view to map
 indexed search candidates as graph vertices. Lance retains index and scoring
 execution. Integration tests create a real IVF_FLAT index and join its results
-with Iceberg relationships. Dynamic per-row search and computed relationship DDL
-are not yet exposed; the existing search planner needs a DDL adapter.
+with Iceberg relationships. Computed relationships can also rank candidates per source using the DDL below.
+That declaration currently uses relational scoring over mapped sources; it does not
+automatically register Lance search-index bindings. A mapped Lance search view
+continues to use the index selected by its DuckDB search function.
+
+## Computed RAG edges
+
+A computed edge defines a relationship from expressions and ranking rules instead
+of an edge table. Its endpoints are existing vertex labels. The shared compiler
+constructs the joins, eligibility filters, scoring, and per-source ranking.
+
+[The complete RAG example](examples/05_rag.sql) creates questions, documents,
+authors, and stored `WRITTEN_BY` relationships, then declares this graph:
+
+```sql
+CREATE PROPERTY GRAPH rag
+VERTEX TABLES (
+    questions KEY (id) LABEL Question PROPERTIES (id, tenant_id, text, tokens),
+    documents KEY (id) LABEL Document PROPERTIES (id, tenant_id, title, body, tokens),
+    authors KEY (id) LABEL Author PROPERTIES (name)
+)
+EDGE TABLES (
+    written_by KEY (id)
+        SOURCE KEY (document_id) REFERENCES documents (id)
+        DESTINATION KEY (author_id) REFERENCES authors (id)
+        LABEL WRITTEN_BY
+)
+COMPUTED EDGES (
+    RELEVANT_TO SOURCE Question DESTINATION Document
+        CANDIDATES (
+            WHERE (source.tenant_id = target.tenant_id)
+            PROPERTIES (text.bm25(source.text, target.body) AS lexical)
+            ORDER BY (lexical DESC)
+            LIMIT PER SOURCE 2
+        )
+        PROPERTIES (vector.maxsim(source.tokens, target.tokens) AS score)
+        ORDER BY (score DESC)
+        LIMIT PER SOURCE 1
+);
+
+```
+
+For each question, this takes the two highest BM25 candidates from the same tenant,
+then reranks those candidates with MaxSim and retains one document. Candidate
+properties such as `lexical` remain available on the final edge.
+
+```sql
+CYPHER rag
+MATCH (q:Question)-[r:RELEVANT_TO]->(d:Document)-[:WRITTEN_BY]->(a:Author)
+WHERE q.id = 1
+RETURN d.title AS title, a.name AS author, r.score AS score;
+-- Detailed guide | Bob | 2.0
+
+GREMLIN rag g.V().has('Question', 'id', 1).out('RELEVANT_TO').values('title');
+-- Detailed guide
+```
+
+The fixture intentionally includes a higher-MaxSim document outside the BM25
+candidate set and another tenant's document. Neither can displace the eligible
+candidate. Questions and token vectors are supplied by the application; the edge
+retrieves context without loading an embedding model or invoking an LLM.
+
+Computed-edge declarations follow `VERTEX TABLES` and optional `EDGE TABLES`:
+
+- `SOURCE` and `DESTINATION` refer to vertex **labels**. Expressions use mapped
+  graph properties through `source.property` and `target.property`.
+- `WHERE (predicate)` filters eligible pairs. Place tenant/access filters in the
+  `CANDIDATES` stage to apply them before candidate selection.
+- `PROPERTIES (expression AS name, ...)` defines edge properties. Existing scalar
+  expressions and immutable functions are reused. Candidate and final property
+  names must be distinct.
+- `ORDER BY (expression DESC, ...)` supports ASC/DESC and NULLS FIRST/LAST.
+  `LIMIT PER SOURCE n` requires ordering; zero produces no edges. Candidate stages
+  require a per-source limit. Omit `CANDIDATES` for single-stage scoring.
+- Optional `RETRIEVAL EXACT` or `RETRIEVAL APPROXIMATE_ALLOWED` selects the existing
+  retrieval policy; the default is `APPROXIMATE_ALLOWED`. An index still requires
+  a supported source/index binding. Native declarations currently use table scans.
+
+Functions include `text.bm25`, `vector.cosine_similarity`, `vector.dot`,
+`vector.l2_distance`, and `vector.maxsim`. BM25's portable scorer uses the mapped
+target corpus before pair filtering. MaxSim sums each query token's best document
+token inner product; supply normalized token vectors when cosine scoring is wanted.
+
+Computed edges are read-only and evaluated from current source data. Their identity
+comes from both endpoint keys, including composite keys. Exact ranking breaks ties
+by destination key. Reverse traversal reads the same directed edges, and filtering
+a result after ranking does not refill the source's top-k. Definitions persist,
+participate in DDL transactions, and are revalidated against source schemas.
+
+The same declaration works over DuckDB tables/views, Lance documents, and Iceberg
+stored relationships. Integration checks cover the two-stage RAG query across
+actual Lance and Iceberg sources.
 
 ## SPARQL and advanced mappings
 

@@ -1,3 +1,4 @@
+use orchiddb::ir::rel::mapping::{ComputedRelationship, RelationshipStage, RelationshipOrder, SortDirection, NullOrder, RetrievalMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -134,6 +135,7 @@ fn tokens(sql: &str) -> Result<Vec<Token>, String> {
 }
 
 struct Parser<'a> {
+    sql: &'a str,
     tokens: &'a [Token],
     pos: usize,
 }
@@ -308,6 +310,129 @@ impl Parser<'_> {
         self.expect(")")?;
         Ok(out)
     }
+    // Only separate DDL clauses here. Expression parsing, type checking, ranking,
+    // function semantics and candidate planning remain in the shared compiler.
+    fn expression_items(&mut self) -> Result<Vec<Vec<Token>>, String> {
+        self.expect("(")?;
+        let mut items = vec![];
+        let mut start = self.pos;
+        let mut nesting = 0;
+        loop {
+            let t = self.tokens.get(self.pos).ok_or("unterminated expression list")?;
+            if t.kind == 'p' {
+                if nesting == 0 && (t.value == "," || t.value == ")") {
+                    if self.pos == start { return Err("expected expression".into()); }
+                    items.push(self.tokens[start..self.pos].to_vec());
+                    self.pos += 1;
+                    if t.value == ")" { return Ok(items); }
+                    start = self.pos;
+                    continue;
+                }
+                match t.value.as_str() {
+                    "(" | "[" | "{" => nesting += 1,
+                    ")" | "]" | "}" => nesting -= 1,
+                    _ => (),
+                }
+                if nesting < 0 { return Err("unbalanced expression".into()); }
+            }
+            self.pos += 1;
+        }
+    }
+    fn expression_text(&self, tokens: &[Token]) -> Result<String, String> {
+        let first = tokens.first().ok_or("expected expression")?;
+        Ok(self.sql[first.start..tokens.last().unwrap().end].to_string())
+    }
+    fn computed_stage(&mut self, rule: &mut ComputedRelationship, candidate: bool) -> Result<(), String> {
+        let mut seen = BTreeSet::new();
+        loop {
+            let clause = self.tokens.get(self.pos)
+                .filter(|t| t.kind == 'w').map(|t| t.value.to_ascii_uppercase()).unwrap_or_default();
+            if !["WHERE", "PROPERTIES", "ORDER", "LIMIT", "RETRIEVAL", "CANDIDATES"].contains(&clause.as_str()) { break; }
+            if !seen.insert(clause.clone()) { return Err(format!("duplicate computed-edge {clause} clause")); }
+            self.pos += 1;
+            match clause.as_str() {
+                "WHERE" => {
+                    let expressions = self.expression_items()?;
+                    if expressions.len() != 1 { return Err("WHERE requires one parenthesized predicate".into()); }
+                    rule.predicate = Some(self.expression_text(&expressions[0])?);
+                }
+                "PROPERTIES" => {
+                    for item in self.expression_items()? {
+                        let alias = item.iter().rposition(|t| t.kind == 'w' && t.value.eq_ignore_ascii_case("AS"))
+                            .ok_or("computed properties require expression AS name")?;
+                        if alias + 2 != item.len() || !matches!(item[alias + 1].kind, 'w' | 'i') {
+                            return Err("computed properties require expression AS name".into());
+                        }
+                        let name = item[alias + 1].value.clone();
+                        if rule.properties.insert(name.clone(), self.expression_text(&item[..alias])?).is_some() {
+                            return Err(format!("duplicate computed property {name}"));
+                        }
+                    }
+                }
+                "ORDER" => {
+                    self.expect("BY")?;
+                    for mut item in self.expression_items()? {
+                        let keyword = |t: &Token, word: &str| t.kind == 'w' && t.value.eq_ignore_ascii_case(word);
+                        let mut nulls = NullOrder::Last;
+                        if item.len() >= 2 && keyword(&item[item.len()-2], "NULLS") {
+                            nulls = if keyword(item.last().unwrap(), "FIRST") { NullOrder::First }
+                                else if keyword(item.last().unwrap(), "LAST") { NullOrder::Last }
+                                else { return Err("expected NULLS FIRST or LAST".into()); };
+                            item.truncate(item.len()-2);
+                        }
+                        let mut direction = SortDirection::Asc;
+                        if item.last().is_some_and(|t| keyword(t,"ASC") || keyword(t,"DESC")) {
+                            if keyword(item.last().unwrap(), "DESC") { direction = SortDirection::Desc; }
+                            item.pop();
+                        }
+                        rule.order_by.push(RelationshipOrder { expression: self.expression_text(&item)?, direction, nulls });
+                    }
+                }
+                "LIMIT" => {
+                    self.expect("PER")?;
+                    self.expect("SOURCE")?;
+                    let token = self.tokens.get(self.pos).ok_or("expected nonnegative per-source limit")?;
+                    if token.kind != 'p' { return Err("expected nonnegative per-source limit".into()); }
+                    rule.limit_per_source = Some(token.value.parse::<u64>().map_err(|_| "expected nonnegative per-source limit")?);
+                    self.pos += 1;
+                }
+                "RETRIEVAL" if !candidate => {
+                    rule.retrieval = if self.take("EXACT") { RetrievalMode::Exact }
+                        else if self.take("APPROXIMATE_ALLOWED") { RetrievalMode::ApproximateAllowed }
+                        else { return Err("expected EXACT or APPROXIMATE_ALLOWED".into()); };
+                }
+                "CANDIDATES" if !candidate => {
+                    self.expect("(")?;
+                    let mut stage = rule.clone();
+                    stage.predicate = None; stage.properties.clear(); stage.order_by.clear(); stage.limit_per_source = None;
+                    self.computed_stage(&mut stage, true)?;
+                    self.expect(")")?;
+                    rule.candidates = Some(RelationshipStage { predicate: stage.predicate, properties: stage.properties,
+                        order_by: stage.order_by, limit_per_source: stage.limit_per_source.ok_or("CANDIDATES requires LIMIT PER SOURCE")? });
+                }
+                _ => return Err(format!("{clause} is not valid inside CANDIDATES")),
+            }
+        }
+        Ok(())
+    }
+    fn computed_edges(&mut self) -> Result<Vec<ComputedRelationship>, String> {
+        self.expect("(")?;
+        let mut rules = vec![];
+        loop {
+            let name = self.name()?;
+            self.expect("SOURCE")?;
+            let source = self.name()?;
+            self.expect("DESTINATION")?;
+            let target = self.name()?;
+            let mut rule = ComputedRelationship { name, source, target, predicate: None, properties: BTreeMap::new(),
+                order_by: vec![], limit_per_source: None, retrieval: RetrievalMode::default(), candidates: None };
+            self.computed_stage(&mut rule, false)?;
+            rules.push(rule);
+            if !self.take(",") { break; }
+        }
+        self.expect(")")?;
+        Ok(rules)
+    }
     fn end(&self) -> Result<(), String> {
         if self.pos == self.tokens.len() {
             Ok(())
@@ -328,6 +453,8 @@ pub struct Graph {
     pub managed_table: Option<String>,
     pub vertices: Vec<Element>,
     pub edges: Vec<Element>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub computed_relationships: Vec<ComputedRelationship>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Element {
@@ -457,7 +584,7 @@ impl Graph {
 }
 
 fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> {
-    let mut p = Parser { tokens: ts, pos: 0 };
+    let mut p = Parser { sql, tokens: ts, pos: 0 };
     let explain = p.take("EXPLAIN");
     let analyze = explain && p.take("ANALYZE");
     let language = if p.take("CYPHER") {
@@ -557,6 +684,10 @@ fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> 
         } else {
             vec![]
         };
+        let computed_relationships = if p.take("COMPUTED") {
+            p.expect("EDGES")?;
+            p.computed_edges()?
+        } else { vec![] };
         p.end()?;
         let graph = Graph {
             version: 1,
@@ -564,6 +695,7 @@ fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> 
             managed_table: None,
             vertices,
             edges,
+            computed_relationships,
         };
         return Ok(Some(format!(
             "CREATE {}VIEW {}{} AS SELECT * FROM orchid_graph_definition({})",

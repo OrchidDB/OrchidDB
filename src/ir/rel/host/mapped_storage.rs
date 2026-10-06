@@ -275,6 +275,9 @@ pub(crate) fn value_scalar(value: &Value) -> Result<ScalarValue, String> {
         return Ok(ScalarValue::Null);
     }
     match value {
+        // Property values can contain lists/arrays; ElementId validation is
+        // intentionally stricter and must not reject preserved source values.
+        Value::Scalar(value) => Ok(value.clone()),
         Value::BigDecimal(v) => Ok(ScalarValue::Utf8(Some(v.to_string()))),
         Value::BigInt(v) | Value::UInt128(v) => Ok(ScalarValue::Utf8(Some(v.to_string()))),
         _ => ElementId::try_from(value).map(|id| id.scalar().clone()),

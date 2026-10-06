@@ -608,6 +608,15 @@ unique_ptr<TableRef> InfoBind(ClientContext &context, TableFunctionBindInput &in
                    Literal(e.at("from").dump()) + " AS source_endpoint, " + Literal(e.at("to").dump()) + " AS destination_endpoint";
         }
     }
+    if (graph.definition.contains("computed_relationships")) {
+        for (const auto &e : graph.definition.at("computed_relationships")) {
+            if (!sql.empty()) { sql += " UNION ALL "; }
+            sql += "SELECT 'computed_edges' AS kind, " + Literal(e.at("name").get<string>()) +
+                   " AS label, NULL::VARCHAR AS source, NULL::VARCHAR AS key_columns, " +
+                   Literal(e.at("source").get<string>()) + " AS source_endpoint, " +
+                   Literal(e.at("target").get<string>()) + " AS destination_endpoint";
+        }
+    }
     return Subquery(context, sql);
 }
 

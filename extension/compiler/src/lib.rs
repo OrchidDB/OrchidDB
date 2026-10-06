@@ -94,15 +94,23 @@ fn request(input: Value) -> Result<Value, String> {
                     "query":input["query"],"parameters":input.get("parameters").cloned().unwrap_or(json!({})),"tables":[],"managed_table":table}),false);
             }
             let (nodes, edges) = graph.mappings(tables)?;
+            let request = json!({
+                "version": 1, "dialect": "duckdb", "language": input.get("language").cloned().unwrap_or(json!("cypher")),
+                "query": input.get("query").cloned().unwrap_or(json!("RETURN 1")),
+                "parameters": input.get("parameters").cloned().unwrap_or(json!({})),
+                "tables": tables, "nodes": nodes, "edges": edges,
+                "computed_relationships": graph.computed_relationships
+            });
             if input["op"] == "validate" {
+                if !graph.computed_relationships.is_empty() {
+                    let request = serde_json::from_value(request).map_err(|e| e.to_string())?;
+                    let prepared = orchiddb::compiler::prepare_graph(&request)?;
+                    orchiddb::ir::functions::with_operator_table(prepared.operators, ||
+                        prepared.mapping.validate_computed_relationships()).map_err(|e| e.to_string())?;
+                }
                 return Ok(json!({"valid": true}));
             }
-            let query = input["query"].as_str().ok_or("missing Cypher query")?;
-            compile(json!({
-                "version": 1, "dialect": "duckdb", "language": input.get("language").cloned().unwrap_or(json!("cypher")), "query": query,
-                "parameters": input.get("parameters").cloned().unwrap_or(json!({})),
-                "tables": tables, "nodes": nodes, "edges": edges
-            }), false)
+            compile(request, false)
         }
         _ => Err("unknown Orchid extension bridge operation".into()),
     }
