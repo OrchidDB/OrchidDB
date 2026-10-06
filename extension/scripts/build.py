@@ -113,9 +113,7 @@ def main():
     if system == "osx":
         link += ["-dynamiclib", "-undefined", "dynamic_lookup", "-Wl,-exported_symbol,_orchid_duckdb_cpp_init"]
     else:
-        # Recent Zig versions reject GNU's comma-form --exclude-libs in -Wl;
-        # forward each linker argument directly.
-        link += ["-shared", "-Xlinker", "--exclude-libs", "-Xlinker", "ALL"]
+        link += ["-shared"]
     link += [obj, archive, "-o", binary]
     if system == "osx":
         link += ["-framework", "Security", "-framework", "CoreFoundation", "-liconv", "-lresolv"]
