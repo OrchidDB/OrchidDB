@@ -20,6 +20,14 @@
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/function/pragma_function.hpp"
+#include "duckdb/catalog/catalog_entry/scalar_macro_catalog_entry.hpp"
+#include "duckdb/function/scalar_macro_function.hpp"
+#include "duckdb/parser/parsed_expression_iterator.hpp"
+#include "duckdb/parser/expression/subquery_expression.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
+#include "duckdb/main/secret/secret_storage.hpp"
+#include <map>
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/execution/executor.hpp"
@@ -99,12 +107,15 @@ string Path(const Json &parts) {
     return out;
 }
 
+void ValidateProtectedFunctions(ClientContext &, SelectStatement &);
+
 unique_ptr<SelectStatement> Select(ClientContext &context, const string &sql) {
     Parser parser(context.GetParserOptions());
     parser.ParseQuery(sql);
     if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
         throw BinderException("Orchid expected one read-only SQL query");
     }
+    ValidateProtectedFunctions(context,parser.statements[0]->Cast<SelectStatement>());
     return unique_ptr_cast<SQLStatement, SelectStatement>(std::move(parser.statements[0]));
 }
 unique_ptr<TableRef> Subquery(ClientContext &context, const string &sql) {
@@ -188,6 +199,12 @@ BoundGraph BindGraph(ClientContext &context, Json definition, const string &cata
                     return false;
                 };
                 needed = needed || includes(element.at("key"));
+                if (graph.definition.contains("authorization") && !graph.definition.at("authorization").is_null()) {
+                    for (const auto &rule : graph.definition.at("authorization").at("vertices")) {
+                        if (rule.at("label")==element.at("label") && !rule.at("key").is_null() &&
+                            StringUtil::CIEquals(rule.at("key").get<string>(),bound.names[i])) {needed=true;}
+                    }
+                }
                 if (!element.at("properties").is_null()) { needed = needed || includes(element.at("properties")); }
                 for (auto endpoint : {"from", "to"}) {
                     if (!element.at(endpoint).is_null()) { needed = needed || includes(element.at(endpoint).at("columns")); }
@@ -237,6 +254,8 @@ unique_ptr<TableRef> DefinitionBind(ClientContext &context, TableFunctionBindInp
     return Subquery(context, "SELECT " + Literal(definition.dump()) + " AS definition");
 }
 
+#include "authorization.hpp"
+
 Json Parameter(const Value &value, bool native = false) {
     if (value.IsNull()) { return nullptr; }
     if (native && (value.type().id()==LogicalTypeId::TINYINT || value.type().id()==LogicalTypeId::SMALLINT || value.type().id()==LogicalTypeId::INTEGER || value.type().id()==LogicalTypeId::BIGINT || value.type().id()==LogicalTypeId::HUGEINT || value.type().id()==LogicalTypeId::FLOAT || value.type().id()==LogicalTypeId::DOUBLE)) {
@@ -283,6 +302,7 @@ Json Parameter(const Value &value, bool native = false) {
 // Execute generated program stages using DuckDB's planner and pipeline executor
 // in the caller's transaction. No Connection or independent transaction is made.
 unique_ptr<QueryResult> HostExecute(ClientContext &context, unique_ptr<SQLStatement> statement, const vector<Value> &params, unique_ptr<PreparedStatementData> *cached=nullptr) {
+    if (statement->type==StatementType::SELECT_STATEMENT) {ValidateProtectedFunctions(context,statement->Cast<SelectStatement>());}
     auto statement_type = statement->type;
     auto &client = ClientData::Get(context);
     struct ProfilerGuard {
@@ -370,6 +390,15 @@ char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
             auto statement=Select(context,request.at("sql").get<string>());
             auto binder=Binder::CreateBinder(context);
             auto bound=binder->Bind(static_cast<SQLStatement &>(*statement));
+            if (Authorization(context)->protected_depth) {
+                std::function<void(LogicalOperator &)> validate = [&](LogicalOperator &op) {
+                    if (op.type!=LogicalOperatorType::LOGICAL_PROJECTION && op.type!=LogicalOperatorType::LOGICAL_DUMMY_SCAN && op.type!=LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
+                        throw BinderException("Functions in protected graphs cannot read additional relations");
+                    }
+                    for(auto &child:op.children){validate(*child);}
+                };
+                validate(*bound.plan);
+            }
             if (bound.types.size()!=1) {throw BinderException("Function binding expected one output");}
             auto properties=context.GetClientProperties();
             ArrowConverter::ToArrowSchema(schema,bound.types,bound.names,properties);
@@ -459,6 +488,8 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
     // mappings or parameter-specialized SQL.
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
     auto graph = LoadGraph(context, input.inputs[0].GetValue<string>());
+    RequireAuthorization(context,graph.definition);
+    ProtectedBinding protection(context,graph.definition.contains("authorization"));
     auto parameters = Json::object();
     auto found = input.named_parameters.find("parameters");
     if (found != input.named_parameters.end()) {
@@ -469,6 +500,7 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
     }
     auto compiled = Bridge(context, {{"op", "compile"}, {"graph", graph.definition}, {"tables", graph.tables},
                             {"query", input.inputs[1].GetValue<string>()}, {"parameters", parameters}, {"language", language}});
+    if (compiled.contains("program_request")) {Authorization(context)->authorized_programs.insert(compiled.at("program_request").dump());}
     return Subquery(context, compiled.at("sql").get<string>());
 }
 
@@ -484,6 +516,10 @@ unique_ptr<TableRef> GremlinBind(ClientContext &context, TableFunctionBindInput 
 Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
     auto request = Json::parse(input.inputs[0].GetValue<string>());
+    auto auth=Authorization(context);
+    if (!auth->subject.empty() && !(input.table_function.name=="orchid_program" && auth->authorized_programs.count(request.dump()))) {
+        throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled");
+    }
     if (request.value("dialect", "duckdb") != "duckdb" ||
         !request.value("engines", Json::object()).empty() || !request.value("execution_engine", Json()).is_null()) {
         throw BinderException("Orchid extension queries must execute in the host DuckDB");
@@ -670,7 +706,8 @@ ParserOverrideResult Rewrite(ParserExtensionInfo *, const string &query, ParserO
     if (rewriting) { return ParserOverrideResult(); }
     auto upper = StringUtil::Upper(query);
     if (!StringUtil::Contains(upper, "CYPHER") && !StringUtil::Contains(upper, "GREMLIN") &&
-        !(StringUtil::Contains(upper, "PROPERTY") && StringUtil::Contains(upper, "GRAPH"))) {
+        !(StringUtil::Contains(upper, "PROPERTY") && StringUtil::Contains(upper, "GRAPH")) &&
+        !(StringUtil::Contains(upper,"GRAPH") && StringUtil::Contains(upper,"AUTHORIZATION"))) {
         return ParserOverrideResult();
     }
     struct Guard { Guard() { rewriting = true; } ~Guard() { rewriting = false; } } guard;
@@ -687,6 +724,7 @@ ParserOverrideResult Rewrite(ParserExtensionInfo *, const string &query, ParserO
 } // namespace
 
 void LoadOrchid(ExtensionLoader &loader) {
+    RegisterAuthorization(loader);
     for (auto operation : {"create","reset","snapshot","import"}) {
         vector<LogicalType> arguments={LogicalType::VARCHAR};
         if (string(operation)=="import") {arguments.push_back(LogicalType::VARCHAR);}

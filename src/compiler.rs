@@ -238,6 +238,8 @@ fn default_subject_id_column() -> String {
 #[serde(deny_unknown_fields)]
 pub struct Edge {
     #[serde(default)]
+    pub source_query: Option<String>,
+    #[serde(default)]
     pub foreign_key: Option<ForeignKeyEndpoint>,
     pub label: String,
     pub table: String,
@@ -800,9 +802,10 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
                 check(&edge.table, column, true)?;
             }
         }
-        let mut e = EdgeMapping::table(
+        let constructor = if edge.source_query.is_some() { EdgeMapping::query } else { EdgeMapping::table };
+        let mut e = constructor(
             &edge.label,
-            &edge.table,
+            edge.source_query.as_ref().unwrap_or(&edge.table),
             &edge.source,
             &edge.target,
             &edge.source_label,

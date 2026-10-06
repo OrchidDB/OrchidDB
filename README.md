@@ -50,6 +50,7 @@ In the DuckDB shell opened above, run these against a fresh database:
 | [03_sparql.sql](examples/03_sparql.sql) | Existing RDF mappings and SPARQL through DuckDB |
 | [04_iceberg_lance.sql](examples/04_iceberg_lance.sql) | Graph queries across existing Iceberg and Lance sources; replace the example paths first |
 | [05_rag.sql](examples/05_rag.sql) | Computed RAG edge: tenant filtering, BM25 candidates, MaxSim reranking, and traversal to authors |
+| [06_authorization.sql](examples/06_authorization.sql) | Optional SpiceDB channel permissions, implicit session identity, chunks, and computed edges |
 
 The local examples create their own data; SPARQL uses the `people` table from
 the first example. The RAG example is self-contained. The storage example expects
@@ -136,6 +137,134 @@ WHERE p.age > 35;
 
 Nested unquoted `(CYPHER ...)` SQL subqueries are not implemented. The table
 functions bind DuckDB relational plans and existing graph kernel operators.
+
+## Optional row authorization with SpiceDB
+
+Orchid can filter mapped graph rows using SpiceDB permissions. The trusted
+embedding application authenticates the caller and supplies a connection-local
+subject. Queries inherit that identity automatically. No MCP server or federation
+service is required or included.
+
+Configure a DuckDB secret for SpiceDB's **HTTP gateway** (not its gRPC port):
+
+```sql
+CREATE SECRET company_auth (
+    TYPE SPICEDB,
+    ENDPOINT 'https://permissions.example.com',
+    TOKEN 'replace-with-service-token'
+);
+```
+
+HTTPS verifies certificates; plain HTTP is accepted only on loopback for local
+testing. Tokens are redacted by DuckDB's secret manager. Secrets are temporary by
+DuckDB's default; use its `CREATE PERSISTENT SECRET` explicitly if desired.
+
+Add a policy to an existing mapped graph, or append the same `AUTHORIZATION`
+block to `CREATE PROPERTY GRAPH`, after any computed edges:
+
+```sql
+ALTER PROPERTY GRAPH slack SET AUTHORIZATION (
+    PROVIDER company_auth, DEFAULT DENY,
+    VERTEX Message RESOURCE channel KEY(channel_id) REQUIRE view,
+    VERTEX Chunk RESOURCE channel KEY(channel_id) REQUIRE view
+);
+
+SET GRAPH AUTHORIZATION (SUBJECT_TYPE 'user', SUBJECT_ID 'alice');
+CYPHER slack MATCH (m:Message) RETURN m.body;
+GREMLIN slack g.V().hasLabel('Message').values('body');
+RESET GRAPH AUTHORIZATION;
+```
+
+A message with `channel_id = 'engineering'` requires `view` on SpiceDB object
+`channel:engineering`. All messages and chunks in that channel share its decision;
+there is no extra authorization-ID column or per-message grant required. Resource
+keys must be string/integer columns containing the canonical SpiceDB object ID.
+Use workspace-qualified IDs when IDs are not globally unique. Authorization key
+columns need not be exposed as graph properties.
+
+SpiceDB owns user/team membership and grant semantics. For example:
+
+```zed
+definition user {}
+definition team {
+    relation member: user
+}
+definition channel {
+    relation viewer: user | team#member
+    permission view = viewer
+}
+```
+
+With these relationships, Alice sees engineering messages and Bob sees private
+messages:
+
+```text
+team:engineering#member@user:alice
+channel:engineering#viewer@team:engineering#member
+channel:private#viewer@user:bob
+```
+
+Your existing application/ingestion process maintains those relationships in
+SpiceDB. Orchid reads permissions; it does not synchronize source ACLs or change
+SpiceDB's schema. [06_authorization.sql](examples/06_authorization.sql) exercises
+this model, including chunks and computed edges. Its local configuration expects
+SpiceDB's HTTP gateway at `127.0.0.1:8448` with token `orchid-local-test` and the
+schema/relationships above.
+
+For parameter binding, the trusted host can use:
+
+```sql
+CALL orchid_set_authorization($context);
+```
+
+`$context` is a JSON string such as
+`{"subject_type":"user","subject_id":"alice","context":{"region":"us"}}`.
+The optional `context` object supplies SpiceDB caveat inputs. An optional
+`at_least_as_fresh` string supplies a ZedToken. The native statement supports the
+same options as string literals:
+
+```sql
+SET GRAPH AUTHORIZATION (
+    SUBJECT_TYPE 'user', SUBJECT_ID 'alice', CONTEXT '{"region":"us"}'
+);
+```
+
+Identity is connection-local, is not persisted, and is not rolled back by a data
+transaction. Clear it before returning a connection to a pool. Prepared graph
+queries rebind and use the current identity and policy. Permission decisions are
+batched and deduplicated within one statement, with no cache across statements.
+The first check requests fully consistent permissions (or the supplied freshness
+bound); subsequent checks use the same SpiceDB revision. This does not create a
+shared transaction across SpiceDB, DuckDB, and external storage.
+
+Unlisted vertex labels are denied; use `VERTEX SomeLabel PUBLIC` to expose one
+explicitly. Stored edges require both endpoints to be visible, including standalone
+edge scans. Computed edges filter before candidate limits and reranking, and BM25
+uses the authorized target corpus. Missing identity/secret, permission-service
+errors, and unresolved caveat context fail the query. NULL/empty resource keys are
+denied. Protected graphs are read-only.
+
+Authorization currently applies to mapped property graphs through native Cypher
+and Gremlin. Authorized sessions reject advanced caller-supplied mappings and
+SPARQL/update entry points; managed graphs do not support these policies. This
+preserves the existing SPARQL functionality without inventing a new RDF policy
+model. Scalar macros remain usable, but macros containing subqueries (including
+transitive calls) are rejected in authorized execution.
+
+The embedding application controls identity, graph definitions, secrets, and
+installed functions/extensions. Arbitrary host SQL remains trusted and can read
+base tables; this feature is not database-wide DuckDB SQL RLS or a sandbox for
+untrusted UDFs. Expose graph-query execution through the application's controlled
+interface rather than exposing administrative operations.
+
+SpiceDB support is enabled in the normal build and makes no network calls for
+unprotected graphs. To build without its HTTP client:
+
+```sh
+CARGO_TARGET_DIR="$PWD/target" cargo build --locked \
+  --manifest-path extension/compiler/Cargo.toml --no-default-features
+python3 extension/scripts/build.py --skip-rust
+```
 
 ## DuckDB functions
 
@@ -481,6 +610,19 @@ The integration suite includes actual Iceberg/Lance scans and indexed search,
 managed storage, native values, parameters, rollback, ordered effects, and
 cancellation. Storage integration was validated with Iceberg `890b78a9c` and Lance
 `2913169`. These checks are not a cross-platform or distributed transaction certification.
+
+To exercise authorization against a **real SpiceDB server**, supply an installed
+SpiceDB binary. The tests start and stop their own isolated memory-datastore server:
+
+```sh
+ORCHID_SPICEDB_BINARY=/absolute/path/to/spicedb ORCHID_EXTERNAL_TESTS=1 \
+  extension/vendor/test-env/bin/python -m unittest discover \
+  -s extension/tests -p test_authorization.py -v
+```
+
+Local authorization validation uses SpiceDB **1.56.2** and includes user/team
+channel grants, revocation, caveats, prepared statements, source-reading macro
+rejection, stored/computed edges, and actual Iceberg/Lance sources.
 
 To reproduce upstream reports, install the existing assertion dependencies
 (Java 21 and Maven required for Gremlin):

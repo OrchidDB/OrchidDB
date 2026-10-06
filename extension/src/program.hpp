@@ -504,6 +504,7 @@ unique_ptr<LogicalOperator> KernelBindOperator(ClientContext &context, TableFunc
 }
 unique_ptr<LogicalOperator> NativeProgramBind(ClientContext &context, TableFunctionBindInput &input, idx_t index, vector<string> &names) {
     auto request=BoundRequest(context,input);
+    ProtectedBinding protection(context,!Authorization(context)->subject.empty());
     auto compiled=ProgramJson(orchid_program_new(request.dump().c_str(), &context, CatalogQuery, UpdateHostFree));
     auto program=make_shared_ptr<NativeProgram>(reinterpret_cast<void *>(compiled.at("handle").get<uintptr_t>()),compiled.at("manifest"),true);
     if (input.binder) {

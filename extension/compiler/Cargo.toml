@@ -10,7 +10,12 @@ license = "GPL-3.0-only"
 [lib]
 crate-type = ["staticlib", "rlib"]
 
+[features]
+default = ["spicedb"]
+spicedb = ["dep:reqwest"]
+
 [dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 arrow = { version = "58.2.0", default-features = false, features = ["ffi"] }
 stacker = "0.1.24"
 orchiddb = { path = "../..", default-features = false }
