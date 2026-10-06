@@ -80,3 +80,13 @@ pub trait HostRelational: Debug {
     }
 }
 pub type SharedHost = Arc<dyn HostRelational + Send + Sync>;
+
+/// Reuse the graph value/Arrow codec for engine-function arguments.
+pub(crate) fn function_arguments(width: usize, rows: &[Vec<crate::ir::value::Value>]) -> Result<RecordBatch, String> {
+    if width == 0 {
+        return RecordBatch::try_new_with_options(Arc::new(arrow::datatypes::Schema::empty()), vec![],
+            &arrow::array::RecordBatchOptions::new().with_row_count(Some(rows.len()))).map_err(|e|e.to_string());
+    }
+    super::scans::values_batch(crate::ir::policy::Language::Cypher,
+        &(0..width).map(|i|format!("arg{i}")).collect::<Vec<_>>(), rows).map_err(|e|e.to_string())
+}

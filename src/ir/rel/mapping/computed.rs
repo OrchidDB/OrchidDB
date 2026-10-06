@@ -349,7 +349,7 @@ impl Expressions<'_> {
             if matches!(e,Expr::AggregateFunction(_)|Expr::WindowFunction(_)|Expr::ScalarSubquery(_)|Expr::Exists(_)|Expr::InSubquery(_)) {
                 return Err(DataFusionError::Plan("relationship expressions must be scalar; subqueries, aggregates, and windows are composed by OrchidDB".into()));
             }
-            if let Expr::ScalarFunction(f)=e { if f.func.signature().volatility!=Volatility::Immutable { return Err(DataFusionError::Plan("relationship expressions must be immutable".into())); } }
+            if let Expr::ScalarFunction(f)=e { if !crate::ir::functions::immutable_call(&f.func,&f.args,plan.schema())? { return Err(DataFusionError::Plan("relationship expressions must be immutable".into())); } }
             Ok(TreeNodeRecursion::Continue)
         })?;
         Ok(expression)
@@ -677,9 +677,7 @@ pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelRe
             expressions.corpora.insert(column, None);
             continue;
         }
-        let aggregate = function_catalog::aggregate()
-            .get("array_agg")
-            .unwrap()
+        let aggregate = datafusion::functions_aggregate::array_agg::array_agg_udaf()
             .call(vec![col_exact(&column)])
             .alias(&name);
         let corpus = LogicalPlanBuilder::from(target.clone())

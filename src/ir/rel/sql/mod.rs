@@ -16,8 +16,8 @@
 //!   generation; anything the unparser cannot express surfaces as a typed
 //!   [`SqlError::Unsupported`], never as wrong SQL.
 //! * [`SqlExecutor`] — the engine abstraction. [`DuckDbExecutor`] (feature
-//!   `duckdb`, explicitly enabled) runs everything in-memory; [`PostgresExecutor`]
-//!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
+//!   `duckdb`, explicitly enabled) runs local DuckDB validation. Production
+//!   queries use the caller-owned DuckDB extension host.
 
 #[cfg(feature = "duckdb")]
 pub mod language_functions;
@@ -80,7 +80,6 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
     };
     Ok(format!("CAST({literal} AS {target})"))
 }
-#[cfg(feature = "duckdb")]
 pub(crate) use functions::expression_sql;
 mod rows;
 use rows::*;
@@ -100,14 +99,12 @@ pub mod program;
 pub mod mutation;
 #[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
-#[cfg(feature = "postgres")]
-mod postgres_exec;
+
 mod recursive;
 
 #[cfg(feature = "duckdb")]
 pub use duckdb_exec::DuckDbExecutor;
-#[cfg(feature = "postgres")]
-pub use postgres_exec::PostgresExecutor;
+
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

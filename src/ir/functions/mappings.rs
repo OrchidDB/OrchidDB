@@ -229,6 +229,9 @@ impl OperatorTable for FunctionRegistry {
             .map(|m| m.overloads.as_slice())
             .unwrap_or_else(|| self.base.overloads(name))
     }
+    fn is_immutable(&self, name: &str, args: &[Expr], schema: &DFSchema) -> Result<bool> {
+        self.base.is_immutable(&self.target_name(name),args,schema)
+    }
     fn bind(
         &self,
         name: &str,

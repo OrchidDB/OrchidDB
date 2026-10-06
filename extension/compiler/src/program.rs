@@ -263,6 +263,8 @@ struct Execution {
 }
 struct Scope {
     _host: HostScope,
+    _functions: orchiddb::ir::functions::host_execution::Scope,
+    _catalog: crate::catalog::Scope,
     token: u64,
     previous: Option<Callback>,
     _thread: PhantomData<Rc<()>>,
@@ -274,6 +276,7 @@ impl Scope {
         query: Query,
         free: Free,
         nested: Nested,
+        catalog: crate::catalog::Query,
     ) -> Result<Self, QueryExecutionError> {
         let host = unsafe { services.host.activate(context, query, free) }?;
         let previous = ACTIVE.with_borrow_mut(|active| {
@@ -288,6 +291,8 @@ impl Scope {
         });
         Ok(Self {
             _host: host,
+            _functions: orchiddb::ir::functions::host_execution::enter(services.host.clone()),
+            _catalog: unsafe { crate::catalog::enter(context, catalog, free) },
             token: services.token,
             previous,
             _thread: PhantomData,
@@ -354,7 +359,7 @@ unsafe fn state<'a>(pointer: *mut c_void) -> Result<&'a mut KernelState, QueryEx
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn orchid_program_new(input: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn orchid_program_new(input: *const c_char, context: *mut c_void, catalog: crate::catalog::Query, free: Free) -> *mut c_char {
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<Value, QueryExecutionError> {
             if input.is_null() {
@@ -367,7 +372,7 @@ pub unsafe extern "C" fn orchid_program_new(input: *const c_char) -> *mut c_char
             )
             .map_err(QueryExecutionError::from_error)?;
             let program =
-                stacker::maybe_grow(128 * 1024, 64 * 1024 * 1024, || Program::new(request))?;
+                stacker::maybe_grow(128 * 1024, 64 * 1024 * 1024, || unsafe { crate::catalog::with_catalog(context, catalog, free, || Ok(Program::new(request))) })??;
             let mut metadata = program.metadata();
             metadata["handle"] = json!(Box::into_raw(Box::new(program)) as usize);
             Ok(metadata)
@@ -434,6 +439,7 @@ pub unsafe extern "C" fn orchid_program_state_new(
     query: Query,
     free: Free,
     nested: Nested,
+    catalog: crate::catalog::Query,
     statement_micros: i64,
     transaction_micros: i64,
     execution_output: *mut *mut c_void,
@@ -451,7 +457,7 @@ pub unsafe extern "C" fn orchid_program_state_new(
             policy: program.policy.clone(),
             programs: Default::default(),
         });
-        let _scope = unsafe { Scope::enter(&services, context, query, free, nested) }?;
+        let _scope = unsafe { Scope::enter(&services, context, query, free, nested, catalog) }?;
         let graph = program.prepared.execution_graph(services.host.clone())?;
         let state = KernelState::for_host(graph, services.clone());
         state.start_clocks(statement_micros, transaction_micros)?;
@@ -478,6 +484,7 @@ pub unsafe extern "C" fn orchid_program_scope_enter(
     query: Query,
     free: Free,
     nested: Nested,
+    catalog: crate::catalog::Query,
     output: *mut *mut c_void,
 ) -> *mut c_char {
     boundary(|| {
@@ -490,7 +497,7 @@ pub unsafe extern "C" fn orchid_program_scope_enter(
         if output.is_null() {
             return Err("Missing execution scope output".into());
         }
-        let scope = unsafe { Scope::enter(services, context, query, free, nested) }?;
+        let scope = unsafe { Scope::enter(services, context, query, free, nested, catalog) }?;
         unsafe {
             *output = Box::into_raw(Box::new(scope)).cast();
         }

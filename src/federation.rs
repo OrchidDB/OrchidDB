@@ -1464,53 +1464,7 @@ mod audit_regressions {
             assert_eq!(json_scalar(&encoded, &ty).unwrap(), value);
         }
     }
-    #[cfg(feature = "postgres")]
-    #[test]
-    fn postgres_nested_json_exchange_round_trips_document_and_sql_null() {
-        use crate::ir::{
-            functions::domain,
-            rel::sql::{
-                self,
-                region::{PostgresRegionSession, RegionSession},
-            },
-        };
-        let Ok(url) = std::env::var("GRAPH_PG_URL") else {
-            return;
-        };
-        let inner = ScalarValue::List(ScalarValue::new_list(
-            &[
-                domain::json_scalar("null").unwrap(),
-                ScalarValue::try_from(&domain::json_type()).unwrap(),
-                domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap(),
-            ],
-            &domain::json_type(),
-            true,
-        ));
-        let outer = ScalarValue::List(ScalarValue::new_list(
-            &[
-                inner.clone(),
-                ScalarValue::try_from(&inner.data_type()).unwrap(),
-            ],
-            &inner.data_type(),
-            true,
-        ));
-        let literal =
-            sql::exchange_literal(outer.clone(), outer.data_type(), sql::SqlDialect::Postgres)
-                .unwrap();
-        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new(
-            "value",
-            outer.data_type(),
-            true,
-        )]));
-        let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-        let output = PostgresRegionSession::new(client)
-            .query(&format!("SELECT {literal} AS value"), schema)
-            .unwrap();
-        assert_eq!(
-            ScalarValue::try_from_array(output.column(0), 0).unwrap(),
-            outer
-        );
-    }
+
     #[test]
     fn audit_large_binary_decodes_bytes() {
         for (input, expected) in [

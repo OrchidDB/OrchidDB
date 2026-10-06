@@ -143,8 +143,10 @@ impl GraphSource for Source {
         cache.records.clear();
         cache.neighbors.clear();
     }
-    fn function(&self, _name: &str, _args: &[Value]) -> Option<Result<Value, String>> {
-        None
+    fn function(&self, name: &str, args: &[Value]) -> Option<Result<Value, String>> {
+        let catalog=crate::ir::functions::selected_operator_table().ok()?;
+        if catalog.overloads(name).is_empty() { return None; }
+        Some(crate::ir::functions::host_execution::value(self.host.as_ref(), &catalog.target_name(name), args))
     }
     fn property_handle(&self, name: &str, id: &ElementId, key: &str) -> i64 {
         let mut cache = self.cache.lock().unwrap();

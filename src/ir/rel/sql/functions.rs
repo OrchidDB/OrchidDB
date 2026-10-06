@@ -3,21 +3,17 @@
 //! substrings: a function spelling inside data or an identifier is untouched.
 use std::ops::ControlFlow;
 
-#[cfg(feature = "duckdb")]
 use datafusion::common::DFSchema;
-#[cfg(feature = "duckdb")]
 use datafusion::logical_expr::Expr;
 use datafusion::sql::sqlparser::{ast, parser::Parser};
 #[cfg(test)]
 use datafusion::sql::sqlparser::dialect::DuckDbDialect;
-#[cfg(feature = "duckdb")]
 use datafusion::sql::unparser::Unparser;
 
 use super::{SqlDialect, SqlError, SqlResult};
 
 /// Render a scalar expression using the same rules as complete queries. The
 /// catalog binder uses this after replacing column references by typed NULLs.
-#[cfg(feature = "duckdb")]
 pub(crate) fn expression_sql(expr: &Expr, _schema: &DFSchema) -> SqlResult<String> {
     let dialect = SqlDialect::DuckDb.unparser_dialect();
     let encoded =
@@ -744,36 +740,6 @@ mod tests {
     fn postgres_preserves_reused_scalar_projection_boundary() {
         let sql = rewrite("SELECT x + x FROM (SELECT TRY_CAST(v AS DOUBLE) AS x FROM source) t", SqlDialect::Postgres);
         assert!(sql.contains("FROM source OFFSET 0"), "{sql}");
-    }
-
-    #[cfg(feature = "postgres")]
-    #[test]
-    fn postgres_lenient_casts_do_not_abort_on_numeric_overflow() {
-        let Ok(url) = std::env::var("GRAPH_PG_URL") else { return; };
-        let mut client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-        let huge = "9".repeat(200_000);
-        let padded = format!("{}1", "0".repeat(200_000));
-        for (ty, value, expected) in [
-            ("BIGINT", huge.as_str(), None),
-            ("BIGINT", padded.as_str(), Some("1")),
-            ("BIGINT", "9223372036854775808", None),
-            ("BIGINT", "-9223372036854775808", Some("-9223372036854775808")),
-            ("DECIMAL(5,2)", huge.as_str(), None),
-            ("DECIMAL(5,2)", "1e99999999999999999999", None),
-            ("DECIMAL(5,2)", "1e-99999999999999999999", Some("0.00")),
-            ("DECIMAL(5,2)", "999.995", None),
-            ("DECIMAL(5,2)", "12.345", Some("12.35")),
-            ("DOUBLE", "1e99999999999999999999", Some("Infinity")),
-            ("DOUBLE", "-1e99999999999999999999", Some("-Infinity")),
-            ("DOUBLE", "1e-99999999999999999999", Some("0")),
-            ("REAL", "1e39", Some("Infinity")),
-            ("REAL", "1e-60", Some("0")),
-            ("DOUBLE", "invalid", None),
-        ] {
-            let sql = rewrite(&format!("SELECT CAST(TRY_CAST(v AS {ty}) AS VARCHAR) FROM (VALUES (CAST($1 AS VARCHAR))) AS input(v)"), SqlDialect::Postgres);
-            let row = client.query_one(&sql, &[&value]).unwrap_or_else(|e| panic!("{ty}: {e}"));
-            assert_eq!(row.get::<_, Option<String>>(0).as_deref(), expected, "{ty}");
-        }
     }
 
     #[test]

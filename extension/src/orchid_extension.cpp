@@ -54,6 +54,7 @@
 #include <thread>
 
 extern "C" char *orchid_bridge(const char *);
+extern "C" char *orchid_bridge_catalog(const char *, void *, char *(*)(void *, const char *, ArrowSchema *), void (*)(char *));
 extern "C" void orchid_bridge_free(char *);
 extern "C" char *orchid_update(const char *, void *, char *(*)(void *, const char *), void (*)(char *));
 
@@ -69,6 +70,17 @@ Json Bridge(const Json &request) {
     if (!result.at("ok").get<bool>()) {
         throw BinderException("Orchid: %s", result.at("error").get<string>());
     }
+    return result.at("result");
+}
+
+char *CatalogQuery(void *, const char *, ArrowSchema *);
+void UpdateHostFree(char *);
+Json Bridge(ClientContext &context, const Json &request) {
+    auto input=request.dump();
+    std::unique_ptr<char, decltype(&orchid_bridge_free)> response(orchid_bridge_catalog(input.c_str(),&context,CatalogQuery,UpdateHostFree),orchid_bridge_free);
+    if (!response) {throw InternalException("Orchid compiler returned no response");}
+    auto result=Json::parse(response.get());
+    if (!result.at("ok").get<bool>()) {throw BinderException("Orchid: %s",result.at("error").get<string>());}
     return result.at("result");
 }
 
@@ -104,6 +116,7 @@ unique_ptr<TableRef> Subquery(ClientContext &context, const string &sql) {
 string CompilerType(const LogicalType &type) {
     if (type.HasAlias() && type.GetAlias() == "JSON") { return "json"; }
     switch (type.id()) {
+    case LogicalTypeId::SQLNULL: return "null";
     case LogicalTypeId::BOOLEAN: return "boolean";
     case LogicalTypeId::TINYINT: return "int8";
     case LogicalTypeId::SMALLINT: return "int16";
@@ -186,7 +199,7 @@ BoundGraph BindGraph(ClientContext &context, Json definition, const string &cata
             graph.sources.push_back(source);
         }
     }
-    Bridge({{"op", "validate"}, {"graph", graph.definition}, {"tables", graph.tables}});
+    Bridge(context, {{"op", "validate"}, {"graph", graph.definition}, {"tables", graph.tables}});
     return graph;
 }
 
@@ -343,6 +356,36 @@ Json HostQuery(ClientContext &context, const Json &request) {
     return {{"columns", result->names}, {"rows", rows}};
 }
 
+// Bind user calls without optimization or execution: volatile functions and
+// macros are never evaluated merely to discover a return type.
+char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
+    Json result;
+    try {
+        auto &context=*static_cast<ClientContext *>(state);
+        auto request=Json::parse(input);
+        Json value;
+        if (request.at("op")=="functions") {
+            value=HostQuery(context,{{"sql","SELECT function_name, function_type, stability, schema_name, database_name FROM duckdb_functions()"}}).at("rows");
+        } else {
+            auto statement=Select(context,request.at("sql").get<string>());
+            auto binder=Binder::CreateBinder(context);
+            auto bound=binder->Bind(static_cast<SQLStatement &>(*statement));
+            if (bound.types.size()!=1) {throw BinderException("Function binding expected one output");}
+            auto properties=context.GetClientProperties();
+            ArrowConverter::ToArrowSchema(schema,bound.types,bound.names,properties);
+            value=bound.plan->type==LogicalOperatorType::LOGICAL_PROJECTION &&
+                bound.plan->children.size()==1 && bound.plan->children[0]->type==LogicalOperatorType::LOGICAL_DUMMY_SCAN &&
+                bound.plan->expressions.size()==1 && bound.plan->expressions[0]->IsConsistent();
+        }
+        result={{"ok",true},{"result",value}};
+    } catch (std::exception &e) {result={{"ok",false},{"error",e.what()}};}
+    auto text=result.dump();
+    auto out=static_cast<char *>(std::malloc(text.size()+1));
+    if (!out) {std::terminate();}
+    std::memcpy(out,text.c_str(),text.size()+1);
+    return out;
+}
+
 #include "host_arrow.hpp"
 
 Json BoundRequest(ClientContext &context, TableFunctionBindInput &input);
@@ -424,7 +467,7 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
         }
         parameters = Parameter(found->second);
     }
-    auto compiled = Bridge({{"op", "compile"}, {"graph", graph.definition}, {"tables", graph.tables},
+    auto compiled = Bridge(context, {{"op", "compile"}, {"graph", graph.definition}, {"tables", graph.tables},
                             {"query", input.inputs[1].GetValue<string>()}, {"parameters", parameters}, {"language", language}});
     return Subquery(context, compiled.at("sql").get<string>());
 }
@@ -464,7 +507,7 @@ Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     return request;
 }
 Json CompileRequest(ClientContext &context, TableFunctionBindInput &input, bool inspect = false) {
-    return Bridge({{"op", "compile_request"}, {"request", BoundRequest(context, input)}, {"inspect", inspect}});
+    return Bridge(context, {{"op", "compile_request"}, {"request", BoundRequest(context, input)}, {"inspect", inspect}});
 }
 unique_ptr<TableRef> QueryBind(ClientContext &context, TableFunctionBindInput &input) {
     return Subquery(context, CompileRequest(context, input).at("sql").get<string>());

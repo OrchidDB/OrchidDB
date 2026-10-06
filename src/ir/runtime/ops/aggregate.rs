@@ -28,11 +28,6 @@ pub(crate) fn aggregate_op_with_cypher_equivalence(
     graph: &PropertyGraph,
     cypher_equivalence: bool,
 ) -> IrResult<Vec<Row>> {
-    if aggs.iter().any(|agg| agg.kind == AggKind::EngineFunction) {
-        return Err(RuntimeError::Unsupported(
-            "engine aggregate functions require relational execution".into(),
-        ));
-    }
     use std::collections::BTreeMap as Map;
     let mut groups: Map<Vec<u8>, (Vec<Value>, Vec<Row>)> = Map::new();
     for row in rows {
@@ -88,7 +83,9 @@ pub(crate) fn aggregate_op_with_cypher_equivalence(
         }
         for agg in aggs {
             row.bindings
-                .insert(agg.alias.clone(), agg_identity(agg.kind));
+                .insert(agg.alias.clone(), if agg.kind == AggKind::EngineFunction {
+                    compute_aggregate_with_cypher_equivalence(agg,&[],graph,cypher_equivalence)?
+                } else {agg_identity(agg.kind)});
         }
         return Ok(vec![row]);
     }
@@ -155,9 +152,10 @@ fn compute_aggregate_with_cypher_equivalence(
         }
     };
     match agg.kind {
-        AggKind::EngineFunction => Err(RuntimeError::Unsupported(
-            "engine aggregate functions require relational execution".into(),
-        )),
+        AggKind::EngineFunction => {
+            let Some(IrExpr::Call{name,args})=&agg.arg else {return Err(RuntimeError::Type("Missing DuckDB aggregate call".into()));};
+            crate::ir::functions::host_execution::aggregate(name,args,rows,graph,agg.distinct)
+        },
         AggKind::CountRows => {
             // `countRows(x)` only counts rows where evaluating `x` is
             // non-null; `countRows()` counts every row.

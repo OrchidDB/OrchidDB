@@ -1,5 +1,6 @@
-//! Database-free language bridge. DuckDB owns binding and all execution.
+//! Language bridge with caller-owned DuckDB binding and execution.
 mod syntax;
+mod catalog;
 mod update;
 mod host;
 mod managed;
@@ -178,6 +179,18 @@ pub unsafe extern "C" fn orchid_bridge(input: *const c_char) -> *mut c_char {
     CString::new(response.to_string())
         .expect("JSON contains no raw NUL")
         .into_raw()
+}
+
+/// Compile synchronously while borrowing the caller's DuckDB binder.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orchid_bridge_catalog(input: *const c_char, context: *mut std::ffi::c_void, query: catalog::Query, free: catalog::Free) -> *mut c_char {
+    let result=catch_unwind(AssertUnwindSafe(|| -> Result<Value,String> {
+        if input.is_null() {return Err("null bridge input".into());}
+        let input: Value=serde_json::from_str(unsafe{CStr::from_ptr(input)}.to_str().map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+        stacker::maybe_grow(128*1024,64*1024*1024,||unsafe{catalog::with_catalog(context,query,free,||request(input))})
+    }));
+    let result=match result {Ok(Ok(value))=>json!({"ok":true,"result":value}),Ok(Err(error))=>json!({"ok":false,"error":error}),Err(_)=>json!({"ok":false,"error":"Orchid compiler panicked"})};
+    CString::new(result.to_string()).unwrap().into_raw()
 }
 
 /// # Safety

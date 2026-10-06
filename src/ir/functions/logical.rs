@@ -38,7 +38,6 @@ pub struct LogicalFunction {
     pub sql: BTreeMap<String, SqlFunctionMapping>,
     /// Arity-specific mappings take precedence over a dialect-wide mapping.
     pub sql_overloads: BTreeMap<(String, usize), SqlFunctionMapping>,
-    pub(crate) portable_builtin: bool,
     /// Optional indexed-access contract. The function's first two arguments
     /// must be query and document, and its ordering must match this metric.
     /// Additional arguments may carry native corpus statistics.
@@ -63,7 +62,6 @@ impl LogicalFunction {
             native,
             sql,
             sql_overloads: BTreeMap::new(),
-            portable_builtin: false,
             search_metric: None,
         }
     }
@@ -81,47 +79,18 @@ impl LogicalFunction {
     }
     pub fn has_sql_mapping(&self, dialect: &str, arity: usize) -> bool {
         self.sql_mapping(dialect, arity).is_some()
-            || (self.portable_builtin
-                && matches!(dialect, "duckdb" | "postgres")
-                && super::portable::structured::handles(self.logical_name()))
     }
     /// Resolve mappings that depend on Arrow field names or literal options.
     pub fn sql_mapping_for_call(
         &self,
         dialect: &str,
         args: &[datafusion::logical_expr::Expr],
-        schema: &datafusion::common::DFSchema,
+        _schema: &datafusion::common::DFSchema,
     ) -> Result<Option<SqlFunctionMapping>> {
         if let Some(mapping) = self.sql_mapping(dialect, args.len()) {
             return Ok(Some(mapping.clone()));
         }
-        if self.has_sql_mapping(dialect, args.len()) {
-            return Ok(Some(SqlFunctionMapping {
-                value: super::portable::structured::mapping(
-                    self.logical_name(),
-                    args,
-                    schema,
-                    dialect == "postgres",
-                )?,
-                ordering: None,
-            }));
-        }
         Ok(None)
-    }
-    pub(crate) fn specialized(&self, dialect: &str, arity: usize, value: String) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        value.hash(&mut hash);
-        let mut result = self.clone();
-        result.name = format!("{}_typed_{:x}", self.name, hash.finish());
-        result.sql_overloads.insert(
-            (dialect.into(), arity),
-            SqlFunctionMapping {
-                value,
-                ordering: None,
-            },
-        );
-        result
     }
     pub fn into_udf(self) -> Arc<ScalarUDF> {
         Arc::new(ScalarUDF::new_from_impl(self))
@@ -158,24 +127,7 @@ impl ScalarUDFImpl for LogicalFunction {
     fn coerce_types(&self, args: &[DataType]) -> Result<Vec<DataType>> {
         self.native.coerce_types(args)
     }
-    fn invoke_with_args(&self, mut args: ScalarFunctionArgs) -> Result<ColumnarValue> {
-        if self.portable_builtin && self.native.name() == "overlay" {
-            return super::portable::native_overlay(args);
-        }
-        if self.portable_builtin
-            && self.native.name() == "map"
-            && args
-                .args
-                .iter()
-                .any(|a| matches!(a, ColumnarValue::Array(_)))
-        {
-            // Upstream map does not broadcast scalar list arguments alongside
-            // array arguments, unlike the rest of the native scalar catalog.
-            args.args = ColumnarValue::values_to_arrays(&args.args)?
-                .into_iter()
-                .map(ColumnarValue::Array)
-                .collect();
-        }
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
         self.native.inner().invoke_with_args(args)
     }
     fn short_circuits(&self) -> bool {
@@ -195,25 +147,6 @@ impl ScalarUDFImpl for LogicalFunction {
         args: Vec<datafusion::logical_expr::Expr>,
         info: &datafusion::logical_expr::simplify::SimplifyContext,
     ) -> Result<datafusion::logical_expr::simplify::ExprSimplifyResult> {
-        if self.portable_builtin
-            && !matches!(
-                self.native.name(),
-                "coalesce"
-                    | "nvl"
-                    | "nvl2"
-                    | "arrow_cast"
-                    | "arrow_typeof"
-                    | "arrow_metadata"
-                    | "version"
-                    | "current_date"
-                    | "current_time"
-                    | "now"
-            )
-        {
-            // Keep the portable identity until placement. Native rewrites such
-            // as regexp_like -> regex operator would bypass dialect guards.
-            return Ok(datafusion::logical_expr::simplify::ExprSimplifyResult::Original(args));
-        }
         self.native.inner().simplify(args, info)
     }
 }

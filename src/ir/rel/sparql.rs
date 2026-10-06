@@ -323,9 +323,9 @@ impl ScalarUDFImpl for DuckDbFunction {
             "length" => "character_length",
             name => name,
         };
-        let function = super::function_catalog::scalar()
-            .get(name)
-            .or_else(|| super::function_catalog::nested().get(name));
+        let function = datafusion::functions::all_default_functions().into_iter()
+            .chain(datafusion::functions_nested::all_default_nested_functions())
+            .find(|f|f.name()==name || f.aliases().iter().any(|a|a==name));
         if let Some(function) = function {
             let mut args = args;
             let scalar_arguments = args.args.iter().map(|v| match v { ColumnarValue::Scalar(v) => Some(v), _ => None }).collect::<Vec<_>>();

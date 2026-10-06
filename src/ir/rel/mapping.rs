@@ -53,7 +53,6 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 
 use crate::ir::plan::LabelExpr;
 
-use super::function_catalog;
 pub mod computed;
 pub use computed::{ComputedRelationship, RelationshipOrder, RelationshipStage, SortDirection, NullOrder, RetrievalMode};
 use super::{
@@ -1119,7 +1118,8 @@ impl GraphMapping {
         let expression=SqlToRel::new(&provider).sql_to_expr(ast,schema,&mut PlannerContext::new())?;
         expression.apply(|expr| {
             if matches!(expr,Expr::AggregateFunction(_)|Expr::WindowFunction(_)|Expr::ScalarSubquery(_)|Expr::Exists(_)|Expr::InSubquery(_)) {return Err(DataFusionError::Plan("mapping expressions must be scalar, without subqueries, aggregates or windows".into()));}
-            if let Expr::ScalarFunction(call)=expr {if call.func.signature().volatility!=datafusion::logical_expr::Volatility::Immutable {return Err(DataFusionError::Plan("mapping expressions must be immutable".into()));}}
+            if let Expr::ScalarFunction(call)=expr {if !crate::ir::functions::immutable_call(&call.func,&call.args,schema)? {return Err(DataFusionError::Plan("mapping expressions must be immutable".into()));}}
+
             Ok(TreeNodeRecursion::Continue)
         })?;
         Ok(expression.transform_up(|expr| {
@@ -1619,19 +1619,17 @@ impl ContextProvider for MappingContextProvider<'_> {
         self.mapping.logical_functions.get(&lower).cloned()
             .or_else(|| crate::ir::functions::search::function(&lower))
             .or_else(|| crate::ir::functions::json::function(&lower))
-            .or_else(|| crate::ir::functions::portable::function(&lower))
-            .or_else(|| function_catalog::scalar().get(&lower).cloned())
-            .or_else(|| function_catalog::nested().get(&lower).cloned())
+            .or_else(|| crate::ir::functions::catalog_scalar(&lower))
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
         let lower = name.to_ascii_lowercase();
-        crate::ir::functions::json::aggregate(&lower).or_else(|| function_catalog::aggregate().get(&lower).cloned())
+        crate::ir::functions::json::aggregate(&lower).or_else(|| datafusion::functions_aggregate::all_default_aggregate_functions().into_iter().find(|f|f.name()==lower || f.aliases().contains(&lower)))
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
         let lower = name.to_ascii_lowercase();
-        function_catalog::window().get(&lower).cloned()
+        datafusion::functions_window::all_default_window_functions().into_iter().find(|f|f.name()==lower || f.aliases().contains(&lower))
     }
 
     fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
@@ -1643,17 +1641,15 @@ impl ContextProvider for MappingContextProvider<'_> {
     }
 
     fn udf_names(&self) -> Vec<String> {
-        let mut names = function_catalog::scalar().names();
-        names.extend(crate::ir::functions::portable::capabilities().iter().map(|f| f.name.clone()));
-        names
+        self.mapping.logical_functions.keys().cloned().collect()
     }
 
     fn udaf_names(&self) -> Vec<String> {
-        function_catalog::aggregate().names()
+        datafusion::functions_aggregate::all_default_aggregate_functions().iter().map(|f|f.name().into()).collect()
     }
 
     fn udwf_names(&self) -> Vec<String> {
-        function_catalog::window().names()
+        datafusion::functions_window::all_default_window_functions().iter().map(|f|f.name().into()).collect()
     }
 }
 
@@ -1997,10 +1993,7 @@ mod tests {
     fn query_function_resolution_preserves_case_aliases_and_namespaces() {
         let mapping = GraphMapping::new();
         let provider = MappingContextProvider::new(&mapping);
-        assert_eq!(
-            provider.get_function_meta("ChAr_LeNgTh").unwrap().name(),
-            "character_length"
-        );
+        assert_eq!(provider.get_function_meta("ChAr_LeNgTh").unwrap().name(),"character_length");
         assert_eq!(provider.get_aggregate_meta("MeAn").unwrap().name(), "avg");
         assert_eq!(
             provider.get_window_meta("RoW_NuMbEr").unwrap().name(),
@@ -2009,20 +2002,15 @@ mod tests {
         assert!(provider.get_function_meta("row_number").is_none());
         assert!(provider.get_aggregate_meta("character_length").is_none());
         assert!(provider.get_window_meta("__missing").is_none());
-        // Planning another query reuses the same functions without moving
-        // request-specific table tracking into the shared catalog.
+        // Table dependency tracking remains scoped to each mapping query.
         let other = MappingContextProvider::new(&mapping);
-        assert!(Arc::ptr_eq(
-            &provider.get_function_meta("length").unwrap(),
-            &other.get_function_meta("character_length").unwrap()
-        ));
         provider.requested.borrow_mut().insert("customers".into());
         assert!(other.requested.borrow().is_empty());
         mapping
             .plan_sql("SELECT ChAr_LeNgTh('hello'), MeAn(3) OVER (), RoW_NuMbEr() OVER ()")
             .unwrap();
-        mapping.plan_sql("SELECT fn.sqrt(9.0), fn.char_length('hello')").unwrap();
-        assert!(provider.udf_names().contains(&"fn.sqrt".into()));
+        mapping.plan_sql("SELECT sqrt(9.0), char_length('hello')").unwrap();
+        assert!(provider.get_function_meta("fn.sqrt").is_none());
     }
 
     #[test]

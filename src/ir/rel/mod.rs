@@ -23,7 +23,6 @@ use scans::*;
 mod expression;
 use expression::*;
 mod scalar_functions;
-mod function_catalog;
 mod scalar_types;
 use scalar_types::*;
 
@@ -76,7 +75,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BooleanBuilder, Float64Builder, Int64Array, Int64Builder, ListBuilder, RecordBatch,
+    ArrayRef, BooleanBuilder, Float64Builder, Int64Array, Int64Builder, RecordBatch,
     StringArray, StringBuilder,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};

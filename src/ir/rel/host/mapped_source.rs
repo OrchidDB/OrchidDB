@@ -489,53 +489,9 @@ impl GraphSource for Source {
         if self.operators.overloads(name).is_empty() {
             return None;
         }
-        Some((|| {
-            use crate::ir::{
-                expr::{IrExpr, Lit},
-                plan::{GraphPlan, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem},
-                policy::GraphPlanPolicy,
-            };
-            let args = args
-                .iter()
-                .map(|v| value_scalar(v).map(|s| IrExpr::Lit(Lit::Scalar(s))))
-                .collect::<Result<Vec<_>, _>>()?;
-            let plan = GraphPlan::new(
-                GraphPlanPolicy::cypher(),
-                Node::GraphProject {
-                    input: Box::new(Node::GraphOneRow),
-                    mode: ProjectMode::PreserveVisible,
-                    error_policy: ProjectErrorPolicy::PropagateError,
-                    items: vec![ProjectionItem {
-                        alias: "value".into(),
-                        expr: IrExpr::Call {
-                            name: name.into(),
-                            args,
-                        },
-                    }],
-                },
-            );
-            let lowered =
-                crate::ir::functions::with_operator_table(self.operators.clone(), || {
-                    crate::ir::rel::RelBackend::new()
-                        .lower(&plan, &PropertyGraph::new())
-                        .map_err(|e| e.to_string())
-                })?;
-            let (batch, queries) = self.host.execute_plan(&self.mapping, lowered.plan)?;
-            {
-                let mut cache = self.cache.lock().unwrap();
-                cache.queries.extend(queries);
-                cache.rows += batch.num_rows();
-            }
-            Ok(crate::ir::catalog::array_value(
-                batch
-                    .column_by_name("value")
-                    .ok_or("missing SQL scalar result")?
-                    .as_ref(),
-                0,
-                None,
-            ))
-        })())
+        Some(crate::ir::functions::host_execution::value(self.host.as_ref(), &self.operators.target_name(name), args))
     }
+
     fn property(&self, edge: bool, name: &str, id: &ElementId, key: &str) -> Value {
         self.record(edge, name, id)
             .and_then(|r| r.properties.get(key).cloned())

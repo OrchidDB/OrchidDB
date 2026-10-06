@@ -2,15 +2,16 @@
 // adapter handles batches and dependencies; language semantics remain in Rust.
 using OrchidHostQuery = decltype(&TypedHostQuery);
 using OrchidHostFree = void (*)(char *);
+using OrchidCatalogQuery = decltype(&CatalogQuery);
 using OrchidNested = char *(*)(void *, const void *, void *, ArrowArrayStream *);
 extern "C" {
-char *orchid_program_new(const char *);
+char *orchid_program_new(const char *, void *, OrchidCatalogQuery, OrchidHostFree);
 char *orchid_program_manifest(const void *);
 char *orchid_program_schema(const void *, uint64_t, ArrowSchema *);
 void orchid_program_free(void *);
-char *orchid_program_state_new(const void *, void *, OrchidHostQuery, OrchidHostFree, OrchidNested,
+char *orchid_program_state_new(const void *, void *, OrchidHostQuery, OrchidHostFree, OrchidNested, OrchidCatalogQuery,
                               int64_t, int64_t, void **, void **);
-char *orchid_program_scope_enter(void *, void *, OrchidHostQuery, OrchidHostFree, OrchidNested, void **);
+char *orchid_program_scope_enter(void *, void *, OrchidHostQuery, OrchidHostFree, OrchidNested, OrchidCatalogQuery, void **);
 void orchid_program_scope_free(void *);
 void orchid_program_state_free(void *);
 void *orchid_program_cancel_token(const void *);
@@ -180,7 +181,7 @@ struct NativeExecution {
     void Ensure(ClientContext &context) {
         if (kernel_state) { return; }
         auto clock = context.registered_state->GetOrCreate<NativeClock>("orchid_native_clock");
-        ProgramCheck(orchid_program_state_new(program->handle, &context, TypedHostQuery, UpdateHostFree, ExecuteNested,
+        ProgramCheck(orchid_program_state_new(program->handle, &context, TypedHostQuery, UpdateHostFree, ExecuteNested, CatalogQuery,
             clock->statement.value, MetaTransaction::Get(context).start_timestamp.value, &execution, &kernel_state));
         interrupt=make_shared_ptr<NativeInterrupt>(context,orchid_program_cancel_token(execution));
         context.registered_state->GetOrCreate<NativeInterrupts>("orchid_native_interrupts")->Add(interrupt);
@@ -195,7 +196,7 @@ struct NativeScope {
     explicit NativeScope(ClientContext &context, NativeExecution &execution) {
         execution.Ensure(context);
         if (execution.execution) {
-            ProgramCheck(orchid_program_scope_enter(execution.execution, &context, TypedHostQuery, UpdateHostFree, ExecuteNested, &scope));
+            ProgramCheck(orchid_program_scope_enter(execution.execution, &context, TypedHostQuery, UpdateHostFree, ExecuteNested, CatalogQuery, &scope));
         }
         previous=active_native_execution; active_native_execution=&execution;
     }
@@ -503,7 +504,7 @@ unique_ptr<LogicalOperator> KernelBindOperator(ClientContext &context, TableFunc
 }
 unique_ptr<LogicalOperator> NativeProgramBind(ClientContext &context, TableFunctionBindInput &input, idx_t index, vector<string> &names) {
     auto request=BoundRequest(context,input);
-    auto compiled=ProgramJson(orchid_program_new(request.dump().c_str()));
+    auto compiled=ProgramJson(orchid_program_new(request.dump().c_str(), &context, CatalogQuery, UpdateHostFree));
     auto program=make_shared_ptr<NativeProgram>(reinterpret_cast<void *>(compiled.at("handle").get<uintptr_t>()),compiled.at("manifest"),true);
     if (input.binder) {
         auto &properties=input.binder->GetStatementProperties();

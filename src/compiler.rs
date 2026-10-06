@@ -827,7 +827,7 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         mapping.map_computed_relationship(rule.clone()).map_err(|e| e.to_string())?;
     }
     mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
-    let mut registry = FunctionRegistry::new(Arc::new(DeclaredCatalog(request.dialect.clone())));
+    let mut registry = FunctionRegistry::new(crate::ir::functions::active_operator_table().unwrap_or_else(|| Arc::new(DeclaredCatalog(request.dialect.clone()))));
     for f in &request.functions {
         registry
             .register_typed_mapping(

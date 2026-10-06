@@ -1570,6 +1570,15 @@ pub(super) fn values_array<'a>(
     values: impl Iterator<Item = &'a Value>,
     data_type: &DataType,
 ) -> RelResult<ArrayRef> {
+    let values=values.collect::<Vec<_>>();
+    if !values.is_empty() && values.iter().all(|v|matches!(v,Value::Scalar(_)|Value::Null)) {
+        let scalars=values.iter().map(|value|match value {
+            Value::Scalar(scalar)=>scalar.cast_to(data_type),
+            _=>ScalarValue::try_from(data_type),
+        }).collect::<datafusion::common::Result<Vec<_>>>()?;
+        return Ok(ScalarValue::iter_to_array(scalars)?);
+    }
+    let values=values.into_iter();
     match data_type {
         DataType::Null => Ok(arrow::array::new_null_array(&DataType::Null, values.count())),
         DataType::Int8
@@ -1651,137 +1660,21 @@ pub(super) fn values_array<'a>(
             }
             Ok(Arc::new(builder.finish()))
         }
-        DataType::List(field) => match field.data_type() {
-            DataType::Boolean => {
-                let mut builder = ListBuilder::new(BooleanBuilder::new());
-                for value in values {
-                    match value {
-                        Value::Null => builder.append(false),
-                        Value::List(items) => {
-                            for item in items {
-                                match item {
-                                    Value::Null => builder.values().append_null(),
-                                    Value::Bool(value) => builder.values().append_value(*value),
-                                    other => {
-                                        return Err(RelError::Unsupported(format!(
-                                            "cannot put `{}` in Boolean GraphValues list",
-                                            other.type_name()
-                                        )));
-                                    }
-                                }
-                            }
-                            builder.append(true);
-                        }
-                        other => {
-                            return Err(RelError::Unsupported(format!(
-                                "cannot put `{}` in GraphValues list column",
-                                other.type_name()
-                            )));
-                        }
-                    }
+        DataType::List(field) => {
+            let mut offsets=vec![0i32];
+            let mut valid=Vec::new();
+            let mut children=Vec::new();
+            for value in values {
+                match value {
+                    Value::Null => valid.push(false),
+                    Value::List(items) => {valid.push(true);children.extend(items.iter());},
+                    other => return Err(RelError::Unsupported(format!("cannot put `{}` in GraphValues list column",other.type_name()))),
                 }
-                Ok(Arc::new(builder.finish()))
+                offsets.push(i32::try_from(children.len()).map_err(|_|RelError::Unsupported("list argument exceeds Arrow limits".into()))?);
             }
-            DataType::Int64 => {
-                let mut builder = ListBuilder::new(Int64Builder::new());
-                for value in values {
-                    match value {
-                        Value::Null => builder.append(false),
-                        Value::List(items) => {
-                            for item in items {
-                                match item {
-                                    Value::Null => builder.values().append_null(),
-                                    item => match item.as_i64() {
-                                        Some(value) => builder.values().append_value(value),
-                                        None => {
-                                            return Err(RelError::Unsupported(format!(
-                                                "cannot put `{}` in Int64 GraphValues list",
-                                                item.type_name()
-                                            )));
-                                        }
-                                    },
-                                }
-                            }
-                            builder.append(true);
-                        }
-                        other => {
-                            return Err(RelError::Unsupported(format!(
-                                "cannot put `{}` in GraphValues list column",
-                                other.type_name()
-                            )));
-                        }
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            DataType::Float64 => {
-                let mut builder = ListBuilder::new(Float64Builder::new());
-                for value in values {
-                    match value {
-                        Value::Null => builder.append(false),
-                        Value::List(items) => {
-                            for item in items {
-                                match item {
-                                    Value::Null => builder.values().append_null(),
-                                    Value::Float(value) => builder.values().append_value(*value),
-                                    Value::Float32(value) => {
-                                        builder.values().append_value(f64::from(*value))
-                                    }
-                                    item => match item.as_i64() {
-                                        Some(value) => builder.values().append_value(value as f64),
-                                        None => {
-                                            return Err(RelError::Unsupported(format!(
-                                                "cannot put `{}` in Float64 GraphValues list",
-                                                item.type_name()
-                                            )));
-                                        }
-                                    },
-                                }
-                            }
-                            builder.append(true);
-                        }
-                        other => {
-                            return Err(RelError::Unsupported(format!(
-                                "cannot put `{}` in GraphValues list column",
-                                other.type_name()
-                            )));
-                        }
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            DataType::Utf8 => {
-                let mut builder = ListBuilder::new(StringBuilder::new());
-                for value in values {
-                    match value {
-                        Value::Null => builder.append(false),
-                        Value::List(items) => {
-                            for item in items {
-                                match item {
-                                    Value::Null => builder.values().append_null(),
-                                    Value::String(value) | Value::DateTime(value) => {
-                                        builder.values().append_value(value)
-                                    }
-                                    other => builder
-                                        .values()
-                                        .append_value(graph_values_display(other, language)),
-                                }
-                            }
-                            builder.append(true);
-                        }
-                        other => {
-                            return Err(RelError::Unsupported(format!(
-                                "cannot put `{}` in GraphValues list column",
-                                other.type_name()
-                            )));
-                        }
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            other => Err(RelError::Unsupported(format!(
-                "GraphValues list element type `{other:?}`"
-            ))),
+            let child=values_array(language,children.into_iter(),field.data_type())?;
+            Ok(Arc::new(arrow::array::ListArray::try_new(field.clone(),
+                arrow::buffer::OffsetBuffer::new(offsets.into()),child,Some(arrow::buffer::NullBuffer::from(valid)))?))
         },
         other => Err(RelError::Unsupported(format!(
             "GraphValues type `{other:?}`"

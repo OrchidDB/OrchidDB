@@ -6,8 +6,10 @@
 //! engine function names. Table functions are catalogued but are not expressions.
 
 mod call;
+mod binding;
+pub mod host_catalog;
+pub mod host_execution;
 pub mod logical;
-pub mod portable;
 pub mod domain;
 pub mod search;
 pub mod json;
@@ -18,7 +20,7 @@ mod duckdb;
 mod typed_cast;
 mod types;
 pub(crate) use types::{postgres_type, sql_type as duckdb_type};
-pub use call::{ENGINE_FUNCTION_PREFIX, native_aggregate, native_scalar};
+pub use call::{catalog_scalar, ENGINE_FUNCTION_PREFIX, native_aggregate, native_scalar};
 #[cfg(feature = "duckdb")]
 pub use duckdb::DuckDbCatalog;
 pub(crate) use typed_cast::{
@@ -70,6 +72,10 @@ pub trait OperatorTable: Send + Sync {
         Ok(args)
     }
     fn overloads(&self, name: &str) -> &[FunctionOverload];
+    fn is_immutable(&self, name: &str, _args: &[Expr], _schema: &DFSchema) -> Result<bool> {
+        let overloads=self.overloads(name);
+        Ok(!overloads.is_empty() && overloads.iter().all(|f|f.stability.as_deref()==Some("CONSISTENT")))
+    }
     fn bind(
         &self,
         name: &str,
@@ -102,7 +108,11 @@ pub fn with_operator_table<T>(
     operation()
 }
 
-pub(crate) fn selected_operator_table() -> Result<std::sync::Arc<dyn OperatorTable>> {
+pub fn active_operator_table() -> Option<std::sync::Arc<dyn OperatorTable>> {
+    ACTIVE_TABLE.with(|active| active.borrow().clone())
+}
+
+pub fn selected_operator_table() -> Result<std::sync::Arc<dyn OperatorTable>> {
     if let Some(table) = ACTIVE_TABLE.with(|active| active.borrow().clone()) {
         return Ok(table);
     }
@@ -134,13 +144,19 @@ pub fn is_native_aggregate(name: &str) -> bool {
 }
 
 pub(crate) fn is_registered_function(name: &str) -> bool {
-    (name == "json.literal" || json::function(name).is_some() || search::function(name).is_some() || portable::function(name).is_some()) || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
+    (name == "json.literal" || json::function(name).is_some() || search::function(name).is_some()) || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
 }
 
 pub(crate) fn is_volatile_function(name: &str) -> bool {
-    if let Some(function) = portable::function(name) {
-        return function.signature().volatility == datafusion::logical_expr::Volatility::Volatile;
-    }
     selected_operator_table().is_ok_and(|catalog| catalog.overloads(name).iter()
         .any(|overload| overload.stability.as_deref().is_some_and(|stability| stability.eq_ignore_ascii_case("volatile"))))
+}
+
+/// Engine calls stay opaque to constant folding, but computed relationships
+/// may use functions DuckDB declares immutable.
+pub(crate) fn immutable_call(function: &datafusion::logical_expr::ScalarUDF, args: &[Expr], schema: &DFSchema) -> Result<bool> {
+    if let Some(name)=function.name().strip_prefix(ENGINE_FUNCTION_PREFIX) {
+        return selected_operator_table()?.is_immutable(name,args,schema);
+    }
+    Ok(function.signature().volatility==datafusion::logical_expr::Volatility::Immutable)
 }

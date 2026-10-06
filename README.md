@@ -137,6 +137,44 @@ WHERE p.age > 35;
 Nested unquoted `(CYPHER ...)` SQL subqueries are not implemented. The table
 functions bind DuckDB relational plans and existing graph kernel operators.
 
+## DuckDB functions
+
+Ordinary scalar and aggregate functions come from the **current DuckDB connection**.
+Orchid uses DuckDB's catalog and binder for overloads, argument checking, and return
+types. Built-ins, loaded extension functions, SQL macros, and registered UDFs are
+available without declaring signatures in Orchid.
+
+```sql
+CREATE MACRO title_slug(s) AS lower(replace(s, ' ', '-'));
+
+CYPHER social
+MATCH (p:Person)
+RETURN title_slug(p.name) AS slug, version() AS duckdb_version;
+
+CYPHER social
+MATCH (p:Person)
+RETURN product(p.age) AS age_product;
+```
+
+The same calls work in managed graphs and graph kernels that cannot become a SQL
+region. Those kernels pass typed values or batches to DuckDB through the existing
+host interface. DuckDB executes the function on the caller's connection and
+transaction; Orchid does not emulate it. Binding discovers types without executing
+user calls. Catalog changes are picked up when queries are rebound.
+
+Language-defined operations retain their semantics: Cypher `labels()` and
+`toInteger()`, Gremlin traversal steps, and SPARQL datatype/error behavior still
+use the shared language implementation. Use a schema-qualified DuckDB function
+such as `main.log(x)` when its name overlaps a language function. Orchid's RAG
+scoring functions also remain available. The former `fn.*` portable catalog and
+its cross-engine function mappings have been removed.
+
+Table functions remain relational sources: expose `read_parquet(...)`,
+`iceberg_scan(...)`, or another table function through a DuckDB view and map that
+view into a graph. DuckDB SQL remains the interface for SQL window syntax and
+other SQL-only calling forms; catalog inheritance does not change graph-language
+grammars.
+
 ## Use an ordinary DuckDB client
 
 For example, install the matching Python driver in a virtual environment:
@@ -406,8 +444,8 @@ subplans on the same connection and transaction, with query-scoped state and
 cancellation. Immutable prepared subplans may be reused within a query.
 
 DataFusion remains a compiler dependency; its executor does not run extension
-queries. The extension includes no PostgreSQL driver and opens no second database
-connection. Iceberg and Lance retain their own scans and indexes. Existing JVM
+queries. The PostgreSQL executor, session implementation, and driver dependency have been
+removed. The extension opens no second database connection. Iceberg and Lance retain their own scans and indexes. Existing JVM
 algorithms, callbacks, and graph file codecs remain internal reusable components.
 The retained `orchiddb-jvm-store` binary is an internal helper, not a public CLI.
 

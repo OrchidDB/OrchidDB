@@ -277,7 +277,7 @@ async fn collected_nested_expansion_selects_flat_without_manual_statistics() {
     let db = duckdb::Connection::open_in_memory().unwrap();
     db.execute_batch("CREATE TABLE orders AS SELECT i::BIGINT AS id, i::BIGINT AS customer_id, list_transform(range(20), x -> {'item_id': x, 'sku': 'sku', 'quantity': 1::BIGINT}) AS items FROM range(100) t(i); CREATE TABLE flat AS SELECT id AS oid, unnest(items).item_id AS line, unnest(items).sku AS product, unnest(items).quantity AS qty FROM orders").unwrap();
     let mut r: Value =
-        serde_json::from_str(include_str!("../examples/data/representation_sources.json")).unwrap();
+        serde_json::from_str(include_str!("../tools/diagnostics/data/representation_sources.json")).unwrap();
     for rep in r["representation_sources"][0]["representations"]
         .as_array_mut()
         .unwrap()

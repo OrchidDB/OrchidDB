@@ -36,8 +36,13 @@ impl ScalarUDFImpl for EngineCall {
     fn return_type(&self, _: &[DataType]) -> Result<DataType> {
         Ok(self.return_type.clone())
     }
-    fn invoke_with_args(&self, _: ScalarFunctionArgs) -> Result<ColumnarValue> {
-        Err(execution_error())
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        super::host_execution::scalar(
+            self.name
+                .strip_prefix(ENGINE_FUNCTION_PREFIX)
+                .unwrap_or(&self.name),
+            args,
+        )
     }
 }
 impl AggregateUDFImpl for EngineCall {
@@ -88,14 +93,22 @@ fn bind(
 
 pub fn native_scalar(name: &str, args: Vec<Expr>, schema: &DFSchema) -> Result<Expr> {
     if name == "json.literal" {
-        let [Expr::Literal(datafusion::common::ScalarValue::Utf8(Some(text)), _)] = args.as_slice() else {
-            return Err(DataFusionError::Plan("JSON literal requires constant text".into()));
+        let [Expr::Literal(datafusion::common::ScalarValue::Utf8(Some(text)), _)] = args.as_slice()
+        else {
+            return Err(DataFusionError::Plan(
+                "JSON literal requires constant text".into(),
+            ));
         };
-        return Ok(datafusion::logical_expr::lit(super::domain::json_scalar(text)?));
+        return Ok(datafusion::logical_expr::lit(super::domain::json_scalar(
+            text,
+        )?));
     }
-    if let Some(function) = super::json::function(name) { return Ok(function.call(args)); }
-    if let Some(function) = super::search::function(name) { return Ok(function.call(args)); }
-    if let Some(function) = super::portable::function(name) { return Ok(function.call(args)); }
+    if let Some(function) = super::json::function(name) {
+        return Ok(function.call(args));
+    }
+    if let Some(function) = super::search::function(name) {
+        return Ok(function.call(args));
+    }
     let catalog = super::selected_operator_table()?;
     let args = catalog.prepare_args(name, FunctionKind::Scalar, args, schema)?;
     Ok(ScalarUDF::new_from_impl(bind(
@@ -116,7 +129,11 @@ pub fn native_aggregate(
 ) -> Result<Expr> {
     if let Some(function) = super::json::aggregate(name) {
         let call = function.call(args);
-        return if distinct { call.distinct().build() } else { Ok(call) };
+        return if distinct {
+            call.distinct().build()
+        } else {
+            Ok(call)
+        };
     }
     let catalog = super::selected_operator_table()?;
     let args = catalog.prepare_args(name, FunctionKind::Aggregate, args, schema)?;
@@ -133,4 +150,85 @@ pub fn native_aggregate(
     } else {
         Ok(call)
     }
+}
+
+/// SQL mapping expressions are parsed before argument types are known. This
+/// lightweight UDF asks DuckDB to bind once DataFusion supplies fields/literals.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct CatalogCall {
+    name: String,
+    signature: Signature,
+}
+impl ScalarUDFImpl for CatalogCall {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+    fn coerce_types(&self, types: &[DataType]) -> Result<Vec<DataType>> {
+        Ok(types.to_vec())
+    }
+    fn return_type(&self, types: &[DataType]) -> Result<DataType> {
+        let fields = types
+            .iter()
+            .map(|t| Arc::new(arrow::datatypes::Field::new("arg", t.clone(), true)))
+            .collect::<Vec<_>>();
+        self.return_field_from_args(datafusion::logical_expr::ReturnFieldArgs {
+            arg_fields: &fields,
+            scalar_arguments: &vec![None; types.len()],
+        })
+        .map(|f| f.data_type().clone())
+    }
+    fn return_field_from_args(
+        &self,
+        args: datafusion::logical_expr::ReturnFieldArgs,
+    ) -> Result<arrow::datatypes::FieldRef> {
+        let arguments = args
+            .arg_fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let scalar = args
+                    .scalar_arguments
+                    .get(i)
+                    .and_then(|v| *v)
+                    .cloned()
+                    .map(Ok)
+                    .unwrap_or_else(|| datafusion::common::ScalarValue::try_from(f.data_type()))?;
+                Ok(datafusion::logical_expr::lit(scalar))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let catalog = super::selected_operator_table()?;
+        let name = self.name.strip_prefix(ENGINE_FUNCTION_PREFIX).unwrap();
+        let ty = catalog.bind(name, FunctionKind::Scalar, &arguments, &DFSchema::empty())?;
+        Ok(Arc::new(arrow::datatypes::Field::new(&self.name, ty, true)))
+    }
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        super::host_execution::scalar(
+            self.name.strip_prefix(ENGINE_FUNCTION_PREFIX).unwrap(),
+            args,
+        )
+    }
+}
+pub fn catalog_scalar(name: &str) -> Option<Arc<ScalarUDF>> {
+    if super::active_operator_table().is_some_and(|t| {
+        t.overloads(name)
+            .iter()
+            .any(|f| matches!(f.kind, FunctionKind::Scalar | FunctionKind::Macro))
+    }) {
+        return Some(Arc::new(ScalarUDF::new_from_impl(CatalogCall {
+            name: format!("{ENGINE_FUNCTION_PREFIX}{name}"),
+            signature: Signature::user_defined(Volatility::Volatile),
+        })));
+    }
+    // Standalone compiler callers without a host still need the upstream SQL
+    // parser's intrinsic expressions. There is no Orchid inventory or mapping.
+    datafusion::functions::all_default_functions()
+        .into_iter()
+        .chain(datafusion::functions_nested::all_default_nested_functions())
+        .find(|f| f.name() == name || f.aliases().iter().any(|a| a == name))
 }

@@ -240,17 +240,8 @@ impl SqlEligibility {
             self.reasons.insert(key, reason);
             return reason;
         }
-        let mut portable_schema = datafusion::common::DFSchema::empty();
-        for input in plan.inputs() { portable_schema.merge(input.schema()); }
-        portable_schema.merge(plan.schema());
         for expr in plan.expressions() {
             let _ = expr.apply(|expr| {
-                if let Expr::Literal(value, _) = expr {
-                    if let Some(why) = crate::ir::functions::portable::literal_issue(value, self.dialect.unwrap_or(sql::SqlDialect::DuckDb).name()) {
-                        reason.get_or_insert(why);
-                        return Ok(TreeNodeRecursion::Stop);
-                    }
-                }
                 if let Expr::ScalarFunction(function) = expr {
                     if super::language_functions::supported(function.func.name()) {
                         if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb) {
@@ -269,12 +260,6 @@ impl SqlEligibility {
                         if !adapter_mapping && !logical.has_sql_mapping(dialect.name(), function.args.len()) {
                             reason.get_or_insert("logical function requires native execution");
                             return Ok(TreeNodeRecursion::Stop);
-                        }
-                        if !adapter_mapping && logical.portable_builtin {
-                            if let Err(why) = crate::ir::functions::portable::validate_call(logical.logical_name(), &function.args, &portable_schema, dialect.name()) {
-                                reason.get_or_insert(why);
-                                return Ok(TreeNodeRecursion::Stop);
-                            }
                         }
                         return Ok(TreeNodeRecursion::Continue);
                     }

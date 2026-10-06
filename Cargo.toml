@@ -27,7 +27,6 @@ sep-0006 = []
 sparql-12 = ["oxrdf/rdf-12"]
 standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
-postgres = ["dep:postgres"]
 quickwit = ["dep:reqwest"]
 elasticsearch = ["dep:reqwest"]
 
@@ -56,7 +55,6 @@ num-bigint = "0.4"
 num-traits = "0.2"
 oxiri = "0.2"
 oxsdatatypes = "0.2.2"
-postgres = { version = "0.19", optional = true, features = ["with-chrono-0_4"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 sha2 = "0.10"
@@ -99,10 +97,6 @@ path = "tools/diagnostics/mapped_execution_plans.rs"
 [[example]]
 name = "partition_layout_plans"
 path = "tools/diagnostics/partition_layout_plans.rs"
-
-[[example]]
-name = "portable_function_catalog"
-path = "tools/diagnostics/portable_function_catalog.rs"
 
 [[example]]
 name = "representation_plans"
