@@ -2067,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "antlr4rust",
  "arrow",

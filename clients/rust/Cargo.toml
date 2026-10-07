@@ -1,6 +1,6 @@
 [package]
 name = "orchiddb-client"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Caller-owned Arrow execution for OrchidDB graph queries"
 license = "GPL-3.0-only"
@@ -10,7 +10,7 @@ include = ["src/**", "examples/**", "Cargo.toml", "Cargo.lock", "README.md", "LI
 
 [dependencies]
 thiserror = "2"
-orchiddb = { version = "=0.3.0", path = "../..", default-features = false }
+orchiddb = { version = "=0.4.0", path = "../..", default-features = false }
 arrow = "58.2.0"
 serde_json = "1"
 

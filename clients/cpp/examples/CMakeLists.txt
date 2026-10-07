@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(OrchidDBPublishedExample LANGUAGES CXX)
-find_package(OrchidDB 0.3.0 CONFIG REQUIRED)
+find_package(OrchidDB 0.4.0 CONFIG REQUIRED)
 find_path(DUCKDB_INCLUDE_DIR duckdb.h REQUIRED)
 find_library(DUCKDB_LIBRARY duckdb REQUIRED)
 add_executable(orchiddb_example people.cpp)
