@@ -127,43 +127,8 @@ class Release:
         if self.completed("build"):
             print("Reusing completed builds for this commit")
             return
-        for target, (triple, classifier, _, _) in TARGETS.items():
-            stage = 'build-' + target
-            if self.completed(stage):
-                print('Reusing completed client binaries:', target)
-                continue
-            env = dict(self.env)
-            command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
-            cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
-            env['CARGO_TARGET_DIR'] = str(cache)
-            if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '11.0'
-            if target != 'osx_arm64':
-                run(['rustup', 'target', 'add', triple], env=env)
-                command += ['--target', triple + '.2.28']
-                rustc = subprocess.check_output(['rustup', 'which', 'rustc'], text=True).strip()
-                env['PATH'] = str(Path(rustc).parent) + ':' + env['PATH']
-            for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
-                command += ['-p', package]
-            run(command, env=env)
-            extension_build = matrix.location(self.version, self.commit) / target
-            extension_env = dict(env, ORCHID_BUILD_DIR=str(extension_build))
-            wrapper = [sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
-                       '--skip-load-check', '--extension-version', self.version, '--duckdb-platform', target]
-            if target != 'osx_arm64':
-                wrapper += ['--rust-target', triple]
-            run(wrapper, env=extension_env)
-            manifest = read(extension_build / 'build-manifest.json')
-            manifest.update(reused_rust=False, rust_build=command)
-            write(extension_build / 'build-manifest.json', manifest)
-            binaries = cache / ('' if target == 'osx_arm64' else triple) / 'release'
-            out = self.base / 'binaries' / target
-            out.mkdir(parents=True, exist_ok=True)
-            suffix = 'dylib' if target == 'osx_arm64' else 'so'
-            for name in ('orchiddb', 'liborchiddb_compiler.' + suffix, 'liborchiddb_java.' + suffix):
-                shutil.copy2(binaries / name, out / name)
-            run([sys.executable, 'clients/java/scripts/package-native.py', '--platform', classifier, '--library', out / ('liborchiddb_java.' + suffix), '--version', self.version,
-                 '--output', ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar')], env=env)
-            self.stamp(stage, list(out.iterdir()) + [ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar'), matrix.location(self.version, self.commit) / target / 'orchid.duckdb_extension', matrix.location(self.version, self.commit) / target / 'build-manifest.json'])
+        matrix.prepare_sources()
+        matrix.parallel_build(self.build_platform, list(TARGETS))
         run(['npm', 'ci'], cwd=ROOT / 'clients/js', env=self.env)
         run(['npm', 'run', 'build'], cwd=ROOT / 'clients/js', env=self.env)
         java_env = dict(self.env)
@@ -174,6 +139,45 @@ class Release:
         run(['mvn', '-Pgremlin', '-DskipTests', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
         inputs = [ROOT / path for t in TARGETS for path in read(self.base / ('build-' + t + '.json'))['files']]
         self.stamp('build', inputs + list((ROOT / 'clients/js/dist').glob('*')) + list((ROOT / 'clients/java').glob('*/target/*.jar')) + list((ROOT / 'clients/java').glob('*/target/runtime-deps/*.jar')) + [ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', ROOT / 'jvm/target/classpath.txt'])
+
+    def build_platform(self, target):
+        triple, classifier, _, _ = TARGETS[target]
+        stage = 'build-' + target
+        if self.completed(stage):
+            print('Reusing completed client binaries:', target)
+            return
+        env = dict(self.env)
+        command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
+        cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
+        env['CARGO_TARGET_DIR'] = str(cache)
+        if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '11.0'
+        if target != 'osx_arm64':
+            run(['rustup', 'target', 'add', triple], env=env)
+            command += ['--target', triple + '.2.28']
+            rustc = subprocess.check_output(['rustup', 'which', 'rustc'], text=True).strip()
+            env['PATH'] = str(Path(rustc).parent) + ':' + env['PATH']
+        for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
+            command += ['-p', package]
+        run(command, env=env)
+        extension_build = matrix.location(self.version, self.commit) / target
+        extension_env = dict(env, ORCHID_BUILD_DIR=str(extension_build))
+        wrapper = [sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
+                   '--skip-load-check', '--extension-version', self.version, '--duckdb-platform', target]
+        if target != 'osx_arm64':
+            wrapper += ['--rust-target', triple]
+        run(wrapper, env=extension_env)
+        manifest = read(extension_build / 'build-manifest.json')
+        manifest.update(reused_rust=False, rust_build=command)
+        write(extension_build / 'build-manifest.json', manifest)
+        binaries = cache / ('' if target == 'osx_arm64' else triple) / 'release'
+        out = self.base / 'binaries' / target
+        out.mkdir(parents=True, exist_ok=True)
+        suffix = 'dylib' if target == 'osx_arm64' else 'so'
+        for name in ('orchiddb', 'liborchiddb_compiler.' + suffix, 'liborchiddb_java.' + suffix):
+            shutil.copy2(binaries / name, out / name)
+        run([sys.executable, 'clients/java/scripts/package-native.py', '--platform', classifier, '--library', out / ('liborchiddb_java.' + suffix), '--version', self.version,
+             '--output', ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar')], env=env)
+        self.stamp(stage, list(out.iterdir()) + [ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar'), matrix.location(self.version, self.commit) / target / 'orchid.duckdb_extension', matrix.location(self.version, self.commit) / target / 'build-manifest.json'])
 
     def package(self):
         if not self.completed('build'):

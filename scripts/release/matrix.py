@@ -144,8 +144,12 @@ def main():
     prerequisites()
     if args.stage == 'check':
         return
-    # Download and extract the pinned DuckDB source exactly once before parallel
-    # jobs share its headers; all platforms use the same source release.
+    prepare_sources()
+    targets = [args.platform] if args.platform else list(PLATFORMS)
+    parallel_build(lambda target: build_one(args.version, commit, target), targets)
+
+
+def prepare_sources():
     vendor = ROOT / 'extension/vendor'
     download(f'https://github.com/duckdb/duckdb/archive/refs/tags/v1.5.6.tar.gz',
              vendor / 'duckdb-v1.5.6.tar.gz',
@@ -158,12 +162,13 @@ def main():
         import tarfile
         with tarfile.open(vendor / 'duckdb-v1.5.6.tar.gz') as archive:
             archive.extractall(vendor, filter='data')
-    targets = [args.platform] if args.platform else list(PLATFORMS)
+
+def parallel_build(build_target, targets):
     workers = int(os.environ.get('RELEASE_JOBS', '3'))
     if workers < 1:
         raise SystemExit('RELEASE_JOBS must be positive')
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, len(targets))) as pool:
-        futures = [pool.submit(build_one, args.version, commit, target) for target in targets]
+        futures = [pool.submit(build_target, target) for target in targets]
         for future in concurrent.futures.as_completed(futures):
             future.result()
 

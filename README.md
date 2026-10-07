@@ -821,7 +821,8 @@ target/releases/orchiddb-v<version>/<commit>/upload/
 
 The pipeline builds and packages optimized artifacts for **macOS ARM64, Linux
 ARM64, and Linux x86-64** using Cargo and Zig locally. There is one Cargo build
-per platform (three total), building the extension, CLI, native library, and JNI
+per platform (three total), running concurrently by default (`RELEASE_JOBS=3`),
+building the extension, CLI, native library, and JNI
 library together in the shared workspace. Release runs no tests,
 conformance suites, smoke checks, or database containers.
 

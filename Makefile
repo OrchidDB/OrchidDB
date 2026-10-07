@@ -3,7 +3,8 @@ PYTHON ?= python3
 TEST_PYTHON ?= extension/vendor/test-env/bin/python
 VERSION ?= $(shell $(PYTHON) -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
 RELEASE_PYTHON ?= target/release-env/bin/python
-export TEST_PYTHON RELEASE_PYTHON
+RELEASE_JOBS ?= 3
+export TEST_PYTHON RELEASE_PYTHON RELEASE_JOBS
 export VERSION
 
 define RELEASE_VERSION_SCRIPT
