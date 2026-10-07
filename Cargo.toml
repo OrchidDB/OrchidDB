@@ -12,7 +12,7 @@ documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = ["clients/rust", "clients/native", "clients/java/native", "cli"]
+members = ["clients/rust", "clients/native", "clients/java/native", "cli", "extension/compiler"]
 default-members = ["."]
 exclude = ["clients/rust/examples"]
 resolver = "2"

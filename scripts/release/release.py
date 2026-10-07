@@ -132,19 +132,29 @@ class Release:
             if self.completed(stage):
                 print('Reusing completed client binaries:', target)
                 continue
-            matrix.build_one(self.version, self.commit, target)
             env = dict(self.env)
             command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
             cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
             env['CARGO_TARGET_DIR'] = str(cache)
             if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '11.0'
             if target != 'osx_arm64':
+                run(['rustup', 'target', 'add', triple], env=env)
                 command += ['--target', triple + '.2.28']
                 rustc = subprocess.check_output(['rustup', 'which', 'rustc'], text=True).strip()
                 env['PATH'] = str(Path(rustc).parent) + ':' + env['PATH']
-            for package in ('orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
+            for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
                 command += ['-p', package]
             run(command, env=env)
+            extension_build = matrix.location(self.version, self.commit) / target
+            extension_env = dict(env, ORCHID_BUILD_DIR=str(extension_build))
+            wrapper = [sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
+                       '--skip-load-check', '--extension-version', self.version, '--duckdb-platform', target]
+            if target != 'osx_arm64':
+                wrapper += ['--rust-target', triple]
+            run(wrapper, env=extension_env)
+            manifest = read(extension_build / 'build-manifest.json')
+            manifest.update(reused_rust=False, rust_build=command)
+            write(extension_build / 'build-manifest.json', manifest)
             binaries = cache / ('' if target == 'osx_arm64' else triple) / 'release'
             out = self.base / 'binaries' / target
             out.mkdir(parents=True, exist_ok=True)

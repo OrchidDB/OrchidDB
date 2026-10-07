@@ -25,14 +25,14 @@ for name in manifests:
     updated = text.replace(old, version)
     if updated != text:
         path.write_text(updated)
-for name in ('Cargo.lock', 'extension/compiler/Cargo.lock'):
+for name in ('Cargo.lock',):
     path = Path(name)
     text = path.read_text()
     updated = re.sub(r'(name = "orchiddb[^"\n]*"\nversion = ")[^"]+(")', lambda m: m[1] + version + m[2], text)
     if updated != text:
         path.write_text(updated)
 if subprocess.check_output(['git', 'diff', '--name-only']):
-    subprocess.run(['git', 'add', '--', *manifests, 'Cargo.lock', 'extension/compiler/Cargo.lock'], check=True)
+    subprocess.run(['git', 'add', '--', *manifests, 'Cargo.lock'], check=True)
     subprocess.run(['git', 'commit', '-m', 'Prepare ' + version + ' release [skip ci]'], check=True)
 endef
 export RELEASE_VERSION_SCRIPT
