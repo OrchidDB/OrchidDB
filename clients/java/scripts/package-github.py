@@ -15,7 +15,7 @@ PLATFORMS = ['linux-x86_64', 'linux-aarch64', 'macos-aarch64', 'macos-x86_64']
 NS = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
 
-def package(output, platforms=None):
+def package(output, platforms=None, native_revisions=None):
     platforms = platforms or PLATFORMS
     pom = ET.parse(ROOT / 'pom.xml').getroot()
     version = pom.findtext('m:version', namespaces=NS)
@@ -27,7 +27,10 @@ def package(output, platforms=None):
     if timestamp is None:
         raise ValueError('Root POM must declare project.build.outputTimestamp')
     zip_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).astimezone(timezone.utc).timetuple()[:6]
-    subprocess.run(['python3', str(TOOLS / 'verify-native-artifacts.py'), '--source', str(ROOT), '--version', version, '--platforms', *platforms], cwd=ROOT, check=True)
+    verification = ['python3', str(TOOLS / 'verify-native-artifacts.py'), '--source', str(ROOT), '--version', version, '--platforms', *platforms]
+    if native_revisions:
+        verification += ['--native-revisions', str(native_revisions)]
+    subprocess.run(verification, cwd=ROOT, check=True)
     files = {}
 
     def add(name, path):
@@ -92,7 +95,7 @@ were reused from the recorded release builds; this package rebuilds none.
 '''.encode()
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     manifest = {'version': version, 'commit': revision, 'distribution': 'github',
-                'core_revision': (ROOT / 'native/CORE_REVISION').read_text().strip(),
+                'native_revisions': json.loads(native_revisions.read_text()) if native_revisions else {platform: (ROOT / 'native/CORE_REVISION').read_text().strip() for platform in platforms},
                 'files': {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}}
     files['release-manifest.json'] = (json.dumps(manifest, indent=2) + '\n').encode()
     output.mkdir(parents=True, exist_ok=True)
@@ -113,6 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--source', type=Path, default=ROOT)
     parser.add_argument('--platforms', nargs='+', choices=PLATFORMS)
+    parser.add_argument('--native-revisions', type=Path)
     args = parser.parse_args()
     ROOT = args.source.resolve()
-    package(args.output, args.platforms)
+    package(args.output, args.platforms, args.native_revisions)

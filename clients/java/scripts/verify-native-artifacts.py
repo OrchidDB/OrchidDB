@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import zipfile
 
@@ -15,7 +16,9 @@ p.add_argument('--version', required=True)
 p.add_argument('--source', type=Path, default=ROOT)
 p.add_argument('--platforms', nargs='+', choices=module.PLATFORMS, default=['linux-x86_64', 'linux-aarch64', 'macos-aarch64', 'macos-x86_64'])
 p.add_argument('--directory', type=Path, default=None)
+p.add_argument('--native-revisions', type=Path)
 a = p.parse_args()
+revisions = json.loads(a.native_revisions.read_text()) if a.native_revisions else {}
 ROOT = a.source.resolve()
 a.directory = a.directory or ROOT / 'target/native-artifacts'
 for platform in a.platforms:
@@ -24,7 +27,7 @@ for platform in a.platforms:
         prefix = f'io/orchiddb/native/{platform}/'
         props = dict(line.split('=', 1) for line in jar.read(prefix+'build.properties').decode().splitlines())
         assert props['version'] == a.version, platform + ': wrong version'
-        assert props['coreRevision'] == (ROOT / 'native/CORE_REVISION').read_text().strip(), platform + ': wrong compiler'
+        assert props['coreRevision'] == (revisions[platform] if a.native_revisions else (ROOT / 'native/CORE_REVISION').read_text().strip()), platform + ': wrong compiler'
         assert props['sha256'] == hashlib.sha256(jar.read(prefix+library)).hexdigest(), platform + ': wrong checksum'
         assert jar.read('META-INF/LICENSE.md') == (ROOT / 'LICENSE.md').read_text(encoding='utf-8').encode('utf-8')
     print('Verified release artifact:', platform)

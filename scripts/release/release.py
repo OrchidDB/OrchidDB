@@ -146,7 +146,7 @@ class Release:
                 if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or commit == self.commit:
                     continue
                 changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-                if any(name != 'scripts/release/release.py' for name in changed):
+                if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py') for name in changed):
                     continue
                 previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
                 if native_inputs(previous) != current_inputs or not state.get('files'):
@@ -174,6 +174,37 @@ class Release:
                 write(self.base / (stage + '.json'), adopted)
                 print('Reusing completed platform artifacts without Cargo:', target, 'from', adopted['binary_commit'], flush=True)
                 break
+
+    def reuse_build(self):
+        if self.completed('build'):
+            return
+        self.reuse_platforms()
+        if not all(self.completed('build-' + target) for target in TARGETS):
+            return
+        def build_method(source):
+            tree = ast.parse(source)
+            release = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'Release')
+            return ast.dump(next(node for node in release.body if isinstance(node, ast.FunctionDef) and node.name == 'build'), include_attributes=False)
+        current = build_method(Path(__file__).read_text())
+        for receipt in sorted(self.base.parent.glob('*/build.json'), key=lambda p: p.stat().st_mtime, reverse=True):
+            state = read(receipt)
+            commit = state.get('commit', '')
+            if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or not state.get('files'):
+                continue
+            changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
+            if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py') for name in changed):
+                continue
+            previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
+            if build_method(previous) != current:
+                continue
+            if not all((ROOT / name).is_file() and digest(ROOT / name) == sha for name, sha in state['files'].items()):
+                continue
+            old_native = {name for target in TARGETS for name in read(receipt.parent / ('build-' + target + '.json'))['files']}
+            files = [ROOT / name for name in state['files'] if name not in old_native]
+            files += [ROOT / name for target in TARGETS for name in read(self.base / ('build-' + target + '.json'))['files']]
+            self.stamp('build', files)
+            print('Reusing completed full build; proceeding directly to packaging', flush=True)
+            return
 
     def build(self):
         if self.completed("build"):
@@ -285,7 +316,9 @@ class Release:
                 write(destination / 'manifest.json', {'version': self.version, 'core_revision': self.commit, 'abi_version': 2, 'sha256': digest(library)})
             run(['npm', 'pack', '--ignore-scripts', '--pack-destination', output], cwd=node, env=self.env)
             inventory['javascript'] = [p.name for p in output.glob('*.tgz')]
-            run([sys.executable, 'clients/java/scripts/package-github.py', '--output', output, '--platforms', *[v[1] for v in TARGETS.values()]], env=self.env)
+            native_revisions = stage / 'native-revisions.json'
+            write(native_revisions, {values[1]: read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit) for target, values in TARGETS.items()})
+            run([sys.executable, 'clients/java/scripts/package-github.py', '--output', output, '--native-revisions', native_revisions, '--platforms', *[v[1] for v in TARGETS.values()]], env=self.env)
             inventory['java'] = [p.name for p in output.glob('orchiddb-java-*.zip')]
             kernels = output / f'orchiddb-jvm-kernels-{self.version}.zip'
             kernel_files = {'lib/orchiddb-jvm-0.1.0.jar': ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', 'LICENSE.md': ROOT / 'LICENSE.md'}
@@ -320,6 +353,8 @@ def main():
     args = parser.parse_args()
     release = Release(args.version)
     release.check()
+    if args.stage != 'check':
+        release.reuse_build()
     if args.stage == 'all':
         release.build(); release.package()
         print('Upload every file in:', release.assets)
