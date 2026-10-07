@@ -103,6 +103,9 @@ class Release:
         if wrong:
             raise RuntimeError(f'Update and commit component versions to {self.version} first: {wrong}')
         matrix.prerequisites()
+        self.env['JAVA_HOME'] = subprocess.check_output(
+            ['/usr/libexec/java_home', '-F', '-v', '21'], text=True).strip()
+        self.env['PATH'] = str(Path(self.env['JAVA_HOME']) / 'bin') + os.pathsep + self.env['PATH']
         for tool in ('npm', 'node', 'mvn', 'java', 'cmake', 'c++'):
             if not shutil.which(tool, path=self.env['PATH']):
                 raise RuntimeError('Missing release prerequisite: ' + tool)
@@ -132,8 +135,6 @@ class Release:
         run(['npm', 'ci', '--workspaces=false'], cwd=ROOT / 'clients/js', env=self.env)
         run(['npm', 'run', 'build'], cwd=ROOT / 'clients/js', env=self.env)
         java_env = dict(self.env)
-        if not java_env.get('JAVA_HOME'):
-            java_env['JAVA_HOME'] = subprocess.check_output(['/usr/libexec/java_home', '-v', '21'], text=True).strip()
         for module in ('jvm-codecs', 'jvm'):
             run(['mvn', '-q', '-f', module + '/pom.xml', '-Dmaven.test.skip=true', 'install', 'dependency:build-classpath', '-DincludeScope=runtime', '-Dmdep.regenerateFile=true', '-Dmdep.outputFile=target/classpath.txt'], env=java_env)
         run(['mvn', '-Pgremlin', '-Dmaven.test.skip=true', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
