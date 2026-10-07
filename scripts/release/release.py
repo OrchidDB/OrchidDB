@@ -111,7 +111,7 @@ class Release:
         self.env.pop('DUCKDB_INCLUDE_DIR', None)
         erlang = Path('/opt/homebrew/opt/erlang/bin')
         if erlang.is_dir(): self.env['PATH'] = str(erlang) + ':' + self.env['PATH']
-        self.python = str(Path(os.environ.get('TEST_PYTHON', ROOT / 'extension/vendor/test-env/bin/python')).resolve())
+        self.python = os.path.abspath(os.environ.get('TEST_PYTHON', ROOT / 'extension/vendor/test-env/bin/python'))
 
     def check(self):
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT):

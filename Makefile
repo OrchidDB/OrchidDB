@@ -3,6 +3,38 @@ PYTHON ?= python3
 TEST_PYTHON ?= extension/vendor/test-env/bin/python
 VERSION ?= $(shell $(PYTHON) -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
 export TEST_PYTHON
+export VERSION
+
+define RELEASE_VERSION_SCRIPT
+import os, re, subprocess, tomllib
+from pathlib import Path
+version = os.environ['VERSION']
+if len(version) > 31 or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
+    raise SystemExit('VERSION must be a semantic version, for example 0.4.0')
+if subprocess.check_output(['git', 'status', '--porcelain']):
+    raise SystemExit('Release requires a clean checkout; existing edits will not be committed automatically')
+old = tomllib.loads(Path('Cargo.toml').read_text())['package']['version']
+names = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+manifests = [name for name in names if name == 'Cargo.toml' or
+    (name.startswith(('cli/', 'clients/')) and Path(name).name in
+     ('Cargo.toml', 'package.json', 'package-lock.json', 'pyproject.toml', 'pom.xml', 'mix.exs', 'CMakeLists.txt'))]
+for name in manifests:
+    path = Path(name)
+    text = path.read_text()
+    updated = text.replace(old, version)
+    if updated != text:
+        path.write_text(updated)
+for name in ('Cargo.lock', 'extension/compiler/Cargo.lock'):
+    path = Path(name)
+    text = path.read_text()
+    updated = re.sub(r'(name = "orchiddb[^"\n]*"\nversion = ")[^"]+(")', lambda m: m[1] + version + m[2], text)
+    if updated != text:
+        path.write_text(updated)
+if subprocess.check_output(['git', 'diff', '--name-only']):
+    subprocess.run(['git', 'add', '--', *manifests, 'Cargo.lock', 'extension/compiler/Cargo.lock'], check=True)
+    subprocess.run(['git', 'commit', '-m', 'Prepare ' + version + ' release [skip ci]'], check=True)
+endef
+export RELEASE_VERSION_SCRIPT
 
 .PHONY: help build cli native clients-check clients-test extension extension-test
 help:
@@ -36,11 +68,17 @@ extension-package:
 release-tools-test:
 	$(PYTHON) -m unittest discover -s scripts/release -p 'test_*.py' -v
 
-.PHONY: extension-release extension-package release-tools-test release release-check release-test release-build release-package release-verify
+.PHONY: extension-release extension-package release-tools-test release release-prepare release-env release-check release-test release-build release-package release-verify
 
-# All builds/checks are local. The final directory is ready for manual GitHub upload.
 release:
+	$(MAKE) release-prepare
+	$(MAKE) release-env
 	$(PYTHON) scripts/release/release.py all --version "$(VERSION)"
+release-prepare:
+	$(PYTHON) -c "$$RELEASE_VERSION_SCRIPT"
+release-env:
+	@test -x "$(TEST_PYTHON)" || $(PYTHON) -m venv "$$(dirname "$(TEST_PYTHON)")/.."
+	$(TEST_PYTHON) -m pip install -r extension/tests/requirements.txt -r conformance/requirements.txt pytest build wheel setuptools
 release-check:
 	$(PYTHON) scripts/release/release.py check --version "$(VERSION)"
 release-test:

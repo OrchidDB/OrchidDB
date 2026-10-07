@@ -104,7 +104,10 @@ class ReleaseTests(unittest.TestCase):
         stub.write_text('import sys\nfrom pathlib import Path\n'
                         f'Path({str(log)!r}).write_text(" ".join(sys.argv[1:]))\n'
                         'sys.exit(1)\n')
-        result = subprocess.run(['make', '-j4', 'release',
+        overrides = self.root / 'steps.mk'
+        overrides.write_text('release-prepare release-env:\n\t@:\n')
+        result = subprocess.run(['make', '-j4', '-f', 'Makefile', '-f', str(overrides), 'release',
+                                 f'MAKE=make -f Makefile -f {overrides}',
                                  'VERSION=0.1.0', f'PYTHON={sys.executable} {stub}'],
                                 cwd=packaging.ROOT, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)

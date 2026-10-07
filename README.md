@@ -807,9 +807,11 @@ From a clean, committed checkout on **macOS ARM64**, run:
 make release
 ```
 
-The version defaults to the root Cargo.toml. To select a new version, update and
-commit the client/CLI manifests first, then run `make release VERSION=0.4.0`.
-Every component must have that same version. Nothing is uploaded, no tag is
+The version defaults to the root Cargo.toml. For a new version, run
+`make release VERSION=0.4.0`. From a clean checkout, Make updates the core, CLI,
+and client manifests and lockfiles, commits the version change, prepares the
+Python release environment, and runs the release pipeline. Existing uncommitted
+work is never included in an automatic release commit. Nothing is uploaded, no tag is
 created, and nothing is published to npm, PyPI, Maven Central, Hex, or crates.io.
 The command prints the directory to upload manually to your GitHub release:
 
