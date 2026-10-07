@@ -732,3 +732,17 @@ fn physical_field(
         }),
     }
 }
+
+#[tokio::test]
+async fn third_engine_can_bind_declared_native_functions() {
+    SqlDialect::register(&WAREHOUSE).unwrap();
+    let mut r = request("MATCH (p:Person) RETURN warehouseScore(p.id) AS score");
+    r["functions"] = json!([{
+        "name": "warehouseScore", "target": "warehouse_score",
+        "parameters": ["int64"], "returns": "int64"
+    }]);
+    let result: Value = serde_json::from_str(&compile_json(&r.to_string()).await.unwrap()).unwrap();
+    let sql = result["sql"].as_str().unwrap();
+    assert!(sql.contains("warehouse_score"), "{sql}");
+    assert!(!sql.contains("__engine_function_"), "{sql}");
+}

@@ -1,0 +1,49 @@
+{
+  "format-version": 2,
+  "table-uuid": "d6f00b21-67a8-4822-a72f-3d3c7566ca81",
+  "location": "/tmp/orchiddb-empty-iceberg",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1,
+  "last-column-id": 2,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "name",
+          "required": false,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 999,
+  "properties": {},
+  "snapshots": [],
+  "snapshot-log": [],
+  "metadata-log": [],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "current-snapshot-id": -1
+}

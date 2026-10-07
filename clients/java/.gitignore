@@ -1,0 +1,16 @@
+/target/
+/native/target/
+*.dylib
+*.so
+*.dll
+.DS_Store
+
+/orchiddb-gremlin/target/
+
+/orchiddb-java/target/
+
+__pycache__/
+
+/examples/target/
+
+.idea/

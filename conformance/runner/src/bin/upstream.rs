@@ -9,11 +9,18 @@ use orchiddb::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value a
  ir::rel::rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},
  rdf_engine::{RdfTermValue,SparqlResults}};
 use serde_json::{Value,json};
-fn configure_sql_engine(_engine: &mut GraphEngine) -> Result<(), String> {
+fn configure_sql_engine(engine: &mut GraphEngine) -> Result<(), String> {
  let Some(config) = std::env::var("ORCHIDDB_SQL_ENGINE_JSON").ok() else { return Ok(()); };
  let config: Value = serde_json::from_str(&config).map_err(|e| format!("Invalid SQL engine JSON: {e}"))?;
  match config["dialect"].as_str() {
   Some("duckdb") => Ok(()),
+  Some("postgres") => {
+   let url = config["connection"].as_str().ok_or("PostgreSQL connection is required")?;
+   let url = url.to_owned();
+   let client = std::thread::spawn(move || { let mut config: postgres::Config = url.parse()?; config.options("-c statement_timeout=8000 -c jit=off"); config.connect(postgres::NoTls) }).join().map_err(|_| "PostgreSQL connection worker failed")?.map_err(|e| e.to_string())?;
+   engine.set_sql_region_session(Box::new(orchiddb::ir::rel::sql::region::PostgresRegionSession::new(client)));
+   Ok(())
+  },
   _ => Err("Unsupported SQL engine dialect".into()),
  }
 }

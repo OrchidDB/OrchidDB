@@ -13,3 +13,9 @@ __pycache__/
 # Isolated ArcadeDB provider runtime
 /conformance/adapters/arcadedb/target/
 /conformance/adapters/sqlg/target-arcadedb/
+
+# Generated client build metadata and packages
+/clients/**/CORE_REVISION
+/clients/**/NATIVE_REVISION
+/clients/**/target/
+/cli/target/

@@ -14,6 +14,8 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = super::lowering::transform_relations(plan, dialect)?;
     let plan = crate::ir::rel::representation::select(plan)?.plan;
+    validate_portable_calls(&plan, dialect)?;
+    let plan = specialize_portable_calls(plan, dialect)?;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
     // residual is authoritative. Do not emit duplicate scan hints under aliases
@@ -81,7 +83,26 @@ fn preserve_portable_numeric_types(
                             return Ok(Transformed::yes(udf.call(args)));
                         }
                     }
-                    Ok(Transformed::no(expr))
+                    let Expr::ScalarFunction(call) = &expr else {
+                        return Ok(Transformed::no(expr));
+                    };
+                    if !crate::ir::functions::logical::definition(&call.func)
+                        .is_some_and(|f| f.portable_builtin)
+                    {
+                        return Ok(Transformed::no(expr));
+                    }
+                    let ty = expr.get_type(&schema)?;
+                    if ty.is_numeric() {
+                        Ok(Transformed::yes(
+                            crate::ir::functions::typed_argument_cast_for_engine(
+                                expr,
+                                ty,
+                                dialect.name(),
+                            )?,
+                        ))
+                    } else {
+                        Ok(Transformed::no(expr))
+                    }
                 })?;
                 Ok(transformed.map_data(|expr| Ok(saved.restore(expr)))?)
             })
@@ -546,6 +567,7 @@ pub(super) fn is_identity_projection(projection: &datafusion::logical_expr::Proj
         )
 }
 
+
 /// A literal sort key has no ordering effect. DuckDB rejects ORDER BY NULL;
 /// retain a pushed-down fetch as a limit when every key is constant.
 fn strip_constant_sorts(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
@@ -598,4 +620,58 @@ pub(super) fn has_rdf_source(plan: &LogicalPlan) -> bool {
         Ok(TreeNodeRecursion::Continue)
     });
     found
+}
+
+fn validate_portable_calls(plan: &LogicalPlan, dialect: SqlDialect) -> SqlResult<()> {
+    plan.apply_with_subqueries(|node| {
+        let mut schema = datafusion::common::DFSchema::empty();
+        for input in node.inputs() { schema.merge(input.schema()); }
+        schema.merge(node.schema());
+        node.apply_expressions(|expr| expr.apply(|expr| {
+            if let Expr::Literal(value, _) = expr {
+                if let Some(reason) = crate::ir::functions::portable::literal_issue(value, dialect.name()) {
+                    return Err(DataFusionError::Plan(reason.into()));
+                }
+            }
+            if let Expr::ScalarFunction(call) = expr {
+                if let Some(f) = crate::ir::functions::logical::definition(&call.func).filter(|f| f.portable_builtin) {
+                    if matches!(dialect, SqlDialect::Custom(adapter) if adapter.function_mapping(f.logical_name()).is_some()) {
+                        return Ok(TreeNodeRecursion::Continue);
+                    }
+                    if !f.has_sql_mapping(dialect.name(), call.args.len()) {
+                        return Err(DataFusionError::Plan(format!("{} has no {} mapping for {} arguments: {}", f.logical_name(), dialect.name(), call.args.len(), crate::ir::functions::portable::audit_note(f.logical_name(), dialect.name()))));
+                    }
+                    crate::ir::functions::portable::validate_call(f.logical_name(), &call.args, &schema, dialect.name())
+                        .map_err(|reason| DataFusionError::Plan(format!("{} has no {} mapping for this call: {reason}", f.logical_name(), dialect.name())))?;
+                }
+            }
+            Ok(TreeNodeRecursion::Continue)
+        }))?;
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    Ok(())
+}
+
+fn specialize_portable_calls(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    use datafusion::logical_expr::expr_rewriter::NamePreserver;
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let names = NamePreserver::new(&node);
+        let mut schema = datafusion::common::DFSchema::empty();
+        for input in node.inputs() { schema.merge(input.schema()); }
+        schema.merge(node.schema());
+        node.map_expressions(|expr| {
+            let saved = names.save(&expr);
+            Ok(expr.transform_up(|expr| {
+                if let Expr::ScalarFunction(call) = &expr {
+                    if let Some(f) = crate::ir::functions::logical::definition(&call.func).filter(|f| f.portable_builtin) {
+                        if crate::ir::functions::portable::structured::handles(f.logical_name()) && !matches!(dialect, SqlDialect::Custom(_)) {
+                            let value = crate::ir::functions::portable::structured::mapping(f.logical_name(), &call.args, &schema, dialect == SqlDialect::Postgres)?;
+                            return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).into_udf().call(call.args.clone())));
+                        }
+                    }
+                }
+                Ok(Transformed::no(expr))
+            })?.map_data(|expr| Ok(saved.restore(expr)))?)
+        })
+    })?.data)
 }

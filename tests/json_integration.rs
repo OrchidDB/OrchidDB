@@ -228,3 +228,77 @@ async fn graph_engine_stores_json_properties_without_reinterpreting_them_as_maps
         Some("null".into())
     );
 }
+
+#[cfg(feature = "postgres")]
+#[test]
+fn postgres_json_transport_distinguishes_document_null_and_sql_null() {
+    use orchiddb::ir::rel::sql::region::{PostgresRegionSession, RegionSession};
+    let Ok(url) = std::env::var("GRAPH_PG_URL") else {
+        return;
+    };
+    let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    let mut session = PostgresRegionSession::new(client);
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("document_null", domain::json_type(), true),
+        Field::new("sql_null", domain::json_type(), true),
+        Field::new("text_null", domain::json_type(), true),
+        Field::new(
+            "nested",
+            DataType::List(Arc::new(Field::new("item", domain::json_type(), true))),
+            true,
+        ),
+        Field::new(
+            "nested_lists",
+            DataType::List(Arc::new(Field::new(
+                "item",
+                DataType::List(Arc::new(Field::new("item", domain::json_type(), true))),
+                true,
+            ))),
+            true,
+        ),
+    ]));
+    let result = session.query(r#"SELECT 'null'::jsonb AS document_null, NULL::jsonb AS sql_null, '"null"'::jsonb AS text_null, ARRAY['null'::jsonb,NULL::jsonb,'"x"'::jsonb] AS nested, ARRAY['["null",null,"\"x\""]'::jsonb,'[]'::jsonb,NULL::jsonb] AS nested_lists"#, schema).unwrap();
+    assert_eq!(
+        domain::json_text(&ScalarValue::try_from_array(result.column(0), 0).unwrap()).unwrap(),
+        Some("null".into())
+    );
+    assert!(result.column(1).is_null(0));
+    assert_eq!(
+        domain::json_text(&ScalarValue::try_from_array(result.column(2), 0).unwrap()).unwrap(),
+        Some(r#""null""#.into())
+    );
+    let values = result
+        .column(3)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap()
+        .value(0);
+    assert!(!values.is_null(0));
+    assert!(values.is_null(1));
+    assert_eq!(
+        domain::json_text(&ScalarValue::try_from_array(&values, 2).unwrap()).unwrap(),
+        Some(r#""x""#.into())
+    );
+    let children = result
+        .column(4)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap()
+        .value(0);
+    let children = children
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap();
+    assert!(children.is_null(2));
+    assert_eq!(children.value(1).len(), 0);
+    let values = children.value(0);
+    assert_eq!(
+        domain::json_text(&ScalarValue::try_from_array(&values, 0).unwrap()).unwrap(),
+        Some("null".into())
+    );
+    assert!(values.is_null(1));
+    assert_eq!(
+        domain::json_text(&ScalarValue::try_from_array(&values, 2).unwrap()).unwrap(),
+        Some(r#""x""#.into())
+    );
+}

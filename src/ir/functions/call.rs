@@ -70,12 +70,6 @@ fn bind(
     args: &[Expr],
     schema: &DFSchema,
 ) -> Result<EngineCall> {
-    if !matches!(catalog.engine(), "duckdb" | "postgres") {
-        return Err(DataFusionError::NotImplemented(format!(
-            "function SQL adapter for engine `{}`",
-            catalog.engine()
-        )));
-    }
     let return_type = catalog.bind(name, kind, args, schema)?;
     let target = catalog.target_name(name);
     // Conservative: native calls must never be folded by DataFusion or the
@@ -107,6 +101,9 @@ pub fn native_scalar(name: &str, args: Vec<Expr>, schema: &DFSchema) -> Result<E
         return Ok(function.call(args));
     }
     if let Some(function) = super::search::function(name) {
+        return Ok(function.call(args));
+    }
+    if let Some(function) = super::portable::function(name) {
         return Ok(function.call(args));
     }
     let catalog = super::selected_operator_table()?;

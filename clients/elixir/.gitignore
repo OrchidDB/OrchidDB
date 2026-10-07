@@ -1,0 +1,8 @@
+/_build/
+/deps/
+/priv/*.so
+/*.tar
+/compiler/
+
+/examples/_build/
+/examples/deps/

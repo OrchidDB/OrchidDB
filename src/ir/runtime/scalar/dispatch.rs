@@ -37,6 +37,10 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
     if name.eq_ignore_ascii_case("json.literal") || crate::ir::functions::json::function(name).is_some() {
         return crate::ir::functions::json::runtime_call(name, &args).map_err(|e| RuntimeError::Runtime(e.to_string()));
     }
+    if crate::ir::functions::portable::function(name).is_some() {
+        return crate::ir::functions::portable::runtime_call(name, &args)
+            .map_err(|e| RuntimeError::Runtime(e.to_string()));
+    }
     let resolved = super::preparation::call(name);
     if !resolved.known {
         if let Some(result)=graph.source.as_ref().and_then(|source|source.function(name,&args)) {

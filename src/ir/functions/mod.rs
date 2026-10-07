@@ -10,6 +10,7 @@ mod binding;
 pub mod host_catalog;
 pub mod host_execution;
 pub mod logical;
+pub mod portable;
 pub mod domain;
 pub mod search;
 pub mod json;
@@ -144,10 +145,13 @@ pub fn is_native_aggregate(name: &str) -> bool {
 }
 
 pub(crate) fn is_registered_function(name: &str) -> bool {
-    (name == "json.literal" || json::function(name).is_some() || search::function(name).is_some()) || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
+    (name == "json.literal" || json::function(name).is_some() || search::function(name).is_some() || portable::function(name).is_some()) || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
 }
 
 pub(crate) fn is_volatile_function(name: &str) -> bool {
+    if let Some(function) = portable::function(name) {
+        return function.signature().volatility == datafusion::logical_expr::Volatility::Volatile;
+    }
     selected_operator_table().is_ok_and(|catalog| catalog.overloads(name).iter()
         .any(|overload| overload.stability.as_deref().is_some_and(|stability| stability.eq_ignore_ascii_case("volatile"))))
 }

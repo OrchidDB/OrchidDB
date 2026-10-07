@@ -1,0 +1,13 @@
+{
+  "name": "orchiddb-published-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node duckdb-wasm.mjs"
+  },
+  "dependencies": {
+    "@orchiddb/client": "0.2.1",
+    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
+    "apache-arrow": "17.0.0"
+  }
+}

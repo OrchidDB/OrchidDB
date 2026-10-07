@@ -1,13 +1,75 @@
 # OrchidDB
 
-**Cypher, Gremlin, and SPARQL in DuckDB.** Map existing tables, Iceberg data, and
-Lance datasets into graphs, then query them through your normal DuckDB connection.
+**Cypher, Gremlin, and SPARQL over multiple execution engines.**
 
-Orchid is a DuckDB extension. DuckDB owns the connection, transactions, relational
-execution, and storage access. Orchid reuses its existing language frontends,
-graph compiler, kernels, and value codecs. There is no separate Orchid server,
-public CLI, or client SDK. This README is the project guide; runnable examples
-use the DuckDB interface exclusively.
+OrchidDB is a shared graph compiler and runtime. Language frontends lower to
+Graph IR, then relational plans and graph kernels. Applications can compile to
+SQL and use their own database connection, use the native runtime, or load Orchid
+as a DuckDB extension. The extension hosts the same compiler and kernels inside
+DuckDB, with access to the caller's catalog, transactions, and storage.
+
+## Clients and CLI
+
+All client source now lives in this repository and builds against the same core:
+
+| Component | Source |
+| --- | --- |
+| Rust | [clients/rust](clients/rust) |
+| Java and Gremlin | [clients/java](clients/java) |
+| Python | [clients/python](clients/python) |
+| JavaScript / TypeScript | [clients/js](clients/js) |
+| C++ | [clients/cpp](clients/cpp) |
+| Elixir | [clients/elixir](clients/elixir) |
+| Shared C ABI | [clients/native](clients/native) |
+| Standalone CLI | [cli](cli) |
+
+See [client development](clients/README.md) for local builds and tests. `make cli`
+builds the standalone CLI; `make native` builds and stages one shared library for
+the foreign-language clients. The DuckDB extension remains a separate integration.
+
+## Standalone compilation and engine adapters
+
+The default Rust library has no DuckDB driver or extension dependency. SQL
+compilation for DuckDB and PostgreSQL needs no database connection.
+
+Compiler requests provide the query,
+source schemas, graph mapping, target dialect, and optional typed parameters and
+function signatures. Compilation returns SQL and result metadata without reading
+or copying source rows. SQL-only compilation reports unsupported operations;
+applications needing residual graph kernels can use `ir::rel` and its host APIs.
+
+| Integration | Entry point | Cargo feature |
+| --- | --- | --- |
+| Database-free SQL compilation | `compiler::compile`, `compiler::compile_json` | None |
+| Caller-owned SQL execution | `execution::SqlSession`, `execution::execute` | None |
+| Native relational/kernel execution | `ir::rel::RelBackend` | None |
+| Embedded DuckDB graph engines and SQL executor | `engine`, `mapped_engine`, `rdf_engine`, `ir::rel::sql::DuckDbExecutor` | `duckdb` |
+| PostgreSQL SQL executor / caller-owned region session | `ir::rel::sql::PostgresExecutor`, `ir::rel::sql::region::PostgresRegionSession` | `postgres` |
+| DuckDB extension | `extension/` | Separate extension build below |
+
+`PostgresExecutor` is a fixture/materialization executor: its setup and query run
+inside a transaction that is rolled back. Use `SqlSession` for application-owned
+execution or `PostgresRegionSession` for SQL regions on an existing connection.
+Database features are opt-in; generating PostgreSQL SQL does not require `postgres`.
+
+Portable `fn.*` scalar functions retain native implementations and explicit
+per-dialect SQL mappings, for example `fn.lower(p.name)`. Language-defined
+functions keep their Cypher, Gremlin, or SPARQL semantics. Backend-specific
+functions use an explicit `OperatorTable` or request function signatures; the
+DuckDB extension discovers them from its caller's catalog.
+
+Additional engines implement `EngineAdapter` (also named `DialectAdapter`) and
+register it through `SqlDialect::register`. Adapters own SQL syntax, type/value
+encoding, function mappings, and relational lowering. Execution remains behind
+session/host interfaces. StarRocks is a planned adapter, not a supported dialect
+yet; adding it should reuse the existing language frontends and IR.
+See [tests/engine_adapter.rs](tests/engine_adapter.rs) for a working third-engine
+adapter and [src/ir/rel/sql/dialect.rs](src/ir/rel/sql/dialect.rs) for the contract.
+
+## Optional DuckDB extension
+
+The following guide and SQL examples use the extension interface. DuckDB owns
+the connection, transactions, relational execution, and storage access in this mode.
 
 ## Build and load
 
@@ -295,8 +357,8 @@ Language-defined operations retain their semantics: Cypher `labels()` and
 `toInteger()`, Gremlin traversal steps, and SPARQL datatype/error behavior still
 use the shared language implementation. Use a schema-qualified DuckDB function
 such as `main.log(x)` when its name overlaps a language function. Orchid's RAG
-scoring functions also remain available. The former `fn.*` portable catalog and
-its cross-engine function mappings have been removed.
+scoring functions and the portable `fn.*` catalog also remain available. Portable
+calls use explicit per-engine mappings; ordinary backend calls use DuckDB's catalog.
 
 Table functions remain relational sources: expose `read_parquet(...)`,
 `iceberg_scan(...)`, or another table function through a DuckDB view and map that
@@ -627,15 +689,17 @@ is unchanged: this migration adds no SERVICE execution, reasoning, or HTTP endpo
 
 ## Execution architecture
 
-Existing language frontends compile to the shared graph IR and relational/kernel
-program. DuckDB optimizes SQL regions and schedules physical graph kernel operators.
+All integrations share language frontends, graph IR, and relational/kernel programs.
+Standalone callers choose their SQL dialect and session or native execution. In
+extension mode, DuckDB optimizes SQL regions and schedules physical graph kernel operators.
 Multi-input stateful branches run in declared order. Nested kernels execute compiled
 subplans on the same connection and transaction, with query-scoped state and
 cancellation. Immutable prepared subplans may be reused within a query.
 
-DataFusion remains a compiler dependency; its executor does not run extension
-queries. The PostgreSQL executor, session implementation, and driver dependency have been
-removed. The extension opens no second database connection. Iceberg and Lance retain their own scans and indexes. Existing JVM
+DataFusion provides relational planning and native execution in the shared core;
+its executor does not run extension queries. PostgreSQL execution is an optional
+feature. The extension opens no second database connection. Iceberg and Lance
+retain their own scans and indexes. Existing JVM
 algorithms, callbacks, and graph file codecs remain internal reusable components.
 The retained `orchiddb-jvm-store` binary is an internal helper, not a public CLI.
 
@@ -707,6 +771,34 @@ extension/vendor/test-env/bin/python extension/conformance/run.py \
 Run suites sequentially without filters for complete catalog coverage. Reports
 record case IDs, assertion identities, source hashes, and the loaded artifact.
 The RDF runner reports its full catalog, including the existing exclusions.
+
+### Standalone SQL backend conformance
+
+The migrated shared core passes the full pinned matrix on **both DuckDB and
+PostgreSQL**: 3,897 Cypher, 1,511 Gremlin, and 974 SPARQL cases per backend.
+The same 77 skipped and 74 not-applicable SPARQL cases remain omitted.
+[Standalone execution evidence](conformance/sql-engine-results/summary.json)
+records full reports, executable identity, selected-engine SQL region counts,
+and uninterrupted Gremlin instances.
+
+After installing the assertion dependencies above, build the shared native runner
+and run all three pinned suites on DuckDB and PostgreSQL:
+
+```sh
+bash conformance/build-orchiddb.sh
+export CONFORMANCE_ORCHIDDB_BINARY="$PWD/target/release/upstream"
+export ORCHIDDB_JVM_STORE="$PWD/target/release/orchiddb-jvm-store"
+export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
+export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
+export CONFORMANCE_JAVA=/path/to/java
+export ORCHIDDB_TEST_PG_URL='host=localhost dbname=orchiddb_test'
+extension/vendor/test-env/bin/python conformance/upstream/engine_matrix.py
+```
+
+The matrix requires complete catalogs, one uninterrupted Gremlin instance per
+backend, SQL regions executed by the selected backend, and no unexpected failures
+or omissions. Only the existing SPARQL omissions with unchanged case hashes are
+allowed. Reports are written under `target/conformance/sql-engines/`.
 
 ## Package and release the extension
 

@@ -5,7 +5,7 @@ fn stats(table: &str, column: &str, partitions: Vec<(&str, &str, u64)>) -> Value
 }
 fn request(query: &str) -> Value {
     let mut request: Value =
-        serde_json::from_str(include_str!("../examples/data/representation_sources.json")).unwrap();
+        serde_json::from_str(include_str!("../tools/diagnostics/data/representation_sources.json")).unwrap();
     request["query"] = json!(query);
     request
 }

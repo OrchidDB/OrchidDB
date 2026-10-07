@@ -271,6 +271,11 @@ pub(super) fn with_row_identity(
         .project(columns)?
         .alias(format!("__w_sql_cte_apply_row_{barrier_id}"))?
         .build()?;
+    // This ordinal identifies the complete input occurrence. Adding its
+    // binding-value keys to the join is redundant and makes SQL planners
+    // multiply correlated selectivities, often choosing quadratic loops.
+    // Retain those columns for inner scopes and remove them via cleanup.
+    key_cols.clear();
     key_cols.push(key.clone());
     cleanup.insert(key);
     cleanup.insert(guard);

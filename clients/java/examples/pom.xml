@@ -1,0 +1,26 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.orchiddb.examples</groupId><artifactId>published-client-examples</artifactId><version>0.3.0</version>
+  <properties><maven.compiler.release>17</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <dependencies>
+    <dependency><groupId>com.orchiddb</groupId><artifactId>orchiddb-java</artifactId><version>0.3.0</version></dependency>
+    <dependency><groupId>org.duckdb</groupId><artifactId>duckdb_jdbc</artifactId><version>1.5.5.1</version></dependency>
+    <dependency><groupId>org.apache.arrow</groupId><artifactId>arrow-c-data</artifactId><version>18.3.0</version></dependency>
+    <dependency><groupId>org.apache.arrow</groupId><artifactId>arrow-memory-netty</artifactId><version>18.3.0</version></dependency>
+  </dependencies>
+  <build>
+    <sourceDirectory>../orchiddb-java/src/test/java</sourceDirectory>
+    <plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>io/orchiddb/examples/*.java</include><include>io/orchiddb/gremlin/GremlinExample.java</include></includes></configuration></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version></plugin>
+    </plugins>
+  </build>
+  <profiles><profile><id>gremlin</id>
+    <dependencies><dependency><groupId>com.orchiddb</groupId><artifactId>orchiddb-gremlin</artifactId><version>0.3.0</version></dependency></dependencies>
+    <build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version>
+      <executions><execution><id>gremlin-example</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals>
+        <configuration><sources><source>../orchiddb-gremlin/src/test/java</source></sources></configuration>
+      </execution></executions>
+    </plugin></plugins></build>
+  </profile></profiles>
+</project>

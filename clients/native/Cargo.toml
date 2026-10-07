@@ -1,0 +1,23 @@
+[package]
+name = "orchiddb-compiler-native"
+version = "0.3.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Database-free OrchidDB SQL compiler C ABI"
+repository = "https://github.com/OrchidDB/OrchidDB"
+
+[lib]
+name = "orchiddb_compiler"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+orchiddb = { path = "../..", default-features = false }
+serde_json = "1"
+arrow = { version = "58.2.0", default-features = false, features = ["ffi"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[features]
+default = ["quickwit", "elasticsearch"]
+quickwit = ["orchiddb/quickwit"]
+elasticsearch = ["orchiddb/elasticsearch"]

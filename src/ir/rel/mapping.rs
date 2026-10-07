@@ -1622,6 +1622,7 @@ impl ContextProvider for MappingContextProvider<'_> {
         self.mapping.logical_functions.get(&lower).cloned()
             .or_else(|| crate::ir::functions::search::function(&lower))
             .or_else(|| crate::ir::functions::json::function(&lower))
+            .or_else(|| crate::ir::functions::portable::function(&lower))
             .or_else(|| crate::ir::functions::catalog_scalar(&lower))
     }
 
@@ -1644,7 +1645,9 @@ impl ContextProvider for MappingContextProvider<'_> {
     }
 
     fn udf_names(&self) -> Vec<String> {
-        self.mapping.logical_functions.keys().cloned().collect()
+        self.mapping.logical_functions.keys().cloned()
+            .chain(crate::ir::functions::portable::capabilities().iter().map(|f| f.name.clone()))
+            .collect()
     }
 
     fn udaf_names(&self) -> Vec<String> {
@@ -2013,7 +2016,9 @@ mod tests {
             .plan_sql("SELECT ChAr_LeNgTh('hello'), MeAn(3) OVER (), RoW_NuMbEr() OVER ()")
             .unwrap();
         mapping.plan_sql("SELECT sqrt(9.0), char_length('hello')").unwrap();
-        assert!(provider.get_function_meta("fn.sqrt").is_none());
+        mapping.plan_sql("SELECT fn.sqrt(9.0), fn.char_length('hello')").unwrap();
+        assert!(provider.get_function_meta("fn.sqrt").is_some());
+        assert!(provider.udf_names().contains(&"fn.sqrt".into()));
     }
 
     #[test]

@@ -1,0 +1,3 @@
+include CORE_REVISION LICENSE.md README.md
+recursive-include examples *.py
+recursive-include tests *.py

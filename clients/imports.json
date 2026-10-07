@@ -1,0 +1,34 @@
+{
+  "clients/rust": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-rust.git",
+    "commit": "b5ca9d9e3ea851b2d4308f8f3cc0f93c7fef939a"
+  },
+  "clients/java": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-java.git",
+    "commit": "cb1036d5e08056c8d51d9e0fc9f990693d02a969"
+  },
+  "clients/python": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-python.git",
+    "commit": "5c8ed610d3dc4f957c38fc0d673da17f0b91f993"
+  },
+  "clients/js": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-js.git",
+    "commit": "ac79bea2716df1b2fa542f91486f5f6e347923ca"
+  },
+  "clients/cpp": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-cpp.git",
+    "commit": "c34b5d541359056a7fd8bf8f786d2a8de66024c3"
+  },
+  "clients/elixir": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-elixir.git",
+    "commit": "f7c339944ddaff2d9b88837c964c6d420a8c9f9f"
+  },
+  "clients/native": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-native.git",
+    "commit": "9c1a7ed9a8baf79e3df65ed81818110a647758b0"
+  },
+  "cli": {
+    "repository": "git@github.com:OrchidDB/OrchidDB-cli.git",
+    "commit": "f6f7aaaf49b30e82238e1361f40569376048899a"
+  }
+}

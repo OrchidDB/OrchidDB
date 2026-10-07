@@ -250,6 +250,28 @@ async fn duckdb_uses_direct_json_row_functions_for_elements_entries_and_tree() {
         assert_eq!(actual, expected, "{operation}\n{query}");
     }
 }
+#[cfg(feature = "postgres")]
+#[tokio::test]
+async fn postgres_uses_direct_json_row_functions_for_elements_entries_and_tree() {
+    use orchiddb::ir::rel::sql::SqlDialect;
+    let Ok(url) = std::env::var("GRAPH_PG_URL") else {
+        return;
+    };
+    tokio::task::spawn_blocking(move|| {
+        let mut client=postgres::Client::connect(&url,postgres::NoTls).unwrap();
+        client.batch_execute("BEGIN; CREATE TEMP TABLE documents(id BIGINT,payload JSONB)").unwrap();
+        for (operation,document,expected_count) in [("elements","[10,null,20]",4),("entries",r#"{"z":2,"a.b":1}"#,3),("tree",r#"{"a.b":[null,{"z":2}],"x":3}"#,7)] {
+            client.batch_execute(&format!("TRUNCATE documents; INSERT INTO documents VALUES(1,'{}'),(2,NULL)",document.replace('\'',"''"))).unwrap();
+            let mut mapping=mapping(&[Some(document),None]);
+            register(&mut mapping,json!({"name":"rows","table":"documents","expand":format!("json.{operation}(payload)"),"as":"row","outer":true,"ordinality":"position","parent_columns":{"owner":"id"},"fields":{"value":"json.stringify(row.value)","path":"row.path","depth":"row.depth"}}));
+            let query=sql(mapping.relational_plan("SELECT owner,value,path,depth,position FROM rows").unwrap(),SqlDialect::Postgres);
+            assert!(query.contains("jsonb_array_elements") && query.contains("jsonb_each"),"{query}");assert!(!query.to_lowercase().contains("unnest("),"{query}");
+            let rows=client.query(&query,&[]).unwrap_or_else(|e|panic!("{e}: {:?}\n{query}",e.as_db_error()));assert_eq!(rows.len(),expected_count);
+            if operation=="tree" {assert!(rows.iter().any(|r|r.get::<_,Option<String>>(2).as_deref()==Some("$[\"a.b\"][1][\"z\"]") && r.get::<_,Option<i64>>(3)==Some(3)));}
+        }
+        client.batch_execute("ROLLBACK").unwrap();
+    }).await.unwrap();
+}
 
 #[tokio::test]
 async fn json_collection_rows_back_ordinary_graph_relationships() {
@@ -370,4 +392,58 @@ async fn nested_outer_expansions_can_reuse_ordinality_names() {
     )
     .await;
     assert_eq!(rows, vec![vec!["1", "1", "1"], vec!["2", "NULL", "NULL"]]);
+}
+
+#[cfg(all(feature = "duckdb", feature = "postgres"))]
+#[tokio::test]
+async fn definite_row_paths_have_native_duckdb_postgres_parity() {
+    use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
+    let document = r#"{"a/b":[[8],[9]],"01":[4]}"#;
+    let mut queries = Vec::new();
+    for path in ["/a~1b/1", "$[\"a/b\"][-1]", "/01", "/a~1b/01", "/a~1b/-1"] {
+        let mut mapping = mapping(&[Some(document)]);
+        register(
+            &mut mapping,
+            json!({"name":"rows","table":"documents","expand":format!("json.tree(payload,'{path}')"),"fields":{"path":"item.path","index":"item.index","depth":"item.depth"}}),
+        );
+        let plan = mapping
+            .relational_plan("SELECT path,index,depth FROM rows")
+            .unwrap();
+        let expected = native(plan.clone()).await;
+        let duck = sql(plan.clone(), SqlDialect::DuckDb);
+        let mut actual = DuckDbExecutor::default()
+            .run(
+                &[
+                    "CREATE TABLE documents(id BIGINT,payload JSON)".into(),
+                    format!("INSERT INTO documents VALUES(1,'{document}')"),
+                ],
+                &duck,
+            )
+            .unwrap_or_else(|e| panic!("{path}: {e}\n{duck}"))
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|v| match v {
+                        SqlValue::Text(s) => s,
+                        SqlValue::Int(i) => i.to_string(),
+                        SqlValue::Null => "NULL".into(),
+                        v => panic!("{v:?}"),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        actual.sort();
+        assert_eq!(actual, expected, "DuckDB {path}");
+        queries.push((path.to_owned(), sql(plan, SqlDialect::Postgres), expected));
+    }
+    if let Ok(url) = std::env::var("GRAPH_PG_URL") {
+        tokio::task::spawn_blocking(move||{
+            let mut client=postgres::Client::connect(&url,postgres::NoTls).unwrap();
+            client.batch_execute(&format!("CREATE TEMP TABLE documents(id BIGINT,payload JSONB); INSERT INTO documents VALUES(1,'{document}')")).unwrap();
+            for (path,query,expected) in queries {
+                let mut actual=client.query(&query,&[]).unwrap_or_else(|e|panic!("{path}: {e}: {:?}\n{query}",e.as_db_error())).into_iter().map(|r|vec![r.get::<_,Option<String>>(0).unwrap_or("NULL".into()),r.get::<_,Option<i64>>(1).map(|v|v.to_string()).unwrap_or("NULL".into()),r.get::<_,Option<i64>>(2).map(|v|v.to_string()).unwrap_or("NULL".into())]).collect::<Vec<_>>();
+                actual.sort();assert_eq!(actual,expected,"PostgreSQL {path}");
+            }
+        }).await.unwrap();
+    }
 }

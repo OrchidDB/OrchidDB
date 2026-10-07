@@ -177,13 +177,9 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
                             return ControlFlow::Continue(());
                         }
                     }
-                    // A derived relation cannot refer to the alias that its
-                    // parent assigns to that same relation. Only original
-                    // outer table names can be correlated SQL references.
-                    if !parts[parts.len() - 2].value.starts_with("__orchiddb_derived_")
-                        && self.scopes.iter().rev().skip(1).any(|scope| scope.names.contains(&parts[parts.len() - 2].value)) {
-                        return ControlFlow::Continue(());
-                    }
+                    // The visible outer scopes were checked above. A matching
+                    // name beyond a non-LATERAL derived-table boundary cannot
+                    // be correlated, even when the same CTE is read outside.
                     *expr = ast::Expr::Identifier(parts.last().unwrap().clone());
                 }
             }
@@ -734,6 +730,13 @@ mod tests {
         let sql = rewrite("SELECT l.id FROM source l WHERE EXISTS (SELECT 1 FROM (SELECT l.id AS right_id FROM source l WHERE l.id = 1) derived_1 WHERE l.id = derived_1.right_id)", SqlDialect::Postgres);
         assert!(sql.contains("WHERE l.id = right_id"), "{sql}");
         assert!(!sql.contains("WHERE right_id = right_id"), "{sql}");
+    }
+
+    #[test]
+    fn derived_wildcard_does_not_correlate_across_non_lateral_boundary() {
+        let sql = rewrite("SELECT ranked.id FROM ranked JOIN (SELECT ranked.id FROM (SELECT * FROM ranked ORDER BY ranked.ordinal) sorted) selected ON ranked.id = selected.id", SqlDialect::Postgres);
+        assert!(sql.contains("JOIN (SELECT id FROM (SELECT * FROM ranked ORDER BY ranked.ordinal)"), "{sql}");
+        assert!(sql.contains("ON ranked.id = selected.id"), "{sql}");
     }
 
     #[test]

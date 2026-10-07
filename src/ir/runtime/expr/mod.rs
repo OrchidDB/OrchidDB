@@ -266,6 +266,26 @@ fn eval_inner(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value
             }
             Ok(Value::Null)
         }
+        IrExpr::Call { name, args }
+            if matches!(name.to_ascii_lowercase().as_str(), "fn.coalesce" | "fn.nvl" | "fn.ifnull" | "fn.nvl2") => {
+            // Portable conditional functions must not evaluate an unused graph
+            // expression (which may call a volatile or failing host function).
+            // Keep the UDF responsible for coercion and arity validation.
+            let mut evaluated = vec![Value::Null; args.len()];
+            let is_null = |value: &Value| matches!(value, Value::Null)
+                || matches!(value, Value::Scalar(scalar) if scalar.is_null());
+            if name.eq_ignore_ascii_case("fn.nvl2") && args.len() == 3 {
+                evaluated[0] = eval(&args[0], row, graph)?;
+                let selected = if is_null(&evaluated[0]) { 2 } else { 1 };
+                evaluated[selected] = eval(&args[selected], row, graph)?;
+            } else {
+                for (index, arg) in args.iter().enumerate() {
+                    evaluated[index] = eval(arg, row, graph)?;
+                    if !is_null(&evaluated[index]) { break; }
+                }
+            }
+            eval_call(name, evaluated, graph)
+        }
         IrExpr::Call { name, args } => {
             let evaluated = args
                 .iter()

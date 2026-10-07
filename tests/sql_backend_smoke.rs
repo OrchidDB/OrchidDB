@@ -503,6 +503,25 @@ fn duckdb_replaces_changed_materialization_blocks() {
     );
 }
 
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs a live Postgres server via GRAPH_PG_URL"]
+async fn cypher_match_filter_expand_order_on_postgres() {
+    let Some(mut executor) = sql::PostgresExecutor::from_env().expect("postgres connect") else {
+        eprintln!("GRAPH_PG_URL unset; skipping postgres smoke test");
+        return;
+    };
+    let graph = fixture_graph();
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[:KNOWS]->(f) WHERE p.name = 'alice' RETURN f.name ORDER BY f.name",
+    );
+    let lowered = RelBackend::new().lower(&plan, &graph).expect("lower");
+    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
+        .await
+        .expect("postgres execute");
+    assert_eq!(batch_lines(&returned.batch), vec!["bob", "carol"]);
+}
+
 #[tokio::test]
 async fn scan_preparation_retains_full_source_and_shares_arrow_buffers() {
     use datafusion::datasource::{MemTable, provider_as_source};

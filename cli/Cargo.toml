@@ -1,0 +1,26 @@
+[package]
+name = "orchiddb-cli"
+version = "0.3.0"
+edition = "2024"
+description = "OrchidDB graph query CLI with DuckDB and Iceberg"
+license = "GPL-3.0-only"
+repository = "https://github.com/OrchidDB/OrchidDB"
+publish = false
+
+[[bin]]
+name = "orchiddb"
+path = "src/main.rs"
+
+[features]
+default = ["bundled", "quickwit", "elasticsearch"]
+bundled = ["duckdb/bundled"]
+quickwit = ["orchiddb-client/quickwit"]
+elasticsearch = ["orchiddb-client/elasticsearch"]
+
+[dependencies]
+orchiddb-client = { path = "../clients/rust", default-features = false }
+duckdb = "=1.10502.0"
+arrow = { version = "58.2.0", features = ["ipc", "prettyprint"] }
+async-trait = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

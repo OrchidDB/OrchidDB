@@ -5,14 +5,16 @@ edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 autobins = false
-description = "Shared graph language compiler and kernels for the Orchid DuckDB extension"
+description = "Multi-engine graph language compiler, runtime, and optional DuckDB extension"
 repository = "https://github.com/OrchidDB/OrchidDB"
 homepage = "https://orchiddb.com"
 documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = []
+members = ["clients/rust", "clients/native", "clients/java/native", "cli"]
+default-members = ["."]
+exclude = ["clients/rust/examples"]
 resolver = "2"
 
 [[bin]]
@@ -27,6 +29,7 @@ sep-0006 = []
 sparql-12 = ["oxrdf/rdf-12"]
 standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
+postgres = ["dep:postgres"]
 quickwit = ["dep:reqwest"]
 elasticsearch = ["dep:reqwest"]
 
@@ -55,6 +58,7 @@ num-bigint = "0.4"
 num-traits = "0.2"
 oxiri = "0.2"
 oxsdatatypes = "0.2.2"
+postgres = { version = "0.19", optional = true, features = ["with-chrono-0_4"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 sha2 = "0.10"

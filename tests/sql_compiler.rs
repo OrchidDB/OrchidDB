@@ -200,3 +200,18 @@ async fn compiler_owned_constant_relations_do_not_require_materialization() {
     r["bindings"] = json!({"x":{"type":"string","value":"x'); DROP TABLE people; //"}});
     compile(r).await.unwrap();
 }
+
+#[tokio::test]
+async fn portable_function_compiles_for_both_engines_without_a_host_catalog() {
+    for dialect in ["duckdb", "postgres"] {
+        let mut r = request("MATCH (p:Person) RETURN fn.coalesce(p.name, 'unknown') AS name");
+        r["dialect"] = json!(dialect);
+        let result = compile(r).await.unwrap();
+        assert_eq!(result["dialect"], dialect);
+        assert_eq!(result["fields"], json!(["name"]));
+        let sql = result["sql"].as_str().unwrap();
+        assert!(sql.to_lowercase().contains("coalesce("), "{sql}");
+        assert!(!sql.contains("__orchiddb_logical_"), "{sql}");
+        assert!(!sql.contains("__engine_function_"), "{sql}");
+    }
+}

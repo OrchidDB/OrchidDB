@@ -1,0 +1,25 @@
+[package]
+name = "orchiddb-client"
+version = "0.3.0"
+edition = "2024"
+description = "Caller-owned Arrow execution for OrchidDB graph queries"
+license = "GPL-3.0-only"
+repository = "https://github.com/OrchidDB/OrchidDB"
+publish = ["crates-io"]
+include = ["src/**", "examples/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
+
+[dependencies]
+orchiddb = { version = "=0.3.0", path = "../..", default-features = false }
+arrow = "58.2.0"
+serde_json = "1"
+
+[features]
+default = []
+quickwit = ["orchiddb/quickwit"]
+elasticsearch = ["orchiddb/elasticsearch"]
+bundled-test-driver = ["duckdb/bundled"]
+
+[dev-dependencies]
+async-trait = "0.1"
+duckdb = "=1.10502.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

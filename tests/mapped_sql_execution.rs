@@ -18,6 +18,32 @@ fn engine() -> GraphEngine {
     GraphEngine::mapped(db, Arc::new(m)).unwrap()
 }
 
+#[cfg(feature = "postgres")]
+#[tokio::test]
+async fn mapped_sources_execute_in_caller_owned_postgres_without_ddl() {
+    use orchiddb::ir::rel::sql::{self, region::{RegionSession, PostgresRegionSession}};
+    let Ok(url) = std::env::var("GRAPH_PG_URL") else { return; };
+    let client = std::thread::spawn(move || postgres::Client::connect(&url, postgres::NoTls).unwrap()).join().unwrap();
+    #[derive(Debug)]
+    struct ReadOnly(PostgresRegionSession);
+    impl RegionSession for ReadOnly {
+        fn dialect(&self) -> sql::SqlDialect { sql::SqlDialect::Postgres }
+        fn query(&mut self, query: &str, schema: arrow::datatypes::SchemaRef) -> sql::SqlResult<arrow::record_batch::RecordBatch> {
+            use datafusion::sql::sqlparser::{parser::Parser, dialect::PostgreSqlDialect, ast::Statement};
+            let statements = Parser::parse_sql(&PostgreSqlDialect {}, query).unwrap();
+            assert_eq!(statements.len(), 1);
+            assert!(matches!(statements[0], Statement::Query(_)));
+            self.0.query(query, schema)
+        }
+    }
+    let mut engine = engine();
+    engine.set_sql_region_session(Box::new(ReadOnly(PostgresRegionSession::new(client))));
+    let result = engine.cypher("MATCH (p:Person {id:'p42'}) RETURN p.name AS name").await.unwrap();
+    assert_eq!(result.returned.batch.num_rows(), 1);
+    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "name42");
+    assert_eq!(result.stats.duckdb_regions, 0);
+    assert!(result.stats.postgres_regions > 0);
+}
 #[tokio::test]
 async fn selective_read_executes_filtered_sql_without_native_source_scan() {
     let mut e = engine();

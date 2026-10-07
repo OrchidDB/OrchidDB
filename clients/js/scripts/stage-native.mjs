@@ -1,0 +1,11 @@
+import {copyFileSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const platform=`${process.platform}-${process.arch}`;
+const library=process.platform==='darwin'?'liborchiddb_compiler.dylib':process.platform==='win32'?'orchiddb_compiler.dll':'liborchiddb_compiler.so';
+const source=process.argv[2], revision=process.argv[3];
+if(!/^[0-9a-f]{40}(-dirty)?$/.test(revision)) throw new Error('Expected compiler source revision');
+const output=new URL(`../native/${platform}/`,import.meta.url);
+mkdirSync(output,{recursive:true});
+copyFileSync(`${source}/${library}`,new URL(library,output));
+const version=JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version;
+writeFileSync(new URL('manifest.json',output),JSON.stringify({abi_version:1,version,core_revision:revision,sha256:createHash('sha256').update(readFileSync(new URL(library,output))).digest('hex')})+'\n');

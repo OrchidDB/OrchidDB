@@ -1,0 +1,222 @@
+from contextlib import contextmanager
+from threading import Lock
+from typing import Protocol, ContextManager, Any
+from .compiler import Compiler, CompiledQuery
+
+class ArrowEngine(Protocol):
+    dialect: str
+    def query_arrow(self, query: CompiledQuery, batch_size: int = 65536) -> ContextManager[Any]:
+        """Yield an Arrow RecordBatchReader; release only resources owned by the query."""
+        ...
+
+class DuckDBEngine:
+    """Borrows the exact caller connection; never commits, rolls back, or closes it.
+
+    Do not use the connection directly while this adapter has an open result.
+    The lock prevents overlapping results through this adapter only.
+    """
+    dialect = "duckdb"
+    def __init__(self, connection):
+        self.connection = connection
+        self._lease = Lock()
+
+    @contextmanager
+    def query_arrow(self, query: CompiledQuery, batch_size: int = 65536):
+        if query.diagnostics.get("transfers"):
+            raise ValueError("Use query_federated for a multi-engine plan")
+        if query.version != 1 or query.dialect != self.dialect:
+            raise ValueError("Compiled query dialect does not match engine")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not self._lease.acquire(blocking=False):
+            raise RuntimeError("An Arrow reader is already active on this engine")
+        reader = None
+        try:
+            # execute uses the original connection, preserving transactions and UDFs.
+            reader = self.connection.execute(query.sql).to_arrow_reader(batch_size)
+            yield reader
+        finally:
+            try:
+                if reader is not None:
+                    reader.close()
+            finally:
+                self._lease.release()
+
+    @contextmanager
+    def statistics_arrow(self, request):
+        """Bounded statistics reader on the same transaction, with interruption."""
+        from threading import Timer
+        if not self._lease.acquire(blocking=False):
+            raise RuntimeError("An Arrow reader is already active on this engine")
+        reader = None
+        timer = Timer(request["timeout_ms"] / 1000, self.connection.interrupt)
+        timer.daemon = True
+        try:
+            timer.start()
+            reader = self.connection.execute(request["sql"]).to_arrow_reader(min(4096, request["max_rows"]))
+            yield reader
+        finally:
+            timer.cancel()
+            timer.join()
+            try:
+                if reader is not None:
+                    reader.close()
+            finally:
+                self._lease.release()
+
+class Graph:
+    def __init__(self, compiler: Compiler, engine: ArrowEngine, *, tables, nodes=(), edges=(), functions=(), ontology=None, rdf=(), dataset="default", logical_sources=(), collection_sources=(), representation_sources=(), computed_relationships=(), source_metadata=(), search_indexes=()):
+        import copy
+        self.compiler, self.engine = compiler, engine
+        self.metadata = copy.deepcopy(dict(tables=tables, nodes=nodes, edges=list(edges), functions=list(functions), ontology=ontology or {}))
+        for name, value in (("logical_sources", logical_sources), ("collection_sources", collection_sources), ("representation_sources", representation_sources), ("computed_relationships", computed_relationships), ("source_metadata", source_metadata), ("search_indexes", search_indexes)):
+            if value:
+                self.metadata[name] = copy.deepcopy(value)
+        if rdf:
+            self.metadata["rdf"] = copy.deepcopy(list(rdf))
+        if dataset != "default":
+            self.metadata["dataset"] = dataset
+
+    def plan(self, query: str, *, language="cypher", parameters=None, authorization=None):
+        request = dict(self.metadata, version=1, dialect=self.engine.dialect,
+                       language=language, query=query, parameters=parameters or {})
+        if authorization is not None:
+            request["authorization"] = authorization.to_dict() if hasattr(authorization, "to_dict") else dict(authorization)
+        return self.compiler.compile(request)
+
+    def query_arrow(self, query: str, *, language="cypher", parameters=None, authorization=None, batch_size=65536):
+        return self.engine.query_arrow(self.plan(query, language=language, parameters=parameters,
+                                                 authorization=authorization), batch_size)
+
+    def generate_statistics(self):
+        return self.compiler.generate_statistics(dict(self.metadata, version=1, dialect=self.engine.dialect, language="cypher", query="RETURN 1"), self.engine)
+
+    def clear_statistics(self):
+        self.compiler.clear_statistics()
+
+    def save_statistics(self, path):
+        self.compiler.save_statistics(path)
+
+    def load_statistics(self, path):
+        self.compiler.load_statistics(path)
+
+class PostgresEngine:
+    """Borrow a psycopg 3 connection. The application owns transactions and TLS.
+
+    PostgreSQL's wire protocol is converted to Arrow batches here. No database
+    driver is imported until the application constructs its connection.
+    """
+    dialect = "postgres"
+
+    def __init__(self, connection):
+        self.connection = connection
+        self._lease = Lock()
+
+    @contextmanager
+    def query_arrow(self, query: CompiledQuery, batch_size: int = 65536):
+        import pyarrow as pa
+        if query.version != 1 or query.dialect != self.dialect:
+            raise ValueError("Compiled query protocol/dialect does not match engine")
+        if query.diagnostics.get('transfers'):
+            raise ValueError('Use query_federated for a multi-engine plan')
+        if batch_size <= 0:
+            raise ValueError('batch_size must be positive')
+        if not self._lease.acquire(blocking=False):
+            raise RuntimeError('An Arrow reader is already active on this engine')
+        reader = None
+        try:
+            with _postgres_savepoint(self.connection), self.connection.cursor() as cursor:
+                # Preserve exact decimal values inside PostgreSQL JSONB list cells.
+                import json
+                from decimal import Decimal
+                from functools import partial
+                from psycopg.types.json import set_json_loads
+                set_json_loads(partial(json.loads, parse_float=Decimal), cursor)
+                cursor.execute(query.sql)
+                field_types = query.diagnostics.get('field_types', [])
+                schema = pa.schema([pa.field(c.name, _logical_arrow_type(field_types[i], pa)
+                    if c.type_code in (114, 3802, 199, 3807) and i < len(field_types) and field_types[i]
+                    else _postgres_arrow_type(c, pa)) for i, c in enumerate(cursor.description)])
+                def batches():
+                    while rows := cursor.fetchmany(batch_size):
+                        yield pa.RecordBatch.from_arrays([pa.array([_postgres_json_value(r[i], f.type, pa) if cursor.description[i].type_code in (114,3802,199,3807) else r[i] for r in rows], type=f.type) for i, f in enumerate(schema)], schema=schema)
+                reader = pa.RecordBatchReader.from_batches(schema, batches())
+                yield reader
+        finally:
+            try:
+                if reader is not None:
+                    reader.close()
+            finally:
+                self._lease.release()
+
+
+def _postgres_arrow_type(column, pa):
+    oid = column.type_code
+    scalar = {16:pa.bool_(), 20:pa.int64(), 21:pa.int16(), 23:pa.int32(), 700:pa.float32(), 701:pa.float64(),
+              25:pa.string(), 1042:pa.string(), 1043:pa.string(), 19:pa.string(), 17:pa.binary(),
+              1082:pa.date32(), 1083:pa.time64('us'), 1114:pa.timestamp('us'), 1184:pa.timestamp('us',tz='UTC')}
+    arrays = {1000:16,1005:21,1007:23,1016:20,1021:700,1022:701,1009:25,1015:1043,1001:17,1182:1082,1183:1083,1115:1114,1185:1184}
+    if oid in scalar:
+        return scalar[oid]
+    if oid in arrays:
+        return pa.list_(scalar[arrays[oid]])
+    if oid in (1700, 1231):
+        if column.precision is None:
+            decimal_type = pa.decimal256(76, 38)
+        else:
+            precision = column.precision
+            scale = column.scale or 0
+            decimal_type = pa.decimal128(precision, scale) if precision <= 38 else pa.decimal256(precision, scale)
+        return pa.list_(decimal_type) if oid == 1231 else decimal_type
+    raise ValueError(f'Unsupported PostgreSQL Arrow type OID {oid}; cast it in a source view')
+
+
+@contextmanager
+def _postgres_savepoint(connection):
+    """Recover adapter errors without aborting an application transaction."""
+    if connection.autocommit:
+        yield
+        return
+    from uuid import uuid4
+    name = '__orchiddb_' + uuid4().hex
+    connection.execute('SAVEPOINT ' + name)
+    try:
+        yield
+    except BaseException:
+        connection.execute('ROLLBACK TO SAVEPOINT ' + name)
+        raise
+    finally:
+        connection.execute('RELEASE SAVEPOINT ' + name)
+
+
+def _logical_arrow_type(name, pa):
+    if name.startswith('list:'):
+        return pa.list_(_logical_arrow_type(name[5:], pa))
+    if name.startswith('decimal:'):
+        _, precision, scale = name.split(':')
+        return pa.decimal128(int(precision), int(scale))
+    if name == 'null': return pa.null()
+    if name == 'time': return pa.time64('us')
+    if name == 'boolean': return pa.bool_()
+    if name == 'date': return pa.date32()
+    if name == 'timestamp': return pa.timestamp('us')
+    return pa.type_for_alias(name)
+
+
+def _postgres_json_value(value, ty, pa):
+    if value is None:
+        return None
+    if pa.types.is_list(ty):
+        return [_postgres_json_value(v, ty.value_type, pa) for v in value]
+    import datetime
+    from decimal import Decimal
+    if pa.types.is_decimal(ty): return Decimal(value)
+    if pa.types.is_floating(ty): return float(value)
+    if pa.types.is_binary(ty) and isinstance(value, str):
+        if value.startswith('\\x'): return bytes.fromhex(value[2:])
+        import base64
+        return base64.b64decode(value, validate=True)
+    if pa.types.is_date(ty) and isinstance(value, str): return datetime.date.fromisoformat(value)
+    if pa.types.is_time(ty) and isinstance(value, str): return datetime.time.fromisoformat(value)
+    if pa.types.is_timestamp(ty) and isinstance(value, str): return datetime.datetime.fromisoformat(value)
+    return value

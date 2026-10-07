@@ -1,0 +1,182 @@
+{
+  "scope": "Standalone SQL execution on DuckDB and PostgreSQL; pinned upstream language suites",
+  "binary_sha256": "fbdc35f50ab16e9fc159633d5c69203e1835c6ac22c4654e01caa1a9e67f9383",
+  "source_note": "Reports capture the precommit working tree and executable hash; this commit contains the validated source.",
+  "sparql_omissions": "Only exact case IDs, hashes and statuses from conformance/extension-results/rdf.json.gz",
+  "reports": [
+    {
+      "engine": "duckdb",
+      "suite": "opencypher",
+      "counts": {
+        "pass": 3897
+      },
+      "full_catalog": true,
+      "engine_regions": 1766,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "duckdb-opencypher.json.gz",
+      "sha256": "dd9f4ee04a71edf0e0559198f2661ecd68cac3909c6bcd9aae88cab9920e6f9f",
+      "coverage": {
+        "catalog_cases": 3897,
+        "recorded_cases": 3897,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-07T20:12:46.203954+00:00"
+    },
+    {
+      "engine": "duckdb",
+      "suite": "tinkerpop",
+      "counts": {
+        "pass": 1511
+      },
+      "full_catalog": true,
+      "engine_regions": 4865,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "duckdb-tinkerpop.json.gz",
+      "sha256": "f0388b85d4a2518dd441c5128fae442ab14266d5b45051937f27112613690585",
+      "coverage": {
+        "catalog_cases": 1511,
+        "recorded_cases": 1511,
+        "filtered": false,
+        "excluded_capabilities": {}
+      },
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-07T20:13:31.571464+00:00"
+    },
+    {
+      "engine": "duckdb",
+      "suite": "rdf",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "full_catalog": true,
+      "engine_regions": 513,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "duckdb-rdf.json.gz",
+      "sha256": "4ef8ca8903daf22cd4099a86b671c84798039e53e5f8678d6dd88be36f17f4eb",
+      "coverage": {
+        "catalog_cases": 1125,
+        "recorded_cases": 1125,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "finished_at": "2026-10-07T20:14:59.827663+00:00"
+    },
+    {
+      "engine": "postgres",
+      "suite": "opencypher",
+      "counts": {
+        "pass": 3897
+      },
+      "full_catalog": true,
+      "engine_regions": 1770,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "postgres-opencypher.json.gz",
+      "sha256": "d0502cfbf42bf8fd36e3a213ad09d71036aa1ca0c1b6dddd7acd2ff4231a8fbc",
+      "coverage": {
+        "catalog_cases": 3897,
+        "recorded_cases": 3897,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-07T20:08:56.502642+00:00"
+    },
+    {
+      "engine": "postgres",
+      "suite": "tinkerpop",
+      "counts": {
+        "pass": 1511
+      },
+      "full_catalog": true,
+      "engine_regions": 4829,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "postgres-tinkerpop.json.gz",
+      "sha256": "3c4516c39ae523c76a7a6b89ccd0769ac368b6d93d7c54298ef55d46ce20fce0",
+      "coverage": {
+        "catalog_cases": 1511,
+        "recorded_cases": 1511,
+        "filtered": false,
+        "excluded_capabilities": {}
+      },
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-07T20:10:25.544118+00:00"
+    },
+    {
+      "engine": "postgres",
+      "suite": "rdf",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "full_catalog": true,
+      "engine_regions": 518,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "postgres-rdf.json.gz",
+      "sha256": "12686662d64dc8490f872ad94da09e2dafcde9b34fabe1ceff5f9f7d4b039a72",
+      "coverage": {
+        "catalog_cases": 1125,
+        "recorded_cases": 1125,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "finished_at": "2026-10-07T20:11:57.379945+00:00"
+    }
+  ]
+}

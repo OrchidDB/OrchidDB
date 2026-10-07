@@ -1,0 +1,20 @@
+[package]
+name = "orchiddb-published-example"
+version = "0.3.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "borrowed-duckdb"
+path = "borrowed_duckdb.rs"
+
+[dependencies]
+orchiddb-client = { version = "=0.3.0", path = "..", default-features = false }
+duckdb = "=1.10502.0"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[features]
+bundled = ["duckdb/bundled"]

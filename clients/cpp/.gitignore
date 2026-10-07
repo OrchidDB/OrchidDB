@@ -1,0 +1,7 @@
+build/
+_dist/
+*.tar.gz
+.native-build/
+_native/
+.test-deps/
+_CPack_Packages/

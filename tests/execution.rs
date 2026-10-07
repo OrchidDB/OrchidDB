@@ -33,6 +33,7 @@ impl SqlSession for Session {
 }
 fn query() -> CompiledSql {
     CompiledSql {
+        result_form: "RowSet".into(),
         execution_engine: None,
         transfers: vec![],
         constraint_proofs: vec![],

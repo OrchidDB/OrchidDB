@@ -316,5 +316,55 @@ mod tests {
         let sql = format!("SELECT {}", lower(&bad, SqlDialect::DuckDb).unwrap());
         assert!(db.prepare(&sql).unwrap().query_arrow([]).is_err());
     }
-
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_transform_preserves_nested_json_domain_cells() {
+        use super::super::region::{PostgresRegionSession, RegionSession};
+        use arrow::datatypes::{Field, Schema};
+        use datafusion::common::ScalarValue;
+        use std::sync::Arc;
+        let Ok(url) = std::env::var("GRAPH_PG_URL") else {
+            return;
+        };
+        let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+        let mut session = PostgresRegionSession::new(client);
+        let schema: Value = serde_json::from_str(r#"[["json"]]"#).unwrap();
+        let ty = crate::ir::functions::json::schema_type(&schema).unwrap();
+        let output_schema = Arc::new(Schema::new(vec![Field::new("result", ty.clone(), true)]));
+        let document: Value = serde_json::from_str("[[null],[1],null,[]]").unwrap();
+        let args = [
+            expression("CAST('[[null],[1],null,[]]' AS JSONB)"),
+            expression(r#"'[["json"]]'"#),
+        ];
+        let sql = format!(
+            "SELECT {} AS result",
+            lower(&args, SqlDialect::Postgres).unwrap()
+        );
+        let actual = session.query(&sql, output_schema).unwrap();
+        let expected = crate::ir::functions::json::convert(&document, &ty).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(actual.column(0), 0).unwrap(),
+            expected
+        );
+        let bad = [
+            expression("CAST('{}' AS JSONB)"),
+            expression(r#"'"string"'"#),
+        ];
+        let sql = format!(
+            "SELECT {} AS result",
+            lower(&bad, SqlDialect::Postgres).unwrap()
+        );
+        assert!(
+            session
+                .query(
+                    &sql,
+                    Arc::new(Schema::new(vec![Field::new(
+                        "result",
+                        DataType::Utf8,
+                        true
+                    )]))
+                )
+                .is_err()
+        );
+    }
 }

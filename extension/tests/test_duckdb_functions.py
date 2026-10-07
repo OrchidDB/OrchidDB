@@ -21,6 +21,24 @@ class DuckDBFunctionTests(unittest.TestCase):
         values = [json.loads(row[0]) for row in rows]
         return [float(v['value']) if v['type'] in ('double','float') else v.get('value') for v in values]
 
+    def test_portable_functions_coexist_with_caller_catalog(self):
+        self.db.execute('CREATE MACRO twice(x) AS x*2')
+        self.assertEqual(self.db.execute(
+            'CYPHER social MATCH (p:Person) RETURN fn.coalesce(p.name, \'unknown\'), twice(p.age) ORDER BY p.name'
+        ).fetchall(), [('Alice', 60), ('Bob', 80), ('Cara', None)])
+        self.assertEqual(self.managed("RETURN fn.lower('ALICE') AS v"), ['alice'])
+
+    def test_portable_conditionals_keep_residual_branches_lazy(self):
+        self.db.execute("CREATE MACRO explode() AS error('unused branch was executed')")
+        for expression in [
+            "fn.coalesce('safe', explode())",
+            "fn.nvl('safe', explode())",
+            "fn.ifnull('safe', explode())",
+            "fn.nvl2(null, explode(), 'safe')",
+            "fn.nvl2(1, 'safe', explode())",
+        ]:
+            self.assertEqual(self.managed(f'RETURN {expression} AS v'), ['safe'], expression)
+
     def test_catalog_builtins_without_signatures(self):
         expected = self.db.execute("SELECT version(), unicode('A'), bar(5,0,10,10)").fetchone()
         self.assertEqual(self.db.execute("CYPHER social RETURN version(), unicode('A'), bar(5,0,10,10)").fetchone(), expected)

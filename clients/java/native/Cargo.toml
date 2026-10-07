@@ -1,0 +1,19 @@
+[package]
+name = "orchiddb-java-native"
+version = "0.3.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "orchiddb_java"
+crate-type = ["cdylib"]
+
+[dependencies]
+orchiddb = { path = "../../..", default-features = false }
+jni = "0.21.1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[features]
+default = ["quickwit", "elasticsearch"]
+quickwit = ["orchiddb/quickwit"]
+elasticsearch = ["orchiddb/elasticsearch"]

@@ -1,0 +1,6 @@
+/target/
+*.duckdb
+*.duckdb.wal
+.DS_Store
+
+/examples/target/

@@ -16,8 +16,8 @@
 //!   generation; anything the unparser cannot express surfaces as a typed
 //!   [`SqlError::Unsupported`], never as wrong SQL.
 //! * [`SqlExecutor`] — the engine abstraction. [`DuckDbExecutor`] (feature
-//!   `duckdb`, explicitly enabled) runs local DuckDB validation. Production
-//!   queries use the caller-owned DuckDB extension host.
+//!   `duckdb`) embeds DuckDB; `PostgresExecutor` (feature `postgres`) connects
+//!   to PostgreSQL. Applications can also supply their own SQL sessions.
 
 #[cfg(feature = "duckdb")]
 pub mod language_functions;
@@ -99,6 +99,11 @@ pub mod program;
 pub mod mutation;
 #[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
+
+#[cfg(feature = "postgres")]
+mod postgres_exec;
+#[cfg(feature = "postgres")]
+pub use postgres_exec::PostgresExecutor;
 
 mod recursive;
 

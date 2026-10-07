@@ -39,7 +39,7 @@ def file_identity(path):
  return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 def execution_profile(engine):
  dialect=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))['dialect']
- sql_engine={'duckdb':'DuckDB'}.get(dialect,dialect)
+ sql_engine={'duckdb':'DuckDB','postgres':'PostgreSQL'}.get(dialect,dialect)
  return {'traversal_language':'gremlin-groovy' if engine in (*JVM_ENGINES,'arcadedb') else 'gremlin-language',
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
@@ -177,6 +177,7 @@ def main():
  if args.engine=='orchiddb':
   sql_config=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))
   build['sql_engine']=sql_config['dialect']
+  if sql_config['dialect']=='postgres':build['sql_session_options']={'statement_timeout_ms':8000,'jit':False}
  build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
  build['capture_phase']='before-scenarios'
  try:

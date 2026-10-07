@@ -1,9 +1,10 @@
-//! Shared graph compiler and kernels for the Orchid DuckDB extension.
+//! Multi-engine graph language compiler and runtime.
 //!
-//! Language frontends lower through Graph IR and relational/kernel programs.
-//! The extension hosts execution in DuckDB; retained library adapters support
-//! internal reuse and regression coverage. See `README.md` for the product interface.
-
+//! Cypher, Gremlin, and SPARQL lower through shared Graph IR and relational/kernel
+//! programs. Compile to SQL using [`compiler`], execute through caller-owned
+//! sessions using [`execution`], or integrate an engine through [`ir::rel::sql`].
+//! The `duckdb` and `postgres` features enable optional database adapters.
+//! The DuckDB extension is built separately from `extension/` using this core.
 
 pub mod spargebra;
 pub mod compiler;
