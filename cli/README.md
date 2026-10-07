@@ -1,7 +1,7 @@
 # OrchidDB CLI
 
-Register schema configuration and execute graph query text separately. Run from
-the repository root:
+Register schema configuration and execute graph query text separately. Install
+the DuckDB shared library as described below, then run from the repository root:
 
 ```sh
 make cli
@@ -24,9 +24,24 @@ Query results default to Arrow IPC on stdout; `--format table` displays them.
 Diagnostics use stderr. The CLI currently executes on DuckDB; SDK connections
 also support PostgreSQL. The optional Orchid DuckDB extension is built separately.
 
-DuckDB and the CLI's native driver are bundled. Iceberg loads by default and may
-be downloaded from DuckDB's extension service on first use. `--no-iceberg`
-disables that setup for queries that do not need Iceberg.
+## DuckDB installation
+
+The CLI dynamically links DuckDB; the engine is not included in the executable
+or release archive. Install the DuckDB 1.5.2 shared library for your platform from
+[DuckDB releases](https://github.com/duckdb/duckdb/releases/tag/v1.5.2).
+Installing only the `duckdb` command is insufficient; the CLI needs
+`libduckdb.dylib` on macOS or `libduckdb.so` on Linux.
+
+On macOS, place the library in `/opt/homebrew/lib` or `/usr/local/lib`, or set
+`DYLD_LIBRARY_PATH` to its directory. On Linux, install it into your system's
+library search path, or set `LD_LIBRARY_PATH` to its directory.
+For source builds, set `DUCKDB_LIB_DIR` to the directory containing the library.
+Release builds automatically download the matching prebuilt library for linking
+and exclude it from the packaged CLI.
+
+Iceberg loads by default and may be downloaded from DuckDB's extension service
+on first use. `--no-iceberg` disables that setup for queries that do not need
+Iceberg.
 
 ## Statistics
 

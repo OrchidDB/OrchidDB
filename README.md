@@ -824,7 +824,10 @@ ARM64, and Linux x86-64** using Cargo and Zig locally. There is one Cargo build
 per platform (three total), running concurrently by default (`RELEASE_JOBS=3`),
 building the extension, CLI, native library, and JNI
 library together in the shared workspace. Release runs no tests,
-conformance suites, smoke checks, or database containers.
+conformance suites, smoke checks, or database containers. The CLI dynamically
+links DuckDB: release builds download its prebuilt library for linking, and users
+install the shared library separately as described in [CLI setup](cli/README.md#duckdb-installation).
+The DuckDB engine is not compiled from source or included in the CLI archive.
 
 | Component | GitHub assets |
 | --- | --- |

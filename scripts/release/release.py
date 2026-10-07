@@ -147,6 +147,8 @@ class Release:
             print('Reusing completed client binaries:', target)
             return
         env = dict(self.env)
+        env['DUCKDB_DOWNLOAD_LIB'] = '1'
+        env['DUCKDB_STATIC'] = '0'
         command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
         cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
         env['CARGO_TARGET_DIR'] = str(cache)
@@ -200,7 +202,7 @@ class Release:
                 library = binaries / ('liborchiddb_compiler.' + ('dylib' if target == 'osx_arm64' else 'so'))
                 metadata = json.dumps({'version': self.version, 'commit': self.commit, 'target': triple, 'abi_version': 2}, indent=2).encode()
                 common = {'LICENSE.md': ROOT / 'LICENSE.md', 'manifest.json': metadata}
-                add('cli', f'orchiddb-cli-{self.version}-{target}.tar.gz', {**common, 'README.txt': b'Extract this archive and run bin/orchiddb query --file examples/people.cypher --schema examples/people.json --init examples/setup.sql --no-iceberg --format table.\n', 'bin/orchiddb': binaries / 'orchiddb', 'README.md': ROOT / 'cli/README.md', **{'examples/' + k: v for k, v in source_files(Path('cli/examples')).items()}})
+                add('cli', f'orchiddb-cli-{self.version}-{target}.tar.gz', {**common, 'README.txt': b'Install the DuckDB 1.5.2 shared library separately and make it available to the system dynamic loader (see README.md). Extract this archive and run bin/orchiddb query --file examples/people.cypher --schema examples/people.json --init examples/setup.sql --no-iceberg --format table.\n', 'bin/orchiddb': binaries / 'orchiddb', 'README.md': ROOT / 'cli/README.md', **{'examples/' + k: v for k, v in source_files(Path('cli/examples')).items()}})
                 add('native', f'orchiddb-native-{self.version}-{target}.tar.gz', {**common, 'lib/' + library.name: library, 'include/orchiddb.h': ROOT / 'clients/native/include/orchiddb.h'})
                 cpp = stage / ('cpp-' + target)
                 run(['cmake', '-S', 'clients/cpp', '-B', cpp / 'build', '-DCMAKE_INSTALL_PREFIX=' + str(cpp / 'install'), '-DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=TRUE', '-DORCHIDDB_NATIVE_LIBRARY=' + str(library)], env=self.env)
