@@ -1,7 +1,7 @@
 package io.orchiddb;
 
 @FunctionalInterface
-public interface SqlCompiler {
+interface SqlCompiler {
   CompiledQuery compile(Compilation request);
 
   /** Shared statistics protocol, also usable with application-owned execution sessions. */

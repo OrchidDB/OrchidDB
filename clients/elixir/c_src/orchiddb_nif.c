@@ -47,7 +47,7 @@ static ERL_NIF_TERM invoke_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM arg
     char *(*compile)(const char *) = dlsym(library, symbol);
     void (*release)(char *) = dlsym(library, "orchiddb_string_free");
     const char *(*revision)(void) = dlsym(library, "orchiddb_core_revision");
-    if (!abi || !compile || !release || !revision || abi() != 1) {
+    if (!abi || !compile || !release || !revision || abi() != 2) {
         enif_free(q); return error(env, "Incompatible OrchidDB ABI");
     }
     char *response = compile(q);
@@ -60,7 +60,7 @@ static ERL_NIF_TERM invoke_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM arg
     return result;
 }
 static ERL_NIF_TERM compile_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    return invoke_json(env, argc, argv, "orchiddb_compile_json");
+    return invoke_json(env, argc, argv, "orchiddb_execution_command");
 }
 static ERL_NIF_TERM statistics_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     return invoke_json(env, argc, argv, "orchiddb_statistics_json");

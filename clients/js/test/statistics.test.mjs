@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tableFromArrays, tableFromIPC } from 'apache-arrow';
-import { Compiler, asyncDuckDBEngine } from '../dist/index.js';
+import { Compiler, asyncDuckDBEngine } from '../dist/internal.js';
 
 function compiler() {
   const c = Object.create(Compiler.prototype);

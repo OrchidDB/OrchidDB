@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import base64
 import pyarrow as pa
 import pytest
-from orchiddb import Compiler
+from orchiddb._runtime import _Runtime as Compiler
 
 
 class Coordinator:

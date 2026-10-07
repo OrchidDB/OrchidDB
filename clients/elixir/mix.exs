@@ -8,7 +8,7 @@ defmodule OrchidDB.MixProject do
       elixir: "~> 1.15",
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_clean: ["clean"],
-      description: "OrchidDB graph-to-SQL compilation with caller-owned Arrow execution",
+      description: "Graph query execution on caller-owned database connections",
       package: [
         licenses: ["GPL-3.0-only"],
         links: %{"GitHub" => "https://github.com/OrchidDB/OrchidDB"},

@@ -1,21 +1,28 @@
 import test from 'node:test';
+import { Connection } from '../dist/index.js';
 import assert from 'node:assert/strict';
-import { Compiler, batches, authorization, permissionRelation, permissionScope } from '../dist/index.js';
-import { openDatabase, arrowEngine, request } from '../examples/duckdb-wasm.mjs';
+import { Compiler, batches, authorization, permissionRelation, permissionScope } from '../dist/internal.js';
+import { openDatabase, arrowEngine, schema } from '../examples/duckdb-wasm.mjs';
+const request = {...schema, version:1, dialect:'duckdb', language:'cypher', query:'MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY p.id'};
 
-test('native compile -> caller DuckDB -> Arrow preserves values/nulls and transaction ownership', async () => {
+test('registered connection executes queries and preserves values/nulls and transaction ownership', async () => {
   const db = await openDatabase(); const connection = db.connect();
   try {
     connection.query("CREATE TABLE people(id BIGINT, name VARCHAR); INSERT INTO people VALUES (9007199254740993, 'Orchid'), (2, NULL)");
     connection.query('BEGIN; INSERT INTO people VALUES (3, \'transaction\')');
     const compiler = new Compiler(); const engine = arrowEngine(connection);
-    const result = await compiler.query(request, engine);
+    const graph = new Connection(engine, schema);
+    assert.throws(() => new Connection(engine, {...schema, query: request.query}), /query belongs/);
+    const result = await graph.query(request.query);
     const rows = [];
     for await (const batch of batches(result)) {
       assert.equal(batch.schema.fields[0].name, 'id');
       for (let i=0;i<batch.numRows;i++) rows.push([batch.getChild('id').get(i),batch.getChild('name').get(i)]);
     }
     assert.deepEqual(rows, [[2n,null],[3n,'transaction'],[9007199254740993n,'Orchid']]);
+    const again = await graph.query('MATCH (p:Person) RETURN count(p) AS n');
+    for await (const batch of batches(again)) assert.equal(batch.getChild('n').get(0), 3n);
+    graph.close();
     connection.query('ROLLBACK');
     assert.equal(connection.query('SELECT count(*) n FROM people').getChild('n').get(0),2n);
     assert.throws(()=>compiler.compile({...request,query:'this is not a graph query'}));

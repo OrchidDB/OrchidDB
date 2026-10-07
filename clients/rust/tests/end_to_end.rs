@@ -1,3 +1,5 @@
+#[path = "../src/statistics.rs"]
+mod statistics;
 use duckdb::arrow::{
     array::{Array, StringArray},
     datatypes::SchemaRef,
@@ -17,11 +19,8 @@ impl RecordBatchReader for Batches<'_> {
         self.0.get_schema()
     }
 }
-use orchiddb_client::{
-    ExecutionError, SqlDialect, SqlSession,
-    compiler::{CompiledSql, compile},
-    execute,
-};
+use orchiddb::execution::{ExecutionError, SqlDialect, SqlSession, execute};
+use orchiddb::compiler::{CompiledSql, compile};
 use serde_json::{Value, json};
 
 // A test application adapter, not an OrchidDB-owned connection or runtime.
@@ -456,7 +455,7 @@ async fn arrow_schema_nulls_multiple_batches_and_retained_buffers() {
 
 #[tokio::test]
 async fn statistics_protocol_retains_snapshot_and_preserves_diagnostics() {
-    use orchiddb_client::Statistics;
+    use statistics::Statistics;
     let r = request("cypher", "MATCH (p:Person) RETURN p.name AS name");
     let mut statistics = Statistics::default();
     let mut calls = 0;
@@ -486,7 +485,7 @@ async fn statistics_protocol_retains_snapshot_and_preserves_diagnostics() {
 
 #[tokio::test]
 async fn failed_statistics_generation_keeps_the_previous_snapshot() {
-    use orchiddb_client::Statistics;
+    use statistics::Statistics;
     let r = request("cypher", "MATCH (p:Person) RETURN p.name AS name");
     let mut statistics = Statistics::default();
     statistics
@@ -511,7 +510,7 @@ mod statistics_adapter;
 
 #[tokio::test]
 async fn generated_statistics_use_the_existing_session_and_keep_all_languages_correct() {
-    use orchiddb_client::Statistics;
+    use statistics::Statistics;
     let db = database();
     let base = request(
         "cypher",
@@ -566,7 +565,7 @@ async fn generated_statistics_use_the_existing_session_and_keep_all_languages_co
 
 #[tokio::test]
 async fn statistics_drop_and_cancel_release_native_capacity() {
-    use orchiddb_client::Statistics;
+    use statistics::Statistics;
     use std::{
         future::Future,
         task::{Context, Poll, Waker},
@@ -601,7 +600,7 @@ async fn statistics_drop_and_cancel_release_native_capacity() {
 
 #[tokio::test]
 async fn transport_truncation_is_not_reported_as_an_empty_table() {
-    use orchiddb_client::Statistics;
+    use statistics::Statistics;
     let db = database();
     let mut statistics = Statistics::default();
     statistics

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.*;
+import java.sql.Connection;
 import java.util.*;
 import org.junit.jupiter.api.*;
 
@@ -42,6 +43,28 @@ class IntegrationTest {
                 PlanCache.bounded(16),
                 JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
             .graph(MAPPING);
+  }
+
+  @Test
+  void registeredJsonSchemaExecutesSeparateQueries() throws Exception {
+    var schema =
+        """
+        {"tables":[{"name":"people","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]}],
+         "nodes":[{"label":"Person","table":"people","id":"id","properties":{"name":"name"}}]}
+        """;
+    var engine = JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection);
+    var registered = new io.orchiddb.Connection(schema, engine);
+    assertEquals(
+        List.of("Ada"),
+        values(
+            registered.query(
+                Query.cypher(
+                    "MATCH (p:Person) WHERE p.name=$name RETURN p.name", Map.of("name", "Ada")))));
+    assertEquals(List.of(3L), values(registered.query("MATCH (p:Person) RETURN count(p)")));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new io.orchiddb.Connection("{\"query\":\"RETURN 1\",\"tables\":[]}", engine));
+    assertFalse(connection.isClosed());
   }
 
   @AfterEach
@@ -291,13 +314,16 @@ class IntegrationTest {
             List.of(new Ontology.ClassMapping("http://example.org/Person", "Person", null)),
             List.of(new Ontology.PropertyMapping("http://example.org/name", "Person", "name")),
             List.of());
+    var rdfGraph =
+        new OrchidDB(JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
+            .graph(
+                new GraphMapping(MAPPING.nodes(), MAPPING.edges(), ontology, List.of(), "default"));
     assertEquals(
         List.of("Ada", "Grace", "O'Reilly 🪷"),
         values(
-            graph.query(
+            rdfGraph.query(
                 Query.sparql(
-                    "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . } ORDER BY ?name",
-                    ontology))));
+                    "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . } ORDER BY ?name"))));
   }
 
   @Test
@@ -457,13 +483,15 @@ class IntegrationTest {
                 Map.of("kind", "template", "prefix", "urn:person:", "columns", List.of("id")),
             "predicate", Map.of("kind", "constant", "value", "urn:name"),
             "object", Map.of("kind", "literal", "column", "name"));
+    var rdfGraph =
+        new OrchidDB(JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
+            .graph(
+                new GraphMapping(
+                    MAPPING.nodes(), MAPPING.edges(), Ontology.EMPTY, List.of(rule), "default"));
     assertEquals(
         List.of("Ada", "Grace", "O'Reilly 🪷"),
         values(
-            graph.query(
-                Query.sparql(
-                    "SELECT ?name WHERE {?s <urn:name> ?name} ORDER BY ?name",
-                    List.of(rule),
-                    "default"))));
+            rdfGraph.query(
+                Query.sparql("SELECT ?name WHERE {?s <urn:name> ?name} ORDER BY ?name"))));
   }
 }

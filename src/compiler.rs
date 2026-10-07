@@ -1132,6 +1132,10 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 }
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
+    let message: serde_json::Value = serde_json::from_str(input).map_err(|e|e.to_string())?;
+    if message["op"] == "validate_schema" {
+        return serde_json::to_string(&crate::session::Schema::from_value(message["schema"].clone())?).map_err(|e|e.to_string());
+    }
     let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
     if command.get("op").and_then(serde_json::Value::as_str).is_some_and(|op| matches!(op, "bind_search" | "bind_operation")) {
         return crate::federation::bind_operation_command(command).map(|v|v.to_string());

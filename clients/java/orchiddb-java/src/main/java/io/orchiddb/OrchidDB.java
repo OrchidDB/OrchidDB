@@ -12,7 +12,15 @@ public final class OrchidDB {
   private final PlanCache cache;
   private final Map<String, ExecutionEngine> engines;
 
-  public OrchidDB(SqlCompiler compiler, PlanCache cache, ExecutionEngine... engines) {
+  public OrchidDB(ExecutionEngine... engines) {
+    this(PlanCache.bounded(128), engines);
+  }
+
+  public OrchidDB(PlanCache cache, ExecutionEngine... engines) {
+    this(NativeSqlCompiler.load(), cache, engines);
+  }
+
+  OrchidDB(SqlCompiler compiler, PlanCache cache, ExecutionEngine... engines) {
     this.compiler = Objects.requireNonNull(compiler);
     this.cache = Objects.requireNonNull(cache);
     var map = new HashMap<String, ExecutionEngine>();
@@ -121,7 +129,8 @@ public final class OrchidDB {
       clearStatistics();
     }
 
-    public CompiledQuery plan(Query query) throws SQLException {
+    // Package-private hook for internal optimizer/cache regression tests.
+    CompiledQuery plan(Query query) throws SQLException {
       try (var session = engine.openSession()) {
         return compile(session, query);
       }

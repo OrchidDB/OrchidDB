@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {queryFederated} from '../dist/index.js';
+import {queryFederated} from '../dist/internal.js';
 
 for (const fail of [false,true]) test(`federation routes read queries and closes results (failure=${fail})`,async()=>{
  const log=[];

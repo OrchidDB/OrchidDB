@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {Compiler, RemoteEngine, queryFederated} from '../dist/index.js';
+import {Compiler, RemoteEngine, queryFederated} from '../dist/internal.js';
 import {openDatabase, arrowEngine} from '../examples/duckdb-wasm.mjs';
 
 const path = process.env.ORCHIDDB_REMOTE_FIXTURE;

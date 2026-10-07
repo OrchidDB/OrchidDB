@@ -437,6 +437,29 @@ struct ProgramBindData : FunctionData {
     bool Equals(const FunctionData &other) const override { return request == other.Cast<ProgramBindData>().request; }
 };
 struct ProgramState : GlobalTableFunctionState { bool done = false; };
+struct RegisteredSchemas : ClientContextState { std::map<string, Json> schemas; };
+unique_ptr<FunctionData> RegisterSchemaBind(ClientContext &, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
+    types = {LogicalType::BOOLEAN}; names = {"registered"};
+    if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) { throw BinderException("Schema name and configuration cannot be NULL"); }
+    auto name = input.inputs[0].GetValue<string>();
+    if (name.empty()) { throw BinderException("Schema name cannot be empty"); }
+    auto schema = Json::parse(input.inputs[1].GetValue<string>());
+    if (schema.is_object() && schema.contains("tables") && schema["tables"].is_array()) {
+        for (auto &table : schema["tables"]) { if (table.is_object() && !table.contains("columns")) { table["columns"] = Json::array(); } }
+    }
+    schema = Bridge({{"op", "validate_schema"}, {"schema", schema}});
+    if (!schema.value("engines", Json::object()).empty() || !schema.value("execution_engine", Json()).is_null()) {
+        throw BinderException("Orchid extension queries must execute in the host DuckDB");
+    }
+    return make_uniq<ProgramBindData>(Json({{"name", name}, {"schema", schema}}).dump());
+}
+void RegisterSchemaExecute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
+    auto &state = input.global_state->Cast<ProgramState>();
+    if (state.done) { return; }
+    auto data = Json::parse(input.bind_data->Cast<ProgramBindData>().request);
+    context.registered_state->GetOrCreate<RegisteredSchemas>("orchid_schemas")->schemas[data.at("name").get<string>()] = data.at("schema");
+    output.SetValue(0, 0, Value::BOOLEAN(true)); output.SetCardinality(1); state.done = true;
+}
 unique_ptr<FunctionData> ProgramBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
     types = {LogicalType::VARCHAR}; names = {"result"};
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
@@ -515,9 +538,27 @@ unique_ptr<TableRef> GremlinBind(ClientContext &context, TableFunctionBindInput 
 // authority for schemas; caller-supplied column types are never trusted.
 Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
-    auto request = Json::parse(input.inputs[0].GetValue<string>());
+    Json request;
     auto auth=Authorization(context);
-    if (!auth->subject.empty() && !(input.table_function.name=="orchid_program" && auth->authorized_programs.count(request.dump()))) {
+    if (input.table_function.name == "__orchid_program") {
+        request = Json::parse(input.inputs[0].GetValue<string>());
+    } else {
+        if (!auth->subject.empty()) { throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled"); }
+        auto schemas = context.registered_state->GetOrCreate<RegisteredSchemas>("orchid_schemas");
+        auto name = input.inputs[0].GetValue<string>();
+        auto found = schemas->schemas.find(name);
+        if (found == schemas->schemas.end()) { throw BinderException("Unknown Orchid schema: %s", name); }
+        request = found->second;
+        request["version"] = 1; request["query"] = input.inputs[1].GetValue<string>();
+        request["language"] = input.table_function.name == "orchid_sparql_update" ? "sparql" : "cypher";
+        auto language = input.named_parameters.find("language");
+        if (language != input.named_parameters.end()) { request["language"] = language->second.GetValue<string>(); }
+        for (auto key : {"parameters", "bindings"}) {
+            auto option = input.named_parameters.find(key);
+            if (option != input.named_parameters.end()) { request[key] = Parameter(option->second); }
+        }
+    }
+    if (!auth->subject.empty() && !(input.table_function.name=="__orchid_program" && auth->authorized_programs.count(request.dump()))) {
         throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled");
     }
     if (request.value("dialect", "duckdb") != "duckdb" ||
@@ -546,10 +587,13 @@ Json CompileRequest(ClientContext &context, TableFunctionBindInput &input, bool 
     return Bridge(context, {{"op", "compile_request"}, {"request", BoundRequest(context, input)}, {"inspect", inspect}});
 }
 unique_ptr<TableRef> QueryBind(ClientContext &context, TableFunctionBindInput &input) {
-    return Subquery(context, CompileRequest(context, input).at("sql").get<string>());
-}
-unique_ptr<TableRef> CompileBind(ClientContext &context, TableFunctionBindInput &input) {
-    return Subquery(context, "SELECT " + Literal(CompileRequest(context, input, true).dump()) + " AS compilation");
+    auto work = CompileRequest(context, input, true);
+    if (work.contains("error")) {
+        unordered_map<string,string> metadata;
+        if (work.contains("classification") && !work.at("classification").is_null()) { metadata["orchid_classification"] = work.at("classification").dump(); }
+        throw BinderException(metadata, work.at("error").get<string>());
+    }
+    return Subquery(context, work.at("sql").get<string>());
 }
 unique_ptr<TableRef> SparqlSyntaxBind(ClientContext &context, TableFunctionBindInput &input) {
     Bridge({{"op", "sparql_syntax"}, {"query", input.inputs[0].GetValue<string>()},
@@ -733,11 +777,12 @@ void LoadOrchid(ExtensionLoader &loader) {
     TableFunction kernel("__orchid_kernel", {LogicalType::UBIGINT,LogicalType::UBIGINT}, nullptr, nullptr);
     kernel.bind_operator=KernelBindOperator;
     loader.RegisterFunction(kernel);
-    TableFunction native_program("orchid_program", {LogicalType::VARCHAR}, nullptr, nullptr);
+    TableFunction native_program("__orchid_program", {LogicalType::VARCHAR}, nullptr, nullptr);
     native_program.bind_operator=NativeProgramBind;
     loader.RegisterFunction(native_program);
     loader.RegisterFunction(TableFunction("__orchid_host_relation", {LogicalType::UBIGINT}, HostRelationScan, HostRelationBind, HostRelationInit));
-    TableFunction program("orchid_sparql_update", {LogicalType::VARCHAR}, ProgramExecute, ProgramBind, ProgramInit);
+    loader.RegisterFunction(TableFunction("orchid_register_schema", {LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterSchemaBind, ProgramInit));
+    TableFunction program("orchid_sparql_update", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ProgramExecute, ProgramBind, ProgramInit);
     program.named_parameters["base"] = LogicalType::VARCHAR;
     loader.RegisterFunction(program);
     auto native_type = LogicalType::STRUCT({{"__orchiddb_value_v1", LogicalType::VARCHAR}});
@@ -771,12 +816,12 @@ void LoadOrchid(ExtensionLoader &loader) {
     TableFunction gremlin("orchid_gremlin", {LogicalType::VARCHAR, LogicalType::VARCHAR}, nullptr, nullptr);
     gremlin.bind_replace = GremlinBind;
     loader.RegisterFunction(gremlin);
-    TableFunction query("orchid_query", {LogicalType::VARCHAR}, nullptr, nullptr);
+    TableFunction query("orchid_query", {LogicalType::VARCHAR, LogicalType::VARCHAR}, nullptr, nullptr);
+    query.named_parameters["language"] = LogicalType::VARCHAR;
+    query.named_parameters["parameters"] = LogicalType::ANY;
+    query.named_parameters["bindings"] = LogicalType::ANY;
     query.bind_replace = QueryBind;
     loader.RegisterFunction(query);
-    TableFunction compile("orchid_compile", {LogicalType::VARCHAR}, nullptr, nullptr);
-    compile.bind_replace = CompileBind;
-    loader.RegisterFunction(compile);
     TableFunction syntax("orchid_sparql_syntax", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::BOOLEAN}, nullptr, nullptr);
     syntax.bind_replace = SparqlSyntaxBind;
     loader.RegisterFunction(syntax);

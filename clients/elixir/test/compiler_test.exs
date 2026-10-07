@@ -20,15 +20,15 @@ defmodule OrchidDBTest do
   end
 
   test "native compile, parameters and compiler errors" do
-    assert {:ok, plan} = OrchidDB.compile(request("MATCH (p:Person) RETURN p.name AS name"))
+    assert {:ok, plan} = OrchidDB.Internal.Runtime.compile(request("MATCH (p:Person) RETURN p.name AS name"))
     assert plan["fields"] == ["name"]
     assert plan["sql"] =~ "people"
 
     assert {:ok, plan} =
-             OrchidDB.compile(Map.put(request("RETURN $n AS n"), :parameters, %{n: 42}))
+             OrchidDB.Internal.Runtime.compile(Map.put(request("RETURN $n AS n"), :parameters, %{n: 42}))
 
     assert plan["sql"] =~ "42"
-    assert {:error, _} = OrchidDB.compile(request("MATCH (p:Person) DELETE p"))
+    assert {:error, _} = OrchidDB.Internal.Runtime.compile(request("MATCH (p:Person) DELETE p"))
   end
 
   test "provider-neutral permission scopes filter by direct and coarse resource keys" do
@@ -77,10 +77,10 @@ defmodule OrchidDBTest do
         ]
       })
 
-    assert {:ok, plan} = OrchidDB.compile(request)
+    assert {:ok, plan} = OrchidDB.Internal.Runtime.compile(request)
     assert plan["sql"] =~ "effective_grants"
     assert plan["sql"] =~ "project_id"
-    assert {:error, message} = OrchidDB.compile(Map.delete(request, :authorization))
+    assert {:error, message} = OrchidDB.Internal.Runtime.compile(Map.delete(request, :authorization))
     assert message =~ "requires a principal"
   end
 
@@ -94,9 +94,9 @@ defmodule OrchidDBTest do
       {:error, "Test session cannot enforce bounded execution"}
     end
 
-    assert {:ok, statistics} = OrchidDB.Statistics.generate(request, collector)
+    assert {:ok, statistics} = OrchidDB.Internal.Statistics.generate(request, collector)
     assert is_map(statistics.snapshot)
-    assert {:ok, plan} = OrchidDB.compile(request, statistics: statistics)
+    assert {:ok, plan} = OrchidDB.Internal.Runtime.compile(request, statistics: statistics)
     assert Map.has_key?(plan, "statistics_usage")
     assert Map.has_key?(plan, "plan_estimates")
 
@@ -107,19 +107,19 @@ defmodule OrchidDBTest do
       )
 
     try do
-      assert :ok = OrchidDB.Statistics.save(statistics, path)
-      assert {:ok, loaded} = OrchidDB.Statistics.load(path)
-      assert {:ok, recompiled} = OrchidDB.Statistics.compile(loaded, request)
+      assert :ok = OrchidDB.Internal.Statistics.save(statistics, path)
+      assert {:ok, loaded} = OrchidDB.Internal.Statistics.load(path)
+      assert {:ok, recompiled} = OrchidDB.Internal.Statistics.compile(loaded, request)
       assert recompiled["sql"] == plan["sql"]
-      assert {:ok, _} = OrchidDB.Statistics.clear(loaded)
+      assert {:ok, _} = OrchidDB.Internal.Statistics.clear(loaded)
     after
       File.rm(path)
-      OrchidDB.Statistics.clear(statistics)
+      OrchidDB.Internal.Statistics.clear(statistics)
     end
   end
 
   test "bad library returns explicit error" do
-    assert {:error, _} = OrchidDB.compile(request("RETURN 1"), library: "/missing/compiler.so")
+    assert {:error, _} = OrchidDB.Internal.Runtime.compile(request("RETURN 1"), library: "/missing/compiler.so")
   end
 
   test "caller-owned DuckDB ADBC Arrow stream can be ingested without row conversion" do
@@ -138,7 +138,7 @@ defmodule OrchidDBTest do
         )
 
       assert {:ok, _} =
-               OrchidDB.query_arrow(
+               OrchidDB.Internal.Runtime.query_arrow(
                  source,
                  request("MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY id"),
                  fn stream ->
@@ -155,7 +155,7 @@ defmodule OrchidDBTest do
              }
 
       assert_raise RuntimeError, "consumer failed", fn ->
-        OrchidDB.query_arrow(source, request("RETURN 1 AS answer"), fn _stream ->
+        OrchidDB.Internal.Runtime.query_arrow(source, request("RETURN 1 AS answer"), fn _stream ->
           raise "consumer failed"
         end)
       end
@@ -166,7 +166,7 @@ defmodule OrchidDBTest do
                Adbc.Connection.query(source, "INSERT INTO people VALUES (3, 'transaction')")
 
       assert {:ok, _} =
-               OrchidDB.query_arrow(
+               OrchidDB.Internal.Runtime.query_arrow(
                  source,
                  request("MATCH (p:Person) RETURN p.id AS id"),
                  fn stream ->

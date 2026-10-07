@@ -136,7 +136,7 @@ pub fn compile_request_json(input: Value) -> Result<Value, String> {
     let program = Program::new(request).map_err(|e| e.to_string())?;
     let query = input.to_string().replace('\'', "''");
     Ok(
-        json!({"version":1,"dialect":"duckdb","program_request":input,"sql":format!("SELECT * FROM orchid_program('{query}')"),
+        json!({"version":1,"dialect":"duckdb","program_request":input,"sql":format!("SELECT * FROM __orchid_program('{query}')"),
         "fields":program.fields,"field_types":vec![Value::Null;program.fields.len()],
         "result_form":format!("{:?}",program.result_form),"logical_plan":program.compiled.manifest().to_string(),
         "transfers":[],"execution_engine":null,"constraint_proofs":[],"layout_selections":[],"representation_selections":[],

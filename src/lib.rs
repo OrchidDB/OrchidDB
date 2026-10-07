@@ -7,7 +7,9 @@
 //! The DuckDB extension is built separately from `extension/` using this core.
 
 pub mod spargebra;
+#[doc(hidden)]
 pub mod compiler;
+pub mod session;
 pub mod execution;
 pub mod federation;
 pub mod operations;

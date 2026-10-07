@@ -1,10 +1,7 @@
 -- Uses the people table created by 01_social.sql.
--- The existing RDF mapping protocol is available through a DuckDB table function.
-SELECT * FROM orchid_query($$
+-- Register the RDF schema once on this connection.
+CALL orchid_register_schema('people_rdf', $$
 {
-  "version": 1,
-  "language": "sparql",
-  "query": "SELECT ?name WHERE { ?person <urn:name> ?name } ORDER BY ?name",
   "tables": [{"name": "people"}],
   "rdf": [{
     "table": "people",
@@ -14,4 +11,7 @@ SELECT * FROM orchid_query($$
   }]
 }
 $$);
+SELECT * FROM orchid_query('people_rdf',
+  'SELECT ?name WHERE { ?person <urn:name> ?name } ORDER BY ?name',
+  language := 'sparql');
 -- Alice, Bob, Cara, each with RDF kind/datatype/language metadata.

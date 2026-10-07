@@ -11,7 +11,6 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <orchiddb.native.path>${maven.multiModuleProjectDirectory}/../../target/debug/liborchiddb_java.dylib</orchiddb.native.path>
     <project.build.outputTimestamp>2026-09-25T00:00:00Z</project.build.outputTimestamp>
-    <central.autoPublish>false</central.autoPublish>
     <release.artifacts>${maven.multiModuleProjectDirectory}/target/native-artifacts</release.artifacts>
   </properties>
   <build>
@@ -78,14 +77,6 @@
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-deploy-plugin</artifactId>
-        <version>3.1.4</version>
-        <configuration>
-          <deployAtEnd>true</deployAtEnd>
-        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -161,45 +152,6 @@
       <modules>
         <module>orchiddb-gremlin</module>
       </modules>
-    </profile>
-    <profile>
-      <id>central</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.sonatype.central</groupId>
-            <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>0.11.0</version>
-            <extensions>true</extensions>
-            <configuration>
-              <publishingServerId>central</publishingServerId>
-              <autoPublish>${central.autoPublish}</autoPublish>
-              <waitUntil>validated</waitUntil>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-gpg-plugin</artifactId>
-            <version>3.2.8</version>
-            <executions>
-              <execution>
-                <id>sign</id>
-                <phase>verify</phase>
-                <goals>
-                  <goal>sign</goal>
-                </goals>
-              </execution>
-            </executions>
-            <configuration>
-              <bestPractices>true</bestPractices>
-              <gpgArguments>
-                <arg>--pinentry-mode</arg>
-                <arg>loopback</arg>
-              </gpgArguments>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
     </profile>
   </profiles>
 </project>

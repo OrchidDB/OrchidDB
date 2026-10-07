@@ -27,7 +27,7 @@ defmodule OrchidDB.RemoteEngine do
 
   @impl true
   def init({adapter, options, opts}) do
-    case OrchidDB.remote_command(%{op: "open", adapter: adapter, options: options}, opts) do
+    case OrchidDB.Internal.Runtime.remote_command(%{op: "open", adapter: adapter, options: options}, opts) do
       {:ok, %{"id" => id}} -> {:ok, %{id: id, adapter: adapter, opts: opts}}
       {:error, reason} -> {:stop, reason}
     end
@@ -38,7 +38,7 @@ defmodule OrchidDB.RemoteEngine do
   def handle_call(:close, _from, %{id: nil} = state), do: {:reply, :ok, state}
 
   def handle_call(:close, _from, state) do
-    case OrchidDB.remote_command(%{op: "close", id: state.id}, state.opts) do
+    case OrchidDB.Internal.Runtime.remote_command(%{op: "close", id: state.id}, state.opts) do
       {:ok, _} -> {:reply, :ok, %{state | id: nil}}
       error -> {:reply, error, state}
     end
@@ -48,13 +48,13 @@ defmodule OrchidDB.RemoteEngine do
     do: {:reply, {:error, "Remote engine is closed"}, state}
 
   def handle_call(:clear_metadata_cache, _from, state) do
-    result = OrchidDB.remote_command(%{op: "clear_metadata_cache", id: state.id}, state.opts)
+    result = OrchidDB.Internal.Runtime.remote_command(%{op: "clear_metadata_cache", id: state.id}, state.opts)
     {:reply, result, state}
   end
 
   def handle_call({:execute, requests, columns}, _from, state) do
     result =
-      OrchidDB.remote_command(
+      OrchidDB.Internal.Runtime.remote_command(
         %{op: "execute", id: state.id, requests: requests, columns: columns, format: "ipc"},
         state.opts
       )
@@ -66,7 +66,7 @@ defmodule OrchidDB.RemoteEngine do
   def terminate(_reason, %{id: nil}), do: :ok
 
   def terminate(_reason, state) do
-    OrchidDB.remote_command(%{op: "close", id: state.id}, state.opts)
+    OrchidDB.Internal.Runtime.remote_command(%{op: "close", id: state.id}, state.opts)
     :ok
   end
 end

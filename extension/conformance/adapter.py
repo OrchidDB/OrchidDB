@@ -4,6 +4,7 @@
 No GraphEngine, source-language evaluator, or alternative query executor is used.
 Fixture inserts and result decoding are transport; all queries use orchid_query.
 """
+from session import execute as execute_query, describe as describe_query, prepare as prepare_query
 import json
 import hashlib
 import math
@@ -95,19 +96,19 @@ class Extension:
         if language == 'gremlin': request['bindings'] = req.get('bindings', {})
         encoded = json.dumps(request)
         if language in ('cypher', 'gremlin'):
-            metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)', [encoded]).fetchone()[0])
+            metadata = describe_query(self.db, encoded)
             if 'error' in metadata: return metadata
             if not metadata['fields']:
-                self.db.execute('SELECT * FROM orchid_query(?)', [encoded]).fetchall()
+                execute_query(self.db, 'SELECT * FROM orchid_query(?)', encoded).fetchall()
                 return {'columns': [], 'native_columns': [], 'native_rows': [], 'rows': [], 'backend': 'duckdb-extension'}
             if metadata['fields']:
                 packed = ','.join(ident(name) + ':=__orchid_row.' + ident(name) for name in metadata['fields'])
-                rows = self.db.execute('SELECT __orchiddb_value_json(struct_pack(' + packed + ')) FROM orchid_query(?) AS __orchid_row', [encoded]).fetchall()
+                rows = execute_query(self.db, 'SELECT __orchiddb_value_json(struct_pack(' + packed + ')) FROM orchid_query(?) AS __orchid_row', encoded).fetchall()
                 decoded = [{key['value']: value for key, value in json.loads(row[0])['value']} for row in rows]
                 names = metadata['fields']
                 return {'columns': names, 'native_columns': names, 'native_rows': [[row[name] for name in names] for row in decoded],
                         'rows': [], 'backend': 'duckdb-extension'}
-        cursor = self.db.execute('SELECT * FROM orchid_query(?)', [encoded])
+        cursor = execute_query(self.db, 'SELECT * FROM orchid_query(?)', encoded)
         columns = [d[0] for d in cursor.description]
         types = [d[1] for d in cursor.description]
         rows = cursor.fetchall()
@@ -136,7 +137,8 @@ class Extension:
         request = dict(version=1, dialect='duckdb', language='sparql', query=req['query'], tables=self.mapping['tables'],
                        rdf_sources=[source], rdf_graph_names=dict(table=graph_table, column='iri', writable=bool(req.get('update'))))
         if req.get('update'):
-            self.db.execute('CALL orchid_sparql_update(?, base := ?)', [json.dumps(request), req.get('base')]).fetchall()
+            function, values = prepare_query(self.db, request, update=True)
+            self.db.execute('CALL ' + function[:-1] + ', base := ?)', values + [req.get('base')]).fetchall()
             request['query'] = 'SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }'
             quads = self.rdf_query(request)['rows']
             request['query'] = 'SELECT ?g WHERE { GRAPH ?g {} }'
@@ -146,9 +148,9 @@ class Extension:
 
     def rdf_query(self, request):
         encoded = json.dumps(request)
-        metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)', [encoded]).fetchone()[0])
+        metadata = describe_query(self.db, encoded)
         if 'error' in metadata: return metadata
-        cursor = self.db.execute('SELECT * FROM orchid_query(?)', [encoded])
+        cursor = execute_query(self.db, 'SELECT * FROM orchid_query(?)', encoded)
         names = [d[0] for d in cursor.description]
         rows = cursor.fetchall()
         if metadata['result_form'] == 'Boolean': return {'boolean': bool(rows and rows[0][0])}
@@ -178,7 +180,7 @@ class Extension:
             procedures = dict(self.procedures)
             procedures[req['name']] = {key:req[key] for key in ('inputs','outputs','rows')}
             request = dict(version=1,dialect='duckdb',language='cypher',query='RETURN 1',procedures=procedures,managed_table=self.managed_table,**self.mapping)
-            metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)',[json.dumps(request)]).fetchone()[0])
+            metadata = describe_query(self.db, json.dumps(request))
             if 'error' in metadata: return metadata
             self.procedures = procedures
             return {'ok':True}

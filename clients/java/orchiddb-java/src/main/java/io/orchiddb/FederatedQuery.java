@@ -8,7 +8,7 @@ import java.util.*;
  * Shared JSON SQL-island execution. Source data is bound into the final SELECT; no database objects
  * are created.
  */
-public final class FederatedQuery {
+final class FederatedQuery {
   private FederatedQuery() {}
 
   public static QueryResult query(

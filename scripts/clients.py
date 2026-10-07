@@ -59,7 +59,7 @@ def main():
     shutil.copy2(source, destination / library)
     version = json.loads((ROOT / 'clients/js/package.json').read_text())['version']
     (destination / 'manifest.json').write_text(json.dumps({
-        'abi_version': 1, 'version': version, 'core_revision': value,
+        'abi_version': 2, 'version': version, 'core_revision': value,
         'sha256': hashlib.sha256(source.read_bytes()).hexdigest()
     }) + '\n')
     print(f'ORCHIDDB_NATIVE_LIBRARY={source}')

@@ -17,17 +17,17 @@ class CompiledQuery:
     version: int = 1
     diagnostics: Mapping[str, Any] = field(default_factory=dict)
 
-class Compiler:
+class _Runtime:
     """Owns a library handle, never a database. Calls release native strings reliably."""
     def __init__(self, library: str | os.PathLike | None = None):
         name = {"Darwin": "liborchiddb_compiler.dylib", "Linux": "liborchiddb_compiler.so", "Windows": "orchiddb_compiler.dll"}.get(platform.system())
         path = library or os.environ.get("ORCHIDDB_NATIVE_LIBRARY") or Path(__file__).parent / "native" / str(name)
         self._lib = ctypes.CDLL(str(path))
         self._lib.orchiddb_abi_version.restype = ctypes.c_uint32
-        if self._lib.orchiddb_abi_version() != 1:
-            raise RuntimeError("Incompatible OrchidDB compiler ABI; expected 1")
-        self._lib.orchiddb_compile_json.argtypes = [ctypes.c_char_p]
-        self._lib.orchiddb_compile_json.restype = ctypes.c_void_p
+        if self._lib.orchiddb_abi_version() != 2:
+            raise RuntimeError("Incompatible OrchidDB compiler ABI; expected 2")
+        self._lib.orchiddb_execution_command.argtypes = [ctypes.c_char_p]
+        self._lib.orchiddb_execution_command.restype = ctypes.c_void_p
         self._lib.orchiddb_statistics_json.argtypes = [ctypes.c_char_p]
         self._lib.orchiddb_statistics_json.restype = ctypes.c_void_p
         self._catalog_id = None
@@ -78,7 +78,7 @@ class Compiler:
 
     def operation_command(self, command):
         """Execute a compiler protocol command whose result is not a query plan."""
-        return self._call(self._lib.orchiddb_compile_json, command)
+        return self._call(self._lib.orchiddb_execution_command, command)
 
     def remote_command(self, command):
         """Use the shared optional HTTP transport; credentials stay out of plans."""
@@ -111,8 +111,8 @@ class Compiler:
         """Shared collection protocol for application-owned database sessions."""
         return self._call(self._lib.orchiddb_statistics_json, command)
 
-    def compile(self, request: Mapping[str, Any]) -> CompiledQuery:
-        result = self.statistics_command(dict(op="compile", catalog_id=self._catalog_id, request=dict(request))) if self._catalog_id else self._call(self._lib.orchiddb_compile_json, request)
+    def prepare(self, request: Mapping[str, Any]) -> CompiledQuery:
+        result = self.statistics_command(dict(op="compile", catalog_id=self._catalog_id, request=dict(request))) if self._catalog_id else self._call(self._lib.orchiddb_execution_command, request)
         if result["version"] != 1:
             raise RuntimeError("Unsupported compiled query protocol")
         return CompiledQuery(result["sql"], tuple(result["fields"]), result["dialect"], diagnostics={k: v for k, v in result.items() if k not in ("sql", "fields", "dialect", "version")})

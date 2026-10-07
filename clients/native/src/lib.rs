@@ -7,7 +7,7 @@ use std::{
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orchiddb_abi_version() -> u32 {
-    1
+    2
 }
 
 #[unsafe(no_mangle)]
@@ -62,7 +62,7 @@ fn dispatch(input: String, operation: u8) -> Result<serde_json::Value, String> {
 /// `input` is null or points to a valid NUL-terminated string for this call.
 /// The returned pointer must be freed exactly once with `orchiddb_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn orchiddb_compile_json(input: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn orchiddb_execution_command(input: *const c_char) -> *mut c_char {
     unsafe { invoke_json(input, 0) }
 }
 
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn orchiddb_bind_arrow_json(
     CString::new(response.to_string()).unwrap().into_raw()
 }
 
-/// Execute a statistics protocol command. Response ownership matches compile_json.
+/// Execute a statistics protocol command. Response ownership matches orchiddb_execution_command.
 /// # Safety
 /// Input must be null or a valid NUL-terminated UTF-8 string.
 #[unsafe(no_mangle)]
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn orchiddb_statistics_json(input: *const c_char) -> *mut 
 /// Open, execute, or close an explicitly requested remote HTTP session.
 /// # Safety
 /// Input must be null or a valid NUL-terminated UTF-8 string. Free the response
-/// using orchiddb_string_free. Unlike compile_json, execute performs network I/O.
+/// using orchiddb_string_free. Unlike the execution preparation command, execute performs network I/O.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn orchiddb_remote_json(input: *const c_char) -> *mut c_char {
     unsafe { invoke_json(input, 2) }
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn orchiddb_string_free(response: *mut c_char) {
 mod tests {
     use super::*;
     unsafe fn invoke(ptr: *const c_char) -> serde_json::Value {
-        let out = unsafe { orchiddb_compile_json(ptr) };
+        let out = unsafe { orchiddb_execution_command(ptr) };
         assert!(!out.is_null());
         let response =
             serde_json::from_str(unsafe { CStr::from_ptr(out) }.to_str().unwrap()).unwrap();
@@ -172,7 +172,7 @@ mod tests {
     }
     #[test]
     fn version_and_error_ownership() {
-        assert_eq!(orchiddb_abi_version(), 1);
+        assert_eq!(orchiddb_abi_version(), 2);
         assert_eq!(
             unsafe { CStr::from_ptr(orchiddb_version()) }
                 .to_str()

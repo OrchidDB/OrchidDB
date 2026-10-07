@@ -4,7 +4,9 @@ import os
 from decimal import Decimal
 import pytest
 import duckdb
-from orchiddb import Compiler, DuckDBEngine, PostgresEngine, query_federated
+from orchiddb import DuckDBEngine, PostgresEngine
+from orchiddb._runtime import _Runtime as Compiler
+from orchiddb.federation import _query_federated as query_federated
 
 
 def request(target='d', people='p', links='d'):
@@ -72,12 +74,12 @@ def test_operators(compiler,engines,target,expression):
 @pytest.mark.parametrize('target,source',[('d','p'),('p','d')])
 def test_pushdown_and_cleanup(compiler,engines,target,source):
     r=request(target,source,target)
-    plan=compiler.compile(r)
+    plan=compiler.prepare(r)
     assert any('WHERE' in t['sql'] and '25' in t['sql'] for t in plan.diagnostics['transfers'])
     assert all('score' not in t['sql'] and 'tags' not in t['sql'] for t in plan.diagnostics['transfers'])
     assert rows(compiler,r,engines)==[['Ada','Bob'],['Ada','Cy']]
     r['query']='MATCH (p:Person) WHERE p.age > 25 RETURN count(p) AS n'
-    plan=compiler.compile(r)
+    plan=compiler.prepare(r)
     assert len(plan.diagnostics['transfers'])==1
     assert 'count(' in plan.diagnostics['transfers'][0]['sql'].lower()
     assert rows(compiler,r,engines)==[[1]]

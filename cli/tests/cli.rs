@@ -10,6 +10,9 @@ fn cli(args: &[&str]) -> std::process::Output {
 fn native_arrow_output_and_application_setup() {
     let output = cli(&[
         "query",
+        "--file",
+        "examples/people.cypher",
+        "--schema",
         "examples/people.json",
         "--init",
         "examples/setup.sql",
@@ -34,10 +37,10 @@ fn native_arrow_output_and_application_setup() {
     assert_eq!(names, ["Ada", "Grace"]);
 }
 #[test]
-fn compile_does_not_need_a_database_or_extension() {
+fn compile_command_is_removed() {
     let output = cli(&["compile", "examples/people.json"]);
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("SELECT"));
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown command"));
 }
 #[test]
 fn invalid_arguments_fail() {
@@ -54,6 +57,9 @@ fn default_iceberg_load_is_real() {
     std::fs::write(&setup, "CREATE VIEW people AS SELECT 1::BIGINT id, CASE WHEN loaded THEN 'Iceberg loaded' ELSE error('Iceberg missing') END AS name FROM duckdb_extensions() WHERE extension_name='iceberg' AND (SELECT count(*) FROM iceberg_scan('examples/empty-iceberg.metadata.json')) = 0;").unwrap();
     let output = cli(&[
         "query",
+        "--file",
+        "examples/people.cypher",
+        "--schema",
         "examples/people.json",
         "--init",
         setup.to_str().unwrap(),
@@ -75,6 +81,7 @@ fn one_time_statistics_can_be_saved_and_used_without_a_database() {
         std::env::temp_dir().join(format!("orchiddb-statistics-{}.json", std::process::id()));
     let generated = cli(&[
         "statistics",
+        "--schema",
         "examples/people.json",
         "--init",
         "examples/setup.sql",
@@ -97,20 +104,26 @@ fn one_time_statistics_can_be_saved_and_used_without_a_database() {
             .unwrap()
             .is_empty()
     );
-    let compiled = cli(&[
-        "compile",
+    let output = cli(&[
+        "query",
+        "--file",
+        "examples/people.cypher",
+        "--schema",
         "examples/people.json",
         "--statistics",
         path.to_str().unwrap(),
-        "--explain-json",
+        "--init",
+        "examples/setup.sql",
+        "--no-iceberg",
+        "--format",
+        "table",
     ]);
     std::fs::remove_file(path).unwrap();
     assert!(
-        compiled.status.success(),
+        output.status.success(),
         "{}",
-        String::from_utf8_lossy(&compiled.stderr)
+        String::from_utf8_lossy(&output.stderr)
     );
-    let plan: serde_json::Value = serde_json::from_slice(&compiled.stdout).unwrap();
-    assert!(plan.get("statistics_usage").is_some());
-    assert!(plan.get("plan_estimates").is_some());
+    let rows = String::from_utf8_lossy(&output.stdout);
+    assert!(rows.contains("Ada") && rows.contains("Grace"));
 }

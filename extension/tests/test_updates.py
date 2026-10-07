@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from test_extension import connect
+from test_extension import execute_query, describe_query, prepare_query, connect
 
 
 class UpdateTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class UpdateTests(unittest.TestCase):
         return json.dumps(dict(self.request, query=query))
 
     def update(self, query):
-        return self.db.execute('CALL orchid_sparql_update(?)', [self.encoded(query)]).fetchall()
+        return execute_query(self.db, 'CALL orchid_sparql_update(?)', self.encoded(query)).fetchall()
 
     def test_update_reads_own_writes_and_rolls_back_with_caller(self):
         self.db.execute('BEGIN')
@@ -42,9 +42,10 @@ class UpdateTests(unittest.TestCase):
 
     def test_explain_and_prepare_do_not_apply_effects(self):
         request = self.encoded('INSERT DATA { _:b <urn:p> "hello" }')
-        self.db.execute('EXPLAIN SELECT * FROM orchid_sparql_update(?)', [request]).fetchall()
-        quoted = "'" + request.replace("'", "''") + "'"
-        self.db.execute('PREPARE upd AS SELECT * FROM orchid_sparql_update(' + quoted + ')')
+        execute_query(self.db, 'EXPLAIN SELECT * FROM orchid_sparql_update(?)', request).fetchall()
+        prepare_query(self.db, request, update=True)
+        quoted = "'" + json.loads(request)["query"].replace("'", "''") + "'"
+        self.db.execute("PREPARE upd AS SELECT * FROM orchid_sparql_update('fixture', " + quoted + ')')
         self.assertEqual(self.db.execute('SELECT count(*) FROM terms').fetchone(), (0,))
         for _ in range(2):
             self.db.execute('EXECUTE upd').fetchall()

@@ -18,9 +18,7 @@ impl RecordBatchReader for Batches<'_> {
     }
 }
 use orchiddb_client::{
-    SqlDialect, SqlSession,
-    compiler::{CompiledSql, compile},
-    execute,
+    Connection as OrchidConnection, Query, Schema, SqlDialect, SqlSession, SqlWork as CompiledSql,
 };
 
 // Borrows the application's existing connection; never closes it or commits.
@@ -61,9 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
          BEGIN;
          INSERT INTO people VALUES (2, 'Grace');",
     )?;
-    let request = serde_json::from_value(serde_json::json!({
-        "version": 1, "dialect": "duckdb", "language": "cypher",
-        "query": "MATCH (p:Person) RETURN decorate(p.name) AS name ORDER BY name",
+    let schema = Schema::from_value(serde_json::json!({
         "tables": [{"name": "people", "columns": [
             {"name": "id", "data_type": "int64", "nullable": false},
             {"name": "name", "data_type": "string"}
@@ -72,14 +68,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                    "properties": {"name": "name"}}],
         "functions": [{"name": "decorate", "target": "decorate_name",
                        "parameters": ["string"], "returns": "string"}]
-    }))?;
-    let compiled = compile(request).await.map_err(std::io::Error::other)?;
-    let mut session = BorrowedDuckDb {
+    }))
+    .map_err(std::io::Error::other)?;
+    let session = BorrowedDuckDb {
         connection: &connection,
         statement: None,
     };
+    let mut graph = OrchidConnection::new(session, schema);
     {
-        let mut rows = execute(&mut session, &compiled).await?;
+        let mut rows = graph
+            .query(Query::cypher(
+                "MATCH (p:Person) RETURN decorate(p.name) AS name ORDER BY name",
+            ))
+            .await?;
         let mut names = Vec::new();
         for batch in &mut rows {
             let batch = batch?;
@@ -95,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         assert_eq!(names, ["ADA", "GRACE"]);
     } // Cursor releases its borrow. No result buffering is imposed by OrchidDB.
-    drop(session);
+    drop(graph);
     // The caller still owns the open transaction; OrchidDB did not commit it.
     connection.execute_batch("ROLLBACK")?;
     let count: i64 = connection.query_row("SELECT count(*) FROM people", [], |r| r.get(0))?;

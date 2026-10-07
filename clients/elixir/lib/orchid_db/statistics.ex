@@ -1,4 +1,4 @@
-defmodule OrchidDB.Statistics do
+defmodule OrchidDB.Internal.Statistics do
   @moduledoc """
   Immutable retained statistics. Generation calls the shared Rust coordinator.
   The collector receives SQL, dialect, max_rows, max_bytes and timeout_ms; it
@@ -11,7 +11,8 @@ defmodule OrchidDB.Statistics do
   defstruct [:catalog_id, :snapshot, :report, opts: []]
 
   def generate(request, collect, opts \\ []) when is_function(collect, 1) do
-    with {:ok, state} <- OrchidDB.statistics_command(%{op: "begin", request: request}, opts) do
+    with {:ok, state} <-
+           OrchidDB.Internal.Runtime.statistics_command(%{op: "begin", request: request}, opts) do
       try do
         case collect_all(state, collect, opts) do
           {:ok, result} ->
@@ -24,19 +25,19 @@ defmodule OrchidDB.Statistics do
              }}
 
           {:error, _} = error ->
-            OrchidDB.statistics_command(%{op: "cancel", id: state["id"]}, opts)
+            OrchidDB.Internal.Runtime.statistics_command(%{op: "cancel", id: state["id"]}, opts)
             error
         end
       rescue
         error ->
-          OrchidDB.statistics_command(%{op: "cancel", id: state["id"]}, opts)
+          OrchidDB.Internal.Runtime.statistics_command(%{op: "cancel", id: state["id"]}, opts)
           reraise error, __STACKTRACE__
       end
     end
   end
 
   defp collect_all(%{"id" => id, "request" => nil}, _collect, opts),
-    do: OrchidDB.statistics_command(%{op: "finish", id: id}, opts)
+    do: OrchidDB.Internal.Runtime.statistics_command(%{op: "finish", id: id}, opts)
 
   defp collect_all(%{"id" => id, "request" => request}, collect, opts) do
     response =
@@ -48,14 +49,14 @@ defmodule OrchidDB.Statistics do
     submission =
       Map.merge(response, %{"op" => "submit", "id" => id, "request_id" => request["id"]})
 
-    with {:ok, state} <- OrchidDB.statistics_command(submission, opts),
+    with {:ok, state} <- OrchidDB.Internal.Runtime.statistics_command(submission, opts),
          do: collect_all(state, collect, opts)
   end
 
   @doc "Compile using this retained catalog, preserving all plan diagnostics."
   def compile(%__MODULE__{} = statistics, request),
     do:
-      OrchidDB.statistics_command(
+      OrchidDB.Internal.Runtime.statistics_command(
         %{op: "compile", catalog_id: statistics.catalog_id, request: request},
         statistics.opts
       )
@@ -67,7 +68,10 @@ defmodule OrchidDB.Statistics do
 
   def install(snapshot, opts \\ []) do
     with {:ok, installed} <-
-           OrchidDB.statistics_command(%{op: "install", snapshot: snapshot}, opts) do
+           OrchidDB.Internal.Runtime.statistics_command(
+             %{op: "install", snapshot: snapshot},
+             opts
+           ) do
       {:ok, %__MODULE__{catalog_id: installed["catalog_id"], snapshot: snapshot, opts: opts}}
     end
   end
@@ -89,7 +93,7 @@ defmodule OrchidDB.Statistics do
   @doc "Release the native catalog after its last user finishes."
   def clear(%__MODULE__{} = statistics),
     do:
-      OrchidDB.statistics_command(
+      OrchidDB.Internal.Runtime.statistics_command(
         %{op: "release", catalog_id: statistics.catalog_id},
         statistics.opts
       )

@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from threading import Lock
 from typing import Protocol, ContextManager, Any
-from .compiler import Compiler, CompiledQuery
+from ._runtime import _Runtime, CompiledQuery
 
 class ArrowEngine(Protocol):
     dialect: str
@@ -64,41 +64,53 @@ class DuckDBEngine:
             finally:
                 self._lease.release()
 
-class Graph:
-    def __init__(self, compiler: Compiler, engine: ArrowEngine, *, tables, nodes=(), edges=(), functions=(), ontology=None, rdf=(), dataset="default", logical_sources=(), collection_sources=(), representation_sources=(), computed_relationships=(), source_metadata=(), search_indexes=()):
+class Connection:
+    """Retains a graph schema and executes on caller-owned engine connections."""
+    def __init__(self, engine, schema, *, engines=None, library=None):
         import copy
-        self.compiler, self.engine = compiler, engine
-        self.metadata = copy.deepcopy(dict(tables=tables, nodes=nodes, edges=list(edges), functions=list(functions), ontology=ontology or {}))
-        for name, value in (("logical_sources", logical_sources), ("collection_sources", collection_sources), ("representation_sources", representation_sources), ("computed_relationships", computed_relationships), ("source_metadata", source_metadata), ("search_indexes", search_indexes)):
-            if value:
-                self.metadata[name] = copy.deepcopy(value)
-        if rdf:
-            self.metadata["rdf"] = copy.deepcopy(list(rdf))
-        if dataset != "default":
-            self.metadata["dataset"] = dataset
+        self.engine = engine
+        self._runtime = _Runtime(library)
+        try:
+            self._schema = self._runtime.operation_command(
+                dict(op="validate_schema", schema=copy.deepcopy(schema)))
+        except BaseException:
+            self._runtime.close()
+            raise
+        self._engines = dict(engines or {})
+        self._closed = False
 
-    def plan(self, query: str, *, language="cypher", parameters=None, authorization=None):
-        request = dict(self.metadata, version=1, dialect=self.engine.dialect,
+    def _request(self, query, language, parameters, authorization):
+        if self._closed:
+            raise RuntimeError("Connection is closed")
+        if not isinstance(query, str):
+            raise TypeError("query must be text, separate from the registered schema")
+        request = dict(self._schema, version=1, dialect=self.engine.dialect,
                        language=language, query=query, parameters=parameters or {})
         if authorization is not None:
             request["authorization"] = authorization.to_dict() if hasattr(authorization, "to_dict") else dict(authorization)
-        return self.compiler.compile(request)
+        return request
 
-    def query_arrow(self, query: str, *, language="cypher", parameters=None, authorization=None, batch_size=65536):
-        return self.engine.query_arrow(self.plan(query, language=language, parameters=parameters,
-                                                 authorization=authorization), batch_size)
+    def query(self, query: str, *, language="cypher", parameters=None, authorization=None, batch_size=65536):
+        request = self._request(query, language, parameters, authorization)
+        if self._engines:
+            from .federation import _query_federated
+            return _query_federated(self._runtime, request, self._engines, batch_size)
+        return self.engine.query_arrow(self._runtime.prepare(request), batch_size)
+
+    query_arrow = query
 
     def generate_statistics(self):
-        return self.compiler.generate_statistics(dict(self.metadata, version=1, dialect=self.engine.dialect, language="cypher", query="RETURN 1"), self.engine)
-
-    def clear_statistics(self):
-        self.compiler.clear_statistics()
-
-    def save_statistics(self, path):
-        self.compiler.save_statistics(path)
-
-    def load_statistics(self, path):
-        self.compiler.load_statistics(path)
+        return self._runtime.generate_statistics(self._request("RETURN 1", "cypher", None, None), self.engine)
+    def clear_statistics(self): self._runtime.clear_statistics()
+    def save_statistics(self, path): self._runtime.save_statistics(path)
+    def load_statistics(self, path): self._runtime.load_statistics(path)
+    def close(self):
+        self._runtime.close()
+        self._closed = True
+    def __enter__(self):
+        if self._closed: raise RuntimeError("Connection is closed")
+        return self
+    def __exit__(self, *args): self.close()
 
 class PostgresEngine:
     """Borrow a psycopg 3 connection. The application owns transactions and TLS.

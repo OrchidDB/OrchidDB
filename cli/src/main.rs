@@ -1,26 +1,28 @@
 use arrow::{ipc::writer::StreamWriter, util::pretty::pretty_format_batches};
 use duckdb::Connection;
-use orchiddb_client::Statistics;
+#[path = "../../clients/rust/src/statistics.rs"]
+mod statistics;
 use serde_json::{Value, json};
+use statistics::Statistics;
 use std::{
     error::Error,
     fs,
     io::{self, Write},
 };
 
-const HELP: &str = "OrchidDB: graph queries over DuckDB + Iceberg
-Usage: orchiddb compile REQUEST.json
-       orchiddb query REQUEST.json [--database FILE] [--init SQL_FILE] [--format arrow|table] [--no-iceberg]
-       orchiddb statistics REQUEST.json --output SNAPSHOT.json [--database FILE] [--init SQL_FILE] [--no-iceberg]
-       orchiddb compile REQUEST.json [--statistics SNAPSHOT.json] [--explain-json]
+const HELP: &str = "OrchidDB: execute graph queries over DuckDB + Iceberg
+Usage: orchiddb query QUERY --schema SCHEMA.json [--language cypher|gremlin|sparql]
+       orchiddb query --file QUERY_FILE --schema SCHEMA.json
+       orchiddb statistics --schema SCHEMA.json --output SNAPSHOT.json
        orchiddb --version
 
-REQUEST.json is compiler protocol v1, including query, mapping, and schema.
-Iceberg loads by default for query; first use downloads the signed official extension.
---init executes application setup SQL (views, credentials, plugins, UDFs).
-Arrow IPC is the default stdout format; diagnostics go to stderr.
---engines FILE supplies remote engine options by engine ID (endpoint, authentication,
-timeouts and limits); credentials stay separate from the compiled query.
+Schema files contain graph mappings and source metadata only, never query text.
+--parameters FILE supplies a JSON object of query parameters.
+--database FILE opens a persistent database; --init FILE runs setup SQL first.
+--format arrow|table selects results (default: arrow).
+--statistics FILE loads a saved statistics snapshot.
+--engines FILE supplies remote connection options by engine ID.
+Iceberg loads by default; --no-iceberg disables it.
 ";
 #[tokio::main]
 async fn main() {
@@ -43,23 +45,33 @@ async fn run() -> Result<(), Box<dyn Error>> {
         println!("orchiddb {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    if command != "query" && command != "compile" && command != "statistics" {
+    if command != "query" && command != "statistics" {
         return Err(format!("unknown command: {command}").into());
     }
-    let request = args.next().ok_or("missing REQUEST.json")?;
+    let mut query = None;
+    let mut query_file = None;
+    let mut schema_path = None;
+    let mut language = "cypher".to_string();
+    let mut parameters = serde_json::Map::new();
     let mut database = None;
     let mut init = None;
     let mut format = "arrow".to_string();
     let mut iceberg = true;
     let mut statistics_path = None;
     let mut output_path = None;
-    let mut explain_json = false;
     let mut engines_path = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--statistics" => statistics_path = Some(args.next().ok_or("missing statistics path")?),
             "--output" => output_path = Some(args.next().ok_or("missing output path")?),
-            "--explain-json" => explain_json = true,
+            "--schema" => schema_path = Some(args.next().ok_or("missing schema file")?),
+            "--file" => query_file = Some(args.next().ok_or("missing query file")?),
+            "--language" => language = args.next().ok_or("missing language")?,
+            "--parameters" => {
+                parameters = serde_json::from_str(&fs::read_to_string(
+                    args.next().ok_or("missing parameters file")?,
+                )?)?
+            }
             "--engines" => {
                 engines_path = Some(args.next().ok_or("missing engine configuration path")?)
             }
@@ -67,37 +79,39 @@ async fn run() -> Result<(), Box<dyn Error>> {
             "--init" => init = Some(args.next().ok_or("missing SQL file")?),
             "--format" => format = args.next().ok_or("missing output format")?,
             "--no-iceberg" => iceberg = false,
+            _ if !arg.starts_with('-') && query.is_none() => query = Some(arg),
             _ => return Err(format!("unknown argument: {arg}").into()),
         }
     }
     if format != "arrow" && format != "table" {
         return Err("format must be arrow or table".into());
     }
-    let request: Value = serde_json::from_str(&fs::read_to_string(request)?)?;
+    let schema = orchiddb::session::Schema::from_json(&fs::read_to_string(
+        schema_path.ok_or("--schema is required")?,
+    )?)
+    .map_err(io::Error::other)?;
+    if query.is_some() && query_file.is_some() {
+        return Err("supply query text or --file, not both".into());
+    }
+    if let Some(path) = query_file {
+        query = Some(fs::read_to_string(path)?);
+    }
+    if command == "statistics" && query.is_some() {
+        return Err("statistics takes a schema, not a query".into());
+    }
+    let text = if command == "statistics" {
+        "RETURN 1".into()
+    } else {
+        query.ok_or("query text or --file is required")?
+    };
+    let mut query = orchiddb::session::Query::cypher(text);
+    query.language = language;
+    query.parameters = parameters.into_iter().collect();
+    let request =
+        serde_json::to_value(schema.request("duckdb", &query).map_err(io::Error::other)?)?;
     let mut statistics = Statistics::default();
     if let Some(path) = statistics_path {
         statistics.load(path).await.map_err(io::Error::other)?;
-    }
-    if command == "compile" {
-        let compiled = statistics
-            .compile(request)
-            .await
-            .map_err(io::Error::other)?;
-        if explain_json {
-            println!("{}", serde_json::to_string_pretty(&compiled)?);
-        } else {
-            println!(
-                "{}",
-                compiled["sql"]
-                    .as_str()
-                    .ok_or("compiler did not return SQL")?
-            );
-        }
-        statistics.clear().await.map_err(io::Error::other)?;
-        return Ok(());
-    }
-    if request["dialect"] != "duckdb" {
-        return Err("CLI executes only DuckDB SQL".into());
     }
     if command == "statistics" && output_path.is_none() {
         return Err("statistics requires --output SNAPSHOT.json".into());
@@ -142,9 +156,6 @@ async fn run() -> Result<(), Box<dyn Error>> {
         .await
         .map_err(io::Error::other)?;
     let sql = &compiled.sql;
-    if explain_json {
-        eprintln!("{}", serde_json::to_string_pretty(&compiled)?);
-    }
     if !compiled.transfers.is_empty() {
         let plan = &compiled;
         let target = plan
@@ -153,10 +164,10 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .ok_or("missing execution engine")?;
         let mut sessions: std::collections::BTreeMap<
             String,
-            Box<dyn orchiddb_client::federation::Session>,
+            Box<dyn orchiddb::federation::Session>,
         > = std::collections::BTreeMap::from([(
             target.clone(),
-            Box::new(LocalSession(db)) as Box<dyn orchiddb_client::federation::Session>,
+            Box::new(LocalSession(db)) as Box<dyn orchiddb::federation::Session>,
         )]);
         let options: Value = match engines_path {
             Some(path) => serde_json::from_str(&fs::read_to_string(path)?)?,
@@ -184,7 +195,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 let config = options.get(&id).ok_or_else(|| {
                     format!("Supply options for engine `{id}` using --engines FILE")
                 })?;
-                let remote = orchiddb_client::remote::transport::HttpSession::from_json_options(
+                let remote = orchiddb::remote::transport::HttpSession::from_json_options(
                     &adapter,
                     config.clone(),
                 )
@@ -200,7 +211,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 .into());
             }
         }
-        let batches = orchiddb_client::federation::execute(plan, &mut sessions)
+        let batches = orchiddb::federation::execute(plan, &mut sessions)
             .await
             .map_err(io::Error::other)?;
         if format == "arrow" {
@@ -241,7 +252,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
 
 struct LocalSession(Connection);
 #[async_trait::async_trait(?Send)]
-impl orchiddb_client::federation::Session for LocalSession {
+impl orchiddb::federation::Session for LocalSession {
     fn dialect(&self) -> &str {
         "duckdb"
     }

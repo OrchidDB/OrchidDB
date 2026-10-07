@@ -1,6 +1,6 @@
 """Execute SQL and request islands using caller-owned sessions."""
 from contextlib import contextmanager
-from .compiler import CompiledQuery
+from ._runtime import CompiledQuery
 
 
 def _query(sql, dialect, columns):
@@ -9,8 +9,8 @@ def _query(sql, dialect, columns):
 
 
 @contextmanager
-def query_federated(compiler, request, engines, batch_size=65536):
-    plan = compiler.compile(request)
+def _query_federated(compiler, request, engines, batch_size=65536):
+    plan = compiler.prepare(request)
     target_id = plan.diagnostics.get("execution_engine")
     if target_id is None:
         raise ValueError("Federated execution requires execution_engine")

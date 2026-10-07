@@ -7,8 +7,11 @@
   shared. SQL dialects, function catalogs, and execution belong to engine adapters.
 - The DuckDB extension is an optional host of the shared core, not a requirement
   for default library compilation. Preserve its caller-owned catalog and session
-  integration alongside standalone SQL lowering and other engine adapters.
-- Use `scripts/release/Makefile` and the root README for local extension packaging.
+  integration alongside other engine adapters. Keep SQL lowering internal.
+- Customer APIs register schema separately from query text and parameters and
+  return execution results. Do not add public compile-only APIs or combined
+  query/schema request documents. JSON/YAML schema configuration is allowed.
+- Use the root `Makefile` and the root README for local extension packaging.
   Keep extension packaging separate from default library use.
 - Preserve completed platform artifacts and caches. Retry only failed work.
 - Artifacts are specific to DuckDB version and platform. Validate each target

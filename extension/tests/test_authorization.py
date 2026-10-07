@@ -185,7 +185,7 @@ class AuthorizationTests(unittest.TestCase):
             with self.subTest(query=query), self.assertRaisesRegex(Exception, 'read-only'):
                 self.db.execute(query)
         with self.assertRaisesRegex(Exception, 'named property graphs'):
-            self.db.execute("SELECT * FROM orchid_query('{}')")
+            self.db.execute("SELECT * FROM orchid_query('missing', 'RETURN 1')")
         self.assertEqual(self.db.execute('SELECT count(*) FROM messages').fetchone(), (5,))
 
     def test_functions_and_macro_source_bypass(self):

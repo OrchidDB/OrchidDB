@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2024"
 publish = false
 license = "GPL-3.0-only"
-description = "Database-free OrchidDB SQL compiler C ABI"
+description = "Internal OrchidDB runtime ABI for language clients"
 repository = "https://github.com/OrchidDB/OrchidDB"
 
 [lib]

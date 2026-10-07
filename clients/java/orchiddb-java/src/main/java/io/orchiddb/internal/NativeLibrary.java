@@ -51,7 +51,7 @@ public final class NativeLibrary {
                   + platform
                   + "; add com.orchiddb:orchiddb-java with classifier "
                   + platform
-                  + " at the same version, or use NativeSqlCompiler.load(Path)");
+                  + " at the same version, or set -Dorchiddb.native.path=/absolute/path/to/library");
         metadata.load(stream);
       }
       // A dedicated resource also works in shaded/fat JARs whose manifest belongs to the app.

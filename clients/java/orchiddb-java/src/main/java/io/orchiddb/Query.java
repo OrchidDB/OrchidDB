@@ -3,34 +3,15 @@ package io.orchiddb;
 import java.util.*;
 
 public record Query(
-    String language,
-    String text,
-    Map<String, Object> parameters,
-    Ontology ontology,
-    List<Map<String, Object>> rdf,
-    String dataset,
-    Authorization authorization) {
-  public Query(String language, String text, Map<String, Object> parameters, Ontology ontology) {
-    this(language, text, parameters, ontology, List.of(), "default", null);
-  }
-
-  public Query(
-      String language,
-      String text,
-      Map<String, Object> parameters,
-      Ontology ontology,
-      List<Map<String, Object>> rdf,
-      String dataset) {
-    this(language, text, parameters, ontology, rdf, dataset, null);
+    String language, String text, Map<String, Object> parameters, Authorization authorization) {
+  public Query(String language, String text, Map<String, Object> parameters) {
+    this(language, text, parameters, null);
   }
 
   @SuppressWarnings("unchecked")
   public Query {
     Checks.name(language);
     Checks.name(text);
-    Objects.requireNonNull(ontology);
-    Checks.name(dataset);
-    rdf = rdf.stream().map(rule -> (Map<String, Object>) freeze(rule)).toList();
     var copy = new TreeMap<String, Object>();
     parameters.forEach((k, v) -> copy.put(Checks.name(k), freeze(v)));
     parameters = Collections.unmodifiableMap(copy);
@@ -38,7 +19,7 @@ public record Query(
       throw new IllegalArgumentException("Bindings currently supported only for Cypher");
   }
 
-  private static Object freeze(Object v) {
+  static Object freeze(Object v) {
     if (v == null
         || v instanceof String
         || v instanceof Boolean
@@ -68,23 +49,18 @@ public record Query(
   }
 
   public static Query cypher(String text, Map<String, Object> parameters) {
-    return new Query("cypher", text, parameters, Ontology.EMPTY);
+    return new Query("cypher", text, parameters);
   }
 
   public Query as(Authorization principal) {
-    return new Query(
-        language, text, parameters, ontology, rdf, dataset, Objects.requireNonNull(principal));
+    return new Query(language, text, parameters, Objects.requireNonNull(principal));
   }
 
   public static Query gremlin(String text) {
-    return new Query("gremlin", text, Map.of(), Ontology.EMPTY);
+    return new Query("gremlin", text, Map.of());
   }
 
-  public static Query sparql(String text, List<Map<String, Object>> rdf, String dataset) {
-    return new Query("sparql", text, Map.of(), Ontology.EMPTY, rdf, dataset);
-  }
-
-  public static Query sparql(String text, Ontology ontology) {
-    return new Query("sparql", text, Map.of(), ontology);
+  public static Query sparql(String text) {
+    return new Query("sparql", text, Map.of());
   }
 }

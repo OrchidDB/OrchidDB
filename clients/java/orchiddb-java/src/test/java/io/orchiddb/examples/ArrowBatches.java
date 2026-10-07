@@ -12,7 +12,6 @@ import org.duckdb.DuckDBResultSet;
 /** scripts/run-example.sh ArrowBatches */
 public final class ArrowBatches {
   public static void main(String[] args) throws Exception {
-    var compiler = NativeSqlCompiler.load();
     var settings = new Properties();
     // The caller explicitly chooses DuckDB execution streaming before opening its connection.
     settings.setProperty("jdbc_stream_results", "true");
@@ -35,7 +34,7 @@ public final class ArrowBatches {
                   NodeMapping.node("Person", Source.table("lake", "people"), "id")
                       .property("number", "id")),
               List.of());
-      var graph = new OrchidDB(compiler, PlanCache.bounded(16), engine).graph(mapping);
+      var graph = new OrchidDB(engine).graph(mapping);
       long count = 0, sum = 0;
       try (var result =
           graph.queryArrow(Query.cypher("MATCH (p:Person) RETURN p.number AS number"))) {

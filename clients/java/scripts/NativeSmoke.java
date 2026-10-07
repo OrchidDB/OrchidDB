@@ -1,18 +1,12 @@
-import io.orchiddb.*;
-import java.util.*;
+import io.orchiddb.OrchidDB;
 
-/** Run against packaged artifacts, with no DuckDB driver or explicit native path. */
+/** Verify packaged API/runtime loading without adding a database driver dependency. */
 class NativeSmoke {
   public static void main(String[] args) {
-    var compiler = NativeSqlCompiler.load();
-    var source = Source.table("warehouse", "people");
-    var mapping = new GraphMapping(
-        List.of(NodeMapping.node("Person", source, "id").property("name", "name")), List.of());
-    var request = new Compilation("warehouse", SqlDialect.DUCKDB, mapping,
-        Map.of(source, List.of(new Column("id", "int64", false), new Column("name", "string", true))),
-        List.of(), Query.cypher("MATCH (p:Person) RETURN p.name"));
-    String sql = compiler.compile(request).sql();
-    if (!sql.contains("people")) throw new AssertionError(sql);
-    System.out.println("Packaged native compiler loaded and generated SQL without a database driver.");
+    new OrchidDB();
+    String schema = io.orchiddb.internal.NativeBridge.compileJson(
+        "{\"op\":\"validate_schema\",\"schema\":{\"tables\":[]}}");
+    if (!schema.contains("tables")) throw new AssertionError(schema);
+    System.out.println("Packaged OrchidDB runtime loaded successfully.");
   }
 }

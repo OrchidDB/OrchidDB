@@ -1,10 +1,7 @@
-"""Database-free compilation; results stay in the caller's Arrow engine."""
-from .compiler import Compiler, CompiledQuery, CompilationError
+"""Connection-based graph query execution."""
+from .execution import Connection, DuckDBEngine, PostgresEngine, ArrowEngine
+from ._runtime import CompilationError as QueryError
 from .permissions import Authorization, PermissionRelation, PermissionScope
-from .execution import DuckDBEngine, PostgresEngine, ArrowEngine, Graph
-__all__ = ["Compiler", "CompiledQuery", "CompilationError", "DuckDBEngine", "PostgresEngine", "query_federated", "ArrowEngine", "Graph",
-           "RemoteEngine", "Authorization", "PermissionRelation", "PermissionScope"]
-
-from .federation import query_federated
-
 from .remote import RemoteEngine
+__all__ = ["Connection", "DuckDBEngine", "PostgresEngine", "ArrowEngine", "QueryError",
+           "RemoteEngine", "Authorization", "PermissionRelation", "PermissionScope"]

@@ -14,10 +14,11 @@ path = "src/main.rs"
 [features]
 default = ["bundled", "quickwit", "elasticsearch"]
 bundled = ["duckdb/bundled"]
-quickwit = ["orchiddb-client/quickwit"]
-elasticsearch = ["orchiddb-client/elasticsearch"]
+quickwit = ["orchiddb-client/quickwit", "orchiddb/quickwit"]
+elasticsearch = ["orchiddb-client/elasticsearch", "orchiddb/elasticsearch"]
 
 [dependencies]
+orchiddb = { path = "..", default-features = false }
 orchiddb-client = { path = "../clients/rust", default-features = false }
 duckdb = "=1.10502.0"
 arrow = { version = "58.2.0", features = ["ipc", "prettyprint"] }

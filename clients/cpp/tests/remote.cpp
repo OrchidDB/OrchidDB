@@ -45,7 +45,7 @@ Json rows(orchiddb::ArrowResult& result) {
   }
   return values;
 }
-void dependent_sql(const orchiddb::Compiler& compiler) {
+void dependent_sql(const orchiddb::detail::Compiler& compiler) {
   Database database;DuckDBEngine local(database.connection);
   auto plan=Json::parse(R"JSON({"version":1,"dialect":"duckdb","execution_engine":"local","fields":["value"],
     "sql":"SELECT value FROM stage2 ORDER BY value","transfers":[
@@ -56,13 +56,13 @@ void dependent_sql(const orchiddb::Compiler& compiler) {
       {"source_engine":"local","source_dialect":"duckdb","sql":"SELECT value * 2 AS value FROM stage1", "target_relation":"stage2",
        "columns":[{"name":"value","data_type":"int64","nullable":false}]}
     ]})JSON");
-  orchiddb::execute_federated(compiler,orchiddb::Compiler::from_plan(plan),{{"local",&local}},[](orchiddb::ArrowResult& result) {REQUIRE(rows(result)==Json::parse("[[6],[12]]"));});
+  orchiddb::detail::execute_federated(compiler,orchiddb::detail::Compiler::from_plan(plan),{{"local",&local}},[](orchiddb::ArrowResult& result) {REQUIRE(rows(result)==Json::parse("[[6],[12]]"));});
   plan["transfers"][0]["sql"]="SELECT 2::BIGINT AS seed WHERE FALSE";
-  orchiddb::execute_federated(compiler,orchiddb::Compiler::from_plan(plan),{{"local",&local}},[](orchiddb::ArrowResult& result) {REQUIRE(rows(result).empty());});
+  orchiddb::detail::execute_federated(compiler,orchiddb::detail::Compiler::from_plan(plan),{{"local",&local}},[](orchiddb::ArrowResult& result) {REQUIRE(rows(result).empty());});
   sql(database.connection,"SELECT 1");
 }
 int main() {
-  orchiddb::Compiler compiler;
+  orchiddb::detail::Compiler compiler;
   dependent_sql(compiler);
   const auto* fixture=std::getenv("ORCHIDDB_REMOTE_FIXTURE");
   if(!fixture) {std::cout<<"Dependent SQL passed; live HTTP fixture not supplied\n";return 0;}
@@ -73,8 +73,8 @@ int main() {
     if(test.at("setup_sql").is_array()) for(const auto& statement:test.at("setup_sql")) sql(database.connection,statement);
     else sql(database.connection,test.at("setup_sql"));
     auto remote=[&] {
-      orchiddb::Compiler scoped_compiler;
-      orchiddb::RemoteEngine opened(scoped_compiler,test.at("adapter"),{{"endpoint",test.at("endpoint")},{"page_size",1},{"batch_size",2}});
+      orchiddb::detail::Compiler scoped_compiler;
+      orchiddb::RemoteEngine opened(test.at("adapter"),{{"endpoint",test.at("endpoint")},{"page_size",1},{"batch_size",2}});
       return orchiddb::RemoteEngine(std::move(opened));
     }(); // The moved session retains its compiler after the original scope ends.
 
@@ -82,17 +82,17 @@ int main() {
     for(auto it=test.at("request").at("engines").begin();it!=test.at("request").at("engines").end();++it)
       engines[it.key()]=it.value().at("dialect")=="duckdb"?static_cast<orchiddb::ExecutionEngine*>(&local):static_cast<orchiddb::ExecutionEngine*>(&remote);
     auto consume=[&](orchiddb::ArrowResult& result){const auto actual=rows(result);if(actual!=test.at("expected_rows"))throw std::runtime_error("Unexpected rows: "+actual.dump()+" expected "+test.at("expected_rows").dump());};
-    orchiddb::query_federated(compiler,test.at("request"),engines,consume);
+    orchiddb::detail::query_federated(compiler,test.at("request"),engines,consume);
     remote.clear_metadata_cache();
     bool malformed_failed=false;
     try {remote.execute_requests(Json::array({Json{{"invalid",true}}}),Json::array());}
     catch(const std::exception&) {malformed_failed=true;}
     REQUIRE(malformed_failed);
     bool failed=false;
-    try {orchiddb::query_federated(compiler,test.at("request"),engines,[](orchiddb::ArrowResult&){throw std::runtime_error("consumer failed");});}
+    try {orchiddb::detail::query_federated(compiler,test.at("request"),engines,[](orchiddb::ArrowResult&){throw std::runtime_error("consumer failed");});}
     catch(const std::runtime_error& error) {failed=std::string(error.what())=="consumer failed";}
     REQUIRE(failed);
-    orchiddb::query_federated(compiler,test.at("request"),engines,consume);
+    orchiddb::detail::query_federated(compiler,test.at("request"),engines,consume);
     remote.close();remote.close();
     failed=false;try {remote.execute_requests(Json::array(),Json::array());}catch(const std::runtime_error&){failed=true;}REQUIRE(failed);
     sql(database.connection,"SELECT 1");

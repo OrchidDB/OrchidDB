@@ -42,6 +42,7 @@ inline Json authorization(std::string subject_type, std::string subject_id) {
   return {{"subject_type", std::move(subject_type)}, {"subject_id", std::move(subject_id)}};
 }
 
+namespace detail {
 /** Shared compiler and explicit statistics coordinator. Connections remain application-owned. */
 class Compiler {
   struct Library {
@@ -79,8 +80,8 @@ public:
   }
   explicit Compiler(const std::string& path = default_path()) : library_(std::make_shared<Library>(path.c_str())) {
     auto abi = reinterpret_cast<uint32_t(*)()>(library_->symbol("orchiddb_abi_version"));
-    if (abi() != 1) throw std::runtime_error("Unsupported OrchidDB ABI");
-    compile_ = reinterpret_cast<char*(*)(const char*)>(library_->symbol("orchiddb_compile_json"));
+    if (abi() != 2) throw std::runtime_error("Unsupported OrchidDB ABI");
+    compile_ = reinterpret_cast<char*(*)(const char*)>(library_->symbol("orchiddb_execution_command"));
     bind_arrow_ = reinterpret_cast<char*(*)(const char*, ArrowArrayStream*)>(library_->symbol("orchiddb_bind_arrow_json"));
     statistics_ = reinterpret_cast<char*(*)(const char*)>(library_->symbol("orchiddb_statistics_json"));
     free_ = reinterpret_cast<void(*)(char*)>(library_->symbol("orchiddb_string_free"));
@@ -198,6 +199,8 @@ public:
   CompiledQuery compile(const Json& request) const { return compiler_.compile(request, catalog_id_); }
 };
 
+} // namespace detail
+
 /** C Data objects own their release callback independently of the stream. */
 template<class T> class ArrowOwner {
   T value_{};
@@ -254,12 +257,12 @@ public:
 /** Optional HTTP engine backed by the shared native transport. Closing the engine
  * never closes caller-owned SQL sessions. Each instance owns one native handle. */
 class RemoteEngine final : public ExecutionEngine {
-  Compiler compiler_;
+  detail::Compiler compiler_;
   std::string adapter_;
   Json handle_;
 public:
-  RemoteEngine(Compiler compiler, std::string adapter, Json options)
-      : compiler_(std::move(compiler)), adapter_(std::move(adapter)) {
+  RemoteEngine(std::string adapter, Json options)
+      : compiler_(), adapter_(std::move(adapter)) {
     const auto opened=compiler_.remote_command({{"op","open"},{"adapter",adapter_},{"options",std::move(options)}});
     handle_=opened.at("id");
   }
@@ -335,25 +338,26 @@ inline CompiledQuery source_query(const Json& transfer,const Json& columns) {
 }
 } // namespace detail
 
-inline ArrowResult query(const Compiler& compiler, const Json& request, ExecutionEngine& engine) {
-  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("Compiler and engine SQL dialects differ");
+namespace detail {
+inline ArrowResult query(const detail::Compiler& compiler, const Json& request, ExecutionEngine& engine) {
+  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("detail::Compiler and engine SQL dialects differ");
   auto plan = compiler.compile(request);
   if (!plan.diagnostics.value("transfers", Json::array()).empty()) throw std::invalid_argument("Use query_federated for a multi-engine plan");
   return engine.execute(plan);
 }
-inline void generate_statistics(Statistics& statistics, const Json& request, ExecutionEngine& engine) {
-  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("Compiler and engine SQL dialects differ");
+inline void generate_statistics(detail::Statistics& statistics, const Json& request, ExecutionEngine& engine) {
+  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("detail::Compiler and engine SQL dialects differ");
   statistics.generate(request, [&](const Json& work) { return engine.collect_statistics(work); });
 }
-inline ArrowResult query(const Statistics& statistics, const Json& request, ExecutionEngine& engine) {
-  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("Compiler and engine SQL dialects differ");
+inline ArrowResult query(const detail::Statistics& statistics, const Json& request, ExecutionEngine& engine) {
+  if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("detail::Compiler and engine SQL dialects differ");
   auto plan = statistics.compile(request);
   if (!plan.diagnostics.value("transfers", Json::array()).empty()) throw std::invalid_argument("Use query_federated for a multi-engine plan");
   return engine.execute(plan);
 }
 
 /** Consume the result inside the callback. Sessions remain application-owned. */
-inline void execute_federated(const Compiler& compiler, CompiledQuery plan,
+inline void execute_federated(const detail::Compiler& compiler, CompiledQuery plan,
     const std::map<std::string, ExecutionEngine*>& engines,
     const std::function<void(ArrowResult&)>& consume) {
   const auto target_id = plan.diagnostics.at("execution_engine").get<std::string>();
@@ -391,7 +395,7 @@ inline void execute_federated(const Compiler& compiler, CompiledQuery plan,
     if(bound.contains("requests")) {
       auto data=engines.at(bound.at("engine"))->execute_requests(bound.at("requests"),bound.at("columns"));
       data["op"]="bind";data["plan"]=plan.diagnostics;data["relation"]=relation;
-      plan=Compiler::from_plan(compiler.command(data));
+      plan=detail::Compiler::from_plan(compiler.command(data));
     } else {
       std::vector<ArrowResult> outputs;
       for(const auto& statement:bound.at("sql")) {
@@ -399,7 +403,7 @@ inline void execute_federated(const Compiler& compiler, CompiledQuery plan,
         outputs.push_back(engines.at(bound.at("engine"))->execute(detail::source_query(output,t.at("columns"))));
       }
       if(outputs.empty()) {
-        plan=Compiler::from_plan(compiler.command({{"op","bind"},{"plan",plan.diagnostics},{"relation",relation},{"rows",Json::array()}}));
+        plan=detail::Compiler::from_plan(compiler.command({{"op","bind"},{"plan",plan.diagnostics},{"relation",relation},{"rows",Json::array()}}));
       } else {
         auto joined=detail::concatenate(std::move(outputs));
         plan=compiler.bind_arrow(plan,relation,joined.stream_for_binding());
@@ -410,10 +414,46 @@ inline void execute_federated(const Compiler& compiler, CompiledQuery plan,
   consume(result);
 }
 
-inline void query_federated(const Compiler& compiler, const Json& request,
+inline void query_federated(const detail::Compiler& compiler, const Json& request,
     const std::map<std::string, ExecutionEngine*>& engines,
     const std::function<void(ArrowResult&)>& consume) {
   execute_federated(compiler,compiler.compile(request),engines,consume);
 }
+
+} // namespace detail
+
+/** Registered schema and execution on the application's existing engine. */
+class Connection {
+  ExecutionEngine& engine_;
+  Json schema_;
+  detail::Compiler runtime_;
+  detail::Statistics statistics_;
+  bool closed_ = false;
+  Json request(const std::string& text, const Json& parameters, const std::string& language, const Json& authorization = nullptr) const {
+    if (closed_) throw std::runtime_error("Connection is closed");
+    auto request = schema_;
+    request["version"] = 1; request["dialect"] = engine_.dialect();
+    request["query"] = text; request["language"] = language; request["parameters"] = parameters;
+    if (!authorization.is_null()) request["authorization"] = authorization;
+    return request;
+  }
+public:
+  Connection(ExecutionEngine& engine, Json schema, const std::string& library = detail::Compiler::default_path())
+    : engine_(engine), runtime_(library), statistics_(runtime_) {
+    schema_ = runtime_.command({{"op","validate_schema"},{"schema",std::move(schema)}});
+  }
+  ArrowResult query(const std::string& text, Json parameters = Json::object(), const std::string& language = "cypher", Json authorization = nullptr) {
+    return detail::query(statistics_, request(text, parameters, language, authorization), engine_);
+  }
+  void query_federated(const std::string& text, const std::map<std::string, ExecutionEngine*>& engines,
+      const std::function<void(ArrowResult&)>& consume, Json parameters = Json::object(), const std::string& language = "cypher", Json authorization = nullptr) {
+    detail::execute_federated(runtime_, statistics_.compile(request(text, parameters, language, authorization)), engines, consume);
+  }
+  void generate_statistics() { detail::generate_statistics(statistics_, request("RETURN 1", Json::object(), "cypher"), engine_); }
+  void save_statistics(const std::string& path) const { statistics_.save(path); }
+  void load_statistics(const std::string& path) { statistics_.load(path); }
+  void clear_statistics() { statistics_.clear(); }
+  void close() { statistics_.clear(); closed_=true; }
+};
 
 } // namespace orchiddb

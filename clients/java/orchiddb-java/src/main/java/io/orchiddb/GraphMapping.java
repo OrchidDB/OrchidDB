@@ -2,8 +2,20 @@ package io.orchiddb;
 
 import java.util.*;
 
-public record GraphMapping(List<NodeMapping> nodes, List<EdgeMapping> edges) {
+public record GraphMapping(
+    List<NodeMapping> nodes,
+    List<EdgeMapping> edges,
+    Ontology ontology,
+    List<Map<String, Object>> rdf,
+    String dataset) {
+  public GraphMapping(List<NodeMapping> nodes, List<EdgeMapping> edges) {
+    this(nodes, edges, Ontology.EMPTY, List.of(), "default");
+  }
+
   public GraphMapping {
+    Objects.requireNonNull(ontology);
+    rdf = rdf.stream().map(GraphMapping::freezeRdf).toList();
+    Objects.requireNonNull(dataset);
     nodes = List.copyOf(nodes);
     edges = List.copyOf(edges);
     if (nodes.isEmpty()) throw new IllegalArgumentException("Map at least one node label");
@@ -18,6 +30,11 @@ public record GraphMapping(List<NodeMapping> nodes, List<EdgeMapping> edges) {
       if (!labels.contains(e.sourceLabel()) || !labels.contains(e.targetLabel()))
         throw new IllegalArgumentException("Unmapped edge endpoint label");
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> freezeRdf(Map<String, Object> mapping) {
+    return (Map<String, Object>) Query.freeze(mapping);
   }
 
   public Set<Source> sources() {

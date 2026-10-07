@@ -113,7 +113,10 @@ impl Statistics {
     }
     /// Compile to the normal typed plan, ready for `execute(session, &plan)`.
     /// Reuses the cached Arc directly; statistics are not serialized per query.
-    pub async fn compile_plan(&self, request: Value) -> Result<crate::CompiledSql, String> {
+    pub async fn compile_plan(
+        &self,
+        request: Value,
+    ) -> Result<orchiddb::compiler::CompiledSql, String> {
         let catalog = match self.catalog_id.as_ref().and_then(Value::as_str) {
             Some(id) => {
                 let catalog = orchiddb::ir::rel::statistics::catalog(id)?;
@@ -127,12 +130,12 @@ impl Statistics {
             }
             None => None,
         };
-        let mut request: crate::CompileRequest =
+        let mut request: orchiddb::compiler::CompileRequest =
             serde_json::from_value(request).map_err(|e| e.to_string())?;
         if catalog.is_some() {
             request.statistics = catalog;
         }
-        crate::compile(request).await
+        orchiddb::compiler::compile(request).await
     }
     /// Compile to portable JSON, including all planner diagnostics.
     pub async fn compile(&self, request: Value) -> Result<Value, String> {

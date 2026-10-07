@@ -3,9 +3,8 @@
 **Cypher, Gremlin, and SPARQL over multiple execution engines.**
 
 OrchidDB is a shared graph compiler and runtime. Language frontends lower to
-Graph IR, then relational plans and graph kernels. Applications can compile to
-SQL and use their own database connection, use the native runtime, or load Orchid
-as a DuckDB extension. The extension hosts the same compiler and kernels inside
+Graph IR, then relational plans and graph kernels. Applications register graph schema on a connection and execute query text with
+separate parameters, or load Orchid as a DuckDB extension. The extension hosts the same compiler and kernels inside
 DuckDB, with access to the caller's catalog, transactions, and storage.
 
 ## Clients and CLI
@@ -27,44 +26,41 @@ See [client development](clients/README.md) for local builds and tests. `make cl
 builds the standalone CLI; `make native` builds and stages one shared library for
 the foreign-language clients. The DuckDB extension remains a separate integration.
 
-## Standalone compilation and engine adapters
+## Connection-based execution
 
-The default Rust library has no DuckDB driver or extension dependency. SQL
-compilation for DuckDB and PostgreSQL needs no database connection.
+Register source schemas and graph mappings once on a connection, then submit
+query text and parameters separately. Schema can be loaded from JSON or YAML
+into an SDK configuration object. Query text, language, parameters, and principal
+are never part of that schema. The CLI accepts JSON schema files.
 
-Compiler requests provide the query,
-source schemas, graph mapping, target dialect, and optional typed parameters and
-function signatures. Compilation returns SQL and result metadata without reading
-or copying source rows. SQL-only compilation reports unsupported operations;
-applications needing residual graph kernels can use `ir::rel` and its host APIs.
+```python
+from orchiddb import Connection, DuckDBEngine
 
-| Integration | Entry point | Cargo feature |
-| --- | --- | --- |
-| Database-free SQL compilation | `compiler::compile`, `compiler::compile_json` | None |
-| Caller-owned SQL execution | `execution::SqlSession`, `execution::execute` | None |
-| Native relational/kernel execution | `ir::rel::RelBackend` | None |
-| Embedded DuckDB graph engines and SQL executor | `engine`, `mapped_engine`, `rdf_engine`, `ir::rel::sql::DuckDbExecutor` | `duckdb` |
-| PostgreSQL SQL executor / caller-owned region session | `ir::rel::sql::PostgresExecutor`, `ir::rel::sql::region::PostgresRegionSession` | `postgres` |
-| DuckDB extension | `extension/` | Separate extension build below |
+# database is your existing DuckDB connection; schema is mapping configuration.
+with Connection(DuckDBEngine(database), schema) as graph:
+    with graph.query("MATCH (p:Person) WHERE p.name=$name RETURN p.name AS name",
+                     parameters={"name": "Ada"}) as result:
+        print(result.read_all().to_pylist())
+```
 
-`PostgresExecutor` is a fixture/materialization executor: its setup and query run
-inside a transaction that is rolled back. Use `SqlSession` for application-owned
-execution or `PostgresRegionSession` for SQL regions on an existing connection.
-Database features are opt-in; generating PostgreSQL SQL does not require `postgres`.
+```sh
+make cli
+./target/debug/orchiddb query 'MATCH (p:Person) RETURN p.name AS name ORDER BY name' \
+  --schema cli/examples/people.json --init cli/examples/setup.sql --no-iceberg --format table
+```
 
-Portable `fn.*` scalar functions retain native implementations and explicit
-per-dialect SQL mappings, for example `fn.lower(p.name)`. Language-defined
-functions keep their Cypher, Gremlin, or SPARQL semantics. Backend-specific
-functions use an explicit `OperatorTable` or request function signatures; the
-DuckDB extension discovers them from its caller's catalog.
+No public compile-only API or CLI route remains. SQL lowering, portable function
+mappings, and engine routing stay internal to execution. Schema validation rejects
+combined query/schema documents. Existing application connections, transactions,
+and driver configuration remain caller-owned. Results are rows or Arrow batches.
 
-Additional engines implement `EngineAdapter` (also named `DialectAdapter`) and
-register it through `SqlDialect::register`. Adapters own SQL syntax, type/value
-encoding, function mappings, and relational lowering. Execution remains behind
-session/host interfaces. StarRocks is a planned adapter, not a supported dialect
-yet; adding it should reuse the existing language frontends and IR.
-See [tests/engine_adapter.rs](tests/engine_adapter.rs) for a working third-engine
-adapter and [src/ir/rel/sql/dialect.rs](src/ir/rel/sql/dialect.rs) for the contract.
+The shared `fn.*` library still lowers to engine SQL or shared runtime kernels.
+Backend-specific functions use declared signatures; the DuckDB extension can
+discover them through its caller's catalog. DuckDB and PostgreSQL adapters share
+the same language frontends and IR. StarRocks remains a planned adapter.
+
+See [client interfaces and source builds](clients/README.md) for each language.
+This API change is in source; it does not republish older registry packages.
 
 ## Optional DuckDB extension
 
@@ -655,15 +651,14 @@ actual Lance and Iceberg sources.
 
 ## SPARQL and advanced mappings
 
-The existing version-1 mapping protocol runs through DuckDB's
-`orchid_query(request_json)` table function. For the `people` table above:
+Register advanced schema configuration once on the DuckDB connection, then pass
+query text separately. For the `people` table above:
 
 ```sql
-SELECT * FROM orchid_query($$
+-- Uses the people table created by 01_social.sql.
+-- Register the RDF schema once on this connection.
+CALL orchid_register_schema('people_rdf', $$
 {
-  "version": 1,
-  "language": "sparql",
-  "query": "SELECT ?name WHERE { ?person <urn:name> ?name } ORDER BY ?name",
   "tables": [{"name": "people"}],
   "rdf": [{
     "table": "people",
@@ -673,19 +668,23 @@ SELECT * FROM orchid_query($$
   }]
 }
 $$);
+SELECT * FROM orchid_query('people_rdf',
+  'SELECT ?name WHERE { ?person <urn:name> ?name } ORDER BY ?name',
+  language := 'sparql');
+-- Alice, Bob, Cara, each with RDF kind/datatype/language metadata.
 ```
 
-SPARQL currently uses this function interface, not a native unquoted statement.
-The same protocol accepts Cypher and typed Gremlin bindings. DuckDB supplies actual
-source schemas; caller-provided column declarations are not authoritative.
-`orchid_compile(request_json)` exposes compilation metadata and frontend errors.
-The extension requires its host DuckDB as the execution engine.
+`orchid_register_schema(name, schema_json)` retains a named schema for the current
+connection. It rejects query text and query options inside the schema document.
+`orchid_query(name, query_text, language := 'cypher', parameters := {name: 'Ada'})`
+executes against that schema; typed Gremlin bindings use the separate `bindings`
+argument. Source column types are resolved from the host DuckDB catalog.
 
-Existing SPARQL updates use `CALL orchid_sparql_update(request_json)` with explicitly
-writable RDF mappings. `rdf_sources` accepts typed quad sources, including kind,
-datatype, and language columns; `rdf_graph_names` maps named graph registries.
-The request types are defined in [src/compiler.rs](src/compiler.rs). SPARQL scope
-is unchanged: this migration adds no SERVICE execution, reasoning, or HTTP endpoint.
+SPARQL updates use `CALL orchid_sparql_update(name, query_text)` with explicitly
+writable RDF mappings. `rdf_sources` supports typed quad sources and
+`rdf_graph_names` maps named graph registries. Native `CYPHER` and `GREMLIN`
+statements over property graphs remain available. SQL lowering is internal;
+there is no `orchid_compile` function or combined query/schema request interface.
 
 ## Execution architecture
 
@@ -728,7 +727,7 @@ Build once, then validate that unchanged artifact locally:
 python3 extension/scripts/build.py
 python3 -m venv extension/vendor/test-env
 extension/vendor/test-env/bin/pip install -r extension/tests/requirements.txt
-make -f scripts/release/Makefile test
+make extension-test
 ```
 
 The integration suite includes actual Iceberg/Lance scans and indexed search,
@@ -800,89 +799,86 @@ backend, SQL regions executed by the selected backend, and no unexpected failure
 or omissions. Only the existing SPARQL omissions with unchanged case hashes are
 allowed. Reports are written under `target/conformance/sql-engines/`.
 
-## Package and release the extension
+## Build the complete GitHub release
 
-Run the complete release on a **macOS ARM64 host**. Linux binaries are
-cross-compiled locally with Zig through `cargo-zigbuild`. Install Rust through
-rustup, Zig, `cargo-zigbuild`, and the
-[GitHub CLI](https://cli.github.com/), then authenticate with
-`gh auth login` using an account with release access to `OrchidDB/OrchidDB`.
-Commit and push the intended source revision first; publication requires a clean
-checkout and verifies that the commit exists in the destination repository.
-
-Choose an unused extension version and run:
+From a clean, committed checkout on **macOS ARM64**, run:
 
 ```sh
-make -f scripts/release/Makefile release VERSION=0.4.0
+make release
 ```
 
-With the workspace Makefile at `~/orchiddb/Makefile` and the repository at
-`~/orchiddb/orchiddb`, the equivalent command is:
+The version defaults to the root Cargo.toml. To select a new version, update and
+commit the client/CLI manifests first, then run `make release VERSION=0.4.0`.
+Every component must have that same version. Nothing is uploaded, no tag is
+created, and nothing is published to npm, PyPI, Maven Central, Hex, or crates.io.
+The command prints the directory to upload manually to your GitHub release:
+
+```text
+target/releases/orchiddb-v<version>/<commit>/upload/
+```
+
+The pipeline runs client tests, the full DuckDB and PostgreSQL conformance matrix,
+and the full extension conformance suites. Only the existing, exact SPARQL
+omissions are accepted. PostgreSQL runs in an isolated temporary Docker container,
+which is removed on exit. It then builds optimized artifacts for **macOS ARM64,
+Linux ARM64, and Linux x86-64**, validates native ABI and actual CLI/extension
+queries on each platform, and checks the Java classifiers in host/Linux JVMs.
+Linux validation uses local Docker containers; builds use Cargo and Zig locally.
+No GitHub Actions jobs are dispatched.
+
+| Component | GitHub assets |
+| --- | --- |
+| DuckDB extension | Three platform archives, pinned to DuckDB 1.5.6 |
+| CLI | Three archives with the standalone executable and examples |
+| Native runtime | Three shared-library/header archives plus JVM kernel/dependency ZIP |
+| Python | Three wheels containing the matching native runtime |
+| JavaScript/TypeScript | One local-install tarball with all three native runtimes |
+| Java/Gremlin | One ZIP with API, dependency, and native classifier JARs |
+| C++ | Three CMake/header/library archives, including JSON headers |
+| Elixir | Three source/runtime archives; the small NIF builds against the user's Erlang |
+| Rust | Complete source archive preserving local workspace dependencies |
+| Verification | Full conformance reports, release manifest, and SHA256SUMS |
+
+Upload **every file** in the printed `upload/` directory. The manifest maps each
+client to its assets and records the source commit and checksums. The Rust client
+is under `clients/rust` in the source archive. Language package tools may install
+the downloaded assets or resolve third-party dependencies; this release process
+requires no registry publishing accounts or credentials. Extension binaries are
+unsigned and require DuckDB's `allow_unsigned_extensions` setting.
+
+### Prerequisites and retries
+
+Install Rust/rustup, Zig, cargo-zigbuild, Docker with ARM64/x86-64 execution,
+Java 21, Maven, Node 20+, npm, Elixir/Erlang, CMake, and a C++17 compiler. Configure
+`JAVA_HOME` for Java 21. Use the existing test environment or prepare it with:
 
 ```sh
-make -C ~/orchiddb release VERSION=0.4.0
+python3 -m venv extension/vendor/test-env
+extension/vendor/test-env/bin/pip install -r extension/tests/requirements.txt \
+  -r conformance/requirements.txt pytest build wheel setuptools
+make release-check
+make release
 ```
 
-That entry point changes into the repository before invoking its release targets.
-`make -C ~/orchiddb release-plan VERSION=0.4.0` previews the commands without
-building or publishing. The workspace also forwards `build`, `test`, `package`,
-`release-check`, and `publish`.
+`TEST_PYTHON=/absolute/path/to/python` selects another prepared environment.
+Build tools can download their normal dependencies; generated packages are staged
+under `target/`. Source files and published tags/assets are never overwritten.
 
-The release target checks prerequisites, builds optimized extensions in parallel for exactly
-**macOS ARM64 (`osx_arm64`), Linux ARM64 (`linux_arm64`), and Linux x86-64
-(`linux_amd64`)**, packages all three, and publishes them in one GitHub release
-tagged `extension-v0.4.0`. Builds use three workers by default and reuse Rust
-and DuckDB source caches. For speed, this target does not run tests or load checks.
-The standalone `test` target remains available separately. Only the extension is
-released; compilation and publication run locally, with no GitHub Actions or
-worktrees.
-
-The release contains three platform-specific archives such as
-`orchid-0.4.0-duckdb-v1.5.6-osx_arm64.tar.gz`, each with its SHA-256 checksum. Inside are
-`orchid.duckdb_extension`, `LICENSE.md`, `manifest.json`, and `SHA256SUMS`.
-The manifest records the binary checksum, build-time source revision, extension
-version, DuckDB version, and platform. These are **unsigned** binaries: extract
-the archive and load the extension using `duckdb -unsigned` or a connection with
-`allow_unsigned_extensions=true`. Linux adapters target glibc 2.28 using Zig.
-
-Optional settings:
+Completed tests, platform builds, packages, and validation receipts are reused
+only for the same commit/version with matching hashes. Rerun `make release` to
+retry a failed stage. Individual stages are available for diagnosis:
 
 ```sh
-make -f scripts/release/Makefile release VERSION=0.4.0 \
-  REPO=OrchidDB/OrchidDB NOTES_FILE=/absolute/path/to/release-notes.md
+make release-test
+make release-build
+make release-package
+make release-verify
 ```
 
-Without `NOTES_FILE`, notes describe the artifact and how to load it. Versions
-such as `0.4.0-rc.1` create GitHub prereleases. Existing tags/releases are never
-overwritten. The tag points to the exact build revision, not a moving branch.
-
-For separate local steps or to publish an existing complete three-platform build:
-
-```sh
-make -f scripts/release/Makefile release-check VERSION=0.4.0
-make -f scripts/release/Makefile release-build VERSION=0.4.0
-make -f scripts/release/Makefile release-verify VERSION=0.4.0
-make -f scripts/release/Makefile release-package VERSION=0.4.0
-make -f scripts/release/Makefile publish VERSION=0.4.0
-```
-
-Completed builds live in `target/releases/extension-v<version>/<commit>`.
-Rerunning `release` reuses completed builds whose checksums still match; Cargo,
-Zig, and downloaded dependencies are cached separately. To retry one target,
-use `release-build` with `PLATFORM=linux_amd64` (or either of
-the other two platform identifiers). `release` and `publish` always require all
-three, regardless of `PLATFORM`.
-
-`release-package` assembles the three built artifacts under
-`target/packages/<sha256>` without GitHub changes. `publish` reuses them without
-rebuilding. Publication rejects
-stale binaries, version mismatches, dirty-source builds, debug builds, and builds
-made manually with `--skip-rust`. The plain `build`, `test`, and `package` targets
-remain available for host-only development. Older binaries without build
-provenance can be packaged locally but must be rebuilt before publication.
-If a failed upload leaves a GitHub draft, inspect and
-complete that draft with `gh release upload` / `gh release edit`; do not replace
-published assets or move the tag.
+`make -n release` previews the command. Packaging requires successful tests and
+builds; only successful verification prints the upload-ready result. The existing
+extension development targets are also in the root `Makefile`: `extension`,
+`extension-release`, `extension-test`, and `extension-package`.
 
 ## License
 

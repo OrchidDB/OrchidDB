@@ -9,24 +9,23 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* ABI 1. Calls may be concurrent. Compilation runs on a bounded native worker pool. */
+/* ABI 2. Calls may be concurrent. Compilation runs on a bounded native worker pool. */
 ORCHIDDB_API uint32_t orchiddb_abi_version(void);
 /* Borrowed static UTF-8 NUL-terminated strings. Do not free. */
 ORCHIDDB_API const char *orchiddb_version(void);
 ORCHIDDB_API const char *orchiddb_core_revision(void);
-/* Input: UTF-8 NUL-terminated compiler protocol v1 JSON. The "bind" operation
- * accepts island results as typed JSON rows or base64 Arrow IPC.
- * Output: owned UTF-8 JSON {"ok":true,"result":{version,dialect,sql,fields}}
- *      or {"ok":false,"error":"..."}. Free once using orchiddb_string_free.
- * Null/invalid UTF-8/invalid requests return an error envelope. Invalid pointers
- * are a caller error. No connection setup, execution, or implicit downloads. */
-ORCHIDDB_API char *orchiddb_compile_json(const char *input);
+/* SDK implementation transport, not a customer query API. Clients register
+ * schema on their connection and submit query text separately.
+ * Input: UTF-8 NUL-terminated internal command JSON.
+ * Output: owned UTF-8 JSON envelope; free once with orchiddb_string_free.
+ * Invalid input returns an error envelope; invalid pointers are a caller error. */
+ORCHIDDB_API char *orchiddb_execution_command(const char *input);
 struct ArrowArrayStream;
 /* Bind an Arrow C stream using {"plan": compiled_plan, "relation": name}.
  * If both arguments are non-null, ownership of the stream moves into this call,
  * including on errors: its release callback is cleared and imported resources
  * are released here. Null arguments leave stream ownership with the caller.
- * Returns the same owned JSON envelope as compile_json. No SQL is executed. */
+ * Returns the same owned JSON envelope as orchiddb_execution_command. No SQL is executed. */
 ORCHIDDB_API char *orchiddb_bind_arrow_json(const char *input, struct ArrowArrayStream *stream);
 /* Statistics coordinator: begin/next/submit/finish/cancel/install/release/compile.
  * Accepts bounded Arrow IPC or row samples; same response envelope and ownership. */

@@ -13,7 +13,11 @@ fn live_remote_queries_use_explicit_engine_configuration() {
         let request = root.join("request.json");
         let init = root.join("setup.sql");
         let engines = root.join("engines.json");
-        std::fs::write(&request, case["request"].to_string()).unwrap();
+        let mut schema = case["request"].clone();
+        for key in ["query", "language", "version", "dialect", "parameters"] {
+            schema.as_object_mut().unwrap().remove(key);
+        }
+        std::fs::write(&request, schema.to_string()).unwrap();
         std::fs::write(
             &init,
             case["setup_sql"]
@@ -33,6 +37,8 @@ fn live_remote_queries_use_explicit_engine_configuration() {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_orchiddb"))
             .args([
                 "query",
+                case["request"]["query"].as_str().unwrap(),
+                "--schema",
                 request.to_str().unwrap(),
                 "--init",
                 init.to_str().unwrap(),

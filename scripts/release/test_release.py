@@ -98,23 +98,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn('--clobber', command)
         self.assertTrue(Path(command[command.index('--notes-file')+1]).is_file())
 
-    def test_make_release_stops_before_publication_when_tests_fail(self):
-        # Replace only the executables, retaining real make recursion and -j.
+    def test_make_release_propagates_pipeline_failure_without_publishing(self):
         stub = self.root / 'stub.py'
         log = self.root / 'calls'
         stub.write_text('import sys\nfrom pathlib import Path\n'
-                        f'with Path({str(log)!r}).open("a") as f: f.write(" ".join(sys.argv[1:])+"\\n")\n'
-                        'sys.exit(1 if "verify" in sys.argv else 0)\n')
-        result = subprocess.run(['make', '-j4', '-f', 'scripts/release/Makefile', 'release',
+                        f'Path({str(log)!r}).write_text(" ".join(sys.argv[1:]))\n'
+                        'sys.exit(1)\n')
+        result = subprocess.run(['make', '-j4', 'release',
                                  'VERSION=0.1.0', f'PYTHON={sys.executable} {stub}'],
                                 cwd=packaging.ROOT, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        calls = log.read_text().splitlines()
-        self.assertIn('--check', calls[0])
-        self.assertIn('matrix.py check', calls[1])
-        self.assertIn('matrix.py build', calls[3])
-        self.assertIn('matrix.py verify', calls[4])
-        self.assertEqual(len(calls), 5, result.stdout + result.stderr)
+        self.assertEqual(log.read_text(), 'scripts/release/release.py all --version 0.1.0')
 
     def test_publication_requires_exactly_three_validated_platforms(self):
         commit = self.receipt['revision']

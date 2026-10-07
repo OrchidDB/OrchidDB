@@ -3,7 +3,7 @@ package io.orchiddb;
 import java.util.*;
 
 /** Complete immutable compilation snapshot. Also usable without a database connection. */
-public record Compilation(
+record Compilation(
     String engine,
     SqlDialect dialect,
     GraphMapping mapping,

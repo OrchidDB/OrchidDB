@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 import duckdb
 import pytest
-from orchiddb import Compiler, DuckDBEngine, RemoteEngine, query_federated
+from orchiddb import DuckDBEngine, RemoteEngine
+from orchiddb._runtime import _Runtime as Compiler
+from orchiddb.federation import _query_federated as query_federated
 
 
 def fixtures():
@@ -18,7 +20,7 @@ def test_live_remote_federation(case):
         for sql in case.get("setup_sql", []):
             connection.execute(sql)
         request = case["request"]
-        with RemoteEngine(compiler, case["adapter"], case["endpoint"], page_size=2) as remote:
+        with RemoteEngine(case["adapter"], case["endpoint"], page_size=2) as remote:
             engines = {name: remote if desc["dialect"] == case["adapter"] else DuckDBEngine(connection)
                        for name, desc in request["engines"].items()}
             with query_federated(compiler, request, engines, batch_size=2) as reader:
@@ -36,7 +38,7 @@ def test_live_remote_federation(case):
 
 def test_dependent_operations_use_current_plan_and_close_source_first():
     from contextlib import contextmanager
-    from orchiddb import CompiledQuery
+    from orchiddb._runtime import CompiledQuery
     import pyarrow as pa
     log = []
     columns = [{"name": "id", "data_type": "int64", "nullable": False}]
@@ -48,7 +50,7 @@ def test_dependent_operations_use_current_plan_and_close_source_first():
     def plan(transfers):
         return CompiledQuery("FINAL", ("id",), "duckdb", diagnostics={"execution_engine": "db", "transfers": transfers})
     class FakeCompiler:
-        def compile(self, request): return plan([remote, later])
+        def prepare(self, request): return plan([remote, later])
         def bind_operation(self, p, relation, *, reader):
             assert reader.read_all().column(0).to_pylist() == [9007199254740993]
             return {"engine": "search", "requests": [{"key": 9007199254740993}]}
@@ -81,12 +83,12 @@ def test_dependent_operations_use_current_plan_and_close_source_first():
 
 
 def test_closed_request_does_not_query_sql_and_propagates_error():
-    from orchiddb import CompiledQuery
+    from orchiddb._runtime import CompiledQuery
     transfer = dict(source_engine="search", source_dialect="quickwit", sql="",
                     target_relation="remote", columns=[],
                     request=dict(engine="search", input_columns=[], template={"adapter": "quickwit"}))
     class FakeCompiler:
-        def compile(self, request):
+        def prepare(self, request):
             return CompiledQuery("FINAL", (), "duckdb", diagnostics={"execution_engine": "db", "transfers": [transfer]})
         def bind_operation(self, plan, relation, *, rows):
             assert rows == [[]]
@@ -115,7 +117,7 @@ def test_live_remote_error_preserves_caller_sessions(case):
         if isinstance(value, dict): return {k: replace(v) for k, v in value.items()}
         return value
     with Compiler() as compiler, duckdb.connect() as connection:
-        with RemoteEngine(compiler, case["adapter"], case["endpoint"]) as remote:
+        with RemoteEngine(case["adapter"], case["endpoint"]) as remote:
             engines = {name: remote if desc["dialect"] == case["adapter"] else DuckDBEngine(connection)
                        for name, desc in request["engines"].items()}
             with pytest.raises(Exception, match="404|not found|does not exist|not_found"):

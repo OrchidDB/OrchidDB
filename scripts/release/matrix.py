@@ -121,6 +121,10 @@ def validated_packages(version, commit, root=ROOT):
         build = location(version, commit, root) / target
         if not reusable(build, version, commit, target):
             raise SystemExit(f'Missing current build for {target}; all three platforms are required')
+        validation = read(build / 'validation.json')
+        if (validation.get('revision') != commit or validation.get('sha256') != digest(build / 'orchid.duckdb_extension')
+                or validation.get('platform') != target):
+            raise SystemExit(f'Missing validation for {target}; run the platform checks before publication')
         directories.append(package(root, build))
     return directories
 

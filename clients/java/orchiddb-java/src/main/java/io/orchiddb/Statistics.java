@@ -9,7 +9,7 @@ import java.sql.SQLException;
 import java.util.*;
 
 /** Immutable statistics snapshot backed by a shared native catalog. */
-public final class Statistics implements AutoCloseable {
+final class Statistics implements AutoCloseable {
   private static final ObjectMapper JSON = new ObjectMapper();
   private final SqlCompiler compiler;
   private final String catalog;

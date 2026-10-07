@@ -9,10 +9,12 @@ class RemoteEngine:
     including authentication, page_size, max_rows, and request_timeout_ms.
     Calls are synchronous; use a worker thread in an async application.
     """
-    def __init__(self, compiler, adapter, endpoint, **options):
+    def __init__(self, adapter, endpoint, *, library=None, **options):
+        from ._runtime import _Runtime
+        compiler = _Runtime(library)
         if adapter not in ("quickwit", "elasticsearch"):
             raise ValueError("RemoteEngine supports quickwit or elasticsearch")
-        self.compiler = compiler
+        self._runtime = compiler
         self.dialect = adapter
         result = compiler.remote_command(dict(op="open", adapter=adapter,
                                                options=dict(options, endpoint=endpoint)))
@@ -21,7 +23,7 @@ class RemoteEngine:
     def _command(self, op, **values):
         if self._id is None:
             raise RuntimeError("Remote engine is closed")
-        return self.compiler.remote_command(dict(op=op, id=self._id, **values))
+        return self._runtime.remote_command(dict(op=op, id=self._id, **values))
 
     @contextmanager
     def execute_requests(self, requests, columns):

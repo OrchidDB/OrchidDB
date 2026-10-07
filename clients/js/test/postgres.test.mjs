@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import {tableFromArrays,vectorFromArray,List,Field,Int64} from 'apache-arrow';
-import {Compiler,queryFederated} from '../dist/index.js';
+import {Compiler,queryFederated} from '../dist/internal.js';
 import {openAsyncDatabase} from './async-duckdb.mjs';
 const uri=process.env.ORCHIDDB_TEST_PG_URI;
 const result=table=>({schema:table.schema,async *[Symbol.asyncIterator](){yield*table.batches;},close(){}});

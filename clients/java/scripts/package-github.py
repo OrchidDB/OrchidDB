@@ -15,7 +15,8 @@ PLATFORMS = ['linux-x86_64', 'linux-aarch64', 'macos-aarch64', 'macos-x86_64']
 NS = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
 
-def package(output):
+def package(output, platforms=None):
+    platforms = platforms or PLATFORMS
     pom = ET.parse(ROOT / 'pom.xml').getroot()
     version = pom.findtext('m:version', namespaces=NS)
     group = pom.findtext('m:groupId', namespaces=NS)
@@ -26,7 +27,7 @@ def package(output):
     if timestamp is None:
         raise ValueError('Root POM must declare project.build.outputTimestamp')
     zip_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).astimezone(timezone.utc).timetuple()[:6]
-    subprocess.run(['python3', str(TOOLS / 'verify-native-artifacts.py'), '--source', str(ROOT), '--version', version, '--platforms', *PLATFORMS], cwd=ROOT, check=True)
+    subprocess.run(['python3', str(TOOLS / 'verify-native-artifacts.py'), '--source', str(ROOT), '--version', version, '--platforms', *platforms], cwd=ROOT, check=True)
     files = {}
 
     def add(name, path):
@@ -56,7 +57,7 @@ def package(output):
             raise ValueError('Missing runtime dependencies for ' + artifact)
         for dependency in dependencies:
             add('lib/' + dependency.name, dependency)
-    for platform in PLATFORMS:
+    for platform in platforms:
         path = ROOT / 'target/native-artifacts' / (platform + '.jar')
         name = f'orchiddb-java-{version}-{platform}.jar'
         repository('orchiddb-java', name, path)
@@ -70,7 +71,8 @@ def package(output):
 This distribution is published on GitHub Releases, not Sonatype/Maven Central.
 
 Use lib/* on your application's runtime classpath. It contains the JVM and
-Gremlin clients, runtime dependencies, and the Linux ARM64/x86_64 and macOS ARM64/x86_64 native classifiers.
+Gremlin clients, runtime dependencies, and the selected native classifiers.
+Included native classifiers: {", ".join(platforms)}.
 The loader selects the classifier for the current OS and architecture.
 Example: java -cp "lib/*:your-application.jar" your.Main.
 Supply your own JDBC driver for your database, such as DuckDB or PostgreSQL.
@@ -82,7 +84,7 @@ its absolute file:/// URL as a repository in your application, or copy its
 dependencies are still resolved through your normal Maven repositories.
 Declare {group}:orchiddb-java:{version} and one runtime dependency with the
 same coordinates and the classifier matching your OS:
-linux-x86_64, linux-aarch64, macos-aarch64, or macos-x86_64.
+{", ".join(platforms)}.
 For Gremlin, also declare {group}:orchiddb-gremlin:{version}.
 
 See README.md and the client documentation for API usage. Native classifiers
@@ -110,6 +112,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--source', type=Path, default=ROOT)
+    parser.add_argument('--platforms', nargs='+', choices=PLATFORMS)
     args = parser.parse_args()
     ROOT = args.source.resolve()
-    package(args.output)
+    package(args.output, args.platforms)

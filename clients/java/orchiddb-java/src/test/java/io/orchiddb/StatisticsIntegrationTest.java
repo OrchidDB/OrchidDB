@@ -35,14 +35,15 @@ class StatisticsIntegrationTest {
               Query.cypher("MATCH (p:Person) WHERE p.name='Ada' RETURN p.name"),
               Query.gremlin("g.V().hasLabel('Person').has('name','Ada').values('name')"),
               Query.sparql(
-                  "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . FILTER(?name = 'Ada') }",
-                  ontology));
+                  "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . FILTER(?name = 'Ada') }"));
       try (var graph =
           new OrchidDB(
                   compiler,
                   PlanCache.bounded(16),
                   JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
-              .graph(mapping)) {
+              .graph(
+                  new GraphMapping(
+                      mapping.nodes(), mapping.edges(), ontology, List.of(), "default"))) {
         for (var query : queries)
           assertEquals(List.of("Ada"), IntegrationTest.values(graph.query(query)));
         var report = new ObjectMapper().readTree(graph.generateStatistics());

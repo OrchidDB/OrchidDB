@@ -3,9 +3,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import duckdb from '@duckdb/duckdb-wasm/blocking';
 const require = createRequire(import.meta.url);
-export const request = {
-  version: 1, dialect: 'duckdb', language: 'cypher',
-  query: 'MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY p.id',
+export const schema = {
   tables: [{name:'people', columns:[{name:'id',data_type:'int64'},{name:'name',data_type:'string'}]}],
   nodes: [{label:'Person',table:'people',id:'id',properties:{id:'id',name:'name'}}]
 };
@@ -47,13 +45,13 @@ export function arrowEngine(connection) {
   };
 }
 export async function main() {
-  const { Compiler, batches } = await import('@orchiddb/client');
+  const { Connection, batches } = await import('../dist/index.js');
   const db = await openDatabase();
   const connection = db.connect();
   try {
     connection.query("CREATE TABLE people(id BIGINT, name VARCHAR); INSERT INTO people VALUES (1, 'Orchid'), (2, NULL)");
-    const compiler = new Compiler();
-    const result = await compiler.query(request, arrowEngine(connection));
+    const graph = new Connection(arrowEngine(connection), schema);
+    const result = await graph.query('MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY p.id');
     const rows = [];
     for await (const batch of batches(result)) {
       for (let i = 0; i < batch.numRows; i++) rows.push([batch.getChild('id').get(i), batch.getChild('name').get(i)]);
@@ -61,6 +59,7 @@ export async function main() {
     assert.deepEqual(rows, [[1n, 'Orchid'], [2n, null]]);
     assert.equal(connection.query('SELECT 42 AS n').getChild('n').get(0), 42);
     console.log(rows);
+    graph.close();
   } finally { connection.close(); db.reset(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

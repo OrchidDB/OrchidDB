@@ -79,12 +79,12 @@ defmodule OrchidDBRemoteEngineTest do
       engines = %{"local" => sql_engine(connection)}
 
       assert {:ok, [[6], [12]]} =
-               OrchidDB.execute_federated(engines, plan, consume(plan["fields"]))
+               OrchidDB.Internal.Runtime.execute_federated(engines, plan, consume(plan["fields"]))
 
       plan =
         put_in(plan, ["transfers", Access.at(0), "sql"], "SELECT 2::BIGINT AS seed WHERE FALSE")
 
-      assert {:ok, []} = OrchidDB.execute_federated(engines, plan, consume(plan["fields"]))
+      assert {:ok, []} = OrchidDB.Internal.Runtime.execute_federated(engines, plan, consume(plan["fields"]))
       assert {:ok, _} = Adbc.Connection.query(connection, "SELECT 1")
     end)
   end
@@ -120,11 +120,11 @@ defmodule OrchidDBRemoteEngineTest do
                )}
             end)
 
-          {:ok, plan} = OrchidDB.compile(test["request"])
+          {:ok, plan} = OrchidDB.Internal.Runtime.compile(test["request"])
           callback = consume(plan["fields"])
 
           assert {:ok, test["expected_rows"]} ==
-                   OrchidDB.query_federated(engines, test["request"], callback)
+                   OrchidDB.Internal.Runtime.query_federated(engines, test["request"], callback)
 
           assert {:ok, _} = OrchidDB.RemoteEngine.clear_metadata_cache(remote)
 
@@ -132,11 +132,11 @@ defmodule OrchidDBRemoteEngineTest do
                    OrchidDB.RemoteEngine.execute_requests(remote, [%{invalid: true}], [])
 
           assert_raise RuntimeError, "consumer failed", fn ->
-            OrchidDB.query_federated(engines, test["request"], fn _ -> raise "consumer failed" end)
+            OrchidDB.Internal.Runtime.query_federated(engines, test["request"], fn _ -> raise "consumer failed" end)
           end
 
           assert {:ok, test["expected_rows"]} ==
-                   OrchidDB.query_federated(engines, test["request"], callback)
+                   OrchidDB.Internal.Runtime.query_federated(engines, test["request"], callback)
 
           assert :ok = OrchidDB.RemoteEngine.close(remote)
           assert :ok = OrchidDB.RemoteEngine.close(remote)

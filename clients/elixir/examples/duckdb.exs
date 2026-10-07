@@ -12,11 +12,7 @@ try do
     "INSERT INTO people VALUES (9007199254740993, 'Ada'), (2, NULL)"
   )
 
-  request = %{
-    version: 1,
-    dialect: "duckdb",
-    language: "cypher",
-    query: "MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY id",
+  schema = %{
     tables: [
       %{
         name: "people",
@@ -26,11 +22,17 @@ try do
     nodes: [%{label: "Person", table: "people", id: "id", properties: %{id: "id", name: "name"}}]
   }
 
+  {:ok, graph} = OrchidDB.connect(connection, schema)
+
   {:ok, _} =
-    OrchidDB.query_arrow(connection, request, fn stream ->
-      # Native Arrow transfer; the pointer must not escape this callback.
-      Adbc.Connection.bulk_insert!(destination, stream, table: "graph_result")
-    end)
+    OrchidDB.query_arrow(
+      graph,
+      "MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY id",
+      fn stream ->
+        # Native Arrow transfer; the pointer must not escape this callback.
+        Adbc.Connection.bulk_insert!(destination, stream, table: "graph_result")
+      end
+    )
 
   # Materialize rows only to display this small example.
   result =

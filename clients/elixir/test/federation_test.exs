@@ -44,7 +44,7 @@ defmodule OrchidDBFederationTest do
     }
 
     assert_raise RuntimeError, "consumer failed", fn ->
-      OrchidDB.query_federated(engines, request, fn :result_stream -> raise "consumer failed" end)
+      OrchidDB.Internal.Runtime.query_federated(engines, request, fn :result_stream -> raise "consumer failed" end)
     end
 
     assert_received :source
@@ -110,10 +110,10 @@ defmodule OrchidDBFederationTest do
         end
 
         assert {:ok, %{"id" => [2, 9_007_199_254_740_993], "name" => [nil, "Ada"]}} =
-                 OrchidDB.query_federated(engines, request, consume)
+                 OrchidDB.Internal.Runtime.query_federated(engines, request, consume)
 
         assert_raise RuntimeError, "consumer failed", fn ->
-          OrchidDB.query_federated(engines, request, fn _ -> raise "consumer failed" end)
+          OrchidDB.Internal.Runtime.query_federated(engines, request, fn _ -> raise "consumer failed" end)
         end
 
         {:ok, _} =
@@ -159,7 +159,7 @@ defmodule OrchidDBFederationTest do
             }
           ])
 
-        assert {:ok, %{"n" => [4]}} = OrchidDB.query_federated(engines, nested, consume)
+        assert {:ok, %{"n" => [4]}} = OrchidDB.Internal.Runtime.query_federated(engines, nested, consume)
         for conn <- [d, p], do: assert({:ok, _} = Adbc.Connection.query(conn, "SELECT 1"))
       after
         GenServer.stop(d)

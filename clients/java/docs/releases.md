@@ -31,9 +31,7 @@ The compiler loader selects the native classifier for the current JVM, verifies
 its version, core revision and checksum, then extracts and loads it. It makes no
 network request and requires no separate native build:
 
-```java
-var compiler = io.orchiddb.NativeSqlCompiler.load();
-```
+The runtime is loaded automatically when an OrchidDB connection is created.
 
 Supply your own JDBC driver. The bundle includes the clients' declared runtime
 dependencies; Arrow execution also requires an application-selected memory
@@ -109,6 +107,6 @@ Sonatype credentials, signing service, or Maven registry deployment is involved.
 ## Source development
 
 For local development, `-Dorchiddb.native.path=/absolute/path/to/compiler` overrides
-classpath extraction, or call `NativeSqlCompiler.load(Path)` explicitly. A local
+classpath extraction. A local
 build does not certify other platforms. Use the completed release classifiers for
 the published distribution.

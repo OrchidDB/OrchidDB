@@ -1,6 +1,6 @@
 {
   "scope": "Standalone SQL execution on DuckDB and PostgreSQL; pinned upstream language suites",
-  "binary_sha256": "fbdc35f50ab16e9fc159633d5c69203e1835c6ac22c4654e01caa1a9e67f9383",
+  "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973",
   "source_note": "Reports capture the precommit working tree and executable hash; this commit contains the validated source.",
   "sparql_omissions": "Only exact case IDs, hashes and statuses from conformance/extension-results/rdf.json.gz",
   "reports": [
@@ -17,7 +17,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "duckdb-opencypher.json.gz",
-      "sha256": "dd9f4ee04a71edf0e0559198f2661ecd68cac3909c6bcd9aae88cab9920e6f9f",
+      "sha256": "1dcbb3a290fcc46af63f592f64d70a81ad76a7dacee77e830efd0b581939d987",
       "coverage": {
         "catalog_cases": 3897,
         "recorded_cases": 3897,
@@ -30,7 +30,7 @@
         "directory": "tck/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:12:46.203954+00:00"
+      "finished_at": "2026-10-07T20:46:17.058357+00:00"
     },
     {
       "engine": "duckdb",
@@ -45,7 +45,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "duckdb-tinkerpop.json.gz",
-      "sha256": "f0388b85d4a2518dd441c5128fae442ab14266d5b45051937f27112613690585",
+      "sha256": "0a0106b55c5c9dea817146bf3bd37172b45967d7932d529a0951aa98a830ac03",
       "coverage": {
         "catalog_cases": 1511,
         "recorded_cases": 1511,
@@ -59,7 +59,7 @@
         "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:13:31.571464+00:00"
+      "finished_at": "2026-10-07T20:47:11.076729+00:00"
     },
     {
       "engine": "duckdb",
@@ -76,7 +76,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "duckdb-rdf.json.gz",
-      "sha256": "4ef8ca8903daf22cd4099a86b671c84798039e53e5f8678d6dd88be36f17f4eb",
+      "sha256": "5076e59ecb51a0f1011a7dce709de2115a4118fc021121c6c3fcab4191822948",
       "coverage": {
         "catalog_cases": 1125,
         "recorded_cases": 1125,
@@ -89,7 +89,7 @@
         "directory": "sparql",
         "license": "See upstream LICENSE.md"
       },
-      "finished_at": "2026-10-07T20:14:59.827663+00:00"
+      "finished_at": "2026-10-07T20:52:47.316189+00:00"
     },
     {
       "engine": "postgres",
@@ -104,7 +104,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "postgres-opencypher.json.gz",
-      "sha256": "d0502cfbf42bf8fd36e3a213ad09d71036aa1ca0c1b6dddd7acd2ff4231a8fbc",
+      "sha256": "37ad1c6af7e1adbca9621b45bfc55ec0fdda8fe7d6c128eb1054576c2b14343c",
       "coverage": {
         "catalog_cases": 3897,
         "recorded_cases": 3897,
@@ -117,7 +117,7 @@
         "directory": "tck/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:08:56.502642+00:00"
+      "finished_at": "2026-10-07T20:53:27.835110+00:00"
     },
     {
       "engine": "postgres",
@@ -132,7 +132,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "postgres-tinkerpop.json.gz",
-      "sha256": "3c4516c39ae523c76a7a6b89ccd0769ac368b6d93d7c54298ef55d46ce20fce0",
+      "sha256": "4e356b81b253422b27e4afff69d0fdf7c3e0d17ac21c660fed0c559fc1501731",
       "coverage": {
         "catalog_cases": 1511,
         "recorded_cases": 1511,
@@ -146,7 +146,7 @@
         "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:10:25.544118+00:00"
+      "finished_at": "2026-10-07T20:55:11.494037+00:00"
     },
     {
       "engine": "postgres",
@@ -163,7 +163,7 @@
       "unexpected_cases": [],
       "success": true,
       "report": "postgres-rdf.json.gz",
-      "sha256": "12686662d64dc8490f872ad94da09e2dafcde9b34fabe1ceff5f9f7d4b039a72",
+      "sha256": "07241b9c6884153fff9f5e966907e21c2609a90be07460bfdeb76c4d95d5640a",
       "coverage": {
         "catalog_cases": 1125,
         "recorded_cases": 1125,
@@ -176,7 +176,7 @@
         "directory": "sparql",
         "license": "See upstream LICENSE.md"
       },
-      "finished_at": "2026-10-07T20:11:57.379945+00:00"
+      "finished_at": "2026-10-07T20:56:58.068552+00:00"
     }
   ]
 }

@@ -1,6 +1,7 @@
 package io.orchiddb;
 
 import java.sql.*;
+import java.sql.Connection;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;

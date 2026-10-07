@@ -4,8 +4,8 @@ import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.orchiddb.*;
-import java.nio.file.Path;
 import java.sql.*;
+import java.sql.Connection;
 import java.util.*;
 import java.util.function.Function;
 import org.apache.tinkerpop.gremlin.process.traversal.Order;
@@ -16,7 +16,6 @@ import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 import org.junit.jupiter.api.*;
 
 class GremlinIntegrationTest {
-  static NativeSqlCompiler compiler;
   Connection connection;
   OrchidDB.Graph graph;
   GraphTraversalSource g;
@@ -25,9 +24,7 @@ class GremlinIntegrationTest {
   static final String SPECIAL = "O'Reilly \"🪷\"\\test\nline";
 
   @BeforeAll
-  static void load() {
-    compiler = NativeSqlCompiler.load(Path.of(System.getProperty("orchiddb.native.path")));
-  }
+  static void load() {}
 
   @BeforeEach
   void setup() throws Exception {
@@ -43,10 +40,7 @@ class GremlinIntegrationTest {
       s.executeUpdate();
     }
     graph =
-        new OrchidDB(
-                compiler,
-                PlanCache.bounded(32),
-                JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
+        new OrchidDB(JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection))
             .graph(
                 new GraphMapping(
                     List.of(
@@ -199,7 +193,7 @@ class GremlinIntegrationTest {
                   NodeMapping.node("Person", Source.table("lake", "people"), "id")
                       .property("name", "name")),
               List.of());
-      var arrowGraph = new OrchidDB(compiler, PlanCache.none(), engine).graph(mapping);
+      var arrowGraph = new OrchidDB(engine).graph(mapping);
       try (var traversal = OrchidGremlin.traversal(arrowGraph)) {
         assertEquals(
             List.of("Ada", "Grace", "Linus", SPECIAL),

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "orchiddb"
 version = "0.3.0"
-description = "OrchidDB graph-to-SQL compiler and caller-owned Arrow execution"
+description = "Graph query execution on caller-owned database connections"
 requires-python = ">=3.10"
 license = "GPL-3.0-only"
 license-files = ["LICENSE.md"]

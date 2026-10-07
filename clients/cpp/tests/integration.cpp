@@ -25,8 +25,11 @@ int main() {
   try {
     sql(connection,"CREATE TABLE people(id BIGINT, name VARCHAR); INSERT INTO people VALUES (9007199254740993,'Orchid'),(2,NULL); BEGIN; INSERT INTO people VALUES (3,'transaction')");
     auto request=orchiddb::Json::parse(R"({"version":1,"dialect":"duckdb","language":"cypher","query":"MATCH (p:Person) RETURN p.id AS id, p.name AS name ORDER BY p.id","tables":[{"name":"people","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]}],"nodes":[{"label":"Person","table":"people","id":"id","properties":{"id":"id","name":"name"}}]})");
-    orchiddb::Compiler compiler; DuckDBEngine engine(connection);
-    auto result=orchiddb::query(compiler,request,engine);
+    orchiddb::detail::Compiler compiler; DuckDBEngine engine(connection);
+    auto registered = request;
+    for (auto key : {"version", "dialect", "language", "query"}) registered.erase(key);
+    orchiddb::Connection graph(engine, registered);
+    auto result=graph.query(request["query"].get<std::string>());
     auto schema=result.schema(); REQUIRE(schema.get()->n_children==2);
     REQUIRE(std::string(schema.get()->children[0]->format)=="l");
     auto batch=result.next(); REQUIRE(batch.get()->length==3);
@@ -39,7 +42,7 @@ int main() {
     REQUIRE(ids[2]==9007199254740993LL);
     sql(connection,"ROLLBACK");
     request["query"]="MATCH (p:Person) RETURN count(p) AS n";
-    auto count=orchiddb::query(compiler,request,engine);
+    auto count=graph.query(request["query"].get<std::string>());
     auto count_batch=count.next();
     REQUIRE(static_cast<const int64_t*>(count_batch.get()->children[0]->buffers[1])[0]==2);
     count.close();
@@ -52,15 +55,15 @@ int main() {
       routed["engines"] = {{"source", {{"dialect", "duckdb"}}}, {"target", {{"dialect", "duckdb"}}}};
       routed["execution_engine"] = "target";
       routed["tables"][0]["engine"] = "source";
-      orchiddb::query_federated(compiler, routed, {{"source", &engine}, {"target", &target}}, [](orchiddb::ArrowResult& r) {
+      orchiddb::detail::query_federated(compiler, routed, {{"source", &engine}, {"target", &target}}, [](orchiddb::ArrowResult& r) {
         auto b = r.next();
         REQUIRE(b.get()->length == 1);
         REQUIRE(static_cast<const int64_t*>(b.get()->children[0]->buffers[1])[0] == 2);
       });
     }
     duckdb_disconnect(&target_connection);
-    orchiddb::Statistics statistics(compiler);
-    orchiddb::generate_statistics(statistics, request, engine);
+    orchiddb::detail::Statistics statistics(compiler);
+    orchiddb::detail::generate_statistics(statistics, request, engine);
     REQUIRE(!statistics.snapshot().is_null());
     REQUIRE(!statistics.report().is_null());
     REQUIRE(statistics.snapshot().at("sources").at("people").at("sample_rows") == 2);
@@ -72,7 +75,7 @@ int main() {
     statistics.clear();
     statistics.install(snapshot);
     REQUIRE(statistics.compile(request).sql == estimated.sql);
-    auto measured_count = orchiddb::query(statistics, request, engine);
+    auto measured_count = orchiddb::detail::query(statistics, request, engine);
     auto measured_batch = measured_count.next();
     REQUIRE(static_cast<const int64_t*>(measured_batch.get()->children[0]->buffers[1])[0]==2);
     measured_count.close();
@@ -93,7 +96,7 @@ int main() {
       orchiddb::permission_scope("id",direct),
       orchiddb::permission_scope("project_id",project)
     };
-    auto protected_result=orchiddb::query(compiler,protected_request,engine);
+    auto protected_result=orchiddb::detail::query(compiler,protected_request,engine);
     auto protected_batch=protected_result.next(); REQUIRE(protected_batch.get()->length==2);
     const auto* protected_ids=static_cast<const int64_t*>(protected_batch.get()->children[0]->buffers[1]);
     REQUIRE(protected_ids[0]==1 && protected_ids[1]==2);
@@ -103,7 +106,7 @@ int main() {
     request["query"]="invalid graph query";
     bool failed=false;try {compiler.compile(request);}catch(const std::exception&){failed=true;} REQUIRE(failed);
     request["dialect"]="postgres";
-    failed=false;try {orchiddb::query(compiler,request,engine);}catch(const std::invalid_argument&){failed=true;} REQUIRE(failed);
+    failed=false;try {orchiddb::detail::query(compiler,request,engine);}catch(const std::invalid_argument&){failed=true;} REQUIRE(failed);
     sql(connection,"SELECT 42");
     std::cout<<"Native compiler, DuckDB "<<duckdb_library_version()<<", Arrow buffers, nulls, int64, ownership, rollback and errors passed\n";
   } catch (...) {duckdb_disconnect(&connection);duckdb_close(&db);throw;}

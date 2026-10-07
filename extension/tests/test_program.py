@@ -6,7 +6,7 @@ import sys
 import textwrap
 import unittest
 
-from test_extension import connect
+from test_extension import execute_query, describe_query, prepare_query, connect
 
 
 class ProgramTests(unittest.TestCase):
@@ -24,16 +24,16 @@ class ProgramTests(unittest.TestCase):
 
     def query(self, language, query):
         request = self.request(language, query)
-        metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)', [request]).fetchone()[0])
+        metadata = describe_query(self.db, request)
         if 'error' in metadata:
             raise AssertionError(metadata['error'])
         if not metadata['fields']:
-            self.db.execute('SELECT * FROM orchid_query(?)', [request]).fetchall()
+            execute_query(self.db, 'SELECT * FROM orchid_query(?)', request).fetchall()
             return []
         quote = lambda value: '"' + value.replace('"', '""') + '"'
         packed = ','.join(quote(name) + ':=result.' + quote(name) for name in metadata['fields'])
-        rows = self.db.execute('SELECT __orchiddb_value_json(struct_pack(' + packed +
-                               ')) FROM orchid_query(?) AS result', [request]).fetchall()
+        rows = execute_query(self.db, 'SELECT __orchiddb_value_json(struct_pack(' + packed +
+                               ')) FROM orchid_query(?) AS result', request).fetchall()
         return [dict((key['value'], value) for key, value in json.loads(row[0])['value']) for row in rows]
 
     def cypher(self, query):
@@ -77,9 +77,10 @@ class ProgramTests(unittest.TestCase):
 
     def test_explain_prepare_have_no_effect_and_execute_uses_fresh_state(self):
         request = self.request('cypher', 'CREATE (:Run)')
-        self.db.execute('EXPLAIN SELECT * FROM orchid_query(?)', [request]).fetchall()
-        escaped = request.replace("'", "''")
-        self.db.execute("PREPARE create_run AS SELECT * FROM orchid_query('" + escaped + "')")
+        execute_query(self.db, 'EXPLAIN SELECT * FROM orchid_query(?)', request).fetchall()
+        prepare_query(self.db, request)
+        escaped = json.loads(request)["query"].replace("'", "''")
+        self.db.execute("PREPARE create_run AS SELECT * FROM orchid_query('fixture', '" + escaped + "')")
         self.assertEqual(self.cypher('MATCH (n:Run) RETURN count(n) AS n')[0]['n']['value'], 0)
         self.db.execute('EXECUTE create_run').fetchall()
         self.db.execute('EXECUTE create_run').fetchall()
@@ -88,8 +89,7 @@ class ProgramTests(unittest.TestCase):
     def test_failed_statement_is_atomic_and_connection_recovers(self):
         before = self.snapshot()
         failing = 'CREATE (n:Attempt {zero:0}) WITH n RETURN 1/n.zero AS invalid'
-        metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)',
-                             [self.request('cypher', failing)]).fetchone()[0])
+        metadata = describe_query(self.db, self.request('cypher', failing))
         self.assertNotIn('error', metadata)
         with self.assertRaises(Exception):
             self.cypher(failing)
@@ -155,13 +155,13 @@ class ProgramTests(unittest.TestCase):
         script = textwrap.dedent('''
             import json
             import threading
-            from test_extension import connect
+            from test_extension import execute_query, describe_query, prepare_query, connect
             db = connect()
             db.execute("CALL orchid_graph_create('cancel_graph')")
             def query(language, text):
                 request = json.dumps(dict(version=1, dialect='duckdb', language=language,
                     query=text, tables=[], managed_table='cancel_graph'))
-                return db.execute('SELECT * FROM orchid_program(?)', [request]).fetchall()
+                return execute_query(db, 'SELECT * FROM orchid_query(?)', request).fetchall()
             before = db.execute("SELECT * FROM orchid_graph_snapshot('cancel_graph')").fetchone()
             stop = threading.Event()
             def interrupt():

@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from test_extension import connect, fixture
+from test_extension import execute_query, describe_query, prepare_query, connect, fixture
 
 
 class DuckDBFunctionTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class DuckDBFunctionTests(unittest.TestCase):
     def managed(self, query):
         request = json.dumps(dict(version=1, dialect='duckdb', language='cypher',
                                   query=query, tables=[], managed_table='main.managed_functions'))
-        rows = self.db.execute('SELECT __orchiddb_value_json(v) FROM orchid_query(?)', [request]).fetchall()
+        rows = execute_query(self.db, 'SELECT __orchiddb_value_json(v) FROM orchid_query(?)', request).fetchall()
         values = [json.loads(row[0]) for row in rows]
         return [float(v['value']) if v['type'] in ('double','float') else v.get('value') for v in values]
 

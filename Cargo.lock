@@ -2600,6 +2600,7 @@ dependencies = [
  "arrow",
  "async-trait",
  "duckdb",
+ "orchiddb",
  "orchiddb-client",
  "serde_json",
  "tokio",
@@ -2614,6 +2615,7 @@ dependencies = [
  "duckdb",
  "orchiddb",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

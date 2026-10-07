@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from test_extension import connect, fixture
+from test_extension import execute_query, describe_query, prepare_query, connect, fixture
 
 
 class LanguageTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class LanguageTests(unittest.TestCase):
 
     def query(self, language, query, **mapping):
         req = dict(version=1, dialect='duckdb', language=language, query=query, tables=[], **mapping)
-        return self.db.execute('SELECT * FROM orchid_query(?)', [json.dumps(req)]).fetchall()
+        return execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(req)).fetchall()
 
     def test_compiler_owned_constants_and_range(self):
         for query, expected in [
@@ -52,11 +52,11 @@ class LanguageTests(unittest.TestCase):
         source = dict(table='terms',subject_column='s',predicate_column='p',object_column='o',graph_column='g',typed_terms=[
             dict(value='s',kind='sk'), dict(value='p',kind='sk'),dict(value='o',kind='ok',datatype='dt',language='lang')])
         request = dict(version=1, dialect='duckdb',language='sparql',query='SELECT DISTINCT ?o WHERE {?s <urn:p> ?o}',tables=[{'name':'terms'}],rdf_sources=[source])
-        cursor = self.db.execute('SELECT * FROM orchid_query(?)', [json.dumps(request)])
+        cursor = execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request))
         rows = [dict(zip([d[0] for d in cursor.description], row)) for row in cursor.fetchall()]
         self.assertEqual({(r['?o'], r['__rdf:term:kind:?o']) for r in rows}, {('same','IRI'), ('same','LITERAL')})
         request['query'] = 'SELECT ?o WHERE { GRAPH <urn:g> {?s <urn:p> ?o}}'
-        cursor = self.db.execute('SELECT * FROM orchid_query(?)', [json.dumps(request)])
+        cursor = execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request))
         row = dict(zip([d[0] for d in cursor.description], cursor.fetchone()))
         self.assertEqual((row['?o'], row['__rdf:term:language:?o']), ('bonjour','fr'))
 
@@ -64,10 +64,10 @@ class LanguageTests(unittest.TestCase):
         request = dict(version=1,dialect='duckdb',language='cypher',query='MATCH (p:Person) RETURN p.age',
                        tables=[{'name':'people','columns':[{'name':'wrong','data_type':'string'}]}],
                        nodes=[dict(label='Person',table='people',id='id',properties={'age':'age'})])
-        self.assertEqual(self.db.execute('SELECT * FROM orchid_query(?)',[json.dumps(request)]).fetchall(),[(30,),(40,),(None,)])
+        self.assertEqual(execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request)).fetchall(),[(30,),(40,),(None,)])
         request['dialect']='postgres'
         with self.assertRaisesRegex(Exception,'host DuckDB'):
-            self.db.execute('SELECT * FROM orchid_query(?)',[json.dumps(request)])
+            execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request))
 
     def test_shared_sparql_scalar_kernel(self):
         self.assertEqual(self.query('sparql', '''SELECT (REPLACE("abc", "b", "X") AS ?s) WHERE {}'''), [('aXc',)])
@@ -78,12 +78,15 @@ class LanguageTests(unittest.TestCase):
 
     def test_compilation_preserves_authoritative_error_diagnostics(self):
         req = dict(version=1,dialect='duckdb',language='cypher',query='RETURN missing',tables=[])
-        metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)',[json.dumps(req)]).fetchone()[0])
-        self.assertEqual(metadata['classification'], {'type':'SyntaxError','detail':'UndefinedVariable','phase':'compile time'})
-        req['query'] = 'CREATE (n) RETURN missing'
-        metadata = json.loads(self.db.execute('SELECT * FROM orchid_compile(?)',[json.dumps(req)]).fetchone()[0])
-        self.assertIn('error', metadata)
-        self.assertEqual(metadata['classification'], {'type':'SyntaxError','detail':'UndefinedVariable','phase':'compile time'})
+        self.db.execute('SET errors_as_json=true')
+        for text in ['RETURN missing', 'CREATE (n) RETURN missing']:
+            req['query'] = text
+            with self.assertRaises(Exception) as raised:
+                execute_query(self.db, 'SELECT * FROM orchid_query(?)', req)
+            error = str(raised.exception)
+            detail, _ = json.JSONDecoder().raw_decode(error[error.index('{'):])
+            self.assertEqual(json.loads(detail['orchid_classification']),
+                             {'type':'SyntaxError','detail':'UndefinedVariable','phase':'compile time'})
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

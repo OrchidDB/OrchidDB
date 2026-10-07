@@ -1,13 +1,13 @@
 # Java architecture review
 
-Java separates graph compilation from application-owned execution. The typed `Graph` API targets one engine. `FederatedQuery` executes mixed-engine requests through the shared JSON API.
+Applications register schema once through `Connection` or the typed `OrchidDB.graph` API, then execute query text with separate parameters. The typed `Graph` API targets one engine; `Connection` also coordinates named engines. SQL lowering and federation requests are internal implementation details.
 
 ## Boundaries retained
 
-- `SqlCompiler` consumes immutable mappings, declared schemas, functions, query parameters and a dialect. It returns SQL and column names. It owns no connection and can compile offline.
+- `SqlCompiler` consumes immutable mappings, declared schemas, functions, query parameters and a dialect. It returns SQL and column names. It is package-private and used internally during execution.
 - The Rust JNI library retains its bounded worker runtime and optional statistics catalogs across requests. Java passes versioned JSON; no JDBC or database handles cross JNI. The native compiler disables the core's default DuckDB feature.
 - `ExecutionEngine` owns the session abstraction. JDBC is an adapter, not a compiler dependency. Borrowed sessions use the exact caller connection; pooled sessions retain one lease for schema discovery and execution. Neither path changes transaction settings or installs plugins/UDFs.
-- `Source` binds tables to named engines. Graph mappings are immutable. The typed `Graph` API rejects mappings spanning engines before acquiring a connection. `FederatedQuery.query` accepts a shared JSON request and an engine registry, runs source SQL islands, and binds their rows into the target SQL. Each transfer is collected in memory; no exchange tables are created.
+- `Source` binds tables to named engines. Graph mappings are immutable. The typed `Graph` API rejects mappings spanning engines before acquiring a connection. The internal federation coordinator accepts the registered schema and engine registry, runs source SQL islands, and binds their rows into the target SQL. Each transfer is collected in memory; no exchange tables are created.
 - `PlanCache` is optional and caches compilation output, not data. Keys include mapped schema types, query values, authorization, functions, mapping, engine, dialect, and statistics catalog identity. JDBC discovers only mapped columns, so an unrelated STRUCT/list column or schema addition does not break or invalidate a graph query. Mapped schema changes still invalidate plans.
 - `orchiddb-gremlin` is a separately selected Maven module/artifact. It validates TinkerPop 3.7 bytecode and uses the same compiler/execution path. Consumers of `orchiddb-java` do not receive TinkerPop transitively.
 
@@ -24,8 +24,8 @@ relation uses the same engine as the graph. See [permission filtering](../README
 
 - One Maven parent/reactor replaces duplicated POMs. `mvn verify` builds the base module; `mvn -Pgremlin verify` adds Gremlin. There is no need to install the base module before a reactor build.
 - Maven coordinates use the owned domain namespace `com.orchiddb`. Java package names stay `io.orchiddb` to avoid an unnecessary API break.
-- Native compiler JARs are explicit platform classifiers. `NativeSqlCompiler.load()` resolves the installed matching artifact, verifies Java version/compiler revision/checksum and extracts it to a unique temporary directory. It never downloads executable code. `load(Path)` remains available for custom builds and application-managed deployment.
-- Release CI pins the Rust core commit, builds or reuses matching native artifacts, verifies their metadata, and assembles signed artifacts for Central staging. Run integration and classpath-loading tests before release; the release workflow skips tests.
+- Native compiler JARs are explicit platform classifiers. The internal loader resolves the installed matching artifact, verifies Java version/compiler revision/checksum and extracts it to a unique temporary directory. It never downloads executable code. The `orchiddb.native.path` system property selects an application-managed library.
+- Local release packaging pins the Rust core commit, builds or reuses matching native artifacts, verifies their metadata, and assembles signed artifacts for Central staging. Run integration and classpath-loading tests before release; the release workflow skips tests.
 
 ## Deliberate limitations
 
@@ -35,7 +35,7 @@ relation uses the same engine as the graph. See [permission filtering](../README
 - Metadata discovery still occurs per operation. This deliberately observes the caller's temporary views and schema changes; metadata caching would need a separate invalidation contract.
 - SQL includes specialized parameter literals. Cache entries and diagnostic SQL may contain sensitive values; consumers control caching/logging.
 - A borrowed connection is guarded per adapter, not globally across all aliases to the same Connection. Applications must not use it concurrently outside the adapter.
-- Native libraries live for the process/classloader lifetime. Sandboxed or no-exec temporary directories may require `load(Path)` from an application-approved path. A runtime checksum detects mismatch/corruption; it is not a substitute for trusting/signature-verifying the artifact source.
+- Native libraries live for the process/classloader lifetime. Sandboxed or no-exec temporary directories may require `orchiddb.native.path` pointing to an application-approved path. A runtime checksum detects mismatch/corruption; it is not a substitute for trusting/signature-verifying the artifact source.
 - The compiler worker count is bounded, but admission/queue limits are not. Applications accepting untrusted queries should impose their own request limits; hard compile cancellation is not implemented.
 
 ## Verification

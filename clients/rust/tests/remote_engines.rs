@@ -1,6 +1,6 @@
 #![cfg(all(feature = "quickwit", feature = "elasticsearch"))]
-use orchiddb_client::{
-    arrow::record_batch::RecordBatch,
+use arrow::record_batch::RecordBatch;
+use orchiddb::{
     federation::{self, Session},
     remote::transport::HttpSession,
 };
@@ -43,7 +43,7 @@ async fn live_remote_engines_compose_with_caller_owned_duckdb() {
             ("text".into(), Box::new(remote) as Box<dyn Session>),
         ]);
         let plan =
-            orchiddb_client::compile(serde_json::from_value(case["request"].clone()).unwrap())
+            orchiddb::compiler::compile(serde_json::from_value(case["request"].clone()).unwrap())
                 .await
                 .unwrap();
         for _ in 0..2 {

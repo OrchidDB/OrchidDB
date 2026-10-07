@@ -8,4 +8,4 @@ const output=new URL(`../native/${platform}/`,import.meta.url);
 mkdirSync(output,{recursive:true});
 copyFileSync(`${source}/${library}`,new URL(library,output));
 const version=JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version;
-writeFileSync(new URL('manifest.json',output),JSON.stringify({abi_version:1,version,core_revision:revision,sha256:createHash('sha256').update(readFileSync(new URL(library,output))).digest('hex')})+'\n');
+writeFileSync(new URL('manifest.json',output),JSON.stringify({abi_version:2,version,core_revision:revision,sha256:createHash('sha256').update(readFileSync(new URL(library,output))).digest('hex')})+'\n');

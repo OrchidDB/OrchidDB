@@ -7,7 +7,6 @@ import java.util.*;
 /** Run with scripts/run-gremlin-example.sh. */
 public final class GremlinExample {
   public static void main(String[] args) throws Exception {
-    var compiler = NativeSqlCompiler.load();
     // The application chooses the driver, database, extensions, credentials,
     // session configuration and transaction policy.
     try (var connection = DriverManager.getConnection("jdbc:duckdb:")) {
@@ -27,11 +26,7 @@ public final class GremlinExample {
                       .property("name", "name")
                       .property("age", "age")),
               List.of(EdgeMapping.edge("KNOWS", knows, "id", "src", "dst", "Person", "Person")));
-      var db =
-          new OrchidDB(
-              compiler,
-              PlanCache.bounded(128),
-              JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection));
+      var db = new OrchidDB(JdbcEngine.borrowed("lake", SqlDialect.DUCKDB, connection));
       var graph = db.graph(mapping);
       // Optional TinkerPop adapter; no Gremlin Server and no new database connection.
       try (var g = OrchidGremlin.traversal(graph)) {

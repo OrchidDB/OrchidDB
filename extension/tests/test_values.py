@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from test_extension import connect, fixture
+from test_extension import execute_query, describe_query, prepare_query, connect, fixture
 
 
 class ValueTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class ValueTests(unittest.TestCase):
 
     def query(self, query):
         request = dict(version=1,dialect='duckdb',language='cypher',tables=[],query=query)
-        result = self.db.execute('SELECT __orchiddb_value_json(r) FROM orchid_query(?) r',[json.dumps(request)]).fetchall()
+        result = execute_query(self.db, 'SELECT __orchiddb_value_json(r) FROM orchid_query(?) r', json.dumps(request)).fetchall()
         return [{k['value']:v for k,v in json.loads(row[0])['value']} for row in result]
 
     def test_temporal_identity_and_components_cross_with(self):
@@ -91,7 +91,7 @@ class ValueTests(unittest.TestCase):
     def test_registered_procedure_uses_shared_argument_and_result_types(self):
         procedure=dict(inputs=[dict(name='number',type='INTEGER',nullable=False)],outputs=[dict(name='word',type='STRING',nullable=False)],rows=[[1,'one'],[2,'two']])
         request=dict(version=1,dialect='duckdb',language='cypher',tables=[],procedures={'test.words':procedure},query='UNWIND [2,1] AS n CALL test.words(n) YIELD word RETURN n,word')
-        rows=self.db.execute('SELECT __orchiddb_value_json(q.word) FROM orchid_query(?) q',[json.dumps(request)]).fetchall()
+        rows=execute_query(self.db, 'SELECT __orchiddb_value_json(q.word) FROM orchid_query(?) q', json.dumps(request)).fetchall()
         self.assertEqual([json.loads(row[0]) for row in rows],[dict(type='string',value='two'),dict(type='string',value='one')])
 
 

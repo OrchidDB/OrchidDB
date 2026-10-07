@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.util.*;
 
 /** Shared graph compiler and statistics coordinator. */
-public final class NativeSqlCompiler implements SqlCompiler {
+final class NativeSqlCompiler implements SqlCompiler {
   private static final ObjectMapper JSON =
       new ObjectMapper()
           .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_INTEGER_FOR_INTS)
@@ -60,15 +60,15 @@ public final class NativeSqlCompiler implements SqlCompiler {
     request.put("language", r.query().language());
     request.put("query", r.query().text());
     request.put("parameters", r.query().parameters());
-    request.put("ontology", r.query().ontology());
+    request.put("ontology", r.mapping().ontology());
     if (r.query().authorization() != null) {
       var principal = r.query().authorization();
       request.put(
           "authorization",
           Map.of("subject_type", principal.subjectType(), "subject_id", principal.subjectId()));
     }
-    if (!r.query().rdf().isEmpty()) request.put("rdf", r.query().rdf());
-    if (!r.query().dataset().equals("default")) request.put("dataset", r.query().dataset());
+    if (!r.mapping().rdf().isEmpty()) request.put("rdf", r.mapping().rdf());
+    if (!r.mapping().dataset().equals("default")) request.put("dataset", r.mapping().dataset());
     request.put(
         "tables",
         r.schemas().entrySet().stream()

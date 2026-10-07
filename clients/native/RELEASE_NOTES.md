@@ -1,8 +1,4 @@
-OrchidDB compiler C ABI 1 for caller-owned SQL engines.
-
-Includes the versioned JSON compiler boundary, ownership-safe response release,
-package/core version metadata, a public C header, and native platform libraries.
-No DuckDB driver is linked. Result data stays in the caller's Arrow execution path.
-
-Archives contain a manifest and library checksum. Match the release to the client
-package's native pin; review the included license and supported target platform.
+Unreleased source API: connection-based execution with schema registered separately
+from query text and parameters. Shared SDK transport ABI 2 removes the obsolete
+orchiddb_compile_json entry point. Rebuild native runtime and clients together.
+Published ABI 1 artifacts remain unchanged.

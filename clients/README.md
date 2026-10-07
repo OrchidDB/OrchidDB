@@ -1,71 +1,75 @@
 # Clients and CLI
 
-These clients and the standalone CLI share the core in this repository. Clone
-`https://github.com/OrchidDB/OrchidDB.git` once. Commands below start at the
-repository root. No sibling checkouts, client Git submodules, or remote source
-pins are required. Original import revisions are recorded in [imports.json](imports.json).
+Clients register graph schema on a connection, then execute query text with
+separate parameters. There is no public SQL-compilation API. SQL lowering,
+function mapping, and federation planning are shared implementation details.
+Applications own database sessions and transactions; closing graph results does
+not close or commit the underlying database connection.
 
-## Build
+Schema configuration can be an application object loaded from JSON or YAML.
+It contains source tables, graph mappings, function declarations, and optional
+RDF, permission, remote-engine, and statistics metadata. Query text, language,
+parameters, principal, and target dialect are not schema fields; passing them
+in schema configuration is rejected. The target dialect comes from the engine.
+The CLI reads JSON schema files. See [people.json](../cli/examples/people.json)
+and the separate [people.cypher](../cli/examples/people.cypher).
+
+## GitHub release assets
+
+`make release` builds every client, the CLI, and the extension into one upload
+directory with checksums. No registry publishing is needed. See the
+[complete release command](../README.md#build-the-complete-github-release).
+
+## Build this checkout
 
 ```sh
-cargo build --locked -p orchiddb-client
+make clients-check
 make cli
 make native
 ```
 
-`make native` builds the C ABI once and stages it for Python, JavaScript, and
-C++. It generates ignored `CORE_REVISION` metadata from the actual library.
-Elixir can use that same library via `ORCHIDDB_NATIVE_LIBRARY`. Java has a separate
-JNI binding that also depends on the local core. Rust crates share the root
-Cargo workspace, lockfile, and target cache; the default Cargo build remains the
-core library. Set `CARGO_TARGET_DIR` to reuse a different cache.
+`make native` stages the shared native runtime for Python, Node, and C++.
+Elixir can load it through `ORCHIDDB_NATIVE_LIBRARY`. Java builds its JNI library
+with `clients/java/scripts/build.sh`. Rust crates use the root workspace and lockfile.
 
-## Local tests
+This connection API is a source change, not a newly published package release.
+Use this checkout instead of older registry packages. Original import revisions
+are recorded in [imports.json](imports.json). Native SDK transport is ABI 2;
+rebuild the native runtime and clients together. Published artifacts are unchanged.
+
+## Interfaces
+
+| Interface | Entry point |
+| --- | --- |
+| Python | `Connection(engine, schema).query(text, parameters=...)` |
+| Node / TypeScript | `new Connection(engine, schema).query(text, options)` |
+| Rust | `Connection::new(session, schema).query(Query::cypher(text))` |
+| Java | `new OrchidDB(engine).graph(mapping).query(Query.cypher(text))` |
+| Java JSON schema | `Connection.fromSchemaFile(path, engine).query(text)` |
+| C++ | `Connection(engine, schema).query(text, parameters)` |
+| Elixir | `OrchidDB.connect(engine, schema)` then `OrchidDB.query(connection, text)` |
+| CLI | `orchiddb query 'MATCH ...' --schema schema.json` |
+
+JSON serialization in the SDK's private native transport is not a customer query
+API. Backend adapter interfaces receive internal SQL work in order to execute it;
+applications receive rows or Arrow results.
+
+## Local verification
 
 ```sh
-make clients-check
 make clients-test
-
-# Build and stage the native library before foreign-language tests.
-make native
+# Foreign clients need make native first.
 export ORCHIDDB_NATIVE_LIBRARY="$PWD/target/debug/liborchiddb_compiler.dylib"
-# On Linux, use liborchiddb_compiler.so instead.
-
-python3 -m venv clients/python/.venv
-clients/python/.venv/bin/pip install -e 'clients/python[test]'
-clients/python/.venv/bin/python -m pytest clients/python/tests
-
+# Linux: use liborchiddb_compiler.so.
+PYTHONPATH=clients/python/src python -m pytest clients/python/tests
 (cd clients/js && npm ci && npm test)
-(cd clients/java && ./scripts/build.sh)
+(cd clients/java && ./scripts/build.sh -Pgremlin)
 (cd clients/elixir && mix deps.get && mix test)
 clients/cpp/scripts/test.sh
 ```
 
-Java needs Java 17+ and Maven; select a suitable `JAVA_HOME`. Elixir needs Erlang,
-Elixir 1.15+, and a C compiler. C++ needs CMake and a C++17 compiler; its test
-script downloads a pinned DuckDB driver unless `DUCKDB_ROOT` supplies it. The CLI
-has a bundled DuckDB driver and its Iceberg tests may download the official
-extension. PostgreSQL and external service tests use the environment settings
-in each client and skip when those services are not configured.
-
-## Source and releases
-
-GitHub source publication uses the single OrchidDB repository. Builds and tests
-run locally; imported per-client GitHub Actions workflows are not used. Existing
-package names and versions remain unchanged. This source consolidation does not
-republish packages or move existing release tags.
-
-Package only clean, validated builds. `CORE_REVISION` is generated build metadata,
-not a committed cross-repository pin. Native packages record the actual source
-revision and checksum. Keep this metadata with bundled libraries; never substitute
-another library under an existing release version. The extension's local release
-pipeline remains under `scripts/release/`.
-
-## Backend conformance
-
-The full pinned suites are run by `conformance/upstream/engine_matrix.py` after
-building `conformance/build-orchiddb.sh` and the Java fixture adapter. Supply
-`ORCHIDDB_TEST_PG_URL` for a dedicated PostgreSQL test database. This matrix
-requires all Cypher and Gremlin cases to pass and allows only the existing
-SPARQL omissions whose IDs and case hashes match the committed baseline.
-It also rejects SQL execution on the wrong engine and Gremlin instance restarts.
+PostgreSQL tests use `ORCHIDDB_TEST_PG_URL` for Python/Rust,
+`ORCHIDDB_TEST_PG_URI` for Node, and `ORCHIDDB_TEST_PG_JDBC` for Java. Optional remote-service fixtures use
+[scripts/clients_remote_fixture.py](../scripts/clients_remote_fixture.py).
+Builds and tests run locally, never through GitHub Actions. The full shared-core
+language conformance matrix is documented in the root README.

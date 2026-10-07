@@ -9,6 +9,9 @@ import tempfile
 import unittest
 
 import duckdb
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "conformance"))
+from session import execute as execute_query, describe as describe_query, prepare as prepare_query
 
 EXTENSION = Path(__file__).resolve().parents[1] / "build/orchid.duckdb_extension"
 

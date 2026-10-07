@@ -11,8 +11,8 @@ def load(path):
     lib.orchiddb_abi_version.restype = ctypes.c_uint32
     lib.orchiddb_version.restype = ctypes.c_char_p
     lib.orchiddb_core_revision.restype = ctypes.c_char_p
-    lib.orchiddb_compile_json.argtypes = [ctypes.c_char_p]
-    lib.orchiddb_compile_json.restype = ctypes.c_void_p
+    lib.orchiddb_execution_command.argtypes = [ctypes.c_char_p]
+    lib.orchiddb_execution_command.restype = ctypes.c_void_p
     lib.orchiddb_string_free.argtypes = [ctypes.c_void_p]
     lib.orchiddb_string_free.restype = None
     return lib
@@ -25,7 +25,7 @@ def metadata(lib):
 
 
 def invoke(lib, request):
-    output = lib.orchiddb_compile_json(request)
+    output = lib.orchiddb_execution_command(request)
     if not output:
         raise RuntimeError("compiler returned null")
     try:
@@ -37,7 +37,7 @@ def invoke(lib, request):
 def verify(path):
     lib = load(path)
     meta = metadata(lib)
-    assert meta["abi_version"] == 1
+    assert meta["abi_version"] == 2
     query = {"version": 1, "dialect": "duckdb", "language": "cypher",
              "query": "RETURN 42 AS answer", "tables": [], "nodes": []}
     result = invoke(lib, json.dumps(query).encode())
