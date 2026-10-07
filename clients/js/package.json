@@ -35,15 +35,16 @@
     "apache-arrow": ">=17 <22"
   },
   "devDependencies": {
-    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
     "@types/node": "^22.0.0",
     "apache-arrow": "^17.0.0",
-    "pg": "^8.23.1",
     "typescript": "^5.9.0"
   },
   "peerDependenciesMeta": {
     "apache-arrow": {
       "optional": true
     }
-  }
+  },
+  "workspaces": [
+    "test"
+  ]
 }

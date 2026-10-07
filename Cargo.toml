@@ -52,7 +52,7 @@ datafusion = { version = "53.1.0", default-features = false, features = [
     "unicode_expressions", "recursive_protection", "sql",
 ] }
 datafusion-sql = "53.1.0"
-duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow", "vscalar", "vscalar-arrow"], optional = true }
+duckdb = { version = "1.10502.0", features = ["chrono", "vtab-arrow", "vscalar", "vscalar-arrow"], optional = true }
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -126,3 +126,6 @@ path = "tools/diagnostics/statistics_join_plans.rs"
 [[example]]
 name = "statistics_plans"
 path = "tools/diagnostics/statistics_plans.rs"
+
+[profile.release]
+strip = "symbols"

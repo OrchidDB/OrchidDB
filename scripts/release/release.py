@@ -129,14 +129,14 @@ class Release:
             return
         matrix.prepare_sources()
         matrix.parallel_build(self.build_platform, list(TARGETS))
-        run(['npm', 'ci'], cwd=ROOT / 'clients/js', env=self.env)
+        run(['npm', 'ci', '--workspaces=false'], cwd=ROOT / 'clients/js', env=self.env)
         run(['npm', 'run', 'build'], cwd=ROOT / 'clients/js', env=self.env)
         java_env = dict(self.env)
         if not java_env.get('JAVA_HOME'):
             java_env['JAVA_HOME'] = subprocess.check_output(['/usr/libexec/java_home', '-v', '21'], text=True).strip()
         for module in ('jvm-codecs', 'jvm'):
-            run(['mvn', '-q', '-f', module + '/pom.xml', '-DskipTests', 'install', 'dependency:build-classpath', '-Dmdep.outputFile=target/classpath.txt'], env=java_env)
-        run(['mvn', '-Pgremlin', '-DskipTests', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
+            run(['mvn', '-q', '-f', module + '/pom.xml', '-Dmaven.test.skip=true', 'install', 'dependency:build-classpath', '-DincludeScope=runtime', '-Dmdep.regenerateFile=true', '-Dmdep.outputFile=target/classpath.txt'], env=java_env)
+        run(['mvn', '-Pgremlin', '-Dmaven.test.skip=true', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
         inputs = [ROOT / path for t in TARGETS for path in read(self.base / ('build-' + t + '.json'))['files']]
         self.stamp('build', inputs + list((ROOT / 'clients/js/dist').glob('*')) + list((ROOT / 'clients/java').glob('*/target/*.jar')) + list((ROOT / 'clients/java').glob('*/target/runtime-deps/*.jar')) + [ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', ROOT / 'jvm/target/classpath.txt'])
 

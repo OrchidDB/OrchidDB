@@ -1,0 +1,10 @@
+{
+  "name": "@orchiddb/client-tests",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
+    "pg": "^8.23.1"
+  }
+}
