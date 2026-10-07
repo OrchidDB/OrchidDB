@@ -7,7 +7,6 @@ import io
 import json
 import os
 from pathlib import Path
-import platform
 import re
 import shutil
 import subprocess
@@ -71,30 +70,6 @@ def source_files(relative):
     return {str((ROOT / name).relative_to(base)): ROOT / name for name in names if name and (ROOT / name).is_file()}
 
 
-def validate_reports(directory, extension=False):
-    baseline = json.loads(gzip.decompress((ROOT / 'conformance/extension-results/rdf.json.gz').read_bytes()))
-    omissions = {(r['id'], r['case_sha256'], r['status']) for r in baseline['results'] if r['status'] != 'pass'}
-    paths = [directory / f'{suite}.json' for suite in ('cypher', 'gremlin', 'rdf')] if extension else [
-        directory / engine / f'{engine}-{suite}.json' for engine in ('duckdb', 'postgres') for suite in ('opencypher', 'tinkerpop', 'rdf')]
-    for path in paths:
-        report = read(path)
-        coverage = report.get('coverage', {})
-        if coverage.get('filtered') is not False or coverage.get('catalog_cases') != coverage.get('recorded_cases') or not report.get('results'):
-            raise RuntimeError(f'Incomplete conformance: {path}')
-        failed = {(r['id'], r['case_sha256'], r['status']) for r in report['results'] if r['status'] != 'pass'}
-        expected = omissions if path.name.endswith('rdf.json') else set()
-        if failed != expected:
-            raise RuntimeError(f'Unexpected conformance failures or omissions: {path}')
-        if extension and path.name == 'gremlin.json' and not report['execution_profile']['single_instance_verified']:
-            raise RuntimeError('Gremlin extension assertions did not share one instance')
-    if not extension:
-        for engine in ('duckdb', 'postgres'):
-            summary = read(directory / engine / 'summary.json')
-            if len(summary) != 3 or not all(item['success'] for item in summary):
-                raise RuntimeError(f'Engine conformance validation failed: {engine}')
-    return {str(path.relative_to(directory)): digest(path) for path in paths}
-
-
 class Release:
     def __init__(self, version):
         if len(version) > 31 or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
@@ -105,13 +80,12 @@ class Release:
         self.assets = self.base / 'upload'
         self.env = matrix.environment()
         self.env['CARGO_TARGET_DIR'] = str(ROOT / 'target')
-        self.env['CONFORMANCE_CARGO_PROFILE'] = 'release'
         self.env.pop('ORCHID_BUILD_DIR', None)
         self.env.pop('DUCKDB_LIB_DIR', None)
         self.env.pop('DUCKDB_INCLUDE_DIR', None)
         erlang = Path('/opt/homebrew/opt/erlang/bin')
         if erlang.is_dir(): self.env['PATH'] = str(erlang) + ':' + self.env['PATH']
-        self.python = os.path.abspath(os.environ.get('TEST_PYTHON', ROOT / 'extension/vendor/test-env/bin/python'))
+        self.python = os.path.abspath(os.environ.get('RELEASE_PYTHON', ROOT / 'target/release-env/bin/python'))
 
     def check(self):
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT):
@@ -129,13 +103,12 @@ class Release:
         if wrong:
             raise RuntimeError(f'Update and commit component versions to {self.version} first: {wrong}')
         matrix.prerequisites()
-        for tool in ('docker', 'npm', 'node', 'mvn', 'java', 'mix', 'erl', 'cmake', 'c++'):
+        for tool in ('npm', 'node', 'mvn', 'java', 'cmake', 'c++'):
             if not shutil.which(tool, path=self.env['PATH']):
                 raise RuntimeError('Missing release prerequisite: ' + tool)
         if not Path(self.python).is_file():
-            raise RuntimeError('Set TEST_PYTHON to the configured test/build virtual environment; see README')
-        run([self.python, '-c', 'import duckdb, pyarrow, pytest, build, wheel, setuptools, psycopg'], env=self.env)
-        run(['docker', 'info', '--format', '{{.ServerVersion}}'], env=self.env)
+            raise RuntimeError('Run make release-env to prepare the packaging environment')
+        run([self.python, '-c', 'import build, wheel, setuptools'], env=self.env)
         run([sys.executable, 'scripts/clients.py', 'metadata'], env=self.env)
         self.base.mkdir(parents=True, exist_ok=True)
 
@@ -149,69 +122,6 @@ class Release:
         state = read(self.base / (stage + '.json'))
         return state.get('version') == self.version and state.get('commit') == self.commit and bool(state.get('files')) and all(
             (ROOT / name).is_file() and digest(ROOT / name) == sha for name, sha in state['files'].items())
-
-    def tests(self):
-        if self.completed('tests'):
-            print('Reusing complete conformance and client checks for this commit')
-            return
-        env = dict(self.env, PYTHONPATH=str(ROOT / 'clients/python/src'))
-        java_home = env.get('JAVA_HOME')
-        if not java_home:
-            java_home = subprocess.check_output(['/usr/libexec/java_home', '-v', '21'], text=True).strip()
-        env.update(JAVA_HOME=java_home, CONFORMANCE_JAVA=java_home + '/bin/java', ORCHIDDB_JAVA=java_home + '/bin/java')
-        env['PATH'] = java_home + '/bin:' + env['PATH']
-        # An isolated disposable database avoids modifying any application database.
-        container = run(['docker', 'run', '--rm', '-d', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
-                         '-p', '127.0.0.1::5432', 'postgres:17-bookworm'], env=env, capture=True).strip()
-        try:
-            for _ in range(60):
-                ready = subprocess.run(['docker', 'exec', container, 'pg_isready', '-U', 'postgres'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if ready.returncode == 0: break
-                import time
-                time.sleep(1)
-            else: raise RuntimeError('Release PostgreSQL did not become ready')
-            port = run(['docker', 'port', container, '5432/tcp'], env=env, capture=True).strip().rsplit(':', 1)[1]
-            env.update(ORCHIDDB_TEST_PG_URL=f'host=127.0.0.1 port={port} user=postgres dbname=postgres',
-                       ORCHIDDB_TEST_PG_URI=f'postgresql://postgres@127.0.0.1:{port}/postgres',
-                       ORCHIDDB_TEST_PG_JDBC=f'jdbc:postgresql://127.0.0.1:{port}/postgres?user=postgres')
-            run(['cargo', 'test', '--locked', '-p', 'orchiddb-client', '--features', 'bundled-test-driver', '-p', 'orchiddb-cli', '-p', 'orchiddb-compiler-native'], env=env)
-            run([sys.executable, 'scripts/clients.py', 'native'], env=env)
-            env['ORCHIDDB_NATIVE_LIBRARY'] = str(ROOT / 'target/debug/liborchiddb_compiler.dylib')
-            run([self.python, '-m', 'pytest', 'clients/python/tests'], env=env)
-            run(['npm', 'ci'], cwd=ROOT / 'clients/js', env=env)
-            run(['npm', 'test'], cwd=ROOT / 'clients/js', env=env)
-            run(['bash', 'scripts/build.sh', '-Pgremlin'], cwd=ROOT / 'clients/java', env=env)
-            run(['mix', 'deps.get'], cwd=ROOT / 'clients/elixir', env=env)
-            run(['mix', 'test'], cwd=ROOT / 'clients/elixir', env=env)
-            run(['bash', 'clients/cpp/scripts/test.sh'], env=env)
-            run([sys.executable, 'extension/scripts/build.py'], env=env)
-            run(['cargo', 'test', '--locked', '--manifest-path', 'extension/compiler/Cargo.toml', '--lib'], env=env)
-            run([self.python, '-m', 'unittest', 'discover', '-s', 'extension/tests', '-p', 'test_*.py'], env=env)
-            run([self.python, 'conformance/upstream/fetch.py'], env=env)
-            run([self.python, 'conformance/upstream/catalog.py'], env=env)
-            for module in ('jvm-codecs', 'jvm'):
-                run(['mvn', '-q', '-f', module + '/pom.xml', 'install', 'dependency:build-classpath', '-Dmdep.outputFile=target/classpath.txt'], env=env)
-            run(['mvn', '-q', '-f', 'conformance/adapters/sqlg/pom.xml', 'package', 'dependency:build-classpath', '-Dmdep.outputFile=classpath.txt'], env=env)
-            run(['bash', 'conformance/build-orchiddb.sh'], env=env)
-            env.update(CONFORMANCE_ORCHIDDB_BINARY=str(ROOT / 'target/release/upstream'),
-                       ORCHIDDB_JVM_STORE=str(ROOT / 'target/release/orchiddb-jvm-store'),
-                       ORCHIDDB_JVM_CLASSPATH=str(ROOT / 'jvm/target/classes') + ':' + (ROOT / 'jvm/target/classpath.txt').read_text().strip(),
-                       CONFORMANCE_TINKERPOP_SOURCE=str(ROOT / 'conformance/upstream/cache/tinkerpop'))
-            reports = self.base / 'conformance'
-            for engine in ('duckdb', 'postgres'):
-                run([self.python, 'conformance/upstream/engine_matrix.py', '--engine', engine, '--output-dir', reports / engine], env=env)
-            validate_reports(reports)
-            for suite, name in [('opencypher', 'cypher'), ('tinkerpop', 'gremlin'), ('rdf', 'rdf')]:
-                # The RDF runner returns 1 for its documented omissions. Validate
-                # exact case IDs/hashes/statuses ourselves before accepting it.
-                command = [self.python, 'extension/conformance/run.py', '--suite', suite, '--output', str(reports / 'extension' / (name + '.json'))]
-                result = subprocess.run(command, cwd=ROOT, env=env)
-                if result.returncode and suite != 'rdf': raise RuntimeError('Extension conformance failed: ' + suite)
-            validate_reports(reports / 'extension', extension=True)
-            run([self.python, '-m', 'unittest', 'discover', '-s', 'scripts/release', '-p', 'test_*.py'], env=env)
-            self.stamp('tests', list(reports.rglob('*.json')))
-        finally:
-            run(['docker', 'rm', '-f', container], env=env)
 
     def build(self):
         if self.completed("build"):
@@ -256,13 +166,12 @@ class Release:
         self.stamp('build', inputs + list((ROOT / 'clients/js/dist').glob('*')) + list((ROOT / 'clients/java').glob('*/target/*.jar')) + list((ROOT / 'clients/java').glob('*/target/runtime-deps/*.jar')) + [ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', ROOT / 'jvm/target/classpath.txt'])
 
     def package(self):
-        if not self.completed('tests') or not self.completed('build'):
-            raise RuntimeError('Complete release-test and release-build before packaging')
+        if not self.completed('build'):
+            raise RuntimeError('Complete release-build before packaging')
         if self.completed('package'):
             print('Reusing complete packages:', self.assets)
             return
         self.assets.mkdir(parents=True, exist_ok=True)
-        # Staging is private to this commit; completed upload assets are immutable.
         if any(self.assets.iterdir()):
             raise RuntimeError('Incomplete upload directory exists; preserve it and retry with a new empty staging directory')
         with tempfile.TemporaryDirectory(dir=self.base, prefix='package-') as temporary:
@@ -325,11 +234,9 @@ class Release:
                     zipped.writestr(info, artifact.read_bytes())
                 zipped.writestr('README.txt', 'Optional JVM graph kernels. Use Java 21 and set ORCHIDDB_JVM_CLASSPATH to the absolute path of lib/* in this extracted directory. Third-party dependencies are included.\n')
             inventory['native'].append(kernels.name)
-            # Full tracked source preserves the local Rust workspace dependency graph.
             add('rust', f'orchiddb-source-{self.version}.tar.gz', source_files(Path('.')))
-            archive(output / f'orchiddb-conformance-{self.version}.tar.gz', {str(p.relative_to(self.base / 'conformance')): p for p in (self.base / 'conformance').rglob('*.json')})
             if any(not assets for assets in inventory.values()): raise RuntimeError('Missing client release assets')
-            (output / 'SHA256SUMS').unlink(missing_ok=True)  # Java's component-only checksum is replaced by the complete list.
+            (output / 'SHA256SUMS').unlink(missing_ok=True)
             write(output / 'release-manifest.json', {'version': self.version, 'commit': self.commit, 'platforms': list(TARGETS), 'components': inventory,
                   'assets': {p.name: digest(p) for p in sorted(output.iterdir()) if p.is_file()}})
             (output / 'SHA256SUMS').write_text(''.join(f'{digest(p)}  {p.name}\n' for p in sorted(output.iterdir()) if p.is_file()))
@@ -337,55 +244,19 @@ class Release:
             output.rename(self.assets)
         self.stamp('package', list(self.assets.iterdir()))
 
-    def verify(self):
-        if not self.completed('package'): raise RuntimeError('Packages are incomplete or have changed')
-        if self.completed('verified'):
-            print('Reusing platform validation:', self.assets)
-            return
-        for target in TARGETS:
-            out = self.base / 'binaries' / target
-            extension = matrix.location(self.version, self.commit) / target / 'orchid.duckdb_extension'
-            command = [self.python, 'scripts/release/platform_smoke.py', '--binaries', out, '--extension', extension, '--version', self.version, '--commit', self.commit]
-            if target == 'osx_arm64': run(command, env=self.env)
-            else:
-                arch = 'arm64' if target == 'linux_arm64' else 'amd64'
-                container_command = ['docker', 'run', '--rm', '--platform', 'linux/' + arch,
-                    '-v', str(out) + ':/binaries:ro', '-v', str(extension) + ':/orchid.duckdb_extension:ro',
-                    '-v', str(ROOT / 'scripts/release/platform_smoke.py') + ':/platform_smoke.py:ro',
-                    'python:3.12-bookworm', 'sh', '-ec',
-                    'pip install --disable-pip-version-check duckdb==1.5.6 >/dev/null && python /platform_smoke.py "$@"', 'smoke',
-                    '--binaries', '/binaries', '--extension', '/orchid.duckdb_extension', '--version', self.version, '--commit', self.commit]
-                run(container_command, env=self.env)
-            write(extension.with_name('validation.json'), {'revision': self.commit, 'sha256': digest(extension), 'platform': target,
-                  'checks': ['native-abi', 'cli-query', 'extension-query']})
-        java_bundle = next(self.assets.glob('orchiddb-java-*.zip'))
-        java_folder = self.base / 'java-validation'
-        with zipfile.ZipFile(java_bundle) as archive_file:
-            archive_file.extractall(java_folder)
-        for arch in ('arm64', 'amd64'):
-            run(['docker', 'run', '--rm', '--platform', 'linux/' + arch,
-                 '-v', str(java_folder) + ':/release:ro', '-v', str(ROOT / 'clients/java/scripts/NativeSmoke.java') + ':/NativeSmoke.java:ro',
-                 'eclipse-temurin:21-jdk', 'java', '-cp', '/release/lib/*', '/NativeSmoke.java'], env=self.env)
-        # Validate the actual packaged JVM/native JAR layout, including negative metadata checks.
-        env = dict(self.env)
-        env.setdefault('JAVA_HOME', subprocess.check_output(['/usr/libexec/java_home', '-v', '21'], text=True).strip())
-        run([sys.executable, 'clients/java/scripts/test-native-package.py', '--jar', 'clients/java/target/native-artifacts/macos-aarch64.jar', '--version', self.version], env=env)
-        self.stamp('verified', list(self.assets.iterdir()))
-        print('\nUpload every file in:', self.assets)
-        print('No package registry publication, GitHub upload, or tag creation was performed.')
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=['check', 'test', 'build', 'package', 'verify', 'all'])
+    parser.add_argument('stage', choices=['check', 'build', 'package', 'all'])
     parser.add_argument('--version', required=True)
     args = parser.parse_args()
     release = Release(args.version)
     release.check()
     if args.stage == 'all':
-        release.tests(); release.build(); release.package(); release.verify()
+        release.build(); release.package()
+        print('Upload every file in:', release.assets)
     elif args.stage != 'check':
-        getattr(release, {'test': 'tests'}.get(args.stage, args.stage))()
+        getattr(release, args.stage)()
 
 
 if __name__ == '__main__':

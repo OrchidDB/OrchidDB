@@ -819,14 +819,9 @@ The command prints the directory to upload manually to your GitHub release:
 target/releases/orchiddb-v<version>/<commit>/upload/
 ```
 
-The pipeline runs client tests, the full DuckDB and PostgreSQL conformance matrix,
-and the full extension conformance suites. Only the existing, exact SPARQL
-omissions are accepted. PostgreSQL runs in an isolated temporary Docker container,
-which is removed on exit. It then builds optimized artifacts for **macOS ARM64,
-Linux ARM64, and Linux x86-64**, validates native ABI and actual CLI/extension
-queries on each platform, and checks the Java classifiers in host/Linux JVMs.
-Linux validation uses local Docker containers; builds use Cargo and Zig locally.
-No GitHub Actions jobs are dispatched.
+The pipeline builds and packages optimized artifacts for **macOS ARM64, Linux
+ARM64, and Linux x86-64** using Cargo and Zig locally. Release runs no tests,
+conformance suites, smoke checks, or database containers.
 
 | Component | GitHub assets |
 | --- | --- |
@@ -839,7 +834,7 @@ No GitHub Actions jobs are dispatched.
 | C++ | Three CMake/header/library archives, including JSON headers |
 | Elixir | Three source/runtime archives; the small NIF builds against the user's Erlang |
 | Rust | Complete source archive preserving local workspace dependencies |
-| Verification | Full conformance reports, release manifest, and SHA256SUMS |
+| Metadata | Release manifest and SHA256SUMS |
 
 Upload **every file** in the printed `upload/` directory. The manifest maps each
 client to its assets and records the source commit and checksums. The Rust client
@@ -850,37 +845,16 @@ unsigned and require DuckDB's `allow_unsigned_extensions` setting.
 
 ### Prerequisites and retries
 
-Install Rust/rustup, Zig, cargo-zigbuild, Docker with ARM64/x86-64 execution,
-Java 21, Maven, Node 20+, npm, Elixir/Erlang, CMake, and a C++17 compiler. Configure
-`JAVA_HOME` for Java 21. Use the existing test environment or prepare it with:
+Install Rust/rustup, Zig, cargo-zigbuild, Java 21, Maven, Node 20+, npm, CMake,
+and a C++17 compiler. Configure `JAVA_HOME` for Java 21. `make release` prepares
+its Python packaging environment automatically under `target/release-env`.
+`RELEASE_PYTHON=/absolute/path/to/python` selects another packaging environment.
 
-```sh
-python3 -m venv extension/vendor/test-env
-extension/vendor/test-env/bin/pip install -r extension/tests/requirements.txt \
-  -r conformance/requirements.txt pytest build wheel setuptools
-make release-check
-make release
-```
+Completed platform builds and packages are reused for the same commit/version
+with matching hashes. Run `make release VERSION=0.4.0` again to retry failed work.
+The individual `release-check`, `release-build`, and `release-package` targets
+are also available in the root Makefile.
 
-`TEST_PYTHON=/absolute/path/to/python` selects another prepared environment.
-Build tools can download their normal dependencies; generated packages are staged
-under `target/`. Source files and published tags/assets are never overwritten.
-
-Completed tests, platform builds, packages, and validation receipts are reused
-only for the same commit/version with matching hashes. Rerun `make release` to
-retry a failed stage. Individual stages are available for diagnosis:
-
-```sh
-make release-test
-make release-build
-make release-package
-make release-verify
-```
-
-`make -n release` previews the command. Packaging requires successful tests and
-builds; only successful verification prints the upload-ready result. The existing
-extension development targets are also in the root `Makefile`: `extension`,
-`extension-release`, `extension-test`, and `extension-package`.
 
 ## License
 

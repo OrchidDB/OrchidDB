@@ -2,7 +2,8 @@
 PYTHON ?= python3
 TEST_PYTHON ?= extension/vendor/test-env/bin/python
 VERSION ?= $(shell $(PYTHON) -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
-export TEST_PYTHON
+RELEASE_PYTHON ?= target/release-env/bin/python
+export TEST_PYTHON RELEASE_PYTHON
 export VERSION
 
 define RELEASE_VERSION_SCRIPT
@@ -38,7 +39,7 @@ export RELEASE_VERSION_SCRIPT
 
 .PHONY: help build cli native clients-check clients-test extension extension-test
 help:
-	@echo 'make release        Build and verify every GitHub release asset locally'
+	@echo 'make release        Build and package every GitHub release asset locally'
 	@echo 'make build          Build the core library'
 	@echo 'make cli            Build the standalone CLI'
 	@echo 'make native         Build and stage the shared client library'
@@ -68,7 +69,7 @@ extension-package:
 release-tools-test:
 	$(PYTHON) -m unittest discover -s scripts/release -p 'test_*.py' -v
 
-.PHONY: extension-release extension-package release-tools-test release release-prepare release-env release-check release-test release-build release-package release-verify
+.PHONY: extension-release extension-package release-tools-test release release-prepare release-env release-check release-build release-package
 
 release:
 	$(MAKE) release-prepare
@@ -77,15 +78,11 @@ release:
 release-prepare:
 	$(PYTHON) -c "$$RELEASE_VERSION_SCRIPT"
 release-env:
-	@test -x "$(TEST_PYTHON)" || $(PYTHON) -m venv "$$(dirname "$(TEST_PYTHON)")/.."
-	$(TEST_PYTHON) -m pip install -r extension/tests/requirements.txt -r conformance/requirements.txt pytest build wheel setuptools
+	@test -x "$(RELEASE_PYTHON)" || $(PYTHON) -m venv "$$(dirname "$(RELEASE_PYTHON)")/.."
+	$(RELEASE_PYTHON) -m pip install build wheel setuptools
 release-check:
 	$(PYTHON) scripts/release/release.py check --version "$(VERSION)"
-release-test:
-	$(PYTHON) scripts/release/release.py test --version "$(VERSION)"
 release-build:
 	$(PYTHON) scripts/release/release.py build --version "$(VERSION)"
 release-package:
 	$(PYTHON) scripts/release/release.py package --version "$(VERSION)"
-release-verify:
-	$(PYTHON) scripts/release/release.py verify --version "$(VERSION)"

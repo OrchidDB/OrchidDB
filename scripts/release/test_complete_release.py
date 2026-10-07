@@ -28,11 +28,11 @@ class CompleteReleaseTests(unittest.TestCase):
 
     def test_failure_stops_before_build_packaging_or_upload(self):
         instance = MagicMock()
-        instance.tests.side_effect = RuntimeError('conformance failed')
+        instance.build.side_effect = RuntimeError('build failed')
         with patch.object(release, 'Release', return_value=instance), patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
-            with self.assertRaisesRegex(RuntimeError, 'conformance failed'): release.main()
+            with self.assertRaisesRegex(RuntimeError, 'build failed'): release.main()
         instance.check.assert_called_once()
-        instance.build.assert_not_called()
+        instance.build.assert_called_once()
         instance.package.assert_not_called()
         instance.verify.assert_not_called()
 
@@ -40,7 +40,7 @@ class CompleteReleaseTests(unittest.TestCase):
         instance = MagicMock()
         with patch.object(release, 'Release', return_value=instance), patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
             release.main()
-        self.assertEqual([call[0] for call in instance.mock_calls], ['check', 'tests', 'build', 'package', 'verify'])
+        self.assertEqual([call[0] for call in instance.mock_calls], ['check', 'build', 'package'])
 
     def test_reuse_requires_all_hashes_and_the_exact_commit(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(release, 'ROOT', Path(tmp)):
@@ -62,10 +62,10 @@ class CompleteReleaseTests(unittest.TestCase):
         self.assertEqual(set(release.TARGETS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
         self.assertEqual(set(release.COMPONENTS), {'extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir'})
 
-    def test_packages_require_test_and_build_receipts(self):
+    def test_packages_require_build_receipts(self):
         instance = object.__new__(release.Release)
         instance.completed = lambda name: False
-        with self.assertRaisesRegex(RuntimeError, 'release-test'): instance.package()
+        with self.assertRaisesRegex(RuntimeError, 'release-build'): instance.package()
 
 
 if __name__ == '__main__': unittest.main()
