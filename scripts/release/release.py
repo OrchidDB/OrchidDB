@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build a complete, resumable GitHub release locally. Never upload or publish."""
 import argparse
+import ast
 import gzip
 import hashlib
 import io
@@ -126,10 +127,59 @@ class Release:
         return state.get('version') == self.version and state.get('commit') == self.commit and bool(state.get('files')) and all(
             (ROOT / name).is_file() and digest(ROOT / name) == sha for name, sha in state['files'].items())
 
+    def reuse_platforms(self):
+        def native_inputs(source):
+            tree = ast.parse(source)
+            release = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'Release')
+            methods = [node for node in release.body if isinstance(node, ast.FunctionDef) and node.name in ('__init__', 'build_platform')]
+            targets = [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'TARGETS' for t in node.targets)]
+            return [ast.dump(node, include_attributes=False) for node in methods + targets]
+
+        current_inputs = native_inputs(Path(__file__).read_text())
+        for target in TARGETS:
+            stage = 'build-' + target
+            if self.completed(stage):
+                continue
+            for receipt in sorted(self.base.parent.glob('*/' + stage + '.json'), key=lambda p: p.stat().st_mtime, reverse=True):
+                state = read(receipt)
+                commit = state.get('commit', '')
+                if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or commit == self.commit:
+                    continue
+                changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
+                if any(name != 'scripts/release/release.py' for name in changed):
+                    continue
+                previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
+                if native_inputs(previous) != current_inputs or not state.get('files'):
+                    continue
+                if not all((ROOT / name).is_file() and digest(ROOT / name) == sha for name, sha in state['files'].items()):
+                    continue
+                files = []
+                old_extension = matrix.location(self.version, commit)
+                new_extension = matrix.location(self.version, self.commit)
+                for name in state['files']:
+                    source = ROOT / name
+                    if source.is_relative_to(receipt.parent):
+                        destination = self.base / source.relative_to(receipt.parent)
+                    elif source.is_relative_to(old_extension):
+                        destination = new_extension / source.relative_to(old_extension)
+                    else:
+                        destination = source
+                    if destination != source:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, destination)
+                    files.append(destination)
+                self.stamp(stage, files)
+                adopted = read(self.base / (stage + '.json'))
+                adopted['binary_commit'] = state.get('binary_commit', commit)
+                write(self.base / (stage + '.json'), adopted)
+                print('Reusing completed platform artifacts without Cargo:', target, 'from', adopted['binary_commit'], flush=True)
+                break
+
     def build(self):
         if self.completed("build"):
             print("Reusing completed builds for this commit")
             return
+        self.reuse_platforms()
         matrix.prepare_sources()
         matrix.parallel_build(self.build_platform, list(TARGETS))
         run(['npm', 'ci', '--workspaces=false'], cwd=ROOT / 'clients/js', env=self.env)
@@ -201,7 +251,7 @@ class Release:
             for target, (triple, classifier, node_platform, wheel_platform) in TARGETS.items():
                 binaries = self.base / 'binaries' / target
                 library = binaries / ('liborchiddb_compiler.' + ('dylib' if target == 'osx_arm64' else 'so'))
-                metadata = json.dumps({'version': self.version, 'commit': self.commit, 'target': triple, 'abi_version': 2}, indent=2).encode()
+                metadata = json.dumps({'version': self.version, 'commit': self.commit, 'binary_commit': read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit), 'target': triple, 'abi_version': 2}, indent=2).encode()
                 common = {'LICENSE.md': ROOT / 'LICENSE.md', 'manifest.json': metadata}
                 add('cli', f'orchiddb-cli-{self.version}-{target}.tar.gz', {**common, 'README.txt': b'Install the DuckDB 1.5.2 shared library separately and make it available to the system dynamic loader (see README.md). Extract this archive and run bin/orchiddb query --file examples/people.cypher --schema examples/people.json --init examples/setup.sql --no-iceberg --format table.\n', 'bin/orchiddb': binaries / 'orchiddb', 'README.md': ROOT / 'cli/README.md', **{'examples/' + k: v for k, v in source_files(Path('cli/examples')).items()}})
                 add('native', f'orchiddb-native-{self.version}-{target}.tar.gz', {**common, 'lib/' + library.name: library, 'include/orchiddb.h': ROOT / 'clients/native/include/orchiddb.h'})
@@ -222,7 +272,7 @@ class Release:
                               'RELEASE.txt': b'Use a Mix path dependency on this extracted directory. The NIF builds for your installed Erlang. Set ORCHIDDB_NATIVE_LIBRARY to priv/native/liborchiddb_compiler.so (Linux) or .dylib (macOS).\n'})
                 add('elixir', f'orchiddb-elixir-{self.version}-{target}.tar.gz', elixir)
                 packaged = package_extension(ROOT, matrix.location(self.version, self.commit) / target)
-                tar, _, _ = extension_bundle(packaged, self.version, self.commit)
+                tar, _, _ = extension_bundle(packaged, self.version, read(packaged / 'manifest.json')['revision'])
                 shutil.copy2(tar, output / tar.name); inventory['extension'].append(tar.name)
             node = stage / 'node'; node.mkdir()
             for name, path in source_files(Path('clients/js')).items():
@@ -255,6 +305,7 @@ class Release:
             if any(not assets for assets in inventory.values()): raise RuntimeError('Missing client release assets')
             (output / 'SHA256SUMS').unlink(missing_ok=True)
             write(output / 'release-manifest.json', {'version': self.version, 'commit': self.commit, 'platforms': list(TARGETS), 'components': inventory,
+                  'binary_commits': {target: read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit) for target in TARGETS},
                   'assets': {p.name: digest(p) for p in sorted(output.iterdir()) if p.is_file()}})
             (output / 'SHA256SUMS').write_text(''.join(f'{digest(p)}  {p.name}\n' for p in sorted(output.iterdir()) if p.is_file()))
             self.assets.rmdir()
