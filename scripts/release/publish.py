@@ -49,7 +49,7 @@ def publish(assets, version):
         notes = assets.parent / 'release-notes.md'
         notes.write_text('OrchidDB ' + version + '\n\nCLI, DuckDB extension, and all language clients for macOS ARM64, Linux ARM64, and Linux x86-64.\n\nThe CLI requires the DuckDB 1.5.2 shared library installed separately. The extension targets DuckDB 1.5.6.\n\nSource: ' + manifest['commit'] + '\n\nSee release-manifest.json and SHA256SUMS for asset details and checksums.\n')
         run('gh', 'release', 'create', tag, '--repo', REPO, '--target', manifest['commit'], '--title', 'OrchidDB ' + version, '--notes-file', notes, '--draft')
-    remote = json.loads(run('gh', 'api', 'repos/' + REPO + '/releases/tags/' + tag))
+    remote = next(release for release in json.loads(run('gh', 'api', 'repos/' + REPO + '/releases')) if release['tag_name'] == tag)
     known = {asset['name']: asset for asset in remote['assets']}
     for path in files:
         sha = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
@@ -59,7 +59,7 @@ def publish(assets, version):
             continue
         print('Uploading ' + path.name, flush=True)
         run('gh', 'release', 'upload', tag, path, '--repo', REPO)
-    remote = json.loads(run('gh', 'api', 'repos/' + REPO + '/releases/tags/' + tag))
+    remote = next(release for release in json.loads(run('gh', 'api', 'repos/' + REPO + '/releases')) if release['tag_name'] == tag)
     uploaded = {asset['name']: asset.get('digest') for asset in remote['assets']}
     if any(uploaded.get(path.name) != 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest() for path in files):
         raise RuntimeError('GitHub upload verification failed')
