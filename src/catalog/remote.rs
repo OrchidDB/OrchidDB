@@ -10,6 +10,7 @@ pub struct OrchidCatalog {
     graph: String,
     revision: Option<i64>,
     bindings: Value,
+    refresh_interval: std::time::Duration,
 }
 impl OrchidCatalog {
     pub fn new(
@@ -55,18 +56,27 @@ impl OrchidCatalog {
         identifier(&scope)?;
         identifier(&graph)?;
         Ok(Self {
-            client: Client::builder()
-                .no_proxy()
-                .timeout(std::time::Duration::from_secs(30))
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .map_err(|e| e.to_string())?,
+            client: {
+                static CLIENT: std::sync::OnceLock<Result<Client, String>> =
+                    std::sync::OnceLock::new();
+                CLIENT
+                    .get_or_init(|| {
+                        Client::builder()
+                            .no_proxy()
+                            .timeout(std::time::Duration::from_secs(30))
+                            .redirect(reqwest::redirect::Policy::none())
+                            .build()
+                            .map_err(|_| "catalog HTTP client setup failed".into())
+                    })
+                    .clone()?
+            },
             endpoint,
             auth,
             scope,
             graph,
             revision: None,
             bindings: serde_json::json!({}),
+            refresh_interval: std::time::Duration::from_millis(super::default_refresh_interval_ms()),
         })
     }
     pub fn from_env(endpoint: &str, scope: &str, graph: &str) -> Result<Self, String> {
@@ -77,6 +87,7 @@ impl OrchidCatalog {
             token_env: "ORCHID_CATALOG_TOKEN".into(),
             revision: None,
             auth: None,
+            refresh_interval_ms: super::default_refresh_interval_ms(),
         }
         .client()
     }
@@ -160,30 +171,57 @@ impl OrchidCatalog {
             serde_json::from_slice(&bytes).map_err(|_| "invalid catalog response".to_string())
         }
     }
-    pub async fn resolve(&self) -> Result<ResolvedCatalog, String> {
-        let query = self
-            .revision
-            .map(|r| vec![("revision", r.to_string())])
-            .unwrap_or_default();
-        let resolved: ResolvedCatalog = serde_json::from_value(
-            self.request(
-                Method::GET,
-                &["graphs", &self.graph, "resolve"],
-                None,
-                &query,
-            )
-            .await?,
+    pub fn with_refresh_interval(mut self, interval: std::time::Duration) -> Self {
+        self.refresh_interval = interval;
+        self
+    }
+    pub async fn refresh(&self) -> Result<i64, String> {
+        Ok(self.cached_snapshot(true).await?.revision)
+    }
+    async fn cached_snapshot(&self, force: bool) -> Result<CatalogSnapshot, String> {
+        let identity = super::cache::Identity {
+            endpoint: self.endpoint.as_str(),
+            scope: &self.scope,
+            graph: &self.graph,
+            revision: self.revision,
+            interval: self.refresh_interval,
+        };
+        let entry = super::cache::entry(&identity, &self.auth.cache_identity()?)?;
+        super::cache::resolve(
+            &entry,
+            &identity,
+            force,
+            std::time::Instant::now(),
+            |known| async move {
+                let mut query = self
+                    .revision
+                    .map(|r| vec![("revision", r.to_string())])
+                    .unwrap_or_default();
+                if let Some(revision) = known {
+                    query.push(("known_revision", revision.to_string()));
+                }
+                self.request(
+                    Method::GET,
+                    &["graphs", &self.graph, "resolve"],
+                    None,
+                    &query,
+                )
+                .await
+            },
         )
-        .map_err(|_| "invalid catalog manifest response".to_string())?;
-        if resolved.manifest.scope != self.scope
-            || resolved.manifest.graph != self.graph
-            || self
-                .revision
-                .is_some_and(|revision| revision != resolved.manifest.revision)
-        {
-            return Err("catalog response does not match the requested graph revision".into());
-        }
-        Ok(resolved)
+        .await
+    }
+    pub async fn resolve(&self) -> Result<ResolvedCatalog, String> {
+        let snapshot = self.cached_snapshot(false).await?;
+        Ok(ResolvedCatalog {
+            manifest: snapshot
+                .manifest
+                .as_ref()
+                .ok_or("missing catalog manifest")?
+                .as_ref()
+                .clone(),
+            principal: snapshot.principal.ok_or("missing catalog principal")?,
+        })
     }
     pub async fn discover(&self, search: Option<&str>) -> Result<Value, String> {
         let mut query = self
@@ -305,8 +343,10 @@ impl OrchidCatalog {
 #[async_trait]
 impl Catalog for OrchidCatalog {
     async fn snapshot(&self) -> Result<CatalogSnapshot, String> {
-        let mut snapshot = self.resolve().await?.snapshot()?;
-        snapshot.schema = snapshot.schema.with_bindings(&self.bindings)?;
+        let mut snapshot = self.cached_snapshot(false).await?;
+        if self.bindings.as_object().is_some_and(|bindings| !bindings.is_empty()) {
+            snapshot.schema = snapshot.schema.with_bindings(&self.bindings)?;
+        }
         Ok(snapshot)
     }
 }
@@ -324,7 +364,7 @@ fn identifier(value: &str) -> Result<(), String> {
 }
 
 fn principal_identifier(value: &str) -> Result<(), String> {
-    if value.is_empty() || value.len() > 256 || value.chars().any(|c|c.is_control() || c == '/') {
+    if value.is_empty() || value.len() > 256 || value.chars().any(|c| c.is_control() || c == '/') {
         return Err("invalid catalog principal identifier".into());
     }
     Ok(())

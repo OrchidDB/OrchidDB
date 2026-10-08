@@ -1,9 +1,10 @@
 defmodule OrchidDB.Catalog do
   @enforce_keys [:endpoint, :scope, :graph]
-  defstruct [:endpoint, :scope, :graph, :revision, :library, :auth, token_env: "ORCHID_CATALOG_TOKEN"]
+  defstruct [:endpoint, :scope, :graph, :revision, :library, :auth, token_env: "ORCHID_CATALOG_TOKEN", refresh_interval_ms: 5000]
 
   def new(endpoint, opts) do
     catalog = struct!(__MODULE__, Keyword.put(opts, :endpoint, endpoint))
+    unless is_integer(catalog.refresh_interval_ms) and catalog.refresh_interval_ms >= 0 and catalog.refresh_interval_ms <= 18_446_744_073_709_551_615, do: raise(ArgumentError, "refresh_interval_ms must be a nonnegative uint64")
     if catalog.revision, do: at_revision(catalog, catalog.revision), else: catalog
   end
 
@@ -22,6 +23,10 @@ defmodule OrchidDB.Catalog do
       Map.merge(values, %{op: "catalog", action: action, catalog: configuration(catalog).catalog}),
       library: catalog.library
     )
+  end
+
+  def refresh(catalog) do
+    with {:ok, result} <- command(catalog, "refresh"), do: {:ok, result["revision"]}
   end
 
   def discover(catalog, search \\ ""), do: command(catalog, "discover", %{search: search})

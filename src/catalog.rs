@@ -13,6 +13,8 @@ mod retrieval;
 pub mod relationship;
 #[cfg(feature = "orchid-catalog")]
 mod remote;
+#[cfg(feature = "orchid-catalog")]
+mod cache;
 pub use manifest::{CatalogManifest, CatalogPrincipal, CatalogRecord, ResolvedCatalog};
 pub use relationship::{CypherRelationship, RelationshipParameter, RelationshipReturns};
 #[cfg(feature = "orchid-catalog")]
@@ -233,7 +235,10 @@ pub struct CatalogReference {
     pub auth: Option<CatalogAuth>,
     #[serde(default)]
     pub revision: Option<i64>,
+    #[serde(default = "default_refresh_interval_ms")]
+    pub refresh_interval_ms: u64,
 }
+fn default_refresh_interval_ms() -> u64 { 5_000 }
 fn default_token_env() -> String {
     "ORCHID_CATALOG_TOKEN".into()
 }
@@ -245,7 +250,7 @@ impl CatalogReference {
         if let Some(revision) = self.revision {
             catalog = catalog.at_revision(revision)?;
         }
-        Ok(catalog)
+        Ok(catalog.with_refresh_interval(std::time::Duration::from_millis(self.refresh_interval_ms)))
     }
     pub async fn resolve(&self) -> Result<CatalogSnapshot, String> {
         #[cfg(feature = "orchid-catalog")]
@@ -275,6 +280,7 @@ pub(crate) async fn command(input: &Value) -> Result<Value, String> {
                 .ok_or("expected_version must be a nonnegative integer".to_string())
         };
         match field("action")? {
+            "refresh" => Ok(serde_json::json!({"revision": catalog.refresh().await?})),
             "discover" => catalog.discover(input["search"].as_str()).await,
             "edges" => catalog.edges(input["search"].as_str()).await,
             "object" => {

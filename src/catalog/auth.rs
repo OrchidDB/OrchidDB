@@ -320,6 +320,15 @@ mod transport {
 }
 #[cfg(feature = "orchid-catalog")]
 impl CatalogAuth {
+    pub(super) fn cache_identity(&self) -> Result<Vec<u8>, String> {
+        let credential = match self {
+            Self::Bearer { token } => token.read()?,
+            Self::ClientCredentials { client_secret, .. } => client_secret.read()?,
+            Self::TokenExchange { subject_token, .. } => subject_token.read()?,
+        };
+        serde_json::to_vec(&(self, credential)).map_err(|_| "invalid catalog authentication".into())
+    }
+
     pub(crate) async fn access_token(
         &self,
         client: &reqwest::Client,

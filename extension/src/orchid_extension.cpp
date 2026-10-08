@@ -498,7 +498,7 @@ unique_ptr<FunctionData> RegisterCatalogBind(ClientContext &, TableFunctionBindI
     } else { throw BinderException("Unknown catalog authentication type"); }
     for (const auto &entry : input.named_parameters) {
         auto key = entry.first;
-        bool allowed = key == "revision" || key == "auth";
+        bool allowed = key == "revision" || key == "refresh_interval_ms" || key == "auth";
         if (method == "bearer") { allowed = allowed || key == "token_env" || key == "token_file"; }
         if (method == "client_credentials") { allowed = allowed || key == "client_id" || key == "client_secret_env" || key == "client_secret_file" || key == "issuer"; }
         if (method == "token_exchange") { allowed = allowed || key == "subject_token_env" || key == "subject_token_file"; }
@@ -512,6 +512,11 @@ unique_ptr<FunctionData> RegisterCatalogBind(ClientContext &, TableFunctionBindI
         auth["scope"] = option("oauth_scope").empty() ? "PRINCIPAL_ROLE:ALL" : option("oauth_scope");
     }
     if (!auth.is_null()) { reference["auth"] = auth; }
+    auto refresh = input.named_parameters.find("refresh_interval_ms");
+    if (refresh != input.named_parameters.end()) {
+        if (refresh->second.IsNull() || refresh->second.GetValue<int64_t>() < 0) { throw BinderException("refresh_interval_ms must be nonnegative"); }
+        reference["refresh_interval_ms"] = refresh->second.GetValue<int64_t>();
+    }
     auto revision = input.named_parameters.find("revision");
     if (revision != input.named_parameters.end()) {
         if (revision->second.IsNull() || revision->second.GetValue<int64_t>() < 1) { throw BinderException("revision must be positive"); }
@@ -519,6 +524,22 @@ unique_ptr<FunctionData> RegisterCatalogBind(ClientContext &, TableFunctionBindI
     }
     auto schema = Bridge({{"op", "validate_schema"}, {"schema", {{"catalog", reference}}}});
     return make_uniq<ProgramBindData>(Json({{"name", name}, {"schema", schema}}).dump());
+}
+unique_ptr<FunctionData> RefreshCatalogBind(ClientContext &, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
+    types = {LogicalType::BIGINT}; names = {"revision"};
+    if (input.inputs[0].IsNull()) { throw BinderException("Catalog name cannot be NULL"); }
+    return make_uniq<ProgramBindData>(Json({{"name", input.inputs[0].GetValue<string>()}}).dump());
+}
+void RefreshCatalogExecute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
+    auto &state = input.global_state->Cast<ProgramState>();
+    if (state.done) { return; }
+    auto data = Json::parse(input.bind_data->Cast<ProgramBindData>().request);
+    auto &schemas = context.registered_state->GetOrCreate<RegisteredSchemas>("orchid_schemas")->schemas;
+    auto found = schemas.find(data.at("name").get<string>());
+    if (found == schemas.end() || !found->second.contains("catalog")) { throw InvalidInputException("Name is not a registered remote catalog"); }
+    auto result = Bridge({{"op", "catalog"}, {"action", "refresh"}, {"catalog", found->second.at("catalog")}});
+    output.SetValue(0, 0, Value::BIGINT(result.at("revision").get<int64_t>()));
+    output.SetCardinality(1); state.done = true;
 }
 void RegisterSchemaExecute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
     auto &state = input.global_state->Cast<ProgramState>();
@@ -851,10 +872,12 @@ void LoadOrchid(ExtensionLoader &loader) {
     TableFunction catalog("orchid_register_catalog", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterCatalogBind, ProgramInit);
     catalog.named_parameters["token_env"] = LogicalType::VARCHAR;
     catalog.named_parameters["revision"] = LogicalType::BIGINT;
+    catalog.named_parameters["refresh_interval_ms"] = LogicalType::BIGINT;
     for (auto name : {"auth", "client_id", "client_secret_env", "client_secret_file", "token_file", "token_endpoint", "issuer", "oauth_scope", "subject_token_env", "subject_token_file"}) {
         catalog.named_parameters[name] = LogicalType::VARCHAR;
     }
     loader.RegisterFunction(catalog);
+    loader.RegisterFunction(TableFunction("orchid_refresh_catalog", {LogicalType::VARCHAR}, RefreshCatalogExecute, RefreshCatalogBind, ProgramInit));
     loader.RegisterFunction(TableFunction("orchid_register_schema", {LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterSchemaBind, ProgramInit));
     TableFunction program("orchid_sparql_update", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ProgramExecute, ProgramBind, ProgramInit);
     program.named_parameters["base"] = LogicalType::VARCHAR;

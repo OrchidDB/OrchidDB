@@ -34,6 +34,7 @@ admin.register_edge('python_edge', CypherEdge('OTHER', 'person', 'person', 'WITH
 assert admin.object('python_edge')['version'] == 1
 admin.register_graph(['person', 'peer', 'python_edge'], description='Auth smoke graph', expected_version=1)
 admin.publish(expected_revision=1, graph_version=2, object_versions={'person':1, 'people':1, 'peer':1, 'python_edge':1})
+admin.refresh()
 with Connection(DuckDBEngine(db), catalog=admin).query('MATCH (p:Person)-[:OTHER]->(q:Person) RETURN q.name AS name ORDER BY name') as result:
     assert result.read_all().column('name').to_pylist() == ['Ada', 'Grace']
 db.execute("INSERT INTO people VALUES (3,'Linus')")
@@ -45,6 +46,7 @@ admin.register_edge('nearest', nearest)
 admin.register_graph(['person', 'peer', 'python_edge', 'nearest'], description='Auth smoke graph', expected_version=2)
 versions = {'person':1, 'people':1, 'peer':1, 'python_edge':1, 'nearest':1}
 admin.publish(expected_revision=2, graph_version=3, object_versions=versions)
+admin.refresh()
 graph = Connection(DuckDBEngine(db), catalog=admin)
 pinned = Connection(DuckDBEngine(db), catalog=admin.at_revision(3))
 
@@ -74,6 +76,7 @@ admin.register_edge('nearest', nearest_ascending, expected_version=1)
 assert rows(forward) == expected
 versions['nearest'] = 2
 admin.publish(expected_revision=3, graph_version=3, object_versions=versions)
+admin.refresh()
 assert rows(forward) == [{'source':1,'target':2,'score':2}, {'source':2,'target':1,'score':1}, {'source':3,'target':1,'score':1}]
 assert rows(forward, connection=pinned) == expected
 assert admin.at_revision(3).at_revision(4).discover()['revision'] == 4
@@ -85,6 +88,7 @@ admin.register_edge('relevant', rag)
 admin.register_graph(['person', 'peer', 'python_edge', 'nearest', 'relevant'], description='Auth smoke graph', expected_version=3)
 versions['relevant'] = 1
 admin.publish(expected_revision=4, graph_version=4, object_versions=versions)
+admin.refresh()
 assert rows('MATCH (p:Person)-[r:RELEVANT_TO {score:$score, limit:$limit}]->(q:Person) RETURN p.id AS source, q.id AS target, r.score AS score ORDER BY source, target', {'score':2,'limit':2}) == [dict(source=1,target=2,score=2),dict(source=1,target=3,score=3),dict(source=2,target=3,score=3),dict(source=3,target=2,score=2)]
 assert rows('MATCH (p:Person)-[r:RELEVANT_TO {score:2, limit:1, kind:"peer"}]->(q:Person) WHERE r.score > 2 RETURN p.id AS source, q.id AS target, r.score AS score ORDER BY source') == expected[:2]
 assert rows('MATCH (p:Person)-[r:RELEVANT_TO {score:2}]->(q:Person) RETURN DISTINCT label(r) AS kind') == [{'kind':'RELEVANT_TO'}]

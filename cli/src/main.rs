@@ -20,6 +20,7 @@ Usage: orchiddb query QUERY --schema SCHEMA.json [--language cypher|gremlin|spar
 Schema files contain graph mappings and source metadata only, never query text.
 --catalog URL selects Orchid Catalog instead of --schema.
 --scope and --graph identify its graph; --revision pins a publication.
+--catalog-refresh-ms sets catalog freshness (default 5000; 0 checks every query).
 --token-env NAME selects the credential environment variable (default: ORCHID_CATALOG_TOKEN).
 --auth bearer|client_credentials|token_exchange selects catalog authentication.
 --token-file FILE reads a bearer token from a mounted file.
@@ -65,6 +66,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let mut catalog_scope = None;
     let mut catalog_graph = None;
     let mut catalog_revision: Option<i64> = None;
+    let mut catalog_refresh_ms: Option<u64> = None;
     let mut token_env = None;
     let mut auth_options = serde_json::Map::new();
     let mut language = "cypher".to_string();
@@ -81,6 +83,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             "--catalog" => catalog_endpoint = Some(args.next().ok_or("missing catalog URL")?),
             "--scope" => catalog_scope = Some(args.next().ok_or("missing catalog scope")?),
             "--graph" => catalog_graph = Some(args.next().ok_or("missing graph name")?),
+            "--catalog-refresh-ms" => catalog_refresh_ms = Some(args.next().ok_or("missing catalog refresh interval")?.parse()?),
             "--revision" => catalog_revision = Some(args.next().ok_or("missing revision")?.parse()?),
             "--auth" | "--client-id" | "--client-secret-env" | "--client-secret-file" | "--token-endpoint" | "--issuer" | "--oauth-scope" | "--token-file" | "--subject-token-env" | "--subject-token-file" => {
                 let key = arg.trim_start_matches("--").replace('-', "_");
@@ -113,7 +116,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     }
     let schema = match (schema_path, catalog_endpoint) {
         (Some(path), None) => {
-            if catalog_scope.is_some() || catalog_graph.is_some() || catalog_revision.is_some() || token_env.is_some() || !auth_options.is_empty() {
+            if catalog_scope.is_some() || catalog_graph.is_some() || catalog_revision.is_some() || catalog_refresh_ms.is_some() || token_env.is_some() || !auth_options.is_empty() {
                 return Err("catalog options require --catalog".into());
             }
             orchiddb::session::Schema::from_json(&fs::read_to_string(path)?)
@@ -125,6 +128,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             "token_env": token_env.clone().unwrap_or_else(|| "ORCHID_CATALOG_TOKEN".into()),
             "auth": catalog_auth(&auth_options, token_env.as_deref())?,
             "revision": catalog_revision,
+            "refresh_interval_ms": catalog_refresh_ms.unwrap_or(5_000),
         }})),
         _ => return Err("supply either --catalog or --schema".into()),
     }.map_err(io::Error::other)?;

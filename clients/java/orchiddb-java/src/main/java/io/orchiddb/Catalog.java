@@ -28,6 +28,13 @@ public final class Catalog {
 
   private Catalog(ObjectNode reference) { this.reference = reference; }
 
+  public Catalog refreshInterval(java.time.Duration interval) {
+    if (interval.isNegative()) throw new IllegalArgumentException("refresh interval must be nonnegative");
+    return new Catalog(reference.deepCopy().put("refresh_interval_ms", interval.toMillis()));
+  }
+
+  public long refresh() { return command("refresh", Map.of()).path("revision").asLong(); }
+
   public Catalog atRevision(long revision) {
     if (revision < 1) throw new IllegalArgumentException("revision must be positive");
     return new Catalog(reference.deepCopy().put("revision", revision));

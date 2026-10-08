@@ -75,8 +75,10 @@ class CypherEdge:
 
 class Catalog:
     def __init__(self, endpoint, *, scope, graph, token_env="ORCHID_CATALOG_TOKEN",
-                 revision=None, library=None, auth=None):
-        self._reference = dict(endpoint=endpoint, scope=scope, graph=graph, token_env=token_env)
+                 revision=None, library=None, auth=None, refresh_interval_ms=5000):
+        if not isinstance(refresh_interval_ms, int) or isinstance(refresh_interval_ms, bool) or not 0 <= refresh_interval_ms <= 2**64 - 1:
+            raise ValueError("refresh_interval_ms must be a nonnegative uint64")
+        self._reference = dict(endpoint=endpoint, scope=scope, graph=graph, token_env=token_env, refresh_interval_ms=refresh_interval_ms)
         if revision is not None:
             self._with_revision(revision)
         self._library = library
@@ -106,6 +108,9 @@ class Catalog:
         with _Runtime(self._library) as runtime:
             return runtime.operation_command(dict(op="catalog", catalog=self._schema()["catalog"],
                                                   action=action, **values))
+
+    def refresh(self):
+        return self._command("refresh")["revision"]
 
     def discover(self, search=None):
         return self._command("discover", search=search)

@@ -57,6 +57,7 @@ export interface CatalogOptions {
   tokenEnv?: string;
   auth?: CatalogAuth;
   revision?: number;
+  refreshIntervalMs?: number;
   library?: string;
 }
 export interface CypherEdge {
@@ -90,13 +91,17 @@ export class Catalog {
     if (options.revision !== undefined && (!Number.isSafeInteger(options.revision) || options.revision < 1)) {
       throw new RangeError('revision must be a positive safe integer');
     }
+    if (options.refreshIntervalMs !== undefined && (!Number.isSafeInteger(options.refreshIntervalMs) || options.refreshIntervalMs < 0)) {
+      throw new RangeError('refreshIntervalMs must be a nonnegative safe integer');
+    }
     this.options = Object.freeze({...options});
   }
   get library(): string | undefined { return this.options.library; }
+  refresh(): number { return this.command<{revision: number}>('refresh', {}).revision; }
   atRevision(revision: number): Catalog { return new Catalog(this.endpoint, {...this.options, revision}); }
   configuration(): Schema {
     return {catalog: {endpoint:this.endpoint, scope:this.options.scope, graph:this.options.graph,
-      token_env:this.options.tokenEnv ?? 'ORCHID_CATALOG_TOKEN', revision:this.options.revision, auth:this.options.auth?.configuration()}};
+      token_env:this.options.tokenEnv ?? 'ORCHID_CATALOG_TOKEN', revision:this.options.revision, refresh_interval_ms:this.options.refreshIntervalMs, auth:this.options.auth?.configuration()}};
   }
   private command<T>(action: string, values: Record<string, unknown> = {}): T {
     const runtime = new Runtime(this.options.library);

@@ -2,6 +2,7 @@
 #include "arrow_abi.h"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <fstream>
@@ -490,6 +491,11 @@ public:
   Catalog(const std::string& endpoint, const std::string& scope, const std::string& graph,
       const CatalogAuth& auth, const std::string& library = detail::Compiler::default_path())
     : Catalog(endpoint,scope,graph,"ORCHID_CATALOG_TOKEN",library) { reference_["auth"] = auth.configuration(); }
+  Catalog refresh_interval(std::chrono::milliseconds interval) const {
+    if (interval.count() < 0) throw std::invalid_argument("refresh interval must be nonnegative");
+    auto copy = *this; copy.reference_["refresh_interval_ms"] = interval.count(); return copy;
+  }
+  std::int64_t refresh() const { return command("refresh").at("revision").get<std::int64_t>(); }
   Catalog at_revision(std::int64_t revision) const {
     if (revision < 1) throw std::invalid_argument("revision must be positive");
     auto copy = *this; copy.reference_["revision"] = revision; return copy;

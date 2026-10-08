@@ -384,8 +384,50 @@ turn an upstream catalog into a writable local catalog.
 Catalog transport requires HTTPS outside loopback and ignores ambient HTTP proxy
 settings. Client errors do not repeat server response bodies. Applications must
 keep their own logs, retained snapshots, statistics exports, and database results inside the authorized
-boundary. Current authorization is checked on every remote resolution; a pinned
-revision does not preserve revoked access.
+boundary. Authorization is rechecked when the client snapshot expires or is explicitly refreshed.
+Pinned revisions use the same authorization refresh policy.
+
+### Catalog freshness
+
+Remote catalog connections cache authorized, validated snapshots in process memory.
+The default refresh interval is **5 seconds**. Queries within that window make no
+catalog or authentication HTTP request. The first query after expiry checks the
+catalog again; concurrent queries share that refresh. This is demand-driven,
+with no background polling or extra service.
+
+The server checks current permissions and the requested publication revision. If
+the revision is unchanged, it returns a small conditional response containing the
+current principal rather than the full manifest; the client reuses its validated
+metadata. A changed publication replaces the snapshot atomically. Older servers
+remain compatible but return the full manifest on refresh.
+
+Unpinned connections follow published revisions. Drafts remain invisible. Pinned
+connections retain their selected revision, but still refresh authorization.
+A query already in progress keeps its snapshot. Permission revocations and published
+changes can take up to the configured interval to affect subsequent queries.
+After expiry, failed authentication, denied access, an unavailable catalog, or an
+invalid response fails the query and clears the cached snapshot; stale metadata is
+not used as a fallback. A changed local credential selects a separate cache entry.
+
+Configure the interval or force refresh through the catalog object:
+
+| Client | Refresh interval | Refresh immediately |
+|---|---|---|
+| Java | `catalog.refreshInterval(Duration.ofSeconds(5))` | `catalog.refresh()` |
+| Python | `Catalog(..., refresh_interval_ms=5000)` | `catalog.refresh()` |
+| JS/TS | `new Catalog(url, {...options, refreshIntervalMs: 5000})` | `catalog.refresh()` |
+| Rust | `catalog.with_refresh_interval(Duration::from_secs(5))` | `catalog.refresh().await?` |
+| C++ | `catalog.refresh_interval(std::chrono::seconds(5))` | `catalog.refresh()` |
+| Elixir | `Catalog.new(url, scope: scope, graph: graph, refresh_interval_ms: 5000)` | `Catalog.refresh(catalog)` |
+| CLI | `--catalog-refresh-ms 5000` | Each invocation starts a new process |
+| DuckDB extension | `orchid_register_catalog(..., refresh_interval_ms=5000)` | `CALL orchid_refresh_catalog('graph_name')` |
+
+Use interval `0` to revalidate on every query. Refresh returns the selected
+publication revision and updates the cache used by existing connections with the
+same endpoint, scope, graph, revision selection, authentication, and interval.
+Configure a catalog before constructing its connection. Metadata cache entries
+are never persisted to disk. This cache does not cache query results, database
+rows, or Weaviate collection configuration.
 
 ### Cypher relationship declarations
 
