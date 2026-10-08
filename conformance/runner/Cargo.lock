@@ -2319,7 +2319,6 @@ version = "1.10502.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d7401630ae2abcff642f7156294289e50f2d222e061c026ad797b01bf20c215"
 dependencies = [
- "cc",
  "flate2",
  "pkg-config",
  "reqwest",
@@ -2606,7 +2605,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "orchiddb"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "antlr4rust",
  "arrow",

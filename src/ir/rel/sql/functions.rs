@@ -492,6 +492,9 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
                 .map(|part| dialect.identifier(part))
                 .collect::<Vec<_>>(),
         );
+        if let SqlDialect::Custom(adapter) = dialect {
+            if let Some(lowered) = adapter.lower_function(function)? { *expr = lowered; }
+        }
         return Ok(());
     }
     let ast::FunctionArguments::List(arguments) = &function.args else {

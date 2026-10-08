@@ -718,7 +718,7 @@ impl GraphEngine {
             if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
             if result.is_ok() && contains_mutation(&plan.root) { self.invalidate_statistics(); }
-            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions + stats.postgres_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
+            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
         if contains_mutation(&plan.root) {
             let automatic = !self.in_transaction;
@@ -735,7 +735,7 @@ impl GraphEngine {
             statement.before = None;
             return Ok(QueryResult {
                 returned,
-                backend: if dag_stats.duckdb_regions + dag_stats.postgres_regions > 0 {
+                backend: if dag_stats.duckdb_regions + dag_stats.postgres_regions + dag_stats.other_sql_regions > 0 {
                     ExecutionBackend::Hybrid
                 } else {
                     ExecutionBackend::DataFusion

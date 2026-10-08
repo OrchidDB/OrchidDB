@@ -255,6 +255,21 @@ impl ScalarUDFImpl for DuckDbFunction {
         Ok(self.return_type.clone())
     }
 
+    fn simplify(
+        &self,
+        args: Vec<Expr>,
+        info: &datafusion::logical_expr::simplify::SimplifyContext,
+    ) -> datafusion::common::Result<datafusion::logical_expr::simplify::ExprSimplifyResult> {
+        use datafusion::logical_expr::simplify::ExprSimplifyResult;
+        if self.name == "now" {
+            if let Some(now) = info.query_execution_start_time() {
+                let value = ScalarValue::TimestampMicrosecond(Some(now.timestamp_micros()), Some("UTC".into()));
+                return Ok(ExprSimplifyResult::Simplified(Expr::Literal(value.cast_to(&self.return_type)?, None)));
+            }
+        }
+        Ok(ExprSimplifyResult::Original(args))
+    }
+
     fn invoke_with_args(
         &self,
         args: ScalarFunctionArgs,
@@ -317,7 +332,15 @@ impl ScalarUDFImpl for DuckDbFunction {
             let array = if values.is_empty() { arrow::array::new_empty_array(&self.return_type) } else { ScalarValue::iter_to_array(values)? };
             return Ok(ColumnarValue::Array(array));
         }
+        if matches!(self.name.as_str(), "epoch_us" | "make_timestamp") {
+            let value = args.args[0].clone().into_array(args.number_rows)?;
+            let value = if self.name == "epoch_us" {
+                arrow::compute::cast(&value, &DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None))?
+            } else { value };
+            return Ok(ColumnarValue::Array(arrow::compute::cast(&value, &self.return_type)?));
+        }
         let name = match self.name.as_str() {
+            "strftime" => "to_char",
             "list_extract" => "array_element",
             "regexp_matches" => "regexp_like",
             "length" => "character_length",

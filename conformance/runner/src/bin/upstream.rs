@@ -2,6 +2,8 @@
 mod gremlin_bindings;
 #[path = "../fixture_cache.rs"]
 mod fixture_cache;
+#[path = "../starrocks.rs"]
+mod starrocks;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
@@ -14,6 +16,10 @@ fn configure_sql_engine(engine: &mut GraphEngine) -> Result<(), String> {
  let config: Value = serde_json::from_str(&config).map_err(|e| format!("Invalid SQL engine JSON: {e}"))?;
  match config["dialect"].as_str() {
   Some("duckdb") => Ok(()),
+  Some("starrocks") => {
+   engine.set_sql_region_session(Box::new(starrocks::Session::new()?));
+   Ok(())
+  },
   Some("postgres") => {
    let url = config["connection"].as_str().ok_or("PostgreSQL connection is required")?;
    let url = url.to_owned();
@@ -93,7 +99,7 @@ async fn rdf(req:&Value)->Result<Value,String>{
  };
  let mut output=response?;
  output["query_cost"]=stats.cost.report();
- output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"postgres":stats.postgres_regions});
+ output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"postgres":stats.postgres_regions,"starrocks":stats.other_sql_regions});
  Ok(output)
 }
 #[tokio::main]
@@ -134,7 +140,7 @@ async fn main(){
   }),
   Err((message,detail))=>{classification=detail;Err(message)}
  }};
- r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions,"starrocks":r.stats.other_sql_regions},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
  let mut output=result.unwrap_or_else(|e|json!({"error":e}));
  if matches!(op,"cypher"|"gremlin"|"rdf"|"sparql-syntax") {

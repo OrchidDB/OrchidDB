@@ -626,6 +626,11 @@ pub(crate) async fn prepare_with_extensions(
             Some(session) => session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?.dialect(),
             None => sql::SqlDialect::DuckDb,
         };
+        let optimized = sql::lowering::rewrite_relations(optimized, dialect).map_err(|error| DataFusionError::Plan(error.to_string()))?;
+        let optimized = if matches!(dialect, sql::SqlDialect::Custom(_)) {
+            super::optimizer::simplify_bound_expressions(optimized, &query_state)?
+        } else { optimized };
+        stats.logical_plan = optimized.display_indent().to_string();
         eligibility.dialect = Some(dialect);
         eligibility.language_functions = resources.region_session.is_none()
             && resources.executor.lock().map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?.language_functions_enabled();

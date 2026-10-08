@@ -47,6 +47,7 @@ help:
 	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
 	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
 	@echo 'make starrocks-test Start local StarRocks and check query execution'
+	@echo 'make starrocks-conformance Run all language catalogs on local StarRocks'
 	@echo 'make extension      Build the optional DuckDB extension'
 	@echo 'See clients/README.md for language-specific build and test commands.'
 build:
@@ -96,3 +97,7 @@ release-publish:
 .PHONY: starrocks-test
 starrocks-test:
 	$(PYTHON) scripts/starrocks_test.py
+
+.PHONY: starrocks-conformance
+starrocks-conformance:
+	$(PYTHON) scripts/starrocks_test.py --conformance

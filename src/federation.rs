@@ -789,8 +789,65 @@ pub fn bind_batches(
     transfer: &Transfer,
     batches: &[RecordBatch],
 ) -> Result<String, String> {
-    use datafusion::common::ScalarValue;
+    bind_region_batches(sql, dialect, &[(transfer, batches)])
+}
+
+pub(crate) fn bind_region_batches(
+    sql: &str,
+    dialect: &str,
+    inputs: &[(&Transfer, &[RecordBatch])],
+) -> Result<String, String> {
     let dialect = crate::execution::SqlDialect::resolve(dialect).map_err(|e| e.to_string())?;
+    let parser_dialect = dialect.parser_dialect();
+    let mut statements = Parser::new(parser_dialect.as_ref())
+        .with_recursion_limit(1024)
+        .try_with_sql(sql).map_err(|e| e.to_string())?
+        .parse_statements().map_err(|e| e.to_string())?;
+    if statements.len() != 1 { return Err("binding requires exactly one query".into()); }
+    let ast::Statement::Query(query) = &mut statements[0] else {
+        return Err("binding requires a read query".into());
+    };
+    let mut names = query.with.as_ref().map(|with| with.cte_tables.iter().map(|cte| cte.alias.name.value.clone()).collect::<std::collections::BTreeSet<_>>()).unwrap_or_default();
+    let mut bindings = Vec::with_capacity(inputs.len());
+    for (index, (transfer, batches)) in inputs.iter().enumerate() {
+        if !names.insert(transfer.target_relation.clone()) { return Err("duplicate exchange binding".into()); }
+        let shared = inputs[..index].iter().find(|(previous, values)| {
+            previous.columns.len() == transfer.columns.len()
+                && previous.columns.iter().zip(&transfer.columns).all(|(a, b)| a.data_type == b.data_type)
+                && values.len() == batches.len()
+                && values.iter().zip(*batches).all(|(a, b)| a.num_rows() == b.num_rows() && a.columns() == b.columns())
+        });
+        if let Some((previous, _)) = shared {
+            for batch in *batches {
+                for (column, field) in batch.columns().iter().zip(&transfer.columns) {
+                    if !field.nullable && column.null_count() != 0 { return Err("NULL in non-nullable exchange column".into()); }
+                }
+            }
+            let columns = transfer.columns.iter().map(|column| dialect.quote_ident(&column.name)).collect::<Vec<_>>().join(", ");
+            let source = previous.columns.iter().map(|column| dialect.quote_ident(&column.name)).collect::<Vec<_>>().join(", ");
+            let sql = format!("WITH {} ({columns}) AS (SELECT {source} FROM {}) SELECT 1", dialect.quote_ident(&transfer.target_relation), dialect.quote_ident(&previous.target_relation));
+            let mut statements = Parser::parse_sql(parser_dialect.as_ref(), &sql).map_err(|error| error.to_string())?;
+            let ast::Statement::Query(query) = statements.remove(0) else { unreachable!() };
+            bindings.push(query.with.unwrap().cte_tables.remove(0));
+        } else {
+            bindings.push(input_binding(dialect, transfer, batches)?);
+        }
+    }
+    if let Some(existing) = &mut query.with {
+        bindings.append(&mut existing.cte_tables);
+        existing.cte_tables = bindings;
+    } else if !bindings.is_empty() {
+        query.with = Some(ast::With { with_token: ast::helpers::attached_token::AttachedToken::empty(), recursive: false, cte_tables: bindings });
+    }
+    Ok(statements.remove(0).to_string())
+}
+
+fn input_binding(
+    dialect: crate::execution::SqlDialect,
+    transfer: &Transfer,
+    batches: &[RecordBatch],
+) -> Result<ast::Cte, String> {
+    use datafusion::common::ScalarValue;
     let types = transfer
         .columns
         .iter()
@@ -845,37 +902,11 @@ pub fn bind_batches(
         dialect.quote_ident(&transfer.target_relation)
     );
     let parser_dialect = dialect.parser_dialect();
-    let mut statements = Parser::new(parser_dialect.as_ref())
-        .with_recursion_limit(1024)
-        .try_with_sql(sql)
-        .map_err(|e| e.to_string())?
-        .parse_statements()
-        .map_err(|e| e.to_string())?;
-    if statements.len() != 1 {
-        return Err("binding requires exactly one query".into());
-    }
-    let ast::Statement::Query(query) = &mut statements[0] else {
-        return Err("binding requires a read query".into());
-    };
-    let mut binding =
-        Parser::parse_sql(parser_dialect.as_ref(), &prefix).map_err(|e| e.to_string())?;
-    let ast::Statement::Query(binding) = binding.remove(0) else {
-        unreachable!()
-    };
-    let mut with = binding.with.unwrap();
-    if let Some(existing) = &mut query.with {
-        if existing
-            .cte_tables
-            .iter()
-            .any(|c| c.alias.name.value == transfer.target_relation)
-        {
-            return Err("duplicate exchange binding".into());
-        }
-        existing.cte_tables.insert(0, with.cte_tables.remove(0));
-    } else {
-        query.with = Some(with);
-    }
-    Ok(statements.remove(0).to_string())
+    let mut binding = Parser::parse_sql(parser_dialect.as_ref(), &prefix).map_err(|e| e.to_string())?;
+    let ast::Statement::Query(binding) = binding.remove(0) else { unreachable!() };
+    let mut cte = binding.with.unwrap().cte_tables.remove(0);
+    dialect.rewrite_input_binding(&mut cte).map_err(|e| e.to_string())?;
+    Ok(cte)
 }
 
 /// Shared protocol for bindings which transport Arrow IPC or typed JSON rows.

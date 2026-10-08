@@ -565,6 +565,17 @@ impl datafusion::logical_expr::UserDefinedLogicalNodeCore for SqlRelation {
 /// Give an engine code-first transformations over the original typed plan,
 /// including extension nodes, before SQL scope/CTE normalization consumes
 /// physical column lineage. Completed SQL subtrees are opaque to this pass.
+pub(crate) fn rewrite_relations(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    if !matches!(dialect, SqlDialect::Custom(_)) { return Ok(plan); }
+    Ok(plan.transform_down_with_subqueries(|node| {
+        match lower_relation(&node, &LoweringContext { dialect, mode: LoweringMode::InIsland })
+            .map_err(|error| DataFusionError::Plan(error.to_string()))? {
+            Some(RelationLowering::Rewrite(replacement)) => Ok(Transformed::yes(replacement)),
+            _ => Ok(Transformed::no(node)),
+        }
+    })?.data)
+}
+
 pub(crate) fn transform_relations(
     plan: LogicalPlan,
     dialect: SqlDialect,

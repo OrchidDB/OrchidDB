@@ -24,6 +24,7 @@ pub struct ExecStats {
     pub datafusion_ops: usize,
     pub duckdb_regions: usize,
     pub postgres_regions: usize,
+    pub other_sql_regions: usize,
     /// Regions delegated to SQL.
     pub islands: usize,
     /// Rows produced by delegated regions when recorded by the engine.
@@ -365,9 +366,10 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             representation_selections: stats.representation_selections,
             plan_estimates: stats.plan_estimates,
             optimizer_decisions: stats.optimizer_decisions,
-            islands: stats.duckdb_regions + stats.postgres_regions,
+            islands: stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions,
             duckdb_regions: stats.duckdb_regions,
             postgres_regions: stats.postgres_regions,
+            other_sql_regions: stats.other_sql_regions,
             datafusion_ops: stats.datafusion_operators,
             sql_queries: stats.sql_queries,
             native_source_queries: stats.native_source_queries,

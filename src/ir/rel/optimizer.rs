@@ -83,3 +83,45 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
         .build();
     SessionContext::new_with_state(state)
 }
+
+pub(super) fn simplify_bound_expressions(plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<LogicalPlan> {
+    use datafusion::common::tree_node::TreeNode;
+    use datafusion::logical_expr::Expr;
+    use datafusion::optimizer::{simplify_expressions::SimplifyExpressions, utils::NamePreserver};
+    fn literal(expr: &Expr) -> Option<Expr> {
+        match expr {
+            Expr::Literal(..) => Some(expr.clone()),
+            Expr::Alias(alias) => literal(&alias.expr),
+            _ => None,
+        }
+    }
+    fn constants(plan: &LogicalPlan) -> Vec<Option<Expr>> {
+        match plan {
+            LogicalPlan::Projection(projection) => projection.expr.iter().map(literal).collect(),
+            LogicalPlan::SubqueryAlias(alias) => constants(&alias.input),
+            _ => vec![None; plan.schema().fields().len()],
+        }
+    }
+    Ok(plan.transform_up_with_subqueries(|node| {
+        if !matches!(node, LogicalPlan::Projection(_) | LogicalPlan::Filter(_)) {
+            return Ok(Transformed::no(node));
+        }
+        let input = node.inputs()[0];
+        let values = input.schema().columns().into_iter().zip(constants(input))
+            .filter_map(|(column, value)| value.map(|value| (column, value)))
+            .collect::<std::collections::HashMap<_, _>>();
+        let names = NamePreserver::new(&node);
+        let node = node.map_expressions(|expr| {
+            let name = names.save(&expr);
+            expr.transform_up(|expr| {
+                if let Expr::Column(column) = &expr {
+                    if let Some(value) = values.get(column) {
+                        return Ok(Transformed::yes(value.clone()));
+                    }
+                }
+                Ok(Transformed::no(expr))
+            })?.map_data(|expr| Ok(name.restore(expr)))
+        })?;
+        node.transform_data(|node| SimplifyExpressions::new().rewrite(node, config))
+    })?.data)
+}

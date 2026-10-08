@@ -89,9 +89,11 @@ TypeScript, C++, and Elixir engine adapters select `starrocks` through their
 existing execution interfaces. SQL lowering is shared across clients. The CLI
 continues to use DuckDB.
 
-StarRocks support is checked against **4.1.6** with live connection tests. It is
-not yet the full DuckDB/PostgreSQL conformance matrix. Portable `fn.*` mappings
-are explicit; unmapped functions fail rather than silently using another engine.
+StarRocks **4.1.6** passes the full pinned language conformance catalogs through
+the shared native execution DAG, with only the existing SPARQL omissions.
+SQL regions execute on StarRocks; operations it cannot represent correctly stay
+in the shared runtime. Portable `fn.*` mappings are explicit. The direct SQL
+connection adapter rejects unmapped functions rather than using another engine.
 Whole graph values and `collect()` still require runtime kernels that this
 connection adapter does not yet execute. The full portable function catalog and
 federated execution have not been validated on StarRocks. Variable-length paths
@@ -106,6 +108,11 @@ This target starts a pinned local StarRocks container, builds the shared native
 runtime, prepares the Python test dependencies, and runs the focused execution
 checks. It creates and removes its own database and leaves the container running
 for reuse. It is independent of release packaging.
+
+Run the original Cypher, Gremlin, and SPARQL catalogs against StarRocks with
+`make starrocks-conformance`. This uses the shared execution DAG and Python
+StarRocks driver, records SQL engine counts, and writes reports under
+`target/conformance/starrocks`. Only the existing SPARQL omissions are allowed.
 
 ## Optional DuckDB extension
 
@@ -818,11 +825,11 @@ The RDF runner reports its full catalog, including the existing exclusions.
 
 ### Standalone SQL backend conformance
 
-The migrated shared core passes the full pinned matrix on **both DuckDB and
-PostgreSQL**: 3,897 Cypher, 1,511 Gremlin, and 974 SPARQL cases per backend.
+Recorded full runs cover **DuckDB, PostgreSQL, and StarRocks 4.1.6**:
+3,897 Cypher, 1,511 Gremlin, and 974 SPARQL cases per backend.
 The same 77 skipped and 74 not-applicable SPARQL cases remain omitted.
 [Standalone execution evidence](conformance/sql-engine-results/summary.json)
-records full reports, executable identity, selected-engine SQL region counts,
+records full reports, each run's executable identity, selected-engine SQL region counts,
 and uninterrupted Gremlin instances.
 
 After installing the assertion dependencies above, build the shared native runner
@@ -830,8 +837,8 @@ and run all three pinned suites on DuckDB and PostgreSQL:
 
 ```sh
 bash conformance/build-orchiddb.sh
-export CONFORMANCE_ORCHIDDB_BINARY="$PWD/target/release/upstream"
-export ORCHIDDB_JVM_STORE="$PWD/target/release/orchiddb-jvm-store"
+export CONFORMANCE_ORCHIDDB_BINARY="$PWD/target/debug/upstream"
+export ORCHIDDB_JVM_STORE="$PWD/target/debug/orchiddb-jvm-store"
 export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
 export CONFORMANCE_JAVA=/path/to/java

@@ -178,6 +178,15 @@ def main():
   sql_config=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))
   build['sql_engine']=sql_config['dialect']
   if sql_config['dialect']=='postgres':build['sql_session_options']={'statement_timeout_ms':8000,'jit':False}
+  if sql_config['dialect']=='starrocks':
+   import pymysql
+   with pymysql.connect(host='127.0.0.1',port=int(os.environ.get('ORCHIDDB_TEST_STARROCKS_PORT','19030')),user='root') as connection:
+    with connection.cursor() as cursor:
+     cursor.execute('SELECT current_version()')
+     build['sql_server_version']=cursor.fetchone()[0]
+   build['sql_session_options']={'query_timeout_seconds':30,'enable_recursive_cte':True,'recursive_cte_max_depth':1000}
+   build['sql_adapter_sources']=[file_identity(REPO/path) for path in ('conformance/runner/src/starrocks.rs','conformance/upstream/starrocks_session.py','clients/python/src/orchiddb/starrocks.py')]
+
  build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
  build['capture_phase']='before-scenarios'
  try:

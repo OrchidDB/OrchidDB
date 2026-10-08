@@ -1,7 +1,6 @@
 {
-  "scope": "Standalone SQL execution on DuckDB and PostgreSQL; pinned upstream language suites",
-  "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973",
-  "source_note": "Reports capture the precommit working tree and executable hash; this commit contains the validated source.",
+  "scope": "Standalone SQL execution on DuckDB, PostgreSQL and StarRocks; pinned upstream language suites",
+  "source_note": "Each report records its executable hash and run timestamp. DuckDB/PostgreSQL reports retain the earlier migration evidence. StarRocks Cypher and Gremlin completed before the final SPARQL-only IF lowering correction; the complete SPARQL catalog passed after that correction.",
   "sparql_omissions": "Only exact case IDs, hashes and statuses from conformance/extension-results/rdf.json.gz",
   "reports": [
     {
@@ -30,7 +29,8 @@
         "directory": "tck/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:46:17.058357+00:00"
+      "finished_at": "2026-10-07T20:46:17.058357+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
     },
     {
       "engine": "duckdb",
@@ -59,7 +59,8 @@
         "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:47:11.076729+00:00"
+      "finished_at": "2026-10-07T20:47:11.076729+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
     },
     {
       "engine": "duckdb",
@@ -89,7 +90,8 @@
         "directory": "sparql",
         "license": "See upstream LICENSE.md"
       },
-      "finished_at": "2026-10-07T20:52:47.316189+00:00"
+      "finished_at": "2026-10-07T20:52:47.316189+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
     },
     {
       "engine": "postgres",
@@ -117,7 +119,8 @@
         "directory": "tck/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:53:27.835110+00:00"
+      "finished_at": "2026-10-07T20:53:27.835110+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
     },
     {
       "engine": "postgres",
@@ -146,7 +149,8 @@
         "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
         "license": "Apache-2.0"
       },
-      "finished_at": "2026-10-07T20:55:11.494037+00:00"
+      "finished_at": "2026-10-07T20:55:11.494037+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
     },
     {
       "engine": "postgres",
@@ -176,7 +180,101 @@
         "directory": "sparql",
         "license": "See upstream LICENSE.md"
       },
-      "finished_at": "2026-10-07T20:56:58.068552+00:00"
+      "finished_at": "2026-10-07T20:56:58.068552+00:00",
+      "binary_sha256": "aae16722ebed6a735a2b51400602a57a3763614fea8c2a171c85379f1a280973"
+    },
+    {
+      "engine": "starrocks",
+      "suite": "opencypher",
+      "counts": {
+        "pass": 3897
+      },
+      "full_catalog": true,
+      "engine_regions": 1827,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "starrocks-opencypher.json.gz",
+      "sha256": "f05ccbd6c776acb69c47cf22c8ac5e6bcdb46ca3e3c256a90de141277ef08956",
+      "binary_sha256": "17ee2ebd380dbc9ecd0e4acc3335131cfc402455638ae09d3e61fcee31dc4f00",
+      "coverage": {
+        "catalog_cases": 3897,
+        "recorded_cases": 3897,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-08T03:15:39.205978+00:00",
+      "sql_server_version": "4.1.6-6862092"
+    },
+    {
+      "engine": "starrocks",
+      "suite": "tinkerpop",
+      "counts": {
+        "pass": 1511
+      },
+      "full_catalog": true,
+      "engine_regions": 5043,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "starrocks-tinkerpop.json.gz",
+      "sha256": "1966d4a4578a9df1197772af668092840a51169fbb43faaf56ca1f7931af0c69",
+      "binary_sha256": "17ee2ebd380dbc9ecd0e4acc3335131cfc402455638ae09d3e61fcee31dc4f00",
+      "coverage": {
+        "catalog_cases": 1511,
+        "recorded_cases": 1511,
+        "filtered": false,
+        "excluded_capabilities": {}
+      },
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "finished_at": "2026-10-08T03:20:36.982394+00:00",
+      "sql_server_version": "4.1.6-6862092"
+    },
+    {
+      "engine": "starrocks",
+      "suite": "rdf",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "full_catalog": true,
+      "engine_regions": 565,
+      "other_engine_regions": 0,
+      "single_instance_verified": true,
+      "unexpected_cases": [],
+      "success": true,
+      "report": "starrocks-rdf.json.gz",
+      "sha256": "f43ad3e62d4e3cb9666fa72175d677d26354407b1074dbf15ab7a0c8f720d030",
+      "binary_sha256": "10372834f6807176d60c3a5ec615ee1dc9c5d999a05c35747eed4339ec8410b4",
+      "coverage": {
+        "catalog_cases": 1125,
+        "recorded_cases": 1125,
+        "filtered": false
+      },
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "finished_at": "2026-10-08T03:31:21.958279+00:00",
+      "sql_server_version": "4.1.6-6862092"
     }
   ]
 }

@@ -21,7 +21,7 @@ SUITES = ("opencypher", "tinkerpop", "rdf")
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", choices=("duckdb", "postgres"), action="append")
+    parser.add_argument("--engine", choices=("duckdb", "postgres", "starrocks"), action="append")
     parser.add_argument("--suite", choices=SUITES, action="append")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "target/conformance/sql-engines")
     args = parser.parse_args()
@@ -40,6 +40,9 @@ def main():
         if engine == "postgres":
             config["connection"] = os.environ["ORCHIDDB_TEST_PG_URL"]
         env = {**os.environ, "ORCHIDDB_SQL_ENGINE_JSON": json.dumps(config)}
+        binary = Path(env.get('CONFORMANCE_ORCHIDDB_BINARY', ROOT / 'target/debug/upstream'))
+        library_path = 'DYLD_LIBRARY_PATH' if sys.platform == 'darwin' else 'LD_LIBRARY_PATH'
+        env[library_path] = str(binary.parent / 'deps') + (os.pathsep + env[library_path] if env.get(library_path) else '')
         for suite in args.suite or SUITES:
             output = (args.output_dir / f"{engine}-{suite}.json").resolve()
             subprocess.run([sys.executable, str(Path(__file__).with_name("run.py")),
@@ -49,9 +52,8 @@ def main():
             counts = Counter(row["status"] for row in report["results"])
             full = (not report["coverage"]["filtered"] and
                     report["coverage"]["recorded_cases"] == report["coverage"]["catalog_cases"])
-            wrong_engine = "postgres" if engine == "duckdb" else "duckdb"
             wrong_regions = sum(
-                (query.get("cost") or {}).get("sql_regions", {}).get(wrong_engine, 0)
+                sum(count for name, count in (query.get("cost") or {}).get("sql_regions", {}).items() if name != engine)
                 for row in report["results"]
                 for query in row.get("query_cost", {}).get("queries", []))
             engine_regions = sum(

@@ -340,7 +340,7 @@ fn prepare_ranges(plan: &LogicalPlan, statement: &mut datafusion::sql::sqlparser
         type Break = ();
         fn post_visit_table_factor(&mut self, factor: &mut ast::TableFactor) -> ControlFlow<()> {
             if let ast::TableFactor::Table { name, alias, .. } = factor {
-                if let Some(mut replacement) = self.0.get(&name.to_string().trim_matches('"').to_owned()).cloned() {
+                if let Some(mut replacement) = name.0.last().and_then(|part| part.as_ident()).and_then(|id| self.0.get(&id.value)).cloned() {
                     if let (Some(alias), ast::TableFactor::Table { alias: target, .. }) = (alias, &mut replacement) {
                         if let Some(target) = target { target.name = alias.name.clone(); }
                     }

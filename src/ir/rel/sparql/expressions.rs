@@ -238,19 +238,21 @@ impl Lowerer<'_, '_> {
                     return unsupported("multi-arm CASE is not SPARQL IF");
                 };
                 let condition = self.ebv(env, condition)?;
+                let condition = self.column(env, condition)?;
                 let yes = self.materialize(env, yes)?;
                 let no = match otherwise {
                     Some(no) => self.materialize(env, no)?,
                     None => Term::error(),
                 };
                 let pick = |a: Expr, b: Expr| {
-                    case(
-                        vec![
-                            (condition.clone().is_true(), a),
-                            (condition.clone().is_false(), b),
-                        ],
+                    if a == b {
+                        return case(vec![(condition.clone().is_not_null(), a)], None);
+                    }
+                    Expr::Case(datafusion::logical_expr::expr::Case::new(
+                        Some(Box::new(condition.clone())),
+                        vec![(Box::new(lit(true)), Box::new(a)), (Box::new(lit(false)), Box::new(b))],
                         None,
-                    )
+                    ))
                 };
                 Term {
                     value: pick(yes.value, no.value),

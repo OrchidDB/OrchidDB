@@ -80,6 +80,9 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
     ) -> SqlResult<Option<ast::Expr>> {
         Ok(None)
     }
+    fn rewrite_input_binding(&self, _binding: &mut ast::Cte) -> SqlResult<()> {
+        Ok(())
+    }
     fn rewrite_query(&self, _query: &mut ast::Query) -> SqlResult<()> {
         Ok(())
     }
@@ -239,6 +242,12 @@ impl SqlDialect {
             Self::DuckDb => Ok(crate::ir::functions::duckdb_type(data_type)?),
             Self::Postgres => Ok(crate::ir::functions::postgres_type(data_type)?),
             Self::Custom(adapter) => adapter.sql_type(data_type),
+        }
+    }
+    pub fn rewrite_input_binding(self, binding: &mut ast::Cte) -> SqlResult<()> {
+        match self {
+            Self::Custom(adapter) => adapter.rewrite_input_binding(binding),
+            Self::DuckDb | Self::Postgres => Ok(()),
         }
     }
     pub fn exchange_literal(self, value: ScalarValue, data_type: DataType) -> SqlResult<String> {
