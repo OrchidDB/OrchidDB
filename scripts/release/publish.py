@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO = 'OrchidDB/OrchidDB'
@@ -40,7 +41,7 @@ def publish(assets, version):
     run('gh', 'auth', 'status')
     run('git', 'push', 'origin', 'main')
     tag = 'v' + version
-    releases = json.loads(run('gh', 'api', '--paginate', 'repos/' + REPO + '/releases'))
+    releases = [release for page in json.loads(run('gh', 'api', '--paginate', '--slurp', 'repos/' + REPO + '/releases')) for release in page]
     existing = next((r for r in releases if r['tag_name'] == tag), None)
     if existing is None:
         refs = json.loads(run('gh', 'api', 'repos/' + REPO + '/git/matching-refs/tags/' + tag))
@@ -48,8 +49,12 @@ def publish(assets, version):
             raise RuntimeError('Tag already exists without a release; refusing to change it')
         notes = assets.parent / 'release-notes.md'
         notes.write_text('OrchidDB ' + version + '\n\nCLI, DuckDB extension, and all language clients for macOS ARM64, Linux ARM64, and Linux x86-64.\n\nThe CLI requires the DuckDB 1.5.2 shared library installed separately. The extension targets DuckDB 1.5.6.\n\nSource: ' + manifest['commit'] + '\n\nSee release-manifest.json and SHA256SUMS for asset details and checksums.\n')
-        run('gh', 'release', 'create', tag, '--repo', REPO, '--target', manifest['commit'], '--title', 'OrchidDB ' + version, '--notes-file', notes, '--draft')
-    remote = next(release for release in json.loads(run('gh', 'api', 'repos/' + REPO + '/releases')) if release['tag_name'] == tag)
+        payload = {'tag_name': tag, 'target_commitish': manifest['commit'], 'name': 'OrchidDB ' + version, 'body': notes.read_text(), 'draft': True}
+        existing = json.loads(subprocess.check_output(
+            ['gh', 'api', '--method', 'POST', 'repos/' + REPO + '/releases', '--input', '-'],
+            input=json.dumps(payload), cwd=ROOT, text=True))
+    release_path = 'repos/' + REPO + '/releases/' + str(existing['id'])
+    remote = json.loads(run('gh', 'api', release_path))
     known = {asset['name']: asset for asset in remote['assets']}
     for path in files:
         sha = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
@@ -58,11 +63,12 @@ def publish(assets, version):
                 raise RuntimeError('Existing GitHub asset differs; refusing to overwrite: ' + path.name)
             continue
         print('Uploading ' + path.name, flush=True)
-        run('gh', 'release', 'upload', tag, path, '--repo', REPO)
-    remote = next(release for release in json.loads(run('gh', 'api', 'repos/' + REPO + '/releases')) if release['tag_name'] == tag)
+        upload_url = remote['upload_url'].split('{', 1)[0] + '?name=' + quote(path.name, safe='')
+        run('gh', 'api', '--method', 'POST', upload_url, '-H', 'Content-Type: application/octet-stream', '--input', path)
+    remote = json.loads(run('gh', 'api', release_path))
     uploaded = {asset['name']: asset.get('digest') for asset in remote['assets']}
     if any(uploaded.get(path.name) != 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest() for path in files):
         raise RuntimeError('GitHub upload verification failed')
     if remote['draft']:
-        run('gh', 'release', 'edit', tag, '--repo', REPO, '--draft=false', '--latest')
-    print(run('gh', 'release', 'view', tag, '--repo', REPO, '--json', 'url', '--jq', '.url'), flush=True)
+        remote = json.loads(run('gh', 'api', '--method', 'PATCH', release_path, '-F', 'draft=false', '-f', 'make_latest=true'))
+    print(remote['html_url'], flush=True)
