@@ -1425,16 +1425,3 @@ An exact retrieval request is rejected when routed to Weaviate. BM25, hybrid
 search, embedding generation, and general collection scans are not implemented.
 Complex edge bodies continue through the existing relational planner; the
 single-target vector ranking shown above uses the shared ranked-retrieval path.
-
-With Docker and the local Python client development dependencies installed:
-
-```sh
-make weaviate-smoke
-```
-
-This incrementally builds native clients, starts a temporary authenticated
-Weaviate 1.34.0 container, and checks cosine, dot product, L2, named vectors,
-parameterized edge expansion, per-source limits, SQL graph joins, stale tenant
-metadata, metric validation, and authentication rejection. The container is
-removed afterwards. It does not run conformance or release tasks. Reuse existing
-builds with `make weaviate-smoke WEAVIATE_SMOKE_ARGS=--no-build`.
