@@ -839,7 +839,7 @@ excludes the test workspace and its database drivers.
 | Native runtime | Three shared-library/header archives plus JVM kernel/dependency ZIP |
 | Python | Three wheels containing the matching native runtime |
 | JavaScript/TypeScript | One local-install tarball with all three native runtimes |
-| Java/Gremlin | One ZIP with API, dependency, and native classifier JARs |
+| Java/Gremlin | Three platform ZIPs, each with API, dependencies, and one native classifier |
 | C++ | Three CMake/header/library archives, including JSON headers |
 | Elixir | Three source/runtime archives; the small NIF builds against the user's Erlang |
 | Rust | Complete source archive preserving local workspace dependencies |

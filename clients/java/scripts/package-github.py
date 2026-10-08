@@ -39,76 +39,45 @@ def package(output, platforms=None, native_revisions=None):
             raise ValueError('Conflicting distribution file: ' + name)
         files[name] = data
 
-    def repository(artifact, name, path):
-        destination = f'repository/{group.replace(".", "/")}/{artifact}/{version}/{name}'
-        add(destination, path)
-        for algorithm in ['sha1', 'sha256']:
-            files[destination + '.' + algorithm] = (hashlib.new(algorithm, files[destination]).hexdigest() + '\n').encode()
-
-    repository(parent, f'{parent}-{version}.pom', ROOT / 'pom.xml')
     for artifact in ['orchiddb-java', 'orchiddb-gremlin']:
         module = ROOT / artifact
-        repository(artifact, f'{artifact}-{version}.pom', module / 'pom.xml')
         for suffix in ['', '-sources', '-javadoc']:
             filename = f'{artifact}-{version}{suffix}.jar'
             jar = module / 'target' / filename
-            repository(artifact, filename, jar)
-            if not suffix:
-                add('lib/' + filename, jar)
+            add(('docs/' if suffix else 'lib/') + filename, jar)
         dependencies = list((module / 'target/runtime-deps').glob('*.jar'))
         if not dependencies:
             raise ValueError('Missing runtime dependencies for ' + artifact)
         for dependency in dependencies:
             add('lib/' + dependency.name, dependency)
-    for platform in platforms:
-        path = ROOT / 'target/native-artifacts' / (platform + '.jar')
-        name = f'orchiddb-java-{version}-{platform}.jar'
-        repository('orchiddb-java', name, path)
-        add('lib/' + name, path)
     add('LICENSE.md', ROOT / 'LICENSE.md')
     add('README.md', ROOT / 'README.md')
     for document in sorted((ROOT / 'docs').glob('*.md')):
         add('docs/' + document.name, document)
-    files['README.txt'] = f'''OrchidDB JVM {version}
-
-This distribution is published on GitHub Releases, not Sonatype/Maven Central.
-
-Use lib/* on your application's runtime classpath. It contains the JVM and
-Gremlin clients, runtime dependencies, and the selected native classifiers.
-Included native classifiers: {", ".join(platforms)}.
-The loader selects the classifier for the current OS and architecture.
-Example: java -cp "lib/*:your-application.jar" your.Main.
-Supply your own JDBC driver for your database, such as DuckDB or PostgreSQL.
-
-For Maven, the repository/ directory contains the OrchidDB POMs, main JARs,
-sources, Javadocs, and native classifiers in standard repository layout. Add
-its absolute file:/// URL as a repository in your application, or copy its
-{group.replace('.', '/')} subtree to your local Maven repository. Ordinary third-party
-dependencies are still resolved through your normal Maven repositories.
-Declare {group}:orchiddb-java:{version} and one runtime dependency with the
-same coordinates and the classifier matching your OS:
-{", ".join(platforms)}.
-For Gremlin, also declare {group}:orchiddb-gremlin:{version}.
-
-See README.md and the client documentation for API usage. Native classifiers
-were reused from the recorded release builds; this package rebuilds none.
-'''.encode()
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    manifest = {'version': version, 'commit': revision, 'distribution': 'github',
-                'native_revisions': json.loads(native_revisions.read_text()) if native_revisions else {platform: (ROOT / 'native/CORE_REVISION').read_text().strip() for platform in platforms},
-                'files': {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}}
-    files['release-manifest.json'] = (json.dumps(manifest, indent=2) + '\n').encode()
+    revisions = json.loads(native_revisions.read_text()) if native_revisions else {platform: (ROOT / 'native/CORE_REVISION').read_text().strip() for platform in platforms}
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / f'orchiddb-java-{version}.zip'
-    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as target:
-        for name, data in sorted(files.items()):
-            info = zipfile.ZipInfo(name, date_time=zip_time)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
-            target.writestr(info, data)
-    (output / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
-    print(archive)
-    return archive
+    archives = []
+    for platform in platforms:
+        entries = dict(files)
+        name = f'orchiddb-java-{version}-{platform}.jar'
+        entries['lib/' + name] = (ROOT / 'target/native-artifacts' / (platform + '.jar')).read_bytes()
+        entries['README.txt'] = f'OrchidDB JVM {version} for {platform}\n\nUse lib/* on your runtime classpath, for example:\njava -cp "lib/*:your-application.jar" your.Main\n\nSupply your own JDBC driver for DuckDB or PostgreSQL.\n'.encode()
+        manifest = {'version': version, 'commit': revision, 'distribution': 'github',
+                    'platform': platform, 'native_revisions': {platform: revisions[platform]},
+                    'files': {name: hashlib.sha256(data).hexdigest() for name, data in sorted(entries.items())}}
+        entries['release-manifest.json'] = (json.dumps(manifest, indent=2) + '\n').encode()
+        archive = output / f'orchiddb-java-{version}-{platform}.zip'
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as target:
+            for name, data in sorted(entries.items()):
+                info = zipfile.ZipInfo(name, date_time=zip_time)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o100644 << 16
+                target.writestr(info, data)
+        archives.append(archive)
+        print(archive)
+    (output / 'SHA256SUMS').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in archives))
+    return archives
 
 
 if __name__ == '__main__':

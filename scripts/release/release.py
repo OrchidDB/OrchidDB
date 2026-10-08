@@ -147,7 +147,7 @@ class Release:
                 if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or commit == self.commit:
                     continue
                 changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-                if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py') for name in changed):
+                if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
                     continue
                 previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
                 if native_inputs(previous) != current_inputs or not state.get('files'):
@@ -193,7 +193,7 @@ class Release:
             if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or not state.get('files'):
                 continue
             changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-            if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py') for name in changed):
+            if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
                 continue
             previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
             if build_method(previous) != current:
