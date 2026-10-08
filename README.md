@@ -811,9 +811,9 @@ The version defaults to the root Cargo.toml. For a new version, run
 `make release VERSION=0.4.0`. From a clean checkout, Make updates the core, CLI,
 and client manifests and lockfiles, commits the version change, prepares the
 Python release environment, and runs the release pipeline. Existing uncommitted
-work is never included in an automatic release commit. Nothing is uploaded, no tag is
-created, and nothing is published to npm, PyPI, Maven Central, Hex, or crates.io.
-The command prints the directory to upload manually to your GitHub release:
+work is never included in an automatic release commit. The command pushes main, creates the GitHub release, uploads every asset, and
+checks the uploaded hashes before making the release public. Nothing is published
+to npm, PyPI, Maven Central, Hex, or crates.io. Completed assets remain in:
 
 ```text
 target/releases/orchiddb-v<version>/<commit>/upload/
@@ -845,7 +845,9 @@ excludes the test workspace and its database drivers.
 | Rust | Complete source archive preserving local workspace dependencies |
 | Metadata | Release manifest and SHA256SUMS |
 
-Upload **every file** in the printed `upload/` directory. The manifest maps each
+`make release` uploads every file automatically. `make release-publish` retries
+only publication of completed assets, without rebuilding. Authenticate with
+`gh auth login` before publishing. The manifest maps each
 client to its assets and records the source commit and checksums. The Rust client
 is under `clients/rust` in the source archive. Language package tools may install
 the downloaded assets or resolve third-party dependencies; this release process

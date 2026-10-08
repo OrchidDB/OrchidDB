@@ -40,7 +40,7 @@ export RELEASE_VERSION_SCRIPT
 
 .PHONY: help build cli native clients-check clients-test extension extension-test
 help:
-	@echo 'make release        Build and package every GitHub release asset locally'
+	@echo 'make release        Build locally and publish all GitHub release assets'
 	@echo 'make build          Build the core library'
 	@echo 'make cli            Build the standalone CLI'
 	@echo 'make native         Build and stage the shared client library'
@@ -87,3 +87,7 @@ release-build:
 	$(PYTHON) scripts/release/release.py build --version "$(VERSION)"
 release-package:
 	$(PYTHON) scripts/release/release.py package --version "$(VERSION)"
+
+.PHONY: release-publish
+release-publish:
+	$(PYTHON) scripts/release/release.py publish --version "$(VERSION)"

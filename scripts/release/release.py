@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a complete, resumable GitHub release locally. Never upload or publish."""
+"""Build locally and publish a resumable GitHub release."""
 import argparse
 import ast
 import gzip
@@ -18,6 +18,7 @@ import tomllib
 import zipfile
 
 import matrix
+from publish import completed_assets, publish
 from package_extension import package as package_extension
 from publish_extension import bundle as extension_bundle
 
@@ -348,16 +349,23 @@ class Release:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=['check', 'build', 'package', 'all'])
+    parser.add_argument('stage', choices=['check', 'build', 'package', 'publish', 'all'])
     parser.add_argument('--version', required=True)
     args = parser.parse_args()
     release = Release(args.version)
+    if args.stage in ('all', 'publish'):
+        assets = completed_assets(args.version)
+        if assets:
+            publish(assets, args.version)
+            return
+        if args.stage == 'publish':
+            raise RuntimeError('No completed matching release assets; run make release')
     release.check()
     if args.stage != 'check':
         release.reuse_build()
     if args.stage == 'all':
         release.build(); release.package()
-        print('Upload every file in:', release.assets)
+        publish(release.assets, release.version)
     elif args.stage != 'check':
         getattr(release, args.stage)()
 
