@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Caller-owned Quickwit or Elasticsearch HTTP client. Reuse it across federated queries and close
+ * Caller-owned Quickwit, Elasticsearch, or Weaviate HTTP client. Reuse it across federated queries and close
  * it when finished. Query sessions borrow this client's connection pool and mapping cache.
  */
 public final class RemoteEngine implements ExecutionEngine, AutoCloseable {
@@ -27,6 +27,10 @@ public final class RemoteEngine implements ExecutionEngine, AutoCloseable {
     return new RemoteEngine(id, "quickwit", Map.of("endpoint", endpoint));
   }
 
+  public static RemoteEngine weaviate(String id, String endpoint) throws SQLException {
+    return new RemoteEngine(id, "weaviate", Map.of("endpoint", endpoint));
+  }
+
   public static RemoteEngine elasticsearch(String id, String endpoint) throws SQLException {
     return new RemoteEngine(id, "elasticsearch", Map.of("endpoint", endpoint));
   }
@@ -38,7 +42,7 @@ public final class RemoteEngine implements ExecutionEngine, AutoCloseable {
    */
   public RemoteEngine(String id, String adapter, Map<String, ?> options) throws SQLException {
     this.id = Checks.name(id);
-    if (!adapter.equals("quickwit") && !adapter.equals("elasticsearch"))
+    if (!adapter.equals("quickwit") && !adapter.equals("elasticsearch") && !adapter.equals("weaviate"))
       throw new IllegalArgumentException("Unsupported remote adapter: " + adapter);
     this.adapter = new SqlDialect(adapter);
     NativeSqlCompiler.ensureLoaded();

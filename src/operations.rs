@@ -244,11 +244,11 @@ pub fn register(adapter: Arc<dyn RequestAdapter>) -> Result<(), String> {
     Ok(())
 }
 fn builtins() -> Vec<Arc<dyn RequestAdapter>> {
-    #[cfg(any(feature = "quickwit", feature = "elasticsearch"))]
+    #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate"))]
     {
         crate::remote::adapters()
     }
-    #[cfg(not(any(feature = "quickwit", feature = "elasticsearch")))]
+    #[cfg(not(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate")))]
     {
         vec![]
     }

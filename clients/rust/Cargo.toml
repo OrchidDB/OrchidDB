@@ -15,6 +15,7 @@ arrow = "58.2.0"
 serde_json = "1"
 
 [features]
+weaviate = ["orchiddb/weaviate"]
 default = []
 orchid-catalog = ["orchiddb/orchid-catalog"]
 quickwit = ["orchiddb/quickwit"]

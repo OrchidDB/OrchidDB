@@ -1,12 +1,12 @@
 defmodule OrchidDB.RemoteEngine do
   @moduledoc """
-  Caller-owned Quickwit or Elasticsearch session using the shared native HTTP
+  Caller-owned Quickwit, Elasticsearch, or Weaviate session using the shared native HTTP
   transport. Pass `registry/1` to `OrchidDB.query_federated/4`. Stop the process or
   call `close/1` when finished; SQL connections are never owned by this process.
   """
   use GenServer
 
-  def start_link(adapter, options, opts \\ []) when adapter in ["quickwit", "elasticsearch"] do
+  def start_link(adapter, options, opts \\ []) when adapter in ["quickwit", "elasticsearch", "weaviate"] do
     GenServer.start_link(__MODULE__, {adapter, options, opts})
   end
 

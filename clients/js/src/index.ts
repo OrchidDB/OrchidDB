@@ -46,7 +46,7 @@ export class Connection {
   close() { this.runtime.close(); this.closed=true; }
 }
 export class RemoteEngine extends NativeRemote {
-  constructor(adapter: 'quickwit' | 'elasticsearch', options: RemoteOptions, library?: string) {
+  constructor(adapter: 'quickwit' | 'elasticsearch' | 'weaviate', options: RemoteOptions, library?: string) {
     super(new Runtime(library), adapter, options);
   }
 }

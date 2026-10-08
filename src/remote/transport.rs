@@ -68,12 +68,14 @@ impl HttpOptions {
 enum Engine {
     Quickwit,
     Elasticsearch,
+    Weaviate,
 }
 impl Engine {
     fn name(self) -> &'static str {
         match self {
             Self::Quickwit => "quickwit",
             Self::Elasticsearch => "elasticsearch",
+            Self::Weaviate => "weaviate",
         }
     }
 }
@@ -95,6 +97,10 @@ impl HttpSession {
     #[cfg(feature = "quickwit")]
     pub fn quickwit(endpoint: &str) -> Result<Self, String> {
         Self::new(Engine::Quickwit, HttpOptions::new(endpoint), None)
+    }
+    #[cfg(feature = "weaviate")]
+    pub fn weaviate(endpoint: &str) -> Result<Self, String> {
+        Self::new(Engine::Weaviate, HttpOptions::new(endpoint), None)
     }
     #[cfg(feature = "elasticsearch")]
     pub fn elasticsearch(endpoint: &str) -> Result<Self, String> {
@@ -126,6 +132,16 @@ impl HttpSession {
         {
             return Err("remote endpoint must be HTTP(S), with credentials supplied through Authentication and no query or fragment".into());
         }
+        if engine == Engine::Weaviate && base.scheme() != "https" {
+            let host = base.host_str().unwrap_or("").trim_matches(['[', ']']);
+            if host != "localhost"
+                && !host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+            {
+                return Err("Weaviate requires HTTPS outside loopback".into());
+            }
+        }
         if options.batch_size == 0
             || options.max_request_bytes == 0
             || options.page_size == 0
@@ -143,6 +159,7 @@ impl HttpSession {
                 .connect_timeout(options.connect_timeout)
                 .timeout(options.request_timeout)
                 .redirect(reqwest::redirect::Policy::none())
+                .no_proxy()
                 .build()
                 .map_err(|e| format!("HTTP client setup: {e}"))?,
         };
@@ -224,8 +241,15 @@ impl HttpSession {
             Authentication::Bearer(token) => request.bearer_auth(token),
             Authentication::ApiKey(key) => {
                 let mut headers = HeaderMap::new();
-                let mut value = HeaderValue::from_str(&format!("ApiKey {key}"))
-                    .map_err(|_| "invalid API key header")?;
+                let mut value = HeaderValue::from_str(&format!(
+                    "{} {key}",
+                    if self.engine == Engine::Weaviate {
+                        "Bearer"
+                    } else {
+                        "ApiKey"
+                    }
+                ))
+                .map_err(|_| "invalid API key header")?;
                 value.set_sensitive(true);
                 headers.insert(AUTHORIZATION, value);
                 request.headers(headers)
@@ -265,6 +289,9 @@ impl HttpSession {
             bytes.extend_from_slice(&chunk);
         }
         let decoded = serde_json::from_slice::<Value>(&bytes);
+        if !status.is_success() && self.engine == Engine::Weaviate {
+            return Err(format!("weaviate HTTP {}", status.as_u16()));
+        }
         if !status.is_success() {
             let detail = decoded
                 .as_ref()
@@ -347,6 +374,12 @@ impl HttpSession {
             )?]);
         }
         let mut body = bound_body(&root, &parameters)?;
+        #[cfg(feature = "weaviate")]
+        if self.engine == Engine::Weaviate {
+            return self
+                .execute_weaviate(&root, &body, projections, columns, &parameters)
+                .await;
+        }
         let projections = self.score_projections(projections, &body)?;
         let projections = projections.as_slice();
         if let Some(requirements) = request.get("requirements").and_then(Value::as_array) {
@@ -1053,3 +1086,7 @@ mod protocol;
 pub use protocol::command;
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "weaviate")]
+mod weaviate;
+session!(WeaviateSession, Weaviate, "weaviate");

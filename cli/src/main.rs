@@ -229,7 +229,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             if &id == target {
                 continue;
             }
-            #[cfg(any(feature = "quickwit", feature = "elasticsearch"))]
+            #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate"))]
             {
                 let config = options.get(&id).ok_or_else(|| {
                     format!("Supply options for engine `{id}` using --engines FILE")
@@ -241,11 +241,11 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 .map_err(io::Error::other)?;
                 sessions.insert(id, Box::new(remote));
             }
-            #[cfg(not(any(feature = "quickwit", feature = "elasticsearch")))]
+            #[cfg(not(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate")))]
             {
                 let _ = (&options, adapter);
                 return Err(format!(
-                    "Remote engine `{id}` requires the quickwit or elasticsearch feature"
+                    "Remote engine `{id}` requires the corresponding remote engine feature"
                 )
                 .into());
             }

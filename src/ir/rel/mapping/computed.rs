@@ -77,7 +77,7 @@ fn error(message: impl Into<String>) -> RelError {
 fn key(side: &str, i: usize) -> String {
     format!("__relationship_{side}_key_{i}")
 }
-pub(super) fn prop(side: &str, name: &str) -> String {
+pub(crate) fn prop(side: &str, name: &str) -> String {
     format!(
         "__relationship_{side}_{}",
         name.as_bytes()
@@ -595,7 +595,7 @@ impl Expressions<'_> {
         Ok(plan)
     }
 }
-pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelResult<LogicalPlan> {
+pub(crate) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelResult<LogicalPlan> {
     let src = mapping
         .nodes
         .get(&rule.source)

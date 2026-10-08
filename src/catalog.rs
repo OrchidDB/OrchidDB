@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 
 pub(crate) mod lowering;
 mod manifest;
+mod retrieval;
 pub mod relationship;
 #[cfg(feature = "orchid-catalog")]
 mod remote;

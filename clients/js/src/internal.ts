@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { RecordBatch, Schema } from 'apache-arrow';
 
 export type Dialect = 'duckdb' | 'postgres' | 'starrocks';
-export type EngineDialect = Dialect | 'quickwit' | 'elasticsearch' | (string & {});
+export type EngineDialect = Dialect | 'quickwit' | 'elasticsearch' | 'weaviate' | (string & {});
 export type Language = 'cypher' | 'gremlin' | 'sparql';
 export interface Column { name: string; data_type: string; nullable?: boolean }
 export interface Table { engine?: string; name: string; columns: readonly Column[] }
@@ -402,7 +402,7 @@ export class RemoteEngine implements RequestEngine {
   private session?: string | number;
   readonly id: string;
   constructor(private readonly compiler: Compiler,
-      readonly dialect: 'quickwit' | 'elasticsearch', options: RemoteOptions) {
+      readonly dialect: 'quickwit' | 'elasticsearch' | 'weaviate', options: RemoteOptions) {
     const result = compiler.remoteCommand({op: 'open', adapter: dialect, options});
     this.session = result.id;
     this.id = String(result.id);

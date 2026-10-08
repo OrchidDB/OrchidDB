@@ -18,7 +18,8 @@ arrow = { version = "58.2.0", default-features = false, features = ["ffi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
+weaviate = ["orchiddb/weaviate"]
 orchid-catalog = ["orchiddb/orchid-catalog"]
-default = ["quickwit", "elasticsearch", "orchid-catalog"]
+default = ["quickwit", "elasticsearch", "weaviate", "orchid-catalog"]
 quickwit = ["orchiddb/quickwit"]
 elasticsearch = ["orchiddb/elasticsearch"]

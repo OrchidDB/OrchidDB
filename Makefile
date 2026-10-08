@@ -44,6 +44,7 @@ help:
 	@echo 'make build          Build the core library'
 	@echo 'make cli            Build the standalone CLI'
 	@echo 'make native         Build and stage the shared client library'
+	@echo 'make weaviate-smoke Check vector edges against local Weaviate and DuckDB'
 	@echo 'make catalog-smoke  Smoke catalog auth and all clients on DuckDB'
 	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
 	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
@@ -106,3 +107,7 @@ starrocks-conformance:
 .PHONY: catalog-smoke
 catalog-smoke:
 	$(TEST_PYTHON) scripts/catalog_smoke.py $(CATALOG_SMOKE_ARGS)
+
+.PHONY: weaviate-smoke
+weaviate-smoke:
+	$(TEST_PYTHON) scripts/weaviate_smoke.py $(WEAVIATE_SMOKE_ARGS)

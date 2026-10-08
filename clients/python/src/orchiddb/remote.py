@@ -1,4 +1,4 @@
-"""Optional Quickwit/Elasticsearch sessions using OrchidDB's shared HTTP transport."""
+"""Optional Quickwit/Elasticsearch/Weaviate sessions using OrchidDB's shared HTTP transport."""
 from contextlib import contextmanager
 
 
@@ -12,8 +12,8 @@ class RemoteEngine:
     def __init__(self, adapter, endpoint, *, library=None, **options):
         from ._runtime import _Runtime
         compiler = _Runtime(library)
-        if adapter not in ("quickwit", "elasticsearch"):
-            raise ValueError("RemoteEngine supports quickwit or elasticsearch")
+        if adapter not in ("quickwit", "elasticsearch", "weaviate"):
+            raise ValueError("RemoteEngine supports quickwit, elasticsearch, or weaviate")
         self._runtime = compiler
         self.dialect = adapter
         result = compiler.remote_command(dict(op="open", adapter=adapter,

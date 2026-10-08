@@ -1314,3 +1314,127 @@ are also available in the root Makefile.
 
 [GPL-3.0-only](LICENSE.md). Third-party components retain their upstream licenses
 and notices.
+### Weaviate retrieval
+
+Weaviate is an optional execution engine for `vector.cosine_similarity`,
+`vector.dot`, and `vector.l2_distance`. Derived edges use those shared primitives;
+the runner lowers ranked retrieval to Weaviate's HTTP API and joins returned keys
+back to the mapped SQL tables. There is no Weaviate SDK dependency. Rust users
+opt in with the `weaviate` feature; the native clients and CLI include the adapter.
+Weaviate runs separately.
+
+For mapped `Question` and `Document` nodes with `embedding` and `tenant_id`
+properties, register this edge in the catalog:
+
+```yaml
+name: RELEVANT_TO
+source: Question
+target: Document
+parameters:
+  - name: score
+    schema:
+      type: number
+      description: Minimum cosine similarity before selecting results.
+    default: 0.7
+  - name: limit
+    schema:
+      type: integer
+      minimum: 1
+      description: Maximum results per source question.
+    default: 5
+cypher: >-
+  WITH source
+  MATCH (target:Document)
+  WHERE target.tenant_id = source.tenant_id
+  WITH target, vector.cosine_similarity(source.embedding, target.embedding) AS score
+  WHERE score >= $score
+  RETURN target, score ORDER BY score DESC LIMIT $limit
+returns:
+  target: target
+  properties:
+    score: {type: number}
+```
+
+In the runner's schema, bind the document embedding index separately:
+
+```yaml
+engines:
+  local: {dialect: duckdb}
+  vectors: {dialect: weaviate}
+execution_engine: local
+source_metadata:
+  - table: documents
+    format: weaviate
+    options:
+      engine: vectors
+      collection: Documents
+      key_field: doc_id
+      retrieval: approximate_allowed
+    indexes:
+      - column: embedding
+        metric: cosine
+```
+
+The mapped tables belong to `local`. The Weaviate collection contains vectors,
+`doc_id` keys matching `documents.id`, and properties used in retrieval filters.
+Text equality filters require `field` tokenization; null checks require
+`invertedIndexConfig.indexNullState`. Use `field_mapping` when indexed property
+names differ from table columns. For named vectors, add `target_vector` to the
+binding options; for Weaviate multi-tenancy, add `tenant`.
+
+Applications own engine sessions and credentials. For Python, with the registered
+schema and an existing DuckDB connection:
+
+```python
+import os
+from orchiddb import Connection, DuckDBEngine, RemoteEngine
+
+local = DuckDBEngine(duckdb_connection)
+with RemoteEngine(
+    "weaviate", "https://vectors.example.com",
+    authentication={"type": "api_key", "token": os.environ["WEAVIATE_API_KEY"]},
+) as vectors:
+    with Connection(local, schema=schema, engines={"local": local, "vectors": vectors}) as graph:
+        with graph.query(
+            "MATCH (q:Question)-[r:RELEVANT_TO {score: $score, limit: $limit}]->(d:Document) "
+            "WHERE q.id = $questionId RETURN d.title, r.score ORDER BY r.score DESC",
+            parameters={"questionId": 10, "score": 0.7, "limit": 5},
+        ) as result:
+            rows = result.read_all().to_pylist()
+```
+
+Java, JS/TS, C++, and Elixir use their existing `RemoteEngine` with adapter
+`weaviate`; the Rust client exposes `engines::HttpSession::weaviate` and the core
+exposes `remote::WeaviateSession`. The CLI accepts the same
+adapter in its remote engine configuration. Credentials stay in engine sessions,
+separate from catalog metadata. HTTPS is required outside loopback; HTTP errors
+omit response bodies. The DuckDB extension currently executes within its DuckDB
+session and does not expose remote engine federation.
+
+The adapter validates the collection's configured metric. Cosine results use
+`1 - distance`, dot product uses `-distance`, and L2 uses the square root of
+Weaviate's squared distance, following [Weaviate's distance definitions](https://docs.weaviate.io/weaviate/config-refs/distances).
+Use descending order for similarity and dot product, ascending order for L2.
+Score thresholds are pushed into retrieval and checked on returned scores.
+Non-score predicates are checked again against authoritative SQL rows after the
+key join; stale or missing index entries can reduce the result count.
+Applications maintain index synchronization and matching embedding models.
+
+This adapter supports approximate vector retrieval with explicit index bindings.
+An exact retrieval request is rejected when routed to Weaviate. BM25, hybrid
+search, embedding generation, and general collection scans are not implemented.
+Complex edge bodies continue through the existing relational planner; the
+single-target vector ranking shown above uses the shared ranked-retrieval path.
+
+With Docker and the local Python client development dependencies installed:
+
+```sh
+make weaviate-smoke
+```
+
+This incrementally builds native clients, starts a temporary authenticated
+Weaviate 1.34.0 container, and checks cosine, dot product, L2, named vectors,
+parameterized edge expansion, per-source limits, SQL graph joins, stale tenant
+metadata, metric validation, and authentication rejection. The container is
+removed afterwards. It does not run conformance or release tasks. Reuse existing
+builds with `make weaviate-smoke WEAVIATE_SMOKE_ARGS=--no-build`.

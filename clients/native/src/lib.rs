@@ -41,9 +41,9 @@ fn dispatch(input: String, operation: u8) -> Result<serde_json::Value, String> {
         let result = match operation {
             1 => orchiddb::ir::rel::statistics::command(&input).await,
             2 => {
-                #[cfg(any(feature = "quickwit", feature = "elasticsearch"))]
+                #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate"))]
                 { orchiddb::remote::transport::command(&input).await }
-                #[cfg(not(any(feature = "quickwit", feature = "elasticsearch")))]
+                #[cfg(not(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate")))]
                 { Err("remote engine support is disabled".into()) }
             },
             _ => orchiddb::compiler::compile_json(&input).await,

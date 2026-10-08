@@ -249,6 +249,8 @@ mod tests {
 
 pub(super) fn new_session(adapter: &str, options: Value) -> Result<HttpSession, String> {
     let engine = match adapter {
+        #[cfg(feature = "weaviate")]
+        "weaviate" => Engine::Weaviate,
         #[cfg(feature = "quickwit")]
         "quickwit" => Engine::Quickwit,
         #[cfg(feature = "elasticsearch")]

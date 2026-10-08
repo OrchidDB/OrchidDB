@@ -9,6 +9,7 @@ license = "GPL-3.0-only"
 crate-type = ["staticlib", "rlib"]
 
 [features]
+weaviate = ["orchiddb/weaviate"]
 default = ["spicedb", "orchid-catalog"]
 orchid-catalog = ["orchiddb/orchid-catalog"]
 spicedb = ["dep:reqwest"]

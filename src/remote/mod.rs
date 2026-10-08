@@ -1,10 +1,14 @@
 //! Optional HTTP engines. Logical expressions remain engine independent; this
 //! module produces typed prepared requests instead of inventing a SQL dialect.
 pub mod transport;
+#[cfg(feature = "weaviate")]
+mod weaviate;
 #[cfg(feature = "elasticsearch")]
 pub use transport::ElasticsearchSession;
 #[cfg(feature = "quickwit")]
 pub use transport::QuickwitSession;
+#[cfg(feature = "weaviate")]
+pub use transport::WeaviateSession;
 pub use transport::{Authentication, HttpOptions, HttpSession};
 
 use crate::ir::rel::{
@@ -26,6 +30,10 @@ pub struct QuickwitAdapter;
 #[derive(Debug, Default)]
 pub struct ElasticsearchAdapter;
 
+#[cfg(feature = "weaviate")]
+#[derive(Debug, Default)]
+pub struct WeaviateAdapter;
+
 pub fn adapters() -> Vec<Arc<dyn RequestAdapter>> {
     #[allow(unused_mut)]
     let mut result: Vec<Arc<dyn RequestAdapter>> = Vec::new();
@@ -33,6 +41,8 @@ pub fn adapters() -> Vec<Arc<dyn RequestAdapter>> {
     result.push(Arc::new(QuickwitAdapter));
     #[cfg(feature = "elasticsearch")]
     result.push(Arc::new(ElasticsearchAdapter));
+    #[cfg(feature = "weaviate")]
+    result.push(Arc::new(WeaviateAdapter));
     result
 }
 macro_rules! adapter {
@@ -93,6 +103,35 @@ macro_rules! adapter {
 adapter!(QuickwitAdapter, "quickwit");
 #[cfg(feature = "elasticsearch")]
 adapter!(ElasticsearchAdapter, "elasticsearch");
+
+#[cfg(feature = "weaviate")]
+impl RequestAdapter for WeaviateAdapter {
+    fn name(&self) -> &str {
+        "weaviate"
+    }
+    fn owner(&self, plan: &LogicalPlan) -> Result<Option<String>> {
+        Ok(ranked(plan)
+            .and_then(|search| {
+                search
+                    .index
+                    .as_ref()
+                    .and_then(|index| index.options.get("engine"))
+                    .or_else(|| {
+                        search
+                            .source_metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.options.get("engine"))
+                    })
+            })
+            .and_then(Value::as_str)
+            .map(str::to_owned))
+    }
+    fn lower(&self, plan: &LogicalPlan) -> Result<Option<PreparedOperation>> {
+        ranked(plan)
+            .map(|search| lower_ranked("weaviate", search))
+            .transpose()
+    }
+}
 
 fn ranked(plan: &LogicalPlan) -> Option<&RankedJoin> {
     let LogicalPlan::Extension(e) = plan else {
@@ -617,13 +656,17 @@ fn output(expr: &Expr, name: &str) -> Result<Value> {
 }
 
 fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> {
-    if search.metric() != Some(SearchMetric::Bm25) {
+    if engine != "weaviate" && search.metric() != Some(SearchMetric::Bm25) {
         return Err(format!(
             "{engine} indexed relationships currently require text.bm25"
         ));
     }
-    if search.ascending || search.nulls_first {
+    if engine != "weaviate" && (search.ascending || search.nulls_first) {
         return Err("BM25 retrieval requires descending score and nulls last".into());
+    }
+    #[cfg(feature = "weaviate")]
+    if engine == "weaviate" {
+        weaviate::validate_search(search)?;
     }
     let mut target =
         scan(&search.target)?.ok_or("remote BM25 target must resolve to a single index scan")?;
@@ -641,7 +684,8 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
             .and_then(|i| i.options.get(name))
             .or_else(|| metadata.options.get(name))
     };
-    let index = option("index")
+    let index = option("collection")
+        .or_else(|| option("index"))
         .and_then(Value::as_str)
         .unwrap_or(&target.table)
         .to_owned();
@@ -673,7 +717,13 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
             name.to_owned(),
         );
     }
-    if let Some(name) = option("text_field").and_then(Value::as_str) {
+    if let Some(name) = option(if engine == "weaviate" {
+        "vector_field"
+    } else {
+        "text_field"
+    })
+    .and_then(Value::as_str)
+    {
         fields.insert(
             field(&resolve(search.document(), &target)?)?,
             name.to_owned(),
@@ -732,11 +782,22 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
             search.source.clone()
         };
     let mut build = Build::new(Some(source));
-    build.requirement(&text, "match");
-    let query_pointer = format!(
-        "/body/query/bool/must/0/match/{}/query",
-        escape_pointer(&text)
+    build.requirement(
+        &text,
+        if engine == "weaviate" {
+            "vector"
+        } else {
+            "match"
+        },
     );
+    let query_pointer = if engine == "weaviate" {
+        "/body/vector".to_owned()
+    } else {
+        format!(
+            "/body/query/bool/must/0/match/{}/query",
+            escape_pointer(&text)
+        )
+    };
     let query = build.value(search.query(), query_pointer.clone())?;
     let mut filters = target.filters.clone();
     if let Some(p) = &search.predicate {
@@ -767,6 +828,12 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
             filters.push(resolved);
         }
     }
+    #[cfg(feature = "weaviate")]
+    let score_filters = if engine == "weaviate" {
+        weaviate::score_filters(&mut filters, search, &target, &mut build)?
+    } else {
+        vec![]
+    };
     let filters = filters
         .iter()
         .enumerate()
@@ -840,14 +907,44 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
             schema: schema.clone(),
         }
         .into_plan();
-        let joined = LogicalPlanBuilder::from(result)
+        let mut joined = LogicalPlanBuilder::from(result)
             .join(
                 search.target.as_ref().clone(),
                 JoinType::Inner,
                 (left_keys, right_keys),
                 None,
             )
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        if engine == "weaviate" {
+            use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
+            let mut filters = Vec::new();
+            for predicate in search
+                .predicate
+                .as_ref()
+                .into_iter()
+                .flat_map(datafusion::logical_expr::utils::split_conjunction)
+            {
+                let mut scoring = false;
+                predicate
+                    .apply(|expression| {
+                        if let Expr::ScalarFunction(function) = expression {
+                            scoring |= crate::ir::functions::logical::definition(&function.func)
+                                .is_some_and(|function| function.search_metric.is_some());
+                        }
+                        Ok(TreeNodeRecursion::Continue)
+                    })
+                    .map_err(|error| error.to_string())?;
+                if !scoring {
+                    filters.push(predicate.clone());
+                }
+            }
+            if let Some(predicate) = datafusion::logical_expr::utils::conjunction(filters) {
+                joined = joined
+                    .filter(predicate)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        let joined = joined
             .project(search.schema.columns().into_iter().map(Expr::Column))
             .map_err(|e| e.to_string())?
             .build()
@@ -867,6 +964,15 @@ fn lower_ranked(engine: &str, search: &RankedJoin) -> Result<PreparedOperation> 
     columns.push(json!({"name":SCORE_COLUMN,"source":"score"}));
     let operator = if engine == "quickwit" { "OR" } else { "or" };
     let request = json!({"version":1,"engine":engine,"operation":"search","api":"elastic","index":index,"body":{"query":{"bool":{"must":[{"match":{text:{"query":query,"operator":operator}}}],"filter":filters}},"sort":sort,"size":search.limit},"columns":columns,"limit":search.limit,"null_query_paths":[query_pointer]});
+    #[cfg(feature = "weaviate")]
+    let request = if engine == "weaviate" {
+        json!({"version":1,"engine":engine,"operation":"search","api":"weaviate","index":index,
+            "body":{"vector":query,"query":{"bool":{"filter":filters}},"score_filters":score_filters},
+            "metric":search.metric(),"vector_name":option("target_vector"),"tenant":option("tenant"),
+            "columns":columns,"limit":search.limit,"null_query_paths":[query_pointer]})
+    } else {
+        request
+    };
     let mut operation = build.finish(engine, request, schema)?;
     operation.replacement = replacement;
     Ok(operation)

@@ -226,6 +226,10 @@ pub(crate) fn relationship_plan(
     let _guard = Guard(rule.name.clone());
     let mut mapping = mapping.clone();
     let right = body(rule, &BTreeMap::new(), &mut mapping)?;
+    if let Some(plan) = super::retrieval::plan(&mapping, rule)? {
+        validate_return_types(rule, plan.schema().as_ref())?;
+        return Ok(plan);
+    }
     mapped_plan(&mapping, rule, right)
 }
 fn mapped_plan(
@@ -519,7 +523,7 @@ fn prepare_patterns(query: &mut ast::Query, mapping: &mut GraphMapping) -> Resul
     Ok(())
 }
 
-fn constant(expr: &ast::Expr) -> Result<serde_json::Value, String> {
+pub(super) fn constant(expr: &ast::Expr) -> Result<serde_json::Value, String> {
     use ast::{Expr, Literal};
     Ok(match expr {
         Expr::Literal(Literal::Null) => serde_json::Value::Null,

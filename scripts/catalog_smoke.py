@@ -30,6 +30,17 @@ def duckdb_library():
     return max(candidates, key=lambda path:path.stat().st_mtime).parent
 
 
+def build_native_clients():
+    library=duckdb_library()
+    env=os.environ | dict(LIBRARY_PATH=str(library))
+    command=['cargo','build','--locked','-j','1']
+    for package in PACKAGES:
+        command.extend(['-p',package,'--config',f'profile.dev.package.{package}.strip="debuginfo"'])
+    command.extend(['--config','profile.dev.package.orchiddb.debug=0','--config','profile.dev.package.orchiddb.incremental=false'])
+    run(command,env=env)
+    run([sys.executable,ROOT/'scripts/clients.py','metadata'])
+
+
 def clients(only):
     env = os.environ.copy()
     library = duckdb_library()
@@ -121,14 +132,7 @@ def main():
         clients(args.only)
         return
     if not args.no_build:
-        library=duckdb_library()
-        env=os.environ | dict(LIBRARY_PATH=str(library))
-        command=['cargo','build','--locked','-j','1']
-        for package in PACKAGES:
-            command.extend(['-p',package,'--config',f'profile.dev.package.{package}.strip="debuginfo"'])
-        command.extend(['--config','profile.dev.package.orchiddb.debug=0','--config','profile.dev.package.orchiddb.incremental=false'])
-        run(command,env=env)
-        run([sys.executable,ROOT/'scripts/clients.py','metadata'])
+        build_native_clients()
         run(['cargo','build','--locked','--manifest-path',args.catalog/'Cargo.toml'])
         run([sys.executable,ROOT/'extension/scripts/build.py','--skip-rust'])
         run(['npm','install','--ignore-scripts','--no-audit','--no-fund','--package-lock=false','--prefix','clients/js'])
