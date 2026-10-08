@@ -1218,3 +1218,6 @@ fn constant_string_column(plan: &LogicalPlan, name: &str) -> Option<String> {
         .all(|value| value.as_ref() == Some(&first))
         .then_some(first)
 }
+
+#[cfg(all(test, feature = "weaviate"))]
+mod vector_lowering_tests;
