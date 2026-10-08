@@ -35,7 +35,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let plan = preserve_portable_numeric_types(plan, dialect)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = preserve_limit_output(plan)?;
-    let plan = if dialect != SqlDialect::Postgres && !has_rdf_source(&plan) {
+    let plan = if !dialect.requires_scope_repair() && !has_rdf_source(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
     } else { plan };
     let repairs = identifier_quote_repairs(&plan, dialect)?;

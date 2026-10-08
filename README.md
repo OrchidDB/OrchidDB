@@ -57,10 +57,55 @@ and driver configuration remain caller-owned. Results are rows or Arrow batches.
 The shared `fn.*` library still lowers to engine SQL or shared runtime kernels.
 Backend-specific functions use declared signatures; the DuckDB extension can
 discover them through its caller's catalog. DuckDB and PostgreSQL adapters share
-the same language frontends and IR. StarRocks remains a planned adapter.
+the same language frontends and IR. StarRocks uses that same core through its
+SQL adapter.
 
 See [client interfaces and source builds](clients/README.md) for each language.
 This API change is in source; it does not republish older registry packages.
+
+## StarRocks
+
+StarRocks uses the `starrocks` dialect and a caller-owned MySQL-compatible
+connection. Python provides `StarRocksEngine` for PyMySQL connections and returns
+Arrow results. Install PyMySQL and PyArrow separately; OrchidDB does not bundle
+StarRocks or its database driver.
+
+```python
+import json
+import pymysql
+from orchiddb import Connection, StarRocksEngine
+
+schema = json.load(open("schema.json"))
+with pymysql.connect(host="localhost", port=9030, user="root",
+                     database="graphs", autocommit=True) as database:
+    with Connection(StarRocksEngine(database), schema) as graph:
+        with graph.query("MATCH (p:Person) WHERE p.age > $age RETURN p.name",
+                         parameters={"age": 25}) as result:
+            print(result.read_all().to_pylist())
+```
+
+Java can borrow a MySQL JDBC connection with `SqlDialect.STARROCKS`. Rust,
+TypeScript, C++, and Elixir engine adapters select `starrocks` through their
+existing execution interfaces. SQL lowering is shared across clients. The CLI
+continues to use DuckDB.
+
+StarRocks support is checked against **4.1.6** with live connection tests. It is
+not yet the full DuckDB/PostgreSQL conformance matrix. Portable `fn.*` mappings
+are explicit; unmapped functions fail rather than silently using another engine.
+Whole graph values and `collect()` still require runtime kernels that this
+connection adapter does not yet execute. The full portable function catalog and
+federated execution have not been validated on StarRocks. Variable-length paths
+require `SET enable_recursive_cte=true` and a suitable `recursive_cte_max_depth`
+on the StarRocks connection; see the [StarRocks recursion settings](https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/SELECT/SELECT_CTE/#configurations).
+
+```sh
+make starrocks-test
+```
+
+This target starts a pinned local StarRocks container, builds the shared native
+runtime, prepares the Python test dependencies, and runs the focused execution
+checks. It creates and removes its own database and leaves the container running
+for reuse. It is independent of release packaging.
 
 ## Optional DuckDB extension
 

@@ -1553,6 +1553,11 @@ impl LoweringContext<'_> {
         if self.language == Language::Cypher && matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div) {
             let lt = lhs.get_type(plan.schema())?;
             let rt = rhs.get_type(plan.schema())?;
+            let text = |ty: &DataType| matches!(ty, DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8);
+            if op == BinaryOp::Add && text(&lt) && text(&rt) {
+                return Ok(Expr::BinaryExpr(datafusion::logical_expr::BinaryExpr::new(
+                    Box::new(lhs), datafusion::logical_expr::Operator::StringConcat, Box::new(rhs))));
+            }
             if matches!(lt, DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 | DataType::List(_) | DataType::LargeList(_))
                 || matches!(rt, DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 | DataType::List(_) | DataType::LargeList(_)) {
                 return Err(RelError::Unsupported("Cypher overloaded arithmetic requires typed value computation".into()));

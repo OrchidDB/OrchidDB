@@ -36,12 +36,14 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
             None => ast::Ident::new(ident).to_string(),
         }
     }
+    fn requires_scope_repair(&self) -> bool { false }
     fn create_table_keyword(&self) -> &'static str {
         "CREATE TEMPORARY TABLE"
     }
     fn double_type(&self) -> &'static str {
         "DOUBLE PRECISION"
     }
+    fn finalize_sql(&self, sql: String) -> SqlResult<String> { Ok(self.fixup_query(sql)) }
     fn fixup_query(&self, sql: String) -> String {
         sql
     }
@@ -122,6 +124,9 @@ fn registry() -> &'static RwLock<BTreeMap<&'static str, &'static dyn DialectAdap
 }
 
 impl SqlDialect {
+    pub(crate) fn requires_scope_repair(self) -> bool {
+        match self { Self::Postgres => true, Self::Custom(adapter) => adapter.requires_scope_repair(), _ => false }
+    }
     /// Snapshot registered adapters before invoking application callbacks. No
     /// registry lock is held while an adapter examines a relational operation.
     pub fn registered_adapters() -> SqlResult<Vec<&'static dyn DialectAdapter>> {
@@ -183,7 +188,7 @@ impl SqlDialect {
     /// Re-registering the same instance is idempotent; replacement is rejected.
     pub fn register(adapter: &'static dyn DialectAdapter) -> SqlResult<Self> {
         let name = adapter.name();
-        if name.is_empty() || matches!(name, "postgres" | "duckdb") {
+        if name.is_empty() || matches!(name, "postgres" | "duckdb" | "starrocks") {
             return Err(SqlError::Setup(format!(
                 "reserved or empty engine dialect name {name:?}"
             )));
@@ -208,6 +213,7 @@ impl SqlDialect {
         match name {
             "duckdb" => Ok(Self::DuckDb),
             "postgres" => Ok(Self::Postgres),
+            "starrocks" => Ok(Self::Custom(&super::starrocks::STARROCKS)),
             _ => registry()
                 .read()
                 .map_err(|_| SqlError::Setup("dialect registry poisoned".into()))?

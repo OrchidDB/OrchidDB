@@ -29,6 +29,7 @@ pub(crate) mod json;
 mod json_transform;
 mod json_rows;
 mod dialect;
+pub mod starrocks;
 pub use dialect::{DialectAdapter, EngineAdapter};
 pub mod search;
 pub mod lowering;
@@ -276,6 +277,10 @@ impl SqlDialect {
     /// Dialect-specific rewrites of unparsed SQL text. Fixups that cannot be
     /// expressed through the unparser dialect hooks belong here, not at call
     /// sites.
+    fn finalize_sql(self, sql: String) -> SqlResult<String> {
+        if let Self::Custom(adapter) = self { adapter.finalize_sql(sql) } else { Ok(self.fixup_query(sql)) }
+    }
+
     fn fixup_query(self, sql: String) -> String {
         if let Self::Custom(adapter) = self { return adapter.fixup_query(sql); }
         // The unparser renders unsigned Arrow casts MySQL-style

@@ -24,7 +24,7 @@ pub(crate) fn expression_sql(expr: &Expr, _schema: &DFSchema) -> SqlResult<Strin
 }
 
 pub(super) fn prepare_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDialect) -> SqlResult<()> {
-    prepare_scoped_ast(tree, dialect, dialect == SqlDialect::Postgres)
+    prepare_scoped_ast(tree, dialect, dialect.requires_scope_repair())
 }
 
 pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDialect, repair_qualifiers: bool) -> SqlResult<()> {
@@ -57,6 +57,7 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         derived: std::collections::BTreeMap<Vec<String>, Vec<ast::Ident>>,
     }
     struct UnitProjection {
+        dialect: SqlDialect,
         repair_qualifiers: bool,
         next_alias: usize,
         scopes: Vec<Scope>,
@@ -115,7 +116,7 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
                                         }
                                     };
                                     *alias = Some(ast::TableAlias {
-                                        name: ast::Ident::with_quote('"', fresh),
+                                        name: self.dialect.identifier(&fresh),
                                         columns: vec![],
                                         explicit: true,
                                     });
@@ -206,6 +207,7 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         }
     }
     if let ControlFlow::Break(error) = tree.visit(&mut UnitProjection {
+        dialect,
         repair_qualifiers,
         next_alias: 0,
         scopes: vec![],
@@ -514,6 +516,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         } else {
             ast::Expr::IsDistinctFrom(Box::new(args[0].clone()), Box::new(args[1].clone()))
         };
+        if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }
         return Ok(());
     }
     if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }

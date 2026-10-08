@@ -32,13 +32,13 @@ struct PlainCte {
 }
 
 pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let repair_scopes = dialect == SqlDialect::Postgres || super::unparse::has_rdf_source(&plan);
+    let repair_scopes = dialect.requires_scope_repair() || super::unparse::has_rdf_source(&plan);
     let (main, plain_ctes, recursive_ctes) = extract_ctes(plan, repair_scopes)?;
     let unparser_dialect = dialect.unparser_dialect();
     let unparser = Unparser::new(unparser_dialect.as_ref()).with_extension_unparsers(vec![Arc::new(super::lowering::RelationUnparser::new(dialect))]);
     let main_sql = unparse_one(&main, &unparser, dialect, repair_scopes)?;
     if plain_ctes.is_empty() && recursive_ctes.is_empty() {
-        return Ok(dialect.fixup_query(main_sql));
+        return dialect.finalize_sql(main_sql);
     }
 
     let has_recursive = !recursive_ctes.is_empty();
@@ -78,8 +78,9 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         // Weighted frontiers and per-occurrence apply inputs are deliberate
         // shared relations. Keep DuckDB/Postgres from repeatedly inlining
         // their joins/windows into every correlated consumer.
-        let materialized = if cte.name.starts_with("__w_sql_cte_weighted_repeat_")
-            || cte.name.starts_with("__w_sql_cte_apply_row_") {
+        let materialized = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres)
+            && (cte.name.starts_with("__w_sql_cte_weighted_repeat_")
+            || cte.name.starts_with("__w_sql_cte_apply_row_")) {
             " MATERIALIZED"
         } else { "" };
         pending.push((
@@ -108,7 +109,7 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     } else {
         "WITH"
     };
-    Ok(dialect.fixup_query(format!("{keyword} {}\n{main_sql}", definitions.join(",\n"))))
+    dialect.finalize_sql(format!("{keyword} {}\n{main_sql}", definitions.join(",\n")))
 }
 
 fn referenced_ctes(plan: &LogicalPlan, names: &BTreeSet<String>) -> BTreeSet<String> {
@@ -146,7 +147,7 @@ fn unparse_one(
                                 alias: match expr {
                                     datafusion::sql::sqlparser::ast::Expr::Identifier(id) => id.clone(),
                                     datafusion::sql::sqlparser::ast::Expr::CompoundIdentifier(ids) => ids.last().unwrap().clone(),
-                                    _ => datafusion::sql::sqlparser::ast::Ident::with_quote('"', field.name()),
+                                    _ => dialect.identifier(field.name()),
                                 },
                             };
                         }

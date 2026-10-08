@@ -46,6 +46,7 @@ help:
 	@echo 'make native         Build and stage the shared client library'
 	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
 	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
+	@echo 'make starrocks-test Start local StarRocks and check query execution'
 	@echo 'make extension      Build the optional DuckDB extension'
 	@echo 'See clients/README.md for language-specific build and test commands.'
 build:
@@ -91,3 +92,7 @@ release-package:
 .PHONY: release-publish
 release-publish:
 	$(PYTHON) scripts/release/release.py publish --version "$(VERSION)"
+
+.PHONY: starrocks-test
+starrocks-test:
+	$(PYTHON) scripts/starrocks_test.py

@@ -1,6 +1,7 @@
 //! Exhaustive review of the enabled native catalog. A dependency upgrade that
 //! adds a function must add an audit entry (enforced by the catalog test).
 pub fn audit_note(name: &str, dialect: &str) -> &'static str {
+    if dialect == "starrocks" { return "Only explicitly mapped StarRocks signatures are supported"; }
     let name = name.strip_prefix("fn.").unwrap_or(name);
     let pg = dialect == "postgres";
     match name {

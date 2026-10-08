@@ -5,6 +5,7 @@
 //! native implementation; SQL-only compilation rejects them rather than guessing.
 mod arrays;
 mod runtime;
+mod starrocks;
 pub(crate) use runtime::call as runtime_call;
 mod audit;
 pub use audit::audit_note;
@@ -34,6 +35,7 @@ pub struct ScalarCapability {
     pub volatility: datafusion::logical_expr::Volatility,
     pub duckdb: bool,
     pub postgres: bool,
+    pub starrocks: bool,
     /// Reviewed scope or the concrete reason SQL execution remains native.
     pub duckdb_note: &'static str,
     pub postgres_note: &'static str,
@@ -52,12 +54,13 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
         .chain(datafusion::functions_nested::all_default_nested_functions())
     {
         let name = format!("fn.{}", native.name());
-        let aliases = native
+        let mut aliases = native
             .aliases()
             .iter()
             .map(|a| format!("fn.{a}"))
             .collect::<Vec<_>>();
-        let sql = ["duckdb", "postgres"]
+        if native.name() == "contains" { aliases.push("fn.contains_fn".into()); }
+        let sql = ["duckdb", "postgres", "starrocks"]
             .into_iter()
             .filter_map(|dialect| {
                 mapping(native.name(), dialect).map(|value| {
@@ -73,7 +76,7 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
             .collect::<BTreeMap<_, _>>();
         let mut definition = LogicalFunction::new(&name, native.clone(), sql);
         definition.portable_builtin = true;
-        for dialect in ["duckdb", "postgres"] {
+        for dialect in ["duckdb", "postgres", "starrocks"] {
             for arity in 0..=5 {
                 if let Some(value) = overload(native.name(), dialect, arity) {
                     definition.sql_overloads.insert(
@@ -93,6 +96,8 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
             postgres_note: audit_note(native.name(), "postgres"),
             aliases: aliases.clone(),
             volatility: native.signature().volatility,
+            starrocks: definition.sql.contains_key("starrocks")
+                || definition.sql_overloads.keys().any(|(d, _)| d == "starrocks"),
             duckdb: structured::handles(native.name())
                 || resolves_in_preparation(native.name())
                 || definition.sql.contains_key("duckdb")
@@ -141,6 +146,7 @@ fn unary(body: &str) -> String {
 }
 
 fn mapping(name: &str, dialect: &str) -> Option<String> {
+    if dialect == "starrocks" { return starrocks::mapping(name); }
     let pg = dialect == "postgres";
     let unary = |body: &str| bind_unary(body, pg);
     let double = if pg { "DOUBLE PRECISION" } else { "DOUBLE" };
@@ -193,6 +199,7 @@ fn mapping(name: &str, dialect: &str) -> Option<String> {
 }
 
 fn overload(name: &str, dialect: &str, arity: usize) -> Option<String> {
+    if dialect == "starrocks" { return starrocks::overload(name, arity); }
     Some(match (name, arity) {
         ("concat", 0) => "''".into(),
         ("btrim" | "ltrim" | "rtrim", 1 | 2) => {
