@@ -453,6 +453,73 @@ unique_ptr<FunctionData> RegisterSchemaBind(ClientContext &, TableFunctionBindIn
     }
     return make_uniq<ProgramBindData>(Json({{"name", name}, {"schema", schema}}).dump());
 }
+unique_ptr<FunctionData> RegisterCatalogBind(ClientContext &, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
+    types = {LogicalType::BOOLEAN}; names = {"registered"};
+    for (const auto &value : input.inputs) {
+        if (value.IsNull()) { throw BinderException("Catalog name, endpoint, scope and graph cannot be NULL"); }
+    }
+    auto name = input.inputs[0].GetValue<string>();
+    if (name.empty()) { throw BinderException("Catalog name cannot be empty"); }
+    Json reference = {{"endpoint", input.inputs[1].GetValue<string>()},
+        {"scope", input.inputs[2].GetValue<string>()}, {"graph", input.inputs[3].GetValue<string>()},
+        {"token_env", "ORCHID_CATALOG_TOKEN"}};
+    auto token_env = input.named_parameters.find("token_env");
+    if (token_env != input.named_parameters.end()) {
+        if (token_env->second.IsNull()) { throw BinderException("token_env cannot be NULL"); }
+        reference["token_env"] = token_env->second.GetValue<string>();
+    }
+    auto option = [&](const string &key) -> string {
+        auto found = input.named_parameters.find(key);
+        if (found == input.named_parameters.end()) { return ""; }
+        if (found->second.IsNull()) { throw BinderException("Authentication option cannot be NULL"); }
+        return found->second.GetValue<string>();
+    };
+    auto credential = [&](const string &env, const string &file) -> Json {
+        auto name = option(env); auto path = option(file);
+        if (name.empty() == path.empty()) { throw BinderException("Supply one credential environment variable or file"); }
+        return name.empty() ? Json{{"source","file"},{"value",path}} : Json{{"source","env"},{"value",name}};
+    };
+    auto method = option("auth");
+    if (method.empty()) {
+        method = !option("client_id").empty() ? "client_credentials" :
+            (!option("subject_token_env").empty() || !option("subject_token_file").empty()) ? "token_exchange" : "bearer";
+    }
+    Json auth;
+    if (method == "client_credentials") {
+        if (option("client_id").empty()) { throw BinderException("OAuth requires client_id"); }
+        auth = {{"type",method},{"client_id",option("client_id")},{"client_secret",credential("client_secret_env","client_secret_file")}};
+    } else if (method == "token_exchange") {
+        auth = {{"type",method},{"subject_token",credential("subject_token_env","subject_token_file")}};
+    } else if (method == "bearer") {
+        if (!option("token_file").empty()) {
+            if (token_env != input.named_parameters.end()) { throw BinderException("Choose token_env or token_file"); }
+            auth = {{"type",method},{"token",{{"source","file"},{"value",option("token_file")}}}};
+        }
+    } else { throw BinderException("Unknown catalog authentication type"); }
+    for (const auto &entry : input.named_parameters) {
+        auto key = entry.first;
+        bool allowed = key == "revision" || key == "auth";
+        if (method == "bearer") { allowed = allowed || key == "token_env" || key == "token_file"; }
+        if (method == "client_credentials") { allowed = allowed || key == "client_id" || key == "client_secret_env" || key == "client_secret_file" || key == "issuer"; }
+        if (method == "token_exchange") { allowed = allowed || key == "subject_token_env" || key == "subject_token_file"; }
+        if (method != "bearer") { allowed = allowed || key == "token_endpoint" || key == "oauth_scope"; }
+        if (!allowed) { throw BinderException("Authentication option does not apply to selected method"); }
+    }
+    if (method != "bearer") {
+        if (!option("issuer").empty() && !option("token_endpoint").empty()) { throw BinderException("Choose issuer or token_endpoint"); }
+        if (!option("token_endpoint").empty()) { auth["token_endpoint"] = option("token_endpoint"); }
+        if (!option("issuer").empty()) { auth["issuer"] = option("issuer"); }
+        auth["scope"] = option("oauth_scope").empty() ? "PRINCIPAL_ROLE:ALL" : option("oauth_scope");
+    }
+    if (!auth.is_null()) { reference["auth"] = auth; }
+    auto revision = input.named_parameters.find("revision");
+    if (revision != input.named_parameters.end()) {
+        if (revision->second.IsNull() || revision->second.GetValue<int64_t>() < 1) { throw BinderException("revision must be positive"); }
+        reference["revision"] = revision->second.GetValue<int64_t>();
+    }
+    auto schema = Bridge({{"op", "validate_schema"}, {"schema", {{"catalog", reference}}}});
+    return make_uniq<ProgramBindData>(Json({{"name", name}, {"schema", schema}}).dump());
+}
 void RegisterSchemaExecute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
     auto &state = input.global_state->Cast<ProgramState>();
     if (state.done) { return; }
@@ -548,7 +615,7 @@ Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
         auto name = input.inputs[0].GetValue<string>();
         auto found = schemas->schemas.find(name);
         if (found == schemas->schemas.end()) { throw BinderException("Unknown Orchid schema: %s", name); }
-        request = found->second;
+        request = Bridge({{"op", "resolve_schema"}, {"schema", found->second}});
         request["version"] = 1; request["query"] = input.inputs[1].GetValue<string>();
         request["language"] = input.table_function.name == "orchid_sparql_update" ? "sparql" : "cypher";
         auto language = input.named_parameters.find("language");
@@ -781,6 +848,13 @@ void LoadOrchid(ExtensionLoader &loader) {
     native_program.bind_operator=NativeProgramBind;
     loader.RegisterFunction(native_program);
     loader.RegisterFunction(TableFunction("__orchid_host_relation", {LogicalType::UBIGINT}, HostRelationScan, HostRelationBind, HostRelationInit));
+    TableFunction catalog("orchid_register_catalog", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterCatalogBind, ProgramInit);
+    catalog.named_parameters["token_env"] = LogicalType::VARCHAR;
+    catalog.named_parameters["revision"] = LogicalType::BIGINT;
+    for (auto name : {"auth", "client_id", "client_secret_env", "client_secret_file", "token_file", "token_endpoint", "issuer", "oauth_scope", "subject_token_env", "subject_token_file"}) {
+        catalog.named_parameters[name] = LogicalType::VARCHAR;
+    }
+    loader.RegisterFunction(catalog);
     loader.RegisterFunction(TableFunction("orchid_register_schema", {LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterSchemaBind, ProgramInit));
     TableFunction program("orchid_sparql_update", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ProgramExecute, ProgramBind, ProgramInit);
     program.named_parameters["base"] = LogicalType::VARCHAR;

@@ -64,7 +64,7 @@ pub(crate) fn slice_expr_op(
     )
 }
 
-fn evaluate_slice_bound(name: &str, expr: &IrExpr, graph: &PropertyGraph) -> IrResult<u64> {
+pub(crate) fn evaluate_slice_bound(name: &str, expr: &IrExpr, graph: &PropertyGraph) -> IrResult<u64> {
     let row = Row::new();
     match eval(expr, &row, graph)? {
         Value::Byte(value) if value >= 0 => Ok(value as u64),

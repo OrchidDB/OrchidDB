@@ -2,6 +2,7 @@
 #include "arrow_abi.h"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
+#include <cstdint>
 #include <functional>
 #include <fstream>
 #include <memory>
@@ -422,6 +423,112 @@ inline void query_federated(const detail::Compiler& compiler, const Json& reques
 
 } // namespace detail
 
+struct CypherEdge {
+  std::string name, source, target, cypher, description;
+  std::string target_column = "target";
+  Json properties = Json::object();
+  Json parameters = Json::array();
+  Json definition() const {
+    return {{"kind","cypher_relationship"},{"name",name},{"source",source},{"target",target},
+      {"cypher",cypher},{"description",description},{"parameters",parameters},
+      {"returns",{{"target",target_column},{"properties",properties}}}};
+  }
+};
+class Credential {
+  Json config_;
+  Credential(const std::string& source, const std::string& value) : config_({{"source",source},{"value",value}}) {
+    if (value.empty()) throw std::invalid_argument("Credential cannot be empty");
+  }
+public:
+  static Credential value(const std::string& value) { return Credential("value",value); }
+  static Credential env(const std::string& name) { return Credential("env",name); }
+  static Credential file(const std::string& path) { return Credential("file",path); }
+  Json configuration() const { return config_; }
+};
+class CatalogAuth {
+  Json config_;
+  explicit CatalogAuth(Json config) : config_(std::move(config)) {}
+  CatalogAuth option(const std::string& name, const std::string& value) const {
+    if (config_.at("type") == "bearer") throw std::invalid_argument("Bearer authentication has no OAuth options");
+    auto copy = *this; copy.config_[name] = value; return copy;
+  }
+public:
+  static CatalogAuth bearer(const Credential& token) {
+    return CatalogAuth({{"type","bearer"},{"token",token.configuration()}});
+  }
+  static CatalogAuth bearer(const std::string& token) { return bearer(Credential::value(token)); }
+  static CatalogAuth client_credentials(const std::string& id, const Credential& secret) {
+    return CatalogAuth({{"type","client_credentials"},{"client_id",id},{"client_secret",secret.configuration()},{"scope","PRINCIPAL_ROLE:ALL"}});
+  }
+  static CatalogAuth client_credentials(const std::string& id, const std::string& secret) {
+    return client_credentials(id,Credential::value(secret));
+  }
+  static CatalogAuth token_exchange(const Credential& token) {
+    return CatalogAuth({{"type","token_exchange"},{"subject_token",token.configuration()},{"scope","PRINCIPAL_ROLE:ALL"}});
+  }
+  CatalogAuth token_endpoint(const std::string& endpoint) const { return option("token_endpoint",endpoint); }
+  CatalogAuth issuer(const std::string& issuer) const {
+    if (config_.at("type") != "client_credentials") throw std::invalid_argument("OIDC discovery requires client credentials");
+    return option("issuer",issuer);
+  }
+  CatalogAuth scope(const std::string& scope) const { return option("scope",scope); }
+  Json configuration() const { return config_; }
+};
+class Catalog {
+  Json reference_;
+  std::string library_;
+  Json command(const std::string& action, Json values = Json::object()) const {
+    detail::Compiler runtime(library_);
+    values["op"] = "catalog"; values["action"] = action; values["catalog"] = reference_;
+    return runtime.command(values);
+  }
+public:
+  Catalog(const std::string& endpoint, const std::string& scope, const std::string& graph,
+      const std::string& token_env = "ORCHID_CATALOG_TOKEN",
+      const std::string& library = detail::Compiler::default_path())
+    : reference_({{"endpoint",endpoint},{"scope",scope},{"graph",graph},{"token_env",token_env}}), library_(library) {}
+  Catalog(const std::string& endpoint, const std::string& scope, const std::string& graph,
+      const CatalogAuth& auth, const std::string& library = detail::Compiler::default_path())
+    : Catalog(endpoint,scope,graph,"ORCHID_CATALOG_TOKEN",library) { reference_["auth"] = auth.configuration(); }
+  Catalog at_revision(std::int64_t revision) const {
+    if (revision < 1) throw std::invalid_argument("revision must be positive");
+    auto copy = *this; copy.reference_["revision"] = revision; return copy;
+  }
+  const std::string& library() const { return library_; }
+  Json configuration() const { return {{"catalog",reference_}}; }
+  Json discover(const std::string& search = "") const { return command("discover",{{"search",search}}); }
+  Json edges(const std::string& search = "") const { return command("edges",{{"search",search}}).at("objects"); }
+  Json principals() const { return command("principals"); }
+  Json principal(const std::string& id) const { return command("principal",{{"id",id}}); }
+  Json register_principal(const std::string& id, const std::vector<std::string>& roles,
+      std::int64_t expected_version = 0, bool enabled = true, bool admin = false, const Json& tenant = nullptr) const {
+    return command("register_principal",{{"id",id},{"expected_version",expected_version},{"enabled",enabled},
+      {"principal",{{"subject",id},{"roles",roles},{"admin",admin},{"tenant",tenant}}}});
+  }
+  Json grants() const { return command("grants"); }
+  Json set_grants(const std::vector<std::string>& discover, const std::vector<std::string>& execute,
+      std::int64_t expected_version = 0) const {
+    return command("set_grants",{{"expected_version",expected_version},{"definition",{{"discover",discover},{"execute",execute}}}});
+  }
+  Json register_edge(const std::string& id, const CypherEdge& edge, std::int64_t expected_version = 0) const {
+    return command("register_edge",{{"id",id},{"definition",edge.definition()},{"expected_version",expected_version}});
+  }
+  Json object(const std::string& id) const { return command("object",{{"id",id}}); }
+  Json draft() const { return command("draft"); }
+  Json register_graph(const std::vector<std::string>& objects, const std::string& description,
+      std::int64_t expected_version = 0, const std::string& execution_connector = "") const {
+    Json definition = {{"objects",objects},{"description",description}};
+    if (!execution_connector.empty()) definition["execution_connector"] = execution_connector;
+    return command("register_graph",{{"expected_version",expected_version},
+      {"definition",definition}});
+  }
+  Json publish(std::int64_t expected_revision, std::int64_t graph_version,
+      const std::map<std::string,std::int64_t>& object_versions) const {
+    return command("publish",{{"publication",{{"expected_revision",expected_revision},
+      {"graph_version",graph_version},{"object_versions",object_versions}}}});
+  }
+};
+
 /** Registered schema and execution on the application's existing engine. */
 class Connection {
   ExecutionEngine& engine_;
@@ -442,6 +549,10 @@ public:
     : engine_(engine), runtime_(library), statistics_(runtime_) {
     schema_ = runtime_.command({{"op","validate_schema"},{"schema",std::move(schema)}});
   }
+  Connection(ExecutionEngine& engine, const Catalog& catalog)
+    : Connection(engine, catalog.configuration(), catalog.library()) {}
+  Connection(ExecutionEngine& engine, const Catalog& catalog, const std::string& library)
+    : Connection(engine, catalog.configuration(), library) {}
   ArrowResult query(const std::string& text, Json parameters = Json::object(), const std::string& language = "cypher", Json authorization = nullptr) {
     return detail::query(statistics_, request(text, parameters, language, authorization), engine_);
   }

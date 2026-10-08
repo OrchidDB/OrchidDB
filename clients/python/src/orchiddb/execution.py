@@ -66,8 +66,20 @@ class DuckDBEngine:
 
 class Connection:
     """Retains a graph schema and executes on caller-owned engine connections."""
-    def __init__(self, engine, schema, *, engines=None, library=None):
+    def __init__(self, engine, schema=None, *, catalog=None, engines=None, library=None):
         import copy
+        from .catalog import Catalog
+        if catalog is not None:
+            if schema is not None:
+                raise TypeError("supply either schema or catalog")
+            if not isinstance(catalog, Catalog):
+                raise TypeError("catalog must be a Catalog")
+            schema = catalog
+        if schema is None:
+            raise TypeError("schema or catalog is required")
+        if isinstance(schema, Catalog):
+            library = library or schema._library
+            schema = schema._schema()
         self.engine = engine
         self._runtime = _Runtime(library)
         try:

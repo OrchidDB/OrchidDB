@@ -14,6 +14,11 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 fn request(input: Value) -> Result<Value, String> {
     match input["op"].as_str() {
         Some("validate_schema") => serde_json::to_value(orchiddb::session::Schema::from_value(input["schema"].clone())?).map_err(|e| e.to_string()),
+        Some("resolve_schema") => {
+            let schema = orchiddb::session::Schema::from_value(input["schema"].clone())?;
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e|e.to_string())?;
+            serde_json::to_value(runtime.block_on(schema.resolve())?).map_err(|e|e.to_string())
+        }
         Some("spicedb_check") => authorization::check(&input),
         Some("native_key") => {
             let values = input["rows"].as_array().ok_or("Missing key rows")?.iter().map(|row| {

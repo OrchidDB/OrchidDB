@@ -12,7 +12,8 @@ name = "orchiddb"
 path = "src/main.rs"
 
 [features]
-default = ["quickwit", "elasticsearch"]
+default = ["quickwit", "elasticsearch", "orchid-catalog"]
+orchid-catalog = ["orchiddb-client/orchid-catalog", "orchiddb/orchid-catalog"]
 quickwit = ["orchiddb-client/quickwit", "orchiddb/quickwit"]
 elasticsearch = ["orchiddb-client/elasticsearch", "orchiddb/elasticsearch"]
 

@@ -14,6 +14,10 @@ public final class Connection {
   private final Map<String, ExecutionEngine> engines;
   private final ExecutionEngine primary;
 
+  public Connection(Catalog catalog, ExecutionEngine primary, ExecutionEngine... others) {
+    this(catalog.schemaJson(), primary, others);
+  }
+
   public Connection(String schemaJson, ExecutionEngine primary, ExecutionEngine... others) {
     this.primary = Objects.requireNonNull(primary);
     try {
@@ -42,6 +46,15 @@ public final class Connection {
 
   public QueryResult query(Query query) throws SQLException {
     var request = schema.deepCopy();
+    if (request.has("catalog")) {
+      try {
+        var command = JSON.createObjectNode().put("op", "resolve_schema");
+        command.set("schema", request);
+        request = (ObjectNode) JSON.readTree(runtime.command(command.toString()));
+      } catch (Exception e) {
+        throw new SQLException("Cannot resolve Orchid catalog", e);
+      }
+    }
     request
         .put("version", 1)
         .put("dialect", primary.dialect().id())
@@ -57,7 +70,7 @@ public final class Connection {
                   query.authorization().subjectType(),
                   "subject_id",
                   query.authorization().subjectId())));
-    if (!request.has("engines")) {
+    if (!request.has("engines") || request.get("engines").isEmpty()) {
       request.putObject("engines").putObject(primary.id()).put("dialect", primary.dialect().id());
       request.put("execution_engine", primary.id());
       request

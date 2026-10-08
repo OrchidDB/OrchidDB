@@ -32,6 +32,7 @@ duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 quickwit = ["dep:reqwest"]
 elasticsearch = ["dep:reqwest"]
+orchid-catalog = ["dep:reqwest"]
 
 [dependencies]
 toml = "0.9.12"
@@ -66,6 +67,7 @@ sha1 = "0.10"
 base64 = "0.22"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
+jsonschema = { version = "0.33", default-features = false }
 oxilangtag = "0.1"
 oxrdf = "=0.3.4"
 peg = "0.8"

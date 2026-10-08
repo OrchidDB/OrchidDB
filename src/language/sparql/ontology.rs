@@ -180,7 +180,7 @@ impl OntologyMapping {
         let source = |s: &MappedSource| -> Result<String, String> { Ok(match s {
             MappedSource::Table(t) => format!("SELECT * FROM {t}"),
             MappedSource::Query(q) => q.clone(),
-            MappedSource::Computed(_) => return Err("computed edges must be exposed as a relational RDF view".into()),
+            MappedSource::Computed(_) | MappedSource::Cypher(_) => return Err("computed edges must be exposed as a relational RDF view".into()),
         }) };
         let identity = |node: &NodeMapping, alias: Option<&str>| -> Result<T, String> {
             let column = |c: &str| alias.map(|a| format!("{a}{c}")).unwrap_or_else(|| c.into());
@@ -203,7 +203,7 @@ impl OntologyMapping {
         for label in mapping.labels() {
             let node = mapping.node(&label).unwrap().clone();
             let table = match &node.source {
-                MappedSource::Computed(_) => return Err("computed sources are relationships, not nodes".into()),
+                MappedSource::Computed(_) | MappedSource::Cypher(_) => return Err("computed sources are relationships, not nodes".into()),
                 MappedSource::Table(t) => t.clone(),
                 MappedSource::Query(q) => {
                     let name = format!("__rdf_node_{}", node_sources.len());

@@ -27,7 +27,7 @@ pub(super) fn normalize_cypher_extensions(input: &str) -> String {
     for (placeholder, original) in identifiers {
         normalized = normalized.replace(&placeholder, &original);
     }
-    normalized
+    normalize_limit_parameter(&normalized)
 }
 
 /// Extension normalizers operate on source text. Hide escaped identifier
@@ -218,4 +218,53 @@ mod tests {
         assert!(normalized.contains("`a[1:2]`(NULL)"), "{normalized}");
         assert!(normalized.contains("bitwise_and(1, 2)"), "{normalized}");
     }
+}
+
+fn normalize_limit_parameter(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = String::with_capacity(input.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' | b'"' | b'`' => {
+                let quote = bytes[i];
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\\' {
+                        i = (i + 2).min(bytes.len());
+                    } else if bytes[i] == quote {
+                        i += 1;
+                        if bytes.get(i) == Some(&quote) { i += 1; } else { break; }
+                    } else { i += 1; }
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i + 1 < bytes.len() && &bytes[i..i + 2] != b"*/" { i += 1; }
+                i = (i + 2).min(bytes.len());
+            }
+            b'$' => {
+                let start = i + 1;
+                i = start;
+                while i < bytes.len() {
+                    let ch = input[i..].chars().next().unwrap();
+                    if ch.is_alphanumeric() || ch == '_' { i += ch.len_utf8(); } else { break; }
+                }
+                if input[start..i].eq_ignore_ascii_case("limit") {
+                    output.push_str(&input[copied..start]);
+                    output.push('`');
+                    output.push_str(&input[start..i]);
+                    output.push('`');
+                    copied = i;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    output.push_str(&input[copied..]);
+    output
 }

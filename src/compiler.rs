@@ -52,7 +52,10 @@ pub struct CompileRequest {
     pub parameters: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub bindings: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
     pub tables: Vec<Table>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<crate::catalog::CatalogReference>,
     #[serde(default)]
     pub representation_sources: Vec<crate::ir::rel::representation::RepresentationSource>,
     #[serde(default)]
@@ -74,6 +77,8 @@ pub struct CompileRequest {
     pub edges: Vec<Edge>,
     #[serde(default)]
     pub computed_relationships: Vec<crate::ir::rel::mapping::ComputedRelationship>,
+    #[serde(default)]
+    pub cypher_relationships: Vec<crate::catalog::CypherRelationship>,
     #[serde(default)]
     pub search_indexes: Vec<crate::ir::rel::search::SearchIndex>,
     #[serde(default)]
@@ -557,14 +562,32 @@ pub fn cypher_diagnostic(request: &CompileRequest) -> Option<crate::language::cy
 /// Compile a read query using only schema metadata. SQL is specialized to typed
 /// parameter values; caches must include the entire request, including values.
 pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
-    compile_parsed(request, None).await
+    compile_parsed(resolve_catalog(request).await?, None).await
+}
+
+pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<CompileRequest, String> {
+    if let Some(catalog) = request.catalog.take() {
+        let snapshot = catalog.resolve().await?;
+        let query = crate::session::Query { text: request.query, language: request.language, parameters: request.parameters, authorization: request.authorization };
+        let mut resolved = snapshot.schema.request(&request.dialect, &query)?;
+        resolved.version = request.version;
+        resolved.bindings = request.bindings;
+        resolved.native_values = request.native_values;
+        resolved.managed_table = request.managed_table;
+        resolved.statistics = request.statistics;
+        resolved.engines.extend(request.engines);
+        resolved.procedures.extend(request.procedures);
+        if !request.functions.is_empty() { resolved.functions = request.functions; }
+        if request.execution_engine.is_some() { resolved.execution_engine = request.execution_engine; }
+        Ok(resolved)
+    } else { Ok(request) }
 }
 
 /// Compile a parsed SPARQL query without a text round trip. Update datasets can
 /// distinguish unrestricted named graphs from the empty FROM NAMED set.
 pub async fn compile_sparql(request: CompileRequest, query: &crate::spargebra::Query) -> Result<CompiledSql, String> {
     if request.language != "sparql" { return Err("Expected SPARQL compiler request".into()); }
-    compile_parsed(request, Some(query)).await
+    compile_parsed(resolve_catalog(request).await?, Some(query)).await
 }
 
 /// Database-free frontend preparation shared by SQL-only and kernel hosts.
@@ -606,6 +629,7 @@ pub fn prepare_graph(request: &CompileRequest) -> Result<PreparedGraphQuery, Str
     prepare_graph_parsed(request, None)
 }
 fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargebra::Query>) -> Result<PreparedGraphQuery, String> {
+    if request.catalog.is_some() { return Err("resolve the catalog snapshot before synchronous graph preparation".into()); }
     if request.version != 1 {
         return Err("unsupported compiler protocol version".into());
     }
@@ -855,14 +879,14 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         .map(|(k, v)| Ok((k.clone(), parameter(v)?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     configure_rdf(&request, &mut mapping, &schemas)?;
-    let mapping = Arc::new(mapping);
+    crate::catalog::lowering::install(&mut mapping, &request.cypher_relationships, procedure_catalog(request)?)?;
     let mut graph=PropertyGraph::new();
     graph.procedures=Arc::new(procedure_catalog(&request)?);
     let operators: Arc<dyn OperatorTable> = Arc::new(registry);
     let plan = with_operator_table(operators.clone(), || -> Result<_, String> {
         let plan = match request.language.as_str() {
             "cypher" => {
-                crate::language::cypher::preparation::prepare(&request.query, &parameters, request.native_values.then_some(graph.procedures.as_ref()))
+                crate::catalog::lowering::prepare_query(&request.query, &parameters, &mut mapping, request.native_values)
                     .map_err(|e| e.to_string())?
             }
             "gremlin" => {
@@ -893,6 +917,7 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         };
         Ok(plan)
     })?;
+    let mapping = Arc::new(mapping);
     graph.mapping = Some(mapping.clone());
     Ok(PreparedGraphQuery { plan, graph, mapping, operators, managed_table: request.managed_table.clone() })
 }
@@ -1133,6 +1158,13 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
     let message: serde_json::Value = serde_json::from_str(input).map_err(|e|e.to_string())?;
+    if message["op"] == "catalog" {
+        return serde_json::to_string(&crate::catalog::command(&message).await?).map_err(|e| e.to_string());
+    }
+    if message["op"] == "resolve_schema" {
+        let schema = crate::session::Schema::from_value(message["schema"].clone())?;
+        return serde_json::to_string(&schema.resolve().await?).map_err(|e|e.to_string());
+    }
     if message["op"] == "validate_schema" {
         return serde_json::to_string(&crate::session::Schema::from_value(message["schema"].clone())?).map_err(|e|e.to_string());
     }

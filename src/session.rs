@@ -28,12 +28,41 @@ impl Schema {
                 ));
             }
         }
+        if object.contains_key("catalog") && object.keys().any(|key| !matches!(key.as_str(),"catalog"|"functions"|"procedures"|"engines"|"execution_engine")) {
+            return Err("catalog references accept only host function, procedure and engine bindings".into());
+        }
         // Reuse the core's field validation; schema files cannot hide ignored query fields.
         let mut request = object.clone();
         request.extend(serde_json::json!({"version":1,"dialect":"duckdb","language":"cypher","query":"RETURN 1"}).as_object().unwrap().clone());
-        serde_json::from_value::<crate::compiler::CompileRequest>(Value::Object(request))
+        let validated = serde_json::from_value::<crate::compiler::CompileRequest>(Value::Object(request))
             .map_err(|e| e.to_string())?;
+        for relationship in &validated.cypher_relationships { relationship.validate()?; }
         Ok(Self(object.clone()))
+    }
+    pub async fn resolve(&self) -> Result<Self, String> {
+        match self.0.get("catalog") {
+            Some(reference) => {
+                let reference: crate::catalog::CatalogReference = serde_json::from_value(reference.clone()).map_err(|e|e.to_string())?;
+                let snapshot = reference.resolve().await?;
+                let bindings = self.0.iter().filter(|(key,_)| key.as_str() != "catalog").map(|(key,value)|(key.clone(),value.clone())).collect();
+                snapshot.schema.with_bindings(&Value::Object(bindings))
+            }
+            None => Ok(self.clone()),
+        }
+    }
+    pub fn with_bindings(&self, bindings: &Value) -> Result<Self, String> {
+        let bindings = bindings.as_object().ok_or("catalog bindings must be an object")?;
+        let mut schema = self.0.clone();
+        for (name,value) in bindings {
+            if !matches!(name.as_str(),"functions"|"procedures"|"engines"|"execution_engine") {
+                return Err(format!("unsupported host catalog binding `{name}`"));
+            }
+            if matches!(name.as_str(),"procedures"|"engines") {
+                let target = schema.entry(name.clone()).or_insert_with(||Value::Object(Map::new())).as_object_mut().ok_or("catalog bindings must be objects")?;
+                target.extend(value.as_object().ok_or("catalog bindings must be objects")?.clone());
+            } else { schema.insert(name.clone(),value.clone()); }
+        }
+        Self::from_value(Value::Object(schema))
     }
     /// Internal adapter input; customer APIs execute Query separately from Schema.
     #[doc(hidden)]

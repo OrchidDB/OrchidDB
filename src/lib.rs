@@ -10,6 +10,7 @@ pub mod spargebra;
 #[doc(hidden)]
 pub mod compiler;
 pub mod session;
+pub mod catalog;
 pub mod execution;
 pub mod federation;
 pub mod operations;

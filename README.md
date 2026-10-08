@@ -63,6 +63,397 @@ SQL adapter.
 See [client interfaces and source builds](clients/README.md) for each language.
 This API change is in source; it does not republish older registry packages.
 
+## Optional Orchid Catalog
+
+Connections use an `InMemoryCatalog` by default. It retains the complete schema,
+including stored and computed edges, RDF, functions, source metadata, and engine
+routing. Rust applications can share one catalog between connections using
+`Connection::with_catalog`; updates use the expected revision to reject concurrent
+changes. `register_relationship`, `replace_relationship`, and `remove_relationship`
+update that shared in-memory catalog.
+
+Connect to a named graph directly. An existing bearer token can be read from
+`ORCHID_CATALOG_TOKEN` by default; OAuth client credentials and OIDC are supported
+through `CatalogAuth` below. No schema file is needed.
+
+```python
+from orchiddb import Catalog, Connection, DuckDBEngine
+
+catalog = Catalog("http://localhost:8182", scope="team", graph="knowledge")
+graph = Connection(DuckDBEngine(database), catalog=catalog)
+
+with graph.query("MATCH (p:Person)-[r:NEAREST]->(q:Person) RETURN p.id, q.id, r.score") as result:
+    print(result.read_all().to_pylist())
+```
+
+The same catalog is also a metadata client:
+
+```python
+edges = catalog.edges()
+metadata = catalog.discover("similar")
+pinned = catalog.at_revision(3)
+```
+
+Catalog registration is a separate operation from query execution. `CypherEdge`
+provides a typed declaration; `source` and `target` below are catalog entity IDs.
+
+```python
+from orchiddb import CypherEdge
+
+registered = catalog.register_edge(
+    "nearest",
+    CypherEdge(
+        name="NEAREST",
+        source="person",
+        target="person",
+        description="Highest scoring other person",
+        cypher="WITH source MATCH (target:Person) WHERE target.id <> source.id RETURN target, target.score AS score ORDER BY score DESC, target.id LIMIT 1",
+        properties={"score": {"type": "integer"}},
+    ),
+)
+```
+
+Registration creates a draft. To update an existing edge, pass its last read
+`expected_version`, available from `catalog.object(id)["version"]`. Graph roots are managed with `register_graph`. Review `draft()`
+and call `publish(expected_revision=..., graph_version=..., object_versions=...)`
+with the reviewed versions to make changes visible to queries. Conflicts are
+returned to the caller. Pinned catalogs are read-only.
+
+### Other clients
+
+These constructors use existing application-owned engine adapters:
+
+Python, JavaScript/TypeScript, Java, Rust, C++, and Elixir all expose catalog
+discovery, edge registration, draft reads, and publication with expected versions.
+The CLI and DuckDB extension accept the catalog connection directly for execution;
+use a language client's catalog API to manage declarations.
+
+```typescript
+const catalog = new Catalog("http://localhost:8182", {scope: "team", graph: "knowledge"});
+const graph = new Connection(engine, catalog);
+const edges = catalog.edges();
+```
+
+```java
+var catalog = new Catalog("http://localhost:8182", "team", "knowledge");
+var graph = new io.orchiddb.Connection(catalog, engine);
+var edges = catalog.edges();
+```
+
+```rust
+let catalog = std::sync::Arc::new(OrchidCatalog::from_env(
+    "http://localhost:8182", "team", "knowledge"
+)?);
+let mut graph = Connection::with_catalog(session, catalog.clone());
+let edges = catalog.edges(None).await?;
+```
+
+```cpp
+orchiddb::Catalog catalog("http://localhost:8182", "team", "knowledge");
+orchiddb::Connection graph(engine, catalog);
+auto edges = catalog.edges();
+```
+
+```elixir
+catalog = OrchidDB.Catalog.new("http://localhost:8182", scope: "team", graph: "knowledge")
+{:ok, graph} = OrchidDB.connect(adbc_connection, catalog)
+{:ok, edges} = OrchidDB.Catalog.edges(catalog)
+```
+
+```sh
+orchiddb query 'MATCH (p:Person) RETURN p.id' \
+  --catalog http://localhost:8182 --scope team --graph knowledge \
+  --database people.duckdb --no-iceberg --format table
+```
+
+```sql
+CALL orchid_register_catalog('knowledge', 'http://localhost:8182', 'team', 'knowledge');
+SELECT * FROM orchid_query('knowledge', 'MATCH (p:Person) RETURN p.id');
+```
+
+JSON remains an optional deployment configuration format. The equivalent schema
+reference is `{"catalog":{"endpoint":"http://localhost:8182","scope":"team","graph":"knowledge"}}`.
+Use `token_env` to select another credential environment variable and `revision`
+to pin a publication. Credentials are not published as catalog metadata.
+
+Each execution resolves one snapshot before planning. Add `revision` to pin an
+immutable publication; the service still checks current grants on every resolve.
+The runner uses caller-owned engine connections and credentials. Catalog connector
+metadata does not cause it to open database connections automatically. Host
+`functions`, `procedures`, `engines`, and `execution_engine` bindings can accompany
+the catalog reference.
+
+The Rust client's `orchid-catalog` feature exposes `OrchidCatalog`, which implements
+the same `Catalog` trait as `InMemoryCatalog`. Its API supports object registration,
+graph drafts, publication with expected versions, grants, discovery, historical
+resolution, and audit reads. `snapshot()` retains the complete manifest and caller
+principal along with the executable schema. `with_bindings` supplies host-owned
+function, procedure, and engine bindings. Native clients, the CLI, and the extension
+enable the optional HTTP provider in their default builds.
+
+### Catalog authentication
+
+Authentication follows the choices provided by
+[Apache Polaris](https://polaris.apache.org/releases/1.8.0/managing-security/external-idp/):
+
+| Setup | Token issuer | Client configuration |
+| --- | --- | --- |
+| Existing access token | Catalog or configured identity provider | `CatalogAuth.bearer(...)` |
+| Internal OAuth | Orchid Catalog | Client ID and secret; default catalog token endpoint |
+| External OAuth/OIDC | Your identity provider | Client ID and secret plus its issuer or token endpoint |
+| Token exchange | Catalog or configured OAuth token endpoint | Subject access token |
+| Mixed | Catalog and configured identity provider | Either supported credential source |
+
+Internal tokens support symmetric or RSA signing. External authentication supports
+OIDC discovery, JWT verification against rotating JWKS, or configured introspection
+with claim mapping for opaque tokens. The service checks issuer, audience, expiry,
+and activation time. Identity and role claim paths, role filters and transformations,
+and required local principal registration are configurable. Authentication policies
+can be overridden per existing catalog scope, without introducing another catalog
+hierarchy. See the catalog service's README for deployment configuration.
+
+The six language clients use one shared implementation for OAuth token acquisition,
+caching, and renewal on requests. Client credentials obtain a new token before
+expiry. Token exchange renews a still-valid token; an expired token requires a new
+credential. Supplying a bearer token directly leaves renewal with the application.
+Environment variables and files are reread when obtaining credentials, including
+when a connection is already open. Choose an explicit token endpoint or OIDC issuer;
+credentials are never forwarded to a token endpoint supplied by catalog metadata.
+
+Java:
+
+```java
+var auth = CatalogAuth.clientCredentials(
+    "reporting-service", Credential.environment("CATALOG_CLIENT_SECRET")
+);
+var catalog = new Catalog("https://catalog.example.com", "team", "knowledge", auth);
+var graph = new io.orchiddb.Connection(catalog, engine);
+```
+
+For an external identity provider, use
+`auth.issuer("https://identity.example.com/realms/company")` or
+`auth.tokenEndpoint("https://identity.example.com/oauth/token")`. Select roles with
+`auth.scope("PRINCIPAL_ROLE:reader")`. For a pre-issued token use
+`CatalogAuth.bearer(token)`; `Credential.file(Path.of("/run/secrets/catalog-token"))`
+reads a mounted secret. `CatalogAuth.tokenExchange(credential)` supports renewal
+through token exchange.
+
+Python:
+
+```python
+from orchiddb import Catalog, CatalogAuth, Credential
+
+catalog = Catalog("https://catalog.example.com", scope="team", graph="knowledge",
+    auth=CatalogAuth.client_credentials("reporting-service", Credential.env("CATALOG_CLIENT_SECRET")))
+```
+
+JavaScript/TypeScript:
+
+```typescript
+const catalog = new Catalog("https://catalog.example.com", {
+  scope: "team", graph: "knowledge",
+  auth: CatalogAuth.clientCredentials("reporting-service", Credential.env("CATALOG_CLIENT_SECRET"))
+});
+```
+
+Rust:
+
+```rust
+let catalog = OrchidCatalog::with_auth(
+    "https://catalog.example.com",
+    CatalogAuth::client_credentials("reporting-service", Credential::env("CATALOG_CLIENT_SECRET")),
+    "team", "knowledge",
+)?;
+```
+
+C++:
+
+```cpp
+orchiddb::Catalog catalog("https://catalog.example.com", "team", "knowledge",
+    orchiddb::CatalogAuth::client_credentials("reporting-service",
+        orchiddb::Credential::env("CATALOG_CLIENT_SECRET")));
+```
+
+Elixir:
+
+```elixir
+catalog = OrchidDB.Catalog.new("https://catalog.example.com",
+  scope: "team", graph: "knowledge",
+  auth: OrchidDB.CatalogAuth.client_credentials("reporting-service",
+    OrchidDB.Credential.env("CATALOG_CLIENT_SECRET")))
+```
+
+CLI:
+
+```sh
+orchiddb query 'MATCH (p:Person) RETURN p.id' \
+  --catalog https://catalog.example.com --scope team --graph knowledge \
+  --client-id reporting-service --client-secret-env CATALOG_CLIENT_SECRET \
+  --database people.duckdb --no-iceberg --format table
+```
+
+Use `--issuer` or `--token-endpoint` for external OAuth, `--oauth-scope` to select
+roles, `--token-file` for an existing token, or `--auth token_exchange` with
+`--subject-token-env`/`--subject-token-file`. Client secrets can also use
+`--client-secret-file`. Secret values do not need to appear in command arguments.
+
+DuckDB extension:
+
+```sql
+CALL orchid_register_catalog('knowledge', 'https://catalog.example.com', 'team', 'knowledge',
+    client_id = 'reporting-service', client_secret_env = 'CATALOG_CLIENT_SECRET');
+SELECT * FROM orchid_query('knowledge', 'MATCH (p:Person) RETURN p.id');
+```
+
+The same options are named arguments: `auth`, `token_env`, `token_file`, `client_id`,
+`client_secret_env`, `client_secret_file`, `token_endpoint`, `issuer`, `oauth_scope`,
+`subject_token_env`, and `subject_token_file`. Credentials stay outside SQL text.
+
+An administrator can create a workload principal and grant it graph access:
+
+```java
+var issued = catalog.registerPrincipal(
+    "reporting-service", new Catalog.Principal("reporting-service", List.of("reader"))
+);
+var clientSecret = issued.get("client_secret").asText();
+catalog.setGrants(List.of("reader"), List.of("reader"), 0);
+```
+
+Store the returned secret in your application's secret store. The service stores
+its hash; principal reads never return it. `principal(id)` returns the current
+version. Registering the same ID with that expected version rotates the secret;
+setting `enabled` to false disables the principal. Internal access tokens are bound
+to the credential generation, so rotation or disablement also invalidates existing
+tokens. Grant updates replace the grant set and require its last-read version.
+The Python, JS/TS, Rust, C++, and Elixir catalog APIs expose the same operations.
+
+### Catalog connection flow
+
+1. Bootstrap the service administrator, or configure a trusted external identity
+   provider. Administrators register workload principals and grant graph access.
+2. Construct a `Catalog` with its endpoint, scope, graph, and `CatalogAuth`, then
+   attach it to your existing database connection. Register definitions through
+   the catalog API and publish a graph revision when it is ready.
+3. Submit queries through the connection. The shared runtime obtains an access
+   token, resolves the active or pinned graph under current grants, and executes
+   against your database session. Query text stays with the execution host.
+4. Client credentials and token exchange renew tokens on demand. Rotating an
+   internal principal secret invalidates its previous tokens; update the mounted
+   secret or environment credential before the next request. Bearer-only clients
+   supply their own replacement tokens.
+
+### Catalog smoke checks
+
+With the local client development dependencies installed and `orchid-catalog`
+checked out alongside this repository:
+
+```sh
+make catalog-smoke
+```
+
+This builds local artifacts incrementally, starts a temporary SQLite catalog and
+local OIDC fixture, and checks Python, JS/TS, Java, Rust, C++, Elixir, the CLI, and
+the DuckDB extension against real DuckDB queries. It covers credential sources,
+OAuth, token exchange, principal management, renewal, rejection, revocation, and
+authentication configuration reload. Derived-edge checks cover traversal in every
+client, per-source limits, default and explicit arguments, property filters,
+reverse and optional traversal, invalid arguments, draft isolation, and active
+versus pinned publication revisions. It removes its temporary
+service, database, and credentials afterwards. It does not run conformance or
+release tasks, or start PostgreSQL or StarRocks.
+
+Reuse existing builds with
+`make catalog-smoke CATALOG_SMOKE_ARGS=--no-build`. To select clients, use
+`CATALOG_SMOKE_ARGS="--no-build --only java python"`. The OIDC and introspection
+checks use a local fixture; they do not certify a particular external provider.
+
+### Catalog access and ownership
+
+The catalog service checks current graph grants for discovery and execution
+metadata resolution, including reads of pinned revisions. Database sessions and
+storage credentials remain application-owned. Access to catalog metadata does
+not grant access to the underlying tables. Draft registration and publication
+currently require a catalog-service administrator.
+
+The current service has flat scopes and graphs. Nested namespaces, delegated
+per-edge grants, paginated discovery, and storage
+credential vending are not implemented. An external metadata catalog is distinct
+from Orchid's query federation: loading a graph does not connect new engines or
+turn an upstream catalog into a writable local catalog.
+
+Catalog transport requires HTTPS outside loopback and ignores ambient HTTP proxy
+settings. Client errors do not repeat server response bodies. Applications must
+keep their own logs, retained snapshots, statistics exports, and database results inside the authorized
+boundary. Current authorization is checked on every remote resolution; a pinned
+revision does not preserve revoked access.
+
+### Cypher relationship declarations
+
+Local schemas accept `cypher_relationships`; protocol 2 catalog publications supply
+the same declarations as `cypher_relationship` objects. Each body receives a node
+named `source` and returns the declared target node plus edge properties. Function
+and procedure implementations come from the runner's registry.
+
+For a mapped `Person` entity with `id` and `score` properties, a declaration is:
+
+```json
+{
+  "name": "NEAREST",
+  "source": "Person",
+  "target": "Person",
+  "parameters": [
+    {"name": "k", "schema": {"type": "integer", "minimum": 1}, "default": 1}
+  ],
+  "cypher": "WITH source MATCH (target:Person) WHERE target.id <> source.id RETURN target, target.score AS score ORDER BY score DESC, target.id LIMIT $k",
+  "returns": {"target": "target", "properties": {"score": {"type": "integer"}}}
+}
+```
+
+In service objects, `source` and `target` refer to entity object IDs; resolution
+translates those IDs to the entities' graph labels. The service object also requires
+`kind` and `description`.
+
+Use normal Cypher relationship syntax to apply defaults:
+
+```cypher
+MATCH (p:Person)-[r:NEAREST]->(q:Person)
+RETURN p.id, q.id, r.score
+```
+
+Supply named arguments directly in the relationship map:
+
+```cypher
+MATCH (p:Person)-[r:NEAREST {k: $k}]->(target:Person)
+RETURN p.id, target.id, r.score
+```
+
+Arguments are literals or query parameters, validated against their JSON Schemas.
+Omitted arguments use catalog defaults; arguments without defaults are required.
+For a derived edge, map keys declared as parameters bind expansion arguments. Other
+keys retain property equality filtering. If a parameter and returned property share
+a name, the map binds the parameter; `r.name` and explicit `WHERE` predicates refer
+to the returned property. Each occurrence binds independently. Stored relationships
+retain ordinary property-map semantics. The catalog exposes parameter schemas and
+defaults alongside the edge description; parameter JSON Schemas can carry a
+`description` explaining threshold and ranking semantics. Positional procedure calls remain supported. The body is read-only;
+its ordering, limits, and duplicate handling apply separately to each source node.
+Bodies lower through the shared graph and relational planners.
+
+For a catalog edge declaring `score` as a minimum relevance threshold and `limit`
+as the number of results per source, callers can write:
+
+```cypher
+MATCH (q:Question)-[r:RELEVANT_TO {score: $minimumScore, limit: $limit}]->(d:Document)
+WHERE q.id = $questionId
+RETURN d.title, r.score
+ORDER BY r.score DESC
+```
+
+The map binds the two declared parameters before the edge body is lowered.
+`r.score` is the resulting relevance score, not an equality check against the
+threshold. A further `WHERE r.score ...` condition filters the expanded results.
+
+
 ## StarRocks
 
 StarRocks uses the `starrocks` dialect and a caller-owned MySQL-compatible

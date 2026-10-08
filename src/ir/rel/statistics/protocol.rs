@@ -32,7 +32,11 @@ pub async fn command(input: &str) -> Result<String, String> {
     if input.len() > MAX_BYTES * 2 {
         return Err("statistics command exceeds input budget".into());
     }
-    let v: Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    let mut v: Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    if matches!(v["op"].as_str(),Some("begin" | "compile")) && v["request"]["catalog"].is_object() {
+        let request = serde_json::from_value(v["request"].clone()).map_err(|e|e.to_string())?;
+        v["request"] = serde_json::to_value(crate::compiler::resolve_catalog(request).await?).map_err(|e|e.to_string())?;
+    }
     // Do not retain the registry lock while planning or awaiting anything.
     if v["op"] == "compile" {
         let catalog = {

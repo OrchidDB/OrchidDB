@@ -75,6 +75,7 @@ pub enum MappedSource {
     Query(String),
     /// Declarative endpoint expressions compiled into a relational plan.
     Computed(Box<ComputedRelationship>),
+    Cypher(Box<crate::catalog::CypherRelationship>),
 }
 
 /// Ordered physical columns forming an element key or relationship endpoint.
@@ -430,10 +431,13 @@ impl EdgeMapping {
 #[derive(Default, Clone)]
 pub struct GraphMapping {
     pub(crate) rdf: super::rdf::RdfDatasetMapping,
+    pub(crate) cypher_relationships: BTreeMap<String, crate::catalog::CypherRelationship>,
+    pub(crate) catalog_procedures: crate::ir::procedures::ProcedureCatalog,
     pub(crate) source_metadata: BTreeMap<String, super::source_metadata::SourceMetadata>,
     logical_functions: BTreeMap<String, Arc<ScalarUDF>>,
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
+    edge_instances: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     representation_sources: BTreeMap<String, super::representation::RepresentationSource>,
     statistics: Option<Arc<super::statistics::StatisticsSnapshot>>,
@@ -1050,12 +1054,39 @@ impl GraphMapping {
         Ok(self)
     }
 
+    pub fn map_cypher_relationship(&mut self, rule: crate::catalog::CypherRelationship) -> RelResult<&mut Self> {
+        let mut candidate = self.clone();
+        let procedures = candidate.catalog_procedures.clone();
+        crate::catalog::lowering::install(&mut candidate,&[rule],procedures).map_err(RelError::Unsupported)?;
+        *self = candidate;
+        Ok(self)
+    }
+
     pub fn node(&self, label: &str) -> Option<&NodeMapping> {
         self.nodes.get(label)
     }
 
     pub fn edge(&self, rel_type: &str) -> Option<&EdgeMapping> {
-        self.edges.get(rel_type)
+        self.edge_instances.get(rel_type).or_else(|| self.edges.get(rel_type))
+    }
+
+    pub(crate) fn bind_edge_arguments(&mut self, name: &str, arguments: &BTreeMap<String, serde_json::Value>) -> Result<String, String> {
+        let mut edge = self.edge(name).ok_or_else(|| format!("unknown relationship {name}"))?.clone();
+        let MappedSource::Cypher(rule) = &mut edge.source else {
+            return Err(format!("relationship {name} does not declare parameters"));
+        };
+        let values = rule.arguments(arguments)?;
+        for parameter in &mut rule.parameters {
+            parameter.default = Some(values[&parameter.name].clone());
+        }
+        let mut index = self.edge_instances.len();
+        let alias = loop {
+            let candidate = format!("__orchid_edge_arguments_{index}");
+            if self.edge(&candidate).is_none() { break candidate; }
+            index += 1;
+        };
+        self.edge_instances.insert(alias.clone(), edge);
+        Ok(alias)
     }
 
     pub fn labels(&self) -> Vec<String> {
@@ -1080,7 +1111,7 @@ impl GraphMapping {
                     .chain(self.edges.values().map(|m| &m.source))
                     .filter_map(|source| match source {
                         MappedSource::Table(name) => Some(name.clone()),
-                        MappedSource::Query(_) | MappedSource::Computed(_) => None,
+                        MappedSource::Query(_) | MappedSource::Computed(_) | MappedSource::Cypher(_) => None,
                     }),
             )
             .collect()
@@ -1106,6 +1137,7 @@ impl GraphMapping {
             }
             MappedSource::Query(sql) => self.plan_sql(sql),
             MappedSource::Computed(rule) => computed::plan(self, rule),
+            MappedSource::Cypher(rule) => crate::catalog::lowering::relationship_plan(self,rule).map_err(RelError::Unsupported),
         }
     }
 
@@ -1695,6 +1727,9 @@ impl GraphMapping {
             .map_err(|e| RelError::Unsupported(e.to_string()))?.unwrap_or_default();
         let indexes = document.as_table_mut().and_then(|t|t.remove("search_indexes"))
             .map(|v|v.try_into::<Vec<super::search::SearchIndex>>()).transpose().map_err(|e|RelError::Unsupported(e.to_string()))?.unwrap_or_default();
+        let cypher = document.as_table_mut().and_then(|t| t.remove("cypher_relationships"))
+            .map(|value|value.try_into::<Vec<crate::catalog::CypherRelationship>>()).transpose()
+            .map_err(|e|RelError::Unsupported(e.to_string()))?.unwrap_or_default();
         let mut computed = Vec::new();
         if let Some(edges) = document.get_mut("edge").and_then(toml::Value::as_table_mut) {
             let names = edges.iter().filter(|(_, v)| v.get("source").is_some() || v.get("target").is_some()).map(|(k, _)| k.clone()).collect::<Vec<_>>();
@@ -1813,6 +1848,7 @@ impl GraphMapping {
         for metadata in source_metadata { mapping.register_source_metadata(metadata)?; }
         for index in indexes { mapping.register_search_index(index)?; }
         for rule in computed { mapping.map_computed_relationship(rule)?; }
+        crate::catalog::lowering::install(&mut mapping, &cypher, Default::default()).map_err(RelError::Unsupported)?;
         mapping.validate_foreign_keys()?;
         Ok(mapping)
     }
@@ -1838,13 +1874,16 @@ impl GraphMapping {
             match source {
                 MappedSource::Table(table) => format!("table = {}", quote(table)),
                 MappedSource::Query(sql) => format!("query = {}", quote(sql)),
-                MappedSource::Computed(_) => unreachable!("serialized separately"),
+                MappedSource::Computed(_) | MappedSource::Cypher(_) => unreachable!("serialized separately"),
             }
         }
         let mut out = if self.source_metadata.is_empty() { String::new() } else {
             toml::to_string(&BTreeMap::from([("source_metadata", self.source_metadata.values().collect::<Vec<_>>())]))
                 .map_err(|e| RelError::Unsupported(format!("source metadata cannot be represented in TOML: {e}")))?
         };
+        if !self.cypher_relationships.is_empty() {
+            out.push_str(&toml::to_string(&BTreeMap::from([("cypher_relationships",self.cypher_relationships.values().collect::<Vec<_>>())])).map_err(|e|RelError::Unsupported(format!("Cypher relationship TOML: {e}")))?);
+        }
         for (label, node) in &self.nodes {
             out.push_str(&format!("[node.{label}]\n"));
             out.push_str(&source_line(&node.source));
@@ -1859,6 +1898,7 @@ impl GraphMapping {
             out.push('\n');
         }
         for (rel_type, edge) in &self.edges {
+            if self.cypher_relationships.contains_key(rel_type) { continue; }
             if let MappedSource::Computed(rule) = &edge.source {
                 let mut value = toml::Value::try_from(rule.as_ref()).map_err(|e| RelError::Unsupported(format!("relationship TOML: {e}")))?;
                 value.as_table_mut().unwrap().remove("name");

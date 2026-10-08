@@ -18,6 +18,7 @@ arrow = { version = "58.2.0", default-features = false, features = ["ffi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
-default = ["quickwit", "elasticsearch"]
+orchid-catalog = ["orchiddb/orchid-catalog"]
+default = ["quickwit", "elasticsearch", "orchid-catalog"]
 quickwit = ["orchiddb/quickwit"]
 elasticsearch = ["orchiddb/elasticsearch"]

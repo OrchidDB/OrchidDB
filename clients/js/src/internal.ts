@@ -60,7 +60,9 @@ export interface CompileRequest {
   engines?: Readonly<Record<string, {dialect: EngineDialect}>>; execution_engine?: string;
   parameters?: Readonly<Record<string, unknown>>;
   authorization?: Authorization;
-  tables: readonly Table[]; nodes?: readonly NodeMapping[]; edges?: readonly EdgeMapping[];
+  catalog?: {endpoint: string; scope: string; graph: string; token_env: string; auth?: import("./catalog-auth.js").CatalogAuthConfig; revision?: number};
+  cypher_relationships?: readonly {name: string; description?: string; source: string; target: string; parameters?: readonly {name: string; schema: unknown; default?: unknown}[]; cypher: string; returns: {target: string; properties?: Readonly<Record<string, unknown>>}}[];
+  tables?: readonly Table[]; nodes?: readonly NodeMapping[]; edges?: readonly EdgeMapping[];
   functions?: readonly FunctionSignature[]; ontology?: Ontology;
   rdf?: readonly RdfMapping[]; dataset?: string;
   logical_sources?: readonly unknown[]; collection_sources?: readonly unknown[];

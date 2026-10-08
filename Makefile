@@ -44,6 +44,7 @@ help:
 	@echo 'make build          Build the core library'
 	@echo 'make cli            Build the standalone CLI'
 	@echo 'make native         Build and stage the shared client library'
+	@echo 'make catalog-smoke  Smoke catalog auth and all clients on DuckDB'
 	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
 	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
 	@echo 'make starrocks-test Start local StarRocks and check query execution'
@@ -101,3 +102,7 @@ starrocks-test:
 .PHONY: starrocks-conformance
 starrocks-conformance:
 	$(PYTHON) scripts/starrocks_test.py --conformance
+
+.PHONY: catalog-smoke
+catalog-smoke:
+	$(TEST_PYTHON) scripts/catalog_smoke.py $(CATALOG_SMOKE_ARGS)

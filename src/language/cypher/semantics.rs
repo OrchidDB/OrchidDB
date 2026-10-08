@@ -138,6 +138,14 @@ pub fn analyze_query(query: &Query) -> CypherPlanResult<AnalyzedQuery<'_>> {
     })
 }
 
+pub(crate) fn validate_relationship_target(query: &Query, target: &str) -> CypherPlanResult<()> {
+    let outputs = SemanticAnalyzer::default().analyze_query_with_scope(query, &mut SemanticScope::default())?;
+    if !outputs.iter().any(|output| output.name == target && output.kind == BindingKind::Node) {
+        return Err(CypherPlanError::Invalid("relationship target must be a node".into()));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Default)]
 struct SemanticAnalyzer {
     synthetic_counter: usize,

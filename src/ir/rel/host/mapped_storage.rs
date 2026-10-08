@@ -37,7 +37,7 @@ pub(crate) fn resolved_source(
     Ok(match src {
         MappedSource::Table(name) => table(&mapping.resolve_table(name, filters)),
         MappedSource::Query(sql) => format!("({sql})"),
-        MappedSource::Computed(_) => return Err("computed relationship was not planned".into()),
+        MappedSource::Computed(_) | MappedSource::Cypher(_) => return Err("computed relationship was not planned".into()),
     })
 }
 
@@ -70,7 +70,7 @@ pub fn metadata(
     if mapping.rel_types().iter().any(|name| {
         matches!(
             mapping.edge(name).unwrap().source,
-            MappedSource::Computed(_)
+            MappedSource::Computed(_) | MappedSource::Cypher(_)
         )
     }) {
         for name in mapping.labels() {
@@ -134,7 +134,7 @@ pub fn metadata(
             format!("{} AS __dst_id", m.dst_column.sql(None)),
         ];
         projection.extend(property_projection(&m.properties));
-        let batch = if matches!(m.source, MappedSource::Computed(_)) {
+        let batch = if matches!(m.source, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
             let plan = mapping.source_plan(&m.source).map_err(|e| e.to_string())?;
             let schema = plan.schema().as_arrow();
             let mut fields = vec![

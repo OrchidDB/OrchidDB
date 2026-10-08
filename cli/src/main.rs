@@ -12,11 +12,21 @@ use std::{
 
 const HELP: &str = "OrchidDB: execute graph queries over DuckDB + Iceberg
 Usage: orchiddb query QUERY --schema SCHEMA.json [--language cypher|gremlin|sparql]
+       orchiddb query QUERY --catalog URL --scope SCOPE --graph GRAPH
        orchiddb query --file QUERY_FILE --schema SCHEMA.json
        orchiddb statistics --schema SCHEMA.json --output SNAPSHOT.json
        orchiddb --version
 
 Schema files contain graph mappings and source metadata only, never query text.
+--catalog URL selects Orchid Catalog instead of --schema.
+--scope and --graph identify its graph; --revision pins a publication.
+--token-env NAME selects the credential environment variable (default: ORCHID_CATALOG_TOKEN).
+--auth bearer|client_credentials|token_exchange selects catalog authentication.
+--token-file FILE reads a bearer token from a mounted file.
+--client-id ID and --client-secret-env NAME (or --client-secret-file FILE) use OAuth.
+--token-endpoint URL overrides the catalog token endpoint; --issuer URL uses OIDC discovery.
+--oauth-scope ROLES selects OAuth roles (default: PRINCIPAL_ROLE:ALL).
+--subject-token-env NAME (or --subject-token-file FILE) supplies a token to exchange.
 --parameters FILE supplies a JSON object of query parameters.
 --database FILE opens a persistent database; --init FILE runs setup SQL first.
 --format arrow|table selects results (default: arrow).
@@ -51,6 +61,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let mut query = None;
     let mut query_file = None;
     let mut schema_path = None;
+    let mut catalog_endpoint = None;
+    let mut catalog_scope = None;
+    let mut catalog_graph = None;
+    let mut catalog_revision: Option<i64> = None;
+    let mut token_env = None;
+    let mut auth_options = serde_json::Map::new();
     let mut language = "cypher".to_string();
     let mut parameters = serde_json::Map::new();
     let mut database = None;
@@ -62,6 +78,15 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let mut engines_path = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--catalog" => catalog_endpoint = Some(args.next().ok_or("missing catalog URL")?),
+            "--scope" => catalog_scope = Some(args.next().ok_or("missing catalog scope")?),
+            "--graph" => catalog_graph = Some(args.next().ok_or("missing graph name")?),
+            "--revision" => catalog_revision = Some(args.next().ok_or("missing revision")?.parse()?),
+            "--auth" | "--client-id" | "--client-secret-env" | "--client-secret-file" | "--token-endpoint" | "--issuer" | "--oauth-scope" | "--token-file" | "--subject-token-env" | "--subject-token-file" => {
+                let key = arg.trim_start_matches("--").replace('-', "_");
+                auth_options.insert(key, args.next().ok_or("missing authentication option value")?.into());
+            }
+            "--token-env" => token_env = Some(args.next().ok_or("missing token environment variable")?),
             "--statistics" => statistics_path = Some(args.next().ok_or("missing statistics path")?),
             "--output" => output_path = Some(args.next().ok_or("missing output path")?),
             "--schema" => schema_path = Some(args.next().ok_or("missing schema file")?),
@@ -86,10 +111,23 @@ async fn run() -> Result<(), Box<dyn Error>> {
     if format != "arrow" && format != "table" {
         return Err("format must be arrow or table".into());
     }
-    let schema = orchiddb::session::Schema::from_json(&fs::read_to_string(
-        schema_path.ok_or("--schema is required")?,
-    )?)
-    .map_err(io::Error::other)?;
+    let schema = match (schema_path, catalog_endpoint) {
+        (Some(path), None) => {
+            if catalog_scope.is_some() || catalog_graph.is_some() || catalog_revision.is_some() || token_env.is_some() || !auth_options.is_empty() {
+                return Err("catalog options require --catalog".into());
+            }
+            orchiddb::session::Schema::from_json(&fs::read_to_string(path)?)
+        }
+        (None, Some(endpoint)) => orchiddb::session::Schema::from_value(json!({"catalog": {
+            "endpoint": endpoint,
+            "scope": catalog_scope.ok_or("--catalog requires --scope")?,
+            "graph": catalog_graph.ok_or("--catalog requires --graph")?,
+            "token_env": token_env.clone().unwrap_or_else(|| "ORCHID_CATALOG_TOKEN".into()),
+            "auth": catalog_auth(&auth_options, token_env.as_deref())?,
+            "revision": catalog_revision,
+        }})),
+        _ => return Err("supply either --catalog or --schema".into()),
+    }.map_err(io::Error::other)?;
     if query.is_some() && query_file.is_some() {
         return Err("supply query text or --file, not both".into());
     }
@@ -107,6 +145,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let mut query = orchiddb::session::Query::cypher(text);
     query.language = language;
     query.parameters = parameters.into_iter().collect();
+    let schema = schema.resolve().await.map_err(io::Error::other)?;
     let request =
         serde_json::to_value(schema.request("duckdb", &query).map_err(io::Error::other)?)?;
     let mut statistics = Statistics::default();
@@ -351,4 +390,40 @@ mod statistics_adapter_tests {
             42
         );
     }
+}
+
+fn catalog_auth(options: &serde_json::Map<String,Value>, token_env: Option<&str>) -> Result<Option<orchiddb::catalog::CatalogAuth>,Box<dyn Error>> {
+    use orchiddb::catalog::{CatalogAuth,Credential};
+    if options.is_empty() { return Ok(None); }
+    let value = |name: &str|options.get(name).and_then(Value::as_str);
+    let kind = value("auth").unwrap_or(if value("client_id").is_some() { "client_credentials" } else if value("subject_token_env").is_some() || value("subject_token_file").is_some() { "token_exchange" } else { "bearer" });
+    let credential = |env: &str, file: &str| -> Result<Credential,Box<dyn Error>> {
+        match (value(env),value(file)) {
+            (Some(name),None) => Ok(Credential::env(name)),
+            (None,Some(path)) => Ok(Credential::file(path)),
+            _=>Err("supply exactly one credential environment variable or file".into()),
+        }
+    };
+    let auth = match kind {
+        "bearer" => {
+            if value("token_file").is_some() && token_env.is_some() { return Err("choose --token-file or --token-env".into()); }
+            CatalogAuth::bearer(value("token_file").map(Credential::file).unwrap_or_else(||Credential::env(token_env.unwrap_or("ORCHID_CATALOG_TOKEN"))))
+        }
+        "client_credentials" => CatalogAuth::client_credentials(value("client_id").ok_or("OAuth requires --client-id")?,credential("client_secret_env","client_secret_file")?),
+        "token_exchange" => CatalogAuth::token_exchange(credential("subject_token_env","subject_token_file")?),
+        _=>return Err("unknown catalog authentication type".into()),
+    };
+    for key in options.keys() {
+        let allowed = match kind {
+            "bearer" => matches!(key.as_str(),"auth"|"token_file"),
+            "client_credentials" => matches!(key.as_str(),"auth"|"client_id"|"client_secret_env"|"client_secret_file"|"token_endpoint"|"issuer"|"oauth_scope"),
+            _=>matches!(key.as_str(),"auth"|"subject_token_env"|"subject_token_file"|"token_endpoint"|"oauth_scope"),
+        };
+        if !allowed { return Err("authentication option does not apply to the selected method".into()); }
+    }
+    if kind != "bearer" && token_env.is_some() { return Err("--token-env applies only to bearer authentication".into()); }
+    if value("issuer").is_some() && value("token_endpoint").is_some() { return Err("choose --issuer or --token-endpoint".into()); }
+    let auth = if let Some(endpoint)=value("token_endpoint") { auth.with_token_endpoint(endpoint) } else { auth };
+    let auth = if let Some(issuer)=value("issuer") { auth.with_issuer(issuer) } else { auth };
+    Ok(Some(if let Some(scope)=value("oauth_scope") { auth.with_scope(scope) } else { auth }))
 }

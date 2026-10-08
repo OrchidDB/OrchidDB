@@ -8,7 +8,12 @@ defmodule OrchidDB do
   @moduledoc "Execute graph query text separately from the registered schema."
   alias OrchidDB.Internal.Runtime
 
-  def connect(engine, schema, opts \\ []) when is_map(schema) do
+  def connect(engine, schema, opts \\ [])
+  def connect(engine, %OrchidDB.Catalog{} = catalog, opts) do
+    opts = if catalog.library, do: Keyword.put_new(opts, :library, catalog.library), else: opts
+    connect(engine, OrchidDB.Catalog.configuration(catalog), opts)
+  end
+  def connect(engine, schema, opts) when is_map(schema) do
     with {:ok, schema} <-
            Runtime.compile(
              %{op: "validate_schema", schema: schema},

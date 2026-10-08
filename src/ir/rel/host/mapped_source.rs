@@ -289,7 +289,7 @@ impl Source {
             .and_then(|m| m.foreign_key_columns())
             .map(|(_, _, _, fk)| format!(" AND {}", fk.present_sql()))
             .unwrap_or_default();
-        let (batch, sql) = if matches!(src, MappedSource::Computed(_)) {
+        let (batch, sql) = if matches!(src, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
             use crate::ir::rel::mapping::id_expr;
             use datafusion::logical_expr::{Expr, LogicalPlanBuilder};
             let source = self.mapping.source_plan(src).map_err(|e| e.to_string())?;
@@ -516,7 +516,7 @@ impl GraphSource for Source {
                 };
                 (&m.source, &m.id_column)
             };
-            if matches!(src, MappedSource::Computed(_)) {
+            if matches!(src, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
                 let plan = self.mapping.source_plan(src).map_err(|e| e.to_string())?;
                 let projection = crate::ir::rel::mapping::id_expr(&plan, key, name)
                     .map_err(|e| e.to_string())?

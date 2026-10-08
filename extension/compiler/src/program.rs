@@ -82,7 +82,7 @@ impl Program {
         // Computed-edge writes must retain source-backed element identities and
         // use the shared catalog's read-only enforcement. Partial SQL islands
         // do not preserve that contract across mutation operators.
-        let computed_mutation = mutating && !request.computed_relationships.is_empty();
+        let computed_mutation = mutating && (!request.computed_relationships.is_empty() || !request.cypher_relationships.is_empty());
         let logical = with_operator_table(prepared.operators.clone(), || {
             compile_for_host(
                 &prepared.plan,

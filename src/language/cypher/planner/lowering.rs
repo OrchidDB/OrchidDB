@@ -29,6 +29,22 @@ fn lower_query_inner(query: &Query) -> CypherPlanResult<GraphPlan> {
     Ok(GraphPlan::new(GraphPlanPolicy::cypher(), root))
 }
 
+pub(crate) fn lower_relationship(query: &Query, source_label: &str, target: &str) -> CypherPlanResult<Node> {
+    use crate::language::cypher::ast::{Clause, MatchClause, PatternPart, PatternElement, NodePattern};
+    let mut validation = query.clone();
+    fn seed(query: &mut Query, source_label: &str) {
+        query.clauses.insert(0, Clause::Match(MatchClause {optional:false,patterns:vec![PatternPart {variable:None,element:PatternElement {start:NodePattern {variable:Some("source".into()),labels:vec![source_label.into()],properties:None},chains:vec![]}}],predicate:None}));
+        for branch in &mut query.unions { seed(&mut branch.query,source_label); }
+    }
+    seed(&mut validation,source_label);
+    crate::language::cypher::semantics::validate_relationship_target(&validation, target)?;
+    let mut lowerer = Lowerer::new();
+    lowerer.add_visible_kind("source", BindingKind::Node);
+    let root = lowerer.root_traversal();
+    lowerer.push_traversal(root);
+    lowerer.lower_query_body(query)
+}
+
 fn lower_query_node(query: &Query) -> CypherPlanResult<(Node, Vec<BindingId>)> {
     let mut lowerer = Lowerer::new();
     lowerer.lower_query_with_unions(query)

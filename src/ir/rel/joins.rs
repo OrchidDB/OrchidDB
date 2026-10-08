@@ -414,12 +414,35 @@ pub(super) fn partitioned_limit(
     offset: u64,
     fetch: Option<u64>,
 ) -> RelResult<LogicalPlan> {
+    if offset == 0 && fetch.is_none() { return Ok(plan); }
     if partition_cols.is_empty() {
         return LogicalPlanBuilder::from(plan)
             .limit(offset as usize, fetch.map(|n| n as usize))?
             .build()
             .map_err(RelError::from);
     }
+    fn ordered(plan: &LogicalPlan) -> bool {
+        match plan {
+            LogicalPlan::Sort(sort) => !sort.expr.is_empty(),
+            LogicalPlan::Projection(projection) => ordered(&projection.input),
+            LogicalPlan::Filter(filter) => ordered(&filter.input),
+            _ => false,
+        }
+    }
+    if let LogicalPlan::Projection(projection) = &plan {
+        if ordered(&projection.input) {
+            let limited = partitioned_limit(projection.input.as_ref().clone(),partition_cols,offset,fetch)?;
+            return Ok(LogicalPlanBuilder::from(limited).project(projection.expr.clone())?.build()?);
+        }
+    }
+    fn order(plan: &LogicalPlan) -> Vec<datafusion::logical_expr::SortExpr> {
+        match plan {
+            LogicalPlan::Sort(sort) => sort.expr.clone(),
+            LogicalPlan::Filter(filter) => order(&filter.input),
+            _ => Vec::new(),
+        }
+    }
+    let order = order(&plan);
     let row_number = unique_internal_alias(&plan, &BTreeSet::new(), "__apply_row_number");
     let partition_by = partition_cols.iter().map(col_exact).collect::<Vec<_>>();
     let mut predicate = binary(col_exact(&row_number), BinaryOp::Gt, lit(offset));
@@ -432,6 +455,7 @@ pub(super) fn partitioned_limit(
     let window = df_window::row_number()
         .window_frame(datafusion::logical_expr::WindowFrame::new(None))
         .partition_by(partition_by)
+        .order_by(order)
         .build()?
         .alias(row_number.clone());
     let mut cleanup = BTreeSet::new();
