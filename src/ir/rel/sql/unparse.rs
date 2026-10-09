@@ -32,6 +32,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
+    let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = preserve_limit_output(plan)?;
@@ -41,6 +42,43 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
     Ok(apply_identifier_repairs(sql, &repairs))
+}
+
+/// Arrow string extrema use byte ordering, independent of database locale.
+/// Explicit collation keeps PostgreSQL MIN/MAX consistent with native execution.
+fn preserve_postgres_text_extrema(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    use crate::ir::functions::logical::{LogicalFunction, SqlFunctionMapping};
+    use datafusion::logical_expr::{ExprSchemable, Volatility, expr_rewriter::NamePreserver};
+    if dialect != SqlDialect::Postgres {
+        return Ok(plan);
+    }
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let names = NamePreserver::new(&node);
+        let mut schema = datafusion::common::DFSchema::empty();
+        for input in node.inputs() { schema.merge(input.schema()); }
+        schema.merge(node.schema());
+        node.map_expressions(|expr| {
+            let saved = names.save(&expr);
+            Ok(expr.transform_up(|expr| {
+                let Expr::AggregateFunction(mut agg) = expr else { return Ok(Transformed::no(expr)); };
+                if matches!(agg.func.name(), "min" | "max") && agg.params.args.len() == 1 {
+                    let ty = agg.params.args[0].get_type(&schema)?;
+                    if matches!(ty, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+                        let native = datafusion::logical_expr::create_udf(
+                            "__postgres_binary_text", vec![ty.clone()], ty, Volatility::Immutable,
+                            Arc::new(|args| Ok(args[0].clone())),
+                        );
+                        let function = LogicalFunction::new("__postgres_binary_text", Arc::new(native), BTreeMap::from([
+                            ("postgres".into(), SqlFunctionMapping { value: "(__arg0 COLLATE \"C\")".into(), ordering: None })
+                        ])).into_udf();
+                        agg.params.args[0] = function.call(vec![agg.params.args[0].clone()]);
+                        return Ok(Transformed::yes(Expr::AggregateFunction(agg)));
+                    }
+                }
+                Ok(Transformed::no(Expr::AggregateFunction(agg)))
+            })?.map_data(|expr| Ok(saved.restore(expr)))?)
+        })
+    })?.data)
 }
 
 /// Preserve each portable numeric result's declared width before its consumer
@@ -663,6 +701,19 @@ fn specialize_portable_calls(plan: LogicalPlan, dialect: SqlDialect) -> SqlResul
             let saved = names.save(&expr);
             Ok(expr.transform_up(|expr| {
                 if let Expr::ScalarFunction(call) = &expr {
+                    // Relational lowering creates native struct calls for identities.
+                    // Route these through the same JSONB adapter as user-facing
+                    // portable calls before the unparser turns fields into identifiers.
+                    if dialect == SqlDialect::Postgres
+                        && matches!(call.func.name(), "get_field" | "named_struct" | "struct")
+                        && crate::ir::functions::logical::definition(&call.func).is_none()
+                    {
+                        let portable = crate::ir::functions::portable::function(&format!("fn.{}", call.func.name()))
+                            .expect("native structured function has a portable adapter");
+                        let f = crate::ir::functions::logical::definition(&portable).unwrap();
+                        let value = crate::ir::functions::portable::structured::mapping(f.logical_name(), &call.args, &schema, true)?;
+                        return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).into_udf().call(call.args.clone())));
+                    }
                     if let Some(f) = crate::ir::functions::logical::definition(&call.func).filter(|f| f.portable_builtin) {
                         if crate::ir::functions::portable::structured::handles(f.logical_name()) && !matches!(dialect, SqlDialect::Custom(_)) {
                             let value = crate::ir::functions::portable::structured::mapping(f.logical_name(), &call.args, &schema, dialect == SqlDialect::Postgres)?;

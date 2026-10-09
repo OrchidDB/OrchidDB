@@ -215,3 +215,34 @@ async fn portable_function_compiles_for_both_engines_without_a_host_catalog() {
         assert!(!sql.contains("__engine_function_"), "{sql}");
     }
 }
+
+#[tokio::test]
+async fn postgres_computed_relationship_history_uses_jsonb_identity_fields() {
+    for id in [json!("id"), json!(["tenant", "id"])] {
+        let result = compile(json!({
+            "version": 1, "dialect": "postgres", "language": "cypher",
+            "query": "MATCH (a:N)-[:NEXT]->(b:N)-[:NEXT]->(c:N) RETURN a.id, c.id",
+            "tables": [{"name": "nodes", "columns": [
+                {"name": "tenant", "data_type": "string"},
+                {"name": "id", "data_type": "int64"}
+            ]}],
+            "nodes": [{"label": "N", "table": "nodes", "id": id,
+                "properties": {"id": "id", "tenant": "tenant"}}],
+            "computed_relationships": [{"name": "NEXT", "source": "N", "target": "N",
+                "predicate": "source.tenant = target.tenant AND source.id + 1 = target.id"}]
+        })).await.unwrap();
+        let sql = result["sql"].as_str().unwrap();
+        assert!(sql.contains("jsonb_build_object"), "{sql}");
+        assert!(!sql.contains("\"k0\"") && !sql.contains("\"k1\""), "{sql}");
+    }
+}
+
+#[tokio::test]
+async fn postgres_text_extrema_use_binary_collation() {
+    let mut r = request("UNWIND ['a', 'b', 'B', null, 'abc', 'abc1'] AS i RETURN min(i) AS lo, max(i) AS hi");
+    r["dialect"] = json!("postgres");
+    let result = compile(r).await.unwrap();
+    let sql = result["sql"].as_str().unwrap();
+    assert_eq!(sql.matches("COLLATE \"C\"").count(), 2, "{sql}");
+    assert_eq!(result["fields"], json!(["lo", "hi"]));
+}

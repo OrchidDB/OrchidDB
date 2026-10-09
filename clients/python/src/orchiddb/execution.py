@@ -216,6 +216,10 @@ def _postgres_savepoint(connection):
 def _logical_arrow_type(name, pa):
     if name.startswith('list:'):
         return pa.list_(_logical_arrow_type(name[5:], pa))
+    if name.startswith('struct_fields:'):
+        import json
+        return pa.struct([pa.field(field, _logical_arrow_type(kind, pa))
+                          for field, kind in json.loads(name[len('struct_fields:'):])])
     if name.startswith('decimal:'):
         _, precision, scale = name.split(':')
         return pa.decimal128(int(precision), int(scale))
@@ -232,8 +236,13 @@ def _postgres_json_value(value, ty, pa):
         return None
     if pa.types.is_list(ty):
         return [_postgres_json_value(v, ty.value_type, pa) for v in value]
+    if pa.types.is_struct(ty):
+        return {field.name: _postgres_json_value(value.get(field.name), field.type, pa)
+                for field in ty}
     import datetime
     from decimal import Decimal
+    if pa.types.is_integer(ty): return int(value)
+    if pa.types.is_boolean(ty) and isinstance(value, str): return value.lower() == 'true'
     if pa.types.is_decimal(ty): return Decimal(value)
     if pa.types.is_floating(ty): return float(value)
     if pa.types.is_binary(ty) and isinstance(value, str):
