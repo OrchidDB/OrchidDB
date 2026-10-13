@@ -989,7 +989,10 @@ impl<'a> LoweringContext<'a> {
                         "Mixed Cypher numeric comparison requires lossless runtime values".into(),
                     ));
                 }
+                // Arrow string encodings represent the same Cypher value type.
+                let text = |t: &DataType| matches!(t, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View);
                 if lt != rt && !(lt.is_numeric() && rt.is_numeric())
+                    && !(text(&lt) && text(&rt))
                     && lt != DataType::Null && rt != DataType::Null {
                     return Err(RelError::Unsupported("Cypher comparisons must not coerce unrelated operand types".into()));
                 }
