@@ -67,9 +67,11 @@ This API change is in source; it does not republish older registry packages.
 ## Go client
 
 The Go module `github.com/OrchidDB/OrchidDB/clients/go` uses `database/sql`
-sessions and the shared native runtime. It requires Go 1.23+, cgo, and macOS or
-Linux. Select `duckdb`, `postgres`, or `starrocks` to match your database driver;
-the client has no Go dependencies and does not choose or open a driver for you.
+sessions and the shared native runtime. It requires Go 1.23+ and macOS or
+Linux on amd64 or arm64. The native loader uses
+[purego](https://github.com/ebitengine/purego) and works with `CGO_ENABLED=0`.
+Select `duckdb`, `postgres`, or `starrocks` to match your database driver;
+the client does not choose or open a driver for you.
 Use `*sql.Conn` for session state or `*sql.Tx` for a caller-owned transaction.
 
 ```go
@@ -106,10 +108,16 @@ make native
 export ORCHIDDB_NATIVE_LIBRARY="$PWD/target/debug/liborchiddb_compiler.dylib"
 # On Linux, use liborchiddb_compiler.so.
 make go-check go-test
+CGO_ENABLED=0 go -C clients/go test -v ./...
 (cd clients/go/examples && go run .)
 (cd clients/go/examples && go test -race ./...)
 ```
 
+The DuckDB example driver still requires cgo; the OrchidDB client itself does not.
+On macOS with Go 1.23, cgo-enabled binaries need `-ldflags=-linkmode=external`
+to avoid the loader's missing `LC_UUID` error; `CGO_ENABLED=0` works directly. The
+`go-test` target uses external linking for its race build. ABI fixture tests
+compile small test libraries with `cc`; using the client needs no C compiler.
 The example module uses a local `replace` directive. Applications using this
 checkout can similarly replace the Go module with its absolute `clients/go`
 path. No separate Go module release tag is published by these commands.
