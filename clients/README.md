@@ -47,6 +47,7 @@ rebuild the native runtime and clients together. Published artifacts are unchang
 | Java | `new OrchidDB(engine).graph(mapping).query(Query.cypher(text))` |
 | Java JSON schema | `Connection.fromSchemaFile(path, engine).query(text)` |
 | C++ | `Connection(engine, schema).query(text, parameters)` |
+| Go | `orchiddb.New(session, schemaJSON, config)` then `graph.Query(ctx, text, options)` |
 | Elixir | `OrchidDB.connect(engine, schema)` then `OrchidDB.query(connection, text)` |
 | CLI | `orchiddb query 'MATCH ...' --schema schema.json` |
 
@@ -66,6 +67,8 @@ PYTHONPATH=clients/python/src python -m pytest clients/python/tests
 (cd clients/java && ./scripts/build.sh -Pgremlin)
 (cd clients/elixir && mix deps.get && mix test)
 clients/cpp/scripts/test.sh
+make go-check go-test
+(cd clients/go/examples && go test -race ./...)
 ```
 
 PostgreSQL tests use `ORCHIDDB_TEST_PG_URL` for Python/Rust,

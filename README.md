@@ -19,6 +19,7 @@ All client source now lives in this repository and builds against the same core:
 | JavaScript / TypeScript | [clients/js](clients/js) |
 | C++ | [clients/cpp](clients/cpp) |
 | Elixir | [clients/elixir](clients/elixir) |
+| Go | [clients/go](clients/go) |
 | Shared C ABI | [clients/native](clients/native) |
 | Standalone CLI | [cli](cli) |
 
@@ -62,6 +63,65 @@ SQL adapter.
 
 See [client interfaces and source builds](clients/README.md) for each language.
 This API change is in source; it does not republish older registry packages.
+
+## Go client
+
+The Go module `github.com/OrchidDB/OrchidDB/clients/go` uses `database/sql`
+sessions and the shared native runtime. It requires Go 1.23+, cgo, and macOS or
+Linux. Select `duckdb`, `postgres`, or `starrocks` to match your database driver;
+the client has no Go dependencies and does not choose or open a driver for you.
+Use `*sql.Conn` for session state or `*sql.Tx` for a caller-owned transaction.
+
+```go
+import orchiddb "github.com/OrchidDB/OrchidDB/clients/go"
+
+// schemaJSON contains JSON schema configuration; session is your *sql.Conn or *sql.Tx.
+graph, err := orchiddb.New(session, schemaJSON, orchiddb.Config{Dialect: "duckdb"})
+if err != nil { return err }
+defer graph.Close()
+rows, err := graph.Query(ctx,
+    "MATCH (p:Person) WHERE p.name = $name RETURN p.name AS name",
+    orchiddb.QueryOptions{Parameters: map[string]any{"name": "Ada"}})
+if err != nil { return err }
+defer rows.Close()
+for rows.Next() {
+    var name string
+    if err := rows.Scan(&name); err != nil { return err }
+    fmt.Println(name)
+}
+return rows.Err()
+```
+
+`QueryOptions.Language` defaults to `cypher`; `sparql` selects SPARQL in the
+shared compiler. `QueryOptions.Authorization` supplies a permission principal.
+Closing the graph or its rows leaves the database session and transaction open.
+Context cancellation reaches database execution; native compilation runs to
+completion before cancellation is checked again. Results use driver-native SQL
+values through `*sql.Rows`.
+
+Build and run the [DuckDB example](clients/go/examples/people.go) locally:
+
+```sh
+make native
+export ORCHIDDB_NATIVE_LIBRARY="$PWD/target/debug/liborchiddb_compiler.dylib"
+# On Linux, use liborchiddb_compiler.so.
+make go-check go-test
+(cd clients/go/examples && go run .)
+(cd clients/go/examples && go test -race ./...)
+```
+
+The example module uses a local `replace` directive. Applications using this
+checkout can similarly replace the Go module with its absolute `clients/go`
+path. No separate Go module release tag is published by these commands.
+`Config.Library` overrides the environment variable; otherwise the platform
+library loader searches for `liborchiddb_compiler.dylib` or `.so`. Build the
+runtime from the same checkout; the loader checks ABI 2 and retains its native
+worker runtime for the lifetime of the process.
+
+This initial Go API supports single-engine SQL execution. Federation transfers
+return `ErrUnsupportedPlan` before any database execution. Arrow streams,
+statistics collection, remote-engine sessions, and catalog management helpers
+are not yet exposed by the Go client.
 
 ## Optional Orchid Catalog
 

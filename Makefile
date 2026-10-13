@@ -38,7 +38,7 @@ if subprocess.check_output(['git', 'diff', '--name-only']):
 endef
 export RELEASE_VERSION_SCRIPT
 
-.PHONY: help build cli native clients-check clients-test extension extension-test
+.PHONY: help build cli native clients-check clients-test go-check go-test extension extension-test
 help:
 	@echo 'make release        Build locally and publish all GitHub release assets'
 	@echo 'make build          Build the core library'
@@ -47,6 +47,8 @@ help:
 	@echo 'make catalog-smoke  Smoke catalog auth and all clients on DuckDB'
 	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
 	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
+	@echo 'make go-check       Build and vet the Go client'
+	@echo 'make go-test        Test the Go client with the race detector'
 	@echo 'make starrocks-test Start local StarRocks and check query execution'
 	@echo 'make starrocks-conformance Run all language catalogs on local StarRocks'
 	@echo 'make extension      Build the optional DuckDB extension'
@@ -61,6 +63,10 @@ clients-check:
 	cargo check --locked -p orchiddb-client -p orchiddb-compiler-native -p orchiddb-java-native -p orchiddb-cli
 clients-test:
 	cargo test --locked -p orchiddb-client --features bundled-test-driver -p orchiddb-compiler-native -p orchiddb-cli
+go-check:
+	cd clients/go && go build ./... && go vet ./...
+go-test:
+	cd clients/go && go test -race ./...
 extension:
 	python3 extension/scripts/build.py
 extension-release:
