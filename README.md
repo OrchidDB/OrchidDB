@@ -1357,14 +1357,26 @@ allowed. Reports are written under `target/conformance/sql-engines/`.
 From a clean, committed checkout on **macOS ARM64**, run:
 
 ```sh
-make release
+./scripts/release-all.sh
+# Also publish the release to GitHub:
+./scripts/release-all.sh --publish
+# Check prerequisites without building:
+./scripts/release-all.sh --check
 ```
 
+The script builds Linux AMD64, Linux ARM64, and Apple Silicon macOS artifacts
+locally. Rerun the same command to resume after a failure. It includes all eight
+language clients (Python, JavaScript/TypeScript, Java, Rust, C++, Go, Elixir, and
+the native C binding), the CLI, and the DuckDB extension. It does not run the
+full test suite; run `make release-tools-test` to check the release tooling.
+
 The version defaults to the root Cargo.toml. For a new version, run
-`make release VERSION=0.4.0`. From a clean checkout, Make updates the core, CLI,
+`./scripts/release-all.sh --version 0.4.1` (choose an unpublished version).
+From a clean checkout, Make updates the core, CLI,
 and client manifests and lockfiles, commits the version change, prepares the
 Python release environment, and runs the release pipeline. Existing uncommitted
-work is never included in an automatic release commit. The command pushes main, creates the GitHub release, uploads every asset, and
+work is never included in an automatic release commit. With `--publish`, the
+command pushes main, creates the GitHub release, uploads every asset, and
 checks the uploaded hashes before making the release public. Nothing is published
 to npm, PyPI, Maven Central, Hex, or crates.io. Completed assets remain in:
 
@@ -1394,11 +1406,13 @@ excludes the test workspace and its database drivers.
 | JavaScript/TypeScript | One local-install tarball with all three native runtimes |
 | Java/Gremlin | Three platform ZIPs, each with API, dependencies, and one native classifier |
 | C++ | Three CMake/header/library archives, including JSON headers |
+| Go | Three module-source/native-runtime archives, with local module installation instructions |
 | Elixir | Three source/runtime archives; the small NIF builds against the user's Erlang |
 | Rust | Complete source archive preserving local workspace dependencies |
 | Metadata | Release manifest and SHA256SUMS |
 
-`make release` uploads every file automatically. `make release-publish` retries
+`./scripts/release-all.sh --publish` (or `make release`) uploads every file
+automatically. `make release-publish` retries
 only publication of completed assets, without rebuilding. Authenticate with
 `gh auth login` before publishing. The manifest maps each
 client to its assets and records the source commit and checksums. The Rust client
@@ -1409,13 +1423,17 @@ unsigned and require DuckDB's `allow_unsigned_extensions` setting.
 
 ### Prerequisites and retries
 
-Install Rust/rustup, Zig, cargo-zigbuild, Java 21, Maven, Node 20+, npm, CMake,
-and a C++17 compiler. Configure `JAVA_HOME` for Java 21. `make release` prepares
+Install Python 3.11+, Rust/rustup, Zig, cargo-zigbuild, Java 21, Maven, Node 20+,
+npm, Go 1.23+, CMake, and Xcode command line tools (C++17 compiler).
+Java 21 must be discoverable by `/usr/libexec/java_home -F -v 21`.
+The script prepares
 its Python packaging environment automatically under `target/release-env`.
 `RELEASE_PYTHON=/absolute/path/to/python` selects another packaging environment.
 
 Completed platform builds and packages are reused for the same commit/version
-with matching hashes. Run `make release VERSION=0.4.0` again to retry failed work.
+with matching hashes. Run the same script command again to retry failed work.
+Set `RELEASE_JOBS=1` to build platforms sequentially, or `CARGO_BUILD_JOBS=2`
+to limit compiler parallelism within each platform. Defaults are three for each.
 The individual `release-check`, `release-build`, and `release-package` targets
 are also available in the root Makefile.
 

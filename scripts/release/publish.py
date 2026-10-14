@@ -13,11 +13,17 @@ def run(*args):
     return subprocess.check_output(list(map(str, args)), cwd=ROOT, text=True).strip()
 
 
-def completed_assets(version):
+def completed_assets(version, components=()):
     parent = ROOT / 'target/releases' / ('orchiddb-v' + version)
     for receipt in sorted(parent.glob('*/package.json'), key=lambda p: p.stat().st_mtime, reverse=True):
         state = json.loads(receipt.read_text())
         if state.get('version') != version or not state.get('files'):
+            continue
+        manifest_path = receipt.parent / 'upload/release-manifest.json'
+        if not manifest_path.is_file():
+            continue
+        manifest = json.loads(manifest_path.read_text())
+        if any(not manifest.get('components', {}).get(name) for name in components):
             continue
         changed = run('git', 'diff', '--name-only', state['commit'], 'HEAD').splitlines()
         if any(name not in ('Makefile', 'README.md', 'scripts/release/release.py', 'scripts/release/publish.py') for name in changed):

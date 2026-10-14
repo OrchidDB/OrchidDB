@@ -28,7 +28,7 @@ TARGETS = {
     'linux_arm64': ('aarch64-unknown-linux-gnu', 'linux-aarch64', 'linux-arm64', 'manylinux_2_28_aarch64'),
     'linux_amd64': ('x86_64-unknown-linux-gnu', 'linux-x86_64', 'linux-x64', 'manylinux_2_28_x86_64'),
 }
-COMPONENTS = ('extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir')
+COMPONENTS = ('extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go')
 
 
 def digest(path):
@@ -108,7 +108,7 @@ class Release:
         self.env['JAVA_HOME'] = subprocess.check_output(
             ['/usr/libexec/java_home', '-F', '-v', '21'], text=True).strip()
         self.env['PATH'] = str(Path(self.env['JAVA_HOME']) / 'bin') + os.pathsep + self.env['PATH']
-        for tool in ('npm', 'node', 'mvn', 'java', 'cmake', 'c++'):
+        for tool in ('npm', 'node', 'mvn', 'java', 'cmake', 'c++', 'go'):
             if not shutil.which(tool, path=self.env['PATH']):
                 raise RuntimeError('Missing release prerequisite: ' + tool)
         if not Path(self.python).is_file():
@@ -212,6 +212,12 @@ class Release:
             print("Reusing completed builds for this commit")
             return
         self.reuse_platforms()
+        # Go distributes source plus the native runtime. Compile the module for
+        # every supported platform without executing foreign binaries.
+        for target in TARGETS:
+            go_env = dict(self.env, CGO_ENABLED='0', GOOS='darwin' if target == 'osx_arm64' else 'linux',
+                          GOARCH='amd64' if target == 'linux_amd64' else 'arm64')
+            run(['go', 'build', '-mod=readonly', './...'], cwd=ROOT / 'clients/go', env=go_env)
         matrix.prepare_sources()
         matrix.parallel_build(self.build_platform, list(TARGETS))
         run(['npm', 'ci', '--workspaces=false'], cwd=ROOT / 'clients/js', env=self.env)
@@ -285,6 +291,19 @@ class Release:
                 library = binaries / ('liborchiddb_compiler.' + ('dylib' if target == 'osx_arm64' else 'so'))
                 metadata = json.dumps({'version': self.version, 'commit': self.commit, 'binary_commit': read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit), 'target': triple, 'abi_version': 2}, indent=2).encode()
                 common = {'LICENSE.md': ROOT / 'LICENSE.md', 'manifest.json': metadata}
+                add('go', f'orchiddb-go-{self.version}-{target}.tar.gz', {
+                    **source_files(Path('clients/go')), **common,
+                    'lib/' + library.name: library,
+                    'README.md': ROOT / 'README.md',
+                    'RELEASE.txt': (
+                        'Requires Go 1.23+. Extract into a permanent directory, then run in your application:\n'
+                        'go mod edit -replace=github.com/OrchidDB/OrchidDB/clients/go=/absolute/path/to/extracted-directory\n'
+                        'go get github.com/OrchidDB/OrchidDB/clients/go\n'
+                        f'export ORCHIDDB_NATIVE_LIBRARY=/absolute/path/to/extracted-directory/lib/{library.name}\n'
+                        'The native library matches this archive. Dependencies are resolved by Go.\n'
+                        'See README.md for the Go connection API and examples/ for a runnable application.\n'
+                    ).encode(),
+                })
                 add('cli', f'orchiddb-cli-{self.version}-{target}.tar.gz', {**common, 'README.txt': b'Install the DuckDB 1.5.2 shared library separately and make it available to the system dynamic loader (see README.md). Extract this archive and run bin/orchiddb query --file examples/people.cypher --schema examples/people.json --init examples/setup.sql --no-iceberg --format table.\n', 'bin/orchiddb': binaries / 'orchiddb', 'README.md': ROOT / 'cli/README.md', **{'examples/' + k: v for k, v in source_files(Path('cli/examples')).items()}})
                 add('native', f'orchiddb-native-{self.version}-{target}.tar.gz', {**common, 'lib/' + library.name: library, 'include/orchiddb.h': ROOT / 'clients/native/include/orchiddb.h'})
                 cpp = stage / ('cpp-' + target)
@@ -354,7 +373,7 @@ def main():
     args = parser.parse_args()
     release = Release(args.version)
     if args.stage in ('all', 'publish'):
-        assets = completed_assets(args.version)
+        assets = completed_assets(args.version, components=COMPONENTS)
         if assets:
             publish(assets, args.version)
             return

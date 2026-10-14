@@ -29,18 +29,20 @@ class CompleteReleaseTests(unittest.TestCase):
     def test_failure_stops_before_build_packaging_or_upload(self):
         instance = MagicMock()
         instance.build.side_effect = RuntimeError('build failed')
-        with patch.object(release, 'Release', return_value=instance), patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
+        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
             with self.assertRaisesRegex(RuntimeError, 'build failed'): release.main()
         instance.check.assert_called_once()
         instance.build.assert_called_once()
         instance.package.assert_not_called()
         instance.verify.assert_not_called()
+        publish.assert_not_called()
 
     def test_all_stages_run_in_order(self):
         instance = MagicMock()
-        with patch.object(release, 'Release', return_value=instance), patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
+        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
             release.main()
-        self.assertEqual([call[0] for call in instance.mock_calls], ['check', 'build', 'package'])
+        self.assertEqual([call[0] for call in instance.mock_calls], ['check', 'reuse_build', 'build', 'package'])
+        publish.assert_called_once_with(instance.assets, instance.version)
 
     def test_reuse_requires_all_hashes_and_the_exact_commit(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(release, 'ROOT', Path(tmp)):
@@ -60,7 +62,7 @@ class CompleteReleaseTests(unittest.TestCase):
 
     def test_platforms_and_every_client_are_included(self):
         self.assertEqual(set(release.TARGETS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
-        self.assertEqual(set(release.COMPONENTS), {'extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir'})
+        self.assertEqual(set(release.COMPONENTS), {'extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'})
 
     def test_packages_require_build_receipts(self):
         instance = object.__new__(release.Release)
