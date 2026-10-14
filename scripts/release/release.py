@@ -147,7 +147,9 @@ class Release:
                 if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or commit == self.commit:
                     continue
                 changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-                if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
+                # TypeScript changes cannot affect native binaries. Rebuild JS,
+                # but retain the completed platform builds and their provenance.
+                if any(name not in ('scripts/release/release.py', 'scripts/release/test_complete_release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') and not (name.startswith('clients/js/src/') and name.endswith('.ts')) for name in changed):
                     continue
                 previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
                 if native_inputs(previous) != current_inputs or not state.get('files'):
@@ -228,6 +230,9 @@ class Release:
         run(['mvn', '-Pgremlin', '-Dmaven.test.skip=true', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
         inputs = [ROOT / path for t in TARGETS for path in read(self.base / ('build-' + t + '.json'))['files']]
         self.stamp('build', inputs + list((ROOT / 'clients/js/dist').glob('*')) + list((ROOT / 'clients/java').glob('*/target/*.jar')) + list((ROOT / 'clients/java').glob('*/target/runtime-deps/*.jar')) + [ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', ROOT / 'jvm/target/classpath.txt'])
+
+    def binary_commit(self, target):
+        return read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit)
 
     def build_platform(self, target):
         triple, classifier, _, _ = TARGETS[target]
@@ -315,11 +320,11 @@ class Release:
                     destination = python / name; destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(path, destination)
                 native = python / 'src/orchiddb/native'; native.mkdir(exist_ok=True)
                 shutil.copy2(library, native / library.name)
-                (python / 'src/orchiddb/CORE_REVISION').write_text(self.commit + '\n')
+                (python / 'src/orchiddb/CORE_REVISION').write_text(self.binary_commit(target) + '\n')
                 run([self.python, 'setup.py', 'bdist_wheel', '--plat-name', wheel_platform, '--dist-dir', output], cwd=python, env=self.env)
                 inventory['python'] += [p.name for p in output.glob('*' + wheel_platform + '.whl')]
                 elixir = source_files(Path('clients/elixir'))
-                elixir.update({'CORE_REVISION': (self.commit + '\n').encode(), 'priv/native/' + library.name: library,
+                elixir.update({'CORE_REVISION': (self.binary_commit(target) + '\n').encode(), 'priv/native/' + library.name: library,
                               'RELEASE.txt': b'Use a Mix path dependency on this extracted directory. The NIF builds for your installed Erlang. Set ORCHIDDB_NATIVE_LIBRARY to priv/native/liborchiddb_compiler.so (Linux) or .dylib (macOS).\n'})
                 add('elixir', f'orchiddb-elixir-{self.version}-{target}.tar.gz', elixir)
                 packaged = package_extension(ROOT, matrix.location(self.version, self.commit) / target)
@@ -333,7 +338,7 @@ class Release:
                 destination = node / 'native' / node_platform; destination.mkdir(parents=True)
                 library = next((self.base / 'binaries' / target).glob('liborchiddb_compiler.*'))
                 shutil.copy2(library, destination / library.name)
-                write(destination / 'manifest.json', {'version': self.version, 'core_revision': self.commit, 'abi_version': 2, 'sha256': digest(library)})
+                write(destination / 'manifest.json', {'version': self.version, 'core_revision': self.binary_commit(target), 'abi_version': 2, 'sha256': digest(library)})
             run(['npm', 'pack', '--ignore-scripts', '--pack-destination', output], cwd=node, env=self.env)
             inventory['javascript'] = [p.name for p in output.glob('*.tgz')]
             native_revisions = stage / 'native-revisions.json'

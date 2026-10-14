@@ -60,6 +60,45 @@ class CompleteReleaseTests(unittest.TestCase):
         for value in ('../escape', '1.2', 'v1.2.3', '1.2.3;echo bad'):
             with self.subTest(value=value), self.assertRaises(ValueError): release.Release(value)
 
+    def test_native_reuse_after_typescript_fix_preserves_binary_revision(self):
+        source = Path(release.__file__).read_text()
+        for changed, corrupt, expected in [
+            ('clients/js/src/internal.ts', False, True),
+            ('src/catalog.rs', False, False),
+            ('clients/js/src/internal.ts', True, False),
+        ]:
+            with self.subTest(changed=changed, corrupt=corrupt), tempfile.TemporaryDirectory() as tmp, patch.object(release, 'ROOT', Path(tmp)):
+                root = Path(tmp)
+                instance = object.__new__(release.Release)
+                instance.version = '1.2.3'; instance.commit = 'b' * 40
+                instance.base = root / 'releases' / instance.commit
+                old_commit = 'a' * 40
+                old = instance.base.parent / old_commit
+                library = old / 'binaries/osx_arm64/liborchiddb_compiler.dylib'
+                library.parent.mkdir(parents=True)
+                library.write_bytes(b'compiled native runtime')
+                release.write(old / 'build-osx_arm64.json', {
+                    'version': instance.version, 'commit': old_commit,
+                    'files': {str(library.relative_to(root)): release.digest(library)},
+                })
+                if corrupt:
+                    library.write_bytes(b'changed')
+
+                def git(args, **kwargs):
+                    if args[1] == 'diff': return changed + '\n'
+                    if args[1] == 'show': return source
+                    if args[1] == 'rev-parse': return instance.commit + '\n'
+                    if args[1] == 'status': return b''
+                    self.fail(f'Unexpected command: {args}')
+
+                with patch.object(release.subprocess, 'check_output', side_effect=git), patch.object(release, 'run') as run:
+                    instance.reuse_platforms()
+                    self.assertEqual(instance.completed('build-osx_arm64'), expected)
+                    if expected:
+                        self.assertEqual(instance.binary_commit('osx_arm64'), old_commit)
+                        instance.build_platform('osx_arm64')
+                    run.assert_not_called()
+
     def test_platforms_and_every_client_are_included(self):
         self.assertEqual(set(release.TARGETS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
         self.assertEqual(set(release.COMPONENTS), {'extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'})
