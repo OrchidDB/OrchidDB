@@ -1,0 +1,268 @@
+{
+  "recorded_at": "2026-10-15T00:52:33.341774+00:00",
+  "revision": "c782f3d8a42303297bcc3458b05317a4f20fabff",
+  "status": "failures_found_outside_kafka_flink",
+  "environment": {
+    "host": "macOS arm64",
+    "services": "isolated local Docker Compose projects; existing Kubernetes workloads untouched",
+    "duckdb_library": "1.5.2",
+    "duckdb_extension_host_and_cli": "1.5.6",
+    "flink": "2.0.1",
+    "flink_kafka_connector": "4.0.1-2.0",
+    "kafka": "4.1.1",
+    "postgres": "15 with pgvector",
+    "starrocks": "4.1.6",
+    "quickwit": "0.9.0",
+    "elasticsearch": "9.2.3",
+    "java": "21 (Flink container Java 17)"
+  },
+  "scope": "Root Rust library/integration tests, all client families, extension, catalog, live database/search adapters, JVM/GraphComputer, independent graph codecs, and actual Flink recovery/hybrid workflow. Not the complete external upstream conformance corpus or a production multi-node HA test.",
+  "core": {
+    "command": "cargo test --locked --features duckdb,kafka,postgres,weaviate,quickwit,elasticsearch,orchid-catalog --lib --tests --no-fail-fast",
+    "initial_run": {
+      "passed": 1344,
+      "failed": 14,
+      "ignored": 36
+    },
+    "effective_after_fixes_and_targeted_retries": {
+      "passed": 1351,
+      "failed": 7,
+      "ignored": 36
+    },
+    "flaky_passed_on_retry": [
+      "map_takes_one_result_instead_of_flattening_every_child_row"
+    ],
+    "unresolved": [
+      {
+        "test": "gremlin_order_then_dedup_by_group",
+        "binary": "distinct_semantics-ee454de293aca392",
+        "error": "tests/distinct_semantics.rs:48:86:\nlower: Unsupported(\"GraphUnwind input: datafusion: Error during planning: DuckDB function binding: unknown function `gremlin_order_key`\")"
+      },
+      {
+        "test": "mapped_engine_owns_function_scope_across_async_queries",
+        "binary": "duckdb_udf_mappings-a952fff43f135d60",
+        "error": "tests/duckdb_udf_mappings.rs:270:136:\ncalled `Result::unwrap()` on an `Err` value: \"datafusion: External error: DuckDB aggregate requires the caller's execution scope\""
+      },
+      {
+        "test": "select_by_element_property_preserves_present_null_and_drops_absence",
+        "binary": "gremlin_semantic_backlog-1b9ea2e97bb364f3",
+        "error": "tests/gremlin_semantic_backlog.rs:263:5:\nassertion `left == right` failed\n  left: Array []\n right: Array [Array [Object {\"type\": String(\"null\"), \"value\": Null}]]"
+      },
+      {
+        "test": "null_traversers_are_productive",
+        "binary": "gremlin_traverser_duckdb-e6086e82bc422bf4",
+        "error": "tests/gremlin_traverser_duckdb.rs:62:13:\ng.inject(null).coalesce(__.identity(),__.constant('fallback')): multiset mismatch: actual=[\"?(Null)\"], expected=[\"null\"]\n actual=[\"?(Null)\"]\n expected=[\"null\"]"
+      },
+      {
+        "test": "relationship_history_distinguishes_label_and_key_boundaries",
+        "binary": "sql_compiler_identities-64a207414a94d80b",
+        "error": "tests/sql_compiler_identities.rs:304:36:\ncalled `Result::unwrap()` on an `Err` value: \"Unknown relationship KNOWS\""
+      },
+      {
+        "test": "connected_access_preserves_gremlin_and_rdf_bindings",
+        "binary": "statistics_access-4d88e34d8e692e76",
+        "error": "tests/statistics_access.rs:18:62:\ncalled `Result::unwrap()` on an `Err` value: DuckDBFailure(Error { code: Unknown, extended_code: 1 }, Some(\"Binder Error: Referenced column \\\"v\\\" not found in FROM clause!\\nCandidate bindings: \\\"item\\\"\\n\\nLINE 14: ... \\\"__w_sql_cte_collection_rows_nested\\\".\\\"__parent_0\\\" AS \\\"owner\\\", \\\"v\\\" AS \\\"value\\\" FROM \\\"__w_sql_cte_collection_rows_nested...\\n                                                                           ^\"))"
+      },
+      {
+        "test": "cheaper_materialization_for_gremlin_and_sparql",
+        "binary": "statistics_generation-ff27e3eddb23def3",
+        "error": "tests/statistics_generation.rs:326:70:\ncalled `Result::unwrap()` on an `Err` value: \"unsupported sql generation: unparser (duckdb): Internal error: Tried to unproject agg expr for column 'name' that was not found in the provided Aggregate!.\\nThis issue was likely caused by a bug in DataFusion's code. Please help us to resolve this by filing a bug report in our issue tracker: https://github.com/apache/datafusion/issues\""
+      }
+    ],
+    "ignored_note": "Opt-in workflows were subsequently run separately below. Three interactive probes were not run; catalog smoke covered the service workflow. The standalone Kafka revocation test and performance benchmarks passed in the preceding streaming validation."
+  },
+  "workflows": {
+    "flink": {
+      "status": "passed_twice",
+      "evidence": "flink.json",
+      "checks": [
+        "stateful materialization",
+        "transactional Kafka output",
+        "savepoint restore",
+        "SIGKILL worker recovery",
+        "duplicate suppression",
+        "versioned deletes",
+        "client-owned read/write authorization",
+        "streaming Cypher frames",
+        "actual Iceberg manifest and hybrid reconciliation"
+      ],
+      "limitation": "PyIceberg publishes the manifest after a quiescent savepoint; this is not a Flink Iceberg connector sink test."
+    },
+    "streaming_unit_and_mock_kafka": {
+      "passed": 17
+    },
+    "catalog_auth_clients": {
+      "status": "passed",
+      "clients": [
+        "Python",
+        "JavaScript",
+        "Java",
+        "C++",
+        "Elixir",
+        "Rust",
+        "CLI",
+        "DuckDB extension"
+      ],
+      "checks": [
+        "bearer/file/env credentials",
+        "internal OAuth",
+        "external OIDC/JWKS",
+        "token exchange",
+        "scopes/roles",
+        "revocation/disablement",
+        "fail-closed refresh",
+        "credential log hygiene"
+      ]
+    },
+    "catalog_sqlite_and_postgres": {
+      "passed": 11
+    },
+    "duckdb_extension": {
+      "passed": 103,
+      "skipped": 1,
+      "skip_reason": "Opt-in live OpenAI embedding API test"
+    },
+    "python": {
+      "base": {
+        "passed": 150,
+        "skipped": 46,
+        "subtests_passed": 16
+      },
+      "live_remote": {
+        "passed": 18
+      },
+      "note": "Initially skipped remote/StarRocks configurations were exercised in separate runs; do not sum parameterized counts as unique tests."
+    },
+    "javascript": {
+      "passed": 35
+    },
+    "java_client": {
+      "passed": 52
+    },
+    "java_gremlin_client": {
+      "passed": 12
+    },
+    "cpp": {
+      "passed": 2
+    },
+    "elixir": {
+      "passed": 10
+    },
+    "go": {
+      "status": "passed",
+      "checks": [
+        "uncached tests",
+        "uncached race detector"
+      ]
+    },
+    "rust_client_native_and_cli": {
+      "initial": {
+        "passed": 29,
+        "failed": 2,
+        "ignored": 0
+      },
+      "effective": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0
+      },
+      "note": "The two CLI failures passed with the pinned DuckDB library explicitly supplied to child test processes."
+    },
+    "jvm_graphcomputer": {
+      "passed": 64,
+      "skipped": 0
+    },
+    "jvm_ir_live": {
+      "passed": 16
+    },
+    "graphson_gryo_graphml_independent_java_readers": {
+      "passed": 4
+    },
+    "postgres_sql_smoke": {
+      "passed": 1
+    },
+    "postgres_vector_relationships": {
+      "status": "passed",
+      "note": "All 25 computed-relationship tests passed after enabling pgvector, including HNSW and cross-engine checks."
+    },
+    "quickwit_elasticsearch_rust_live": {
+      "passed": 2
+    },
+    "weaviate": {
+      "status": "passed",
+      "checks": [
+        "cosine/dot/L2",
+        "named vectors",
+        "tenant filtering",
+        "limits",
+        "SQL joins",
+        "exact retrieval",
+        "metric/auth rejection"
+      ]
+    },
+    "json_duckdb_postgres_live": {
+      "passed": 3
+    },
+    "portable_duckdb_postgres_live": {
+      "passed": 3,
+      "failed": 1,
+      "unresolved": [
+        {
+          "test": "portable_results_round_trip_through_both_executors",
+          "error": "Exact float comparison for power(f, 0.5): PostgreSQL 1.3407807929942596e154 versus expected 1.3407807929942597e154."
+        }
+      ]
+    },
+    "starrocks": {
+      "passed": 38,
+      "failed": 5,
+      "unresolved": [
+        {
+          "cases": [
+            "Gremlin numeric predicate"
+          ],
+          "error": "starrocks decimal casts do not preserve scientific notation"
+        },
+        {
+          "cases": [
+            "SPARQL numeric predicate"
+          ],
+          "error": "No mapping for __orchiddb_starrocks_decimal_from_text"
+        },
+        {
+          "cases": [
+            "p.age / 2",
+            "p.age / 2 > 18",
+            "-p.age / 2"
+          ],
+          "error": "Dialect expression template parser rejects DIV"
+        }
+      ]
+    },
+    "release_tooling": {
+      "passed": 21
+    }
+  },
+  "harness_fixes": [
+    "Use Mix to load all Elixir application modules and dependencies; prepare ADBC driver.",
+    "Project a scalar after DISTINCT when testing a plain SQL host without native graph return values.",
+    "Represent a traversal-producing Gremlin apply with its current output.",
+    "Reset the intentional 1ms timeout before testing session recovery.",
+    "Accept the current DuckDB physical-plan display casing.",
+    "Keep synchronous PostgreSQL driver operations outside the Tokio preparation runtime."
+  ],
+  "fixture_corrections": [
+    "Install and enable pgvector in the owned PostgreSQL fixture.",
+    "Explicitly select pinned DuckDB library and CLI; host default CLI was 1.0.0.",
+    "Use a local launcher to preserve the DuckDB library path when Maven/Java starts the native JVM store on macOS."
+  ],
+  "remaining_failure_counts": {
+    "core": 7,
+    "starrocks": 5,
+    "portable_cross_engine": 1,
+    "flaky_core_case_passed_on_retry": 1
+  },
+  "production_code_changes_in_this_validation": "None. Runtime failures above remain unresolved; this commit adds diagnostic coverage and fixes test harnesses.",
+  "cleanup": "Owned Flink/Kafka, PostgreSQL/pgvector, Quickwit/Elasticsearch, Weaviate, and StarRocks fixtures removed; pre-existing kind containers preserved.",
+  "publication": "Local commits only; no push."
+}

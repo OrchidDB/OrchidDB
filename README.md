@@ -759,6 +759,8 @@ The fixture uses Flink 2.0.1 and its compatible Kafka connector. PyIceberg publi
 the checkpoint manifest after the stream is quiescent at a successful savepoint;
 this tests the snapshot contract, not a continuously running Flink Iceberg sink.
 It uses one broker and one worker, so it does not establish cluster HA behavior.
+The broader local workflow results, fixture corrections, and unresolved failures
+are recorded in [`artifacts/e2e/summary.json`](artifacts/e2e/summary.json).
 
 Use `insert(subject, change)` and `subscription.next()` for ordinary single-record
 traffic. Reuse the connection and allow independent insert calls to overlap;
