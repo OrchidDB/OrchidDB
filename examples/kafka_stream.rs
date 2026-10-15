@@ -1,18 +1,42 @@
-//! KAFKA_BOOTSTRAP, KAFKA_TOPIC, KAFKA_SOURCE_ID, SPICEDB_ENDPOINT,
-//! SPICEDB_TOKEN, ORCHID_SUBJECT, ORCHID_ENTITY and ORCHID_VERSION identify services/data.
+//! KAFKA_BOOTSTRAP, KAFKA_TOPIC, KAFKA_SOURCE_ID, ORCHID_SUBJECT, ORCHID_ENTITY and ORCHID_VERSION identify services/data.
+use async_trait::async_trait;
 use orchiddb::{compiler::Authorization, session::Query, streaming::*};
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
+// Example client-owned policy. Replace with your trusted authorizer/cache.
+struct ClientPolicy {
+    subject: String,
+    key: String,
+}
+#[async_trait]
+impl Authorizer for ClientPolicy {
+    async fn check(
+        &self,
+        subject: &Authorization,
+        resource_type: &str,
+        resource_id: &str,
+        permission: &str,
+    ) -> Result<bool, String> {
+        Ok(subject.subject_type == "user"
+            && subject.subject_id == self.subject
+            && resource_type == "person"
+            && resource_id == self.key
+            && ["view", "edit"].contains(&permission))
+    }
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env = |key| std::env::var(key).map_err(|_| format!("set {key}"));
     let mut config = rdkafka::ClientConfig::new();
-    config.set("bootstrap.servers", env("KAFKA_BOOTSTRAP")?);
+    config
+        .set("bootstrap.servers", env("KAFKA_BOOTSTRAP")?)
+        // Avoid an intentional linger delay for this single-record example.
+        .set("linger.ms", "0");
     let log = Arc::new(KafkaLog::new(config, env("KAFKA_TOPIC")?)?);
-    let auth = Arc::new(SpiceDb::new(
-        &env("SPICEDB_ENDPOINT")?,
-        env("SPICEDB_TOKEN")?,
-    )?);
+    let auth = Arc::new(ClientPolicy {
+        subject: env("ORCHID_SUBJECT")?,
+        key: env("ORCHID_ENTITY")?,
+    });
     let schema = StreamSchema {
         tables: BTreeMap::from([(
             "people".into(),

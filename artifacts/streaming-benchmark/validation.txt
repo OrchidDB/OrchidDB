@@ -1,0 +1,23 @@
+Final streaming integration uses client-supplied Authorizer; no streaming SpiceDB feature or adapter.
+
+cargo test --features kafka,duckdb --test streaming
+  17 passed, 1 ignored (opt-in live test), 0 failed.
+  DUCKDB_LIB_DIR pointed to local DuckDB 1.5.2 library.
+Live ignored test: live_kafka_client_authorization_and_revocation
+  Passed against isolated Docker Kafka with a client-owned revocable policy.
+  Verifies insertion denial, stream filtering, bounded-query filtering and Arrow metadata.
+Default-library compilation passed during implementation; DuckDB remains optional.
+Release benchmark checksum and row-count assertions passed for every recorded run.
+
+Historical artifacts containing spice/cached modes were measured before removal of
+Orchid's direct SpiceDB streaming adapter. That adapter was removed at the user's
+request. No server cache was introduced; the cache experiment was diagnostic only.
+Binary hashes distinguish these runs from the final client-authorization-only build.
+
+No Flink deployment or external production cluster was modified or benchmarked.
+Docker Desktop Kubernetes endpoint was unavailable; used isolated Compose project.
+
+Final feature/build checks:
+cargo build --release --features kafka --example kafka_bench: passed.
+cargo check --features kafka --example kafka_stream: passed.
+cargo check --manifest-path clients/rust/Cargo.toml --features kafka: passed.

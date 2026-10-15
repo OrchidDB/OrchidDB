@@ -620,12 +620,12 @@ StarRocks driver, records SQL engine counts, and writes reports under
 The Rust API `orchiddb::streaming` (also re-exported by `orchiddb-client`) provides
 Kafka insertion, bounded Kafka queries, hybrid Iceberg/Kafka queries, and a
 pull-based streaming Cypher subscription. Enable `kafka` for the librdkafka
-transport and `spicedb` for live permission checks. These are optional; default
-library builds do not require Kafka, SpiceDB, or DuckDB. This API is separate from
-the DuckDB extension SQL interface.
+transport. Authorization is supplied by your client through `Authorizer`; the
+streaming API has no SpiceDB dependency. Default library builds do not require
+Kafka or DuckDB. This API is separate from the DuckDB extension SQL interface.
 
 Register `StreamSchema` on `StreamConnection::new` once. Each table specifies its
-node label (or edge endpoints), JSON Schema for properties, and SpiceDB resource
+node label (or edge endpoints), JSON Schema for properties, and authorization resource
 type/read/write permissions. Supply query text and parameters separately using
 `Query::cypher`; set `query.authorization` to the authenticated caller. The host
 must derive this identity from its authentication layer, not accept it from an
@@ -708,31 +708,143 @@ closes its consumer. Errors terminate the subscription. Deduplication state is
 bounded by `Limits.entities`; reaching the limit errors rather than evicting keys
 and risking duplicate results.
 
-SpiceDB checks use the registered resource type and stable entity key, with fully
-consistent reads on every write and on each new visible event. Denials and caveated
-results do not authorize data; network/unknown-decision failures error. Bounded
-queries authorize before executing Cypher, including aggregates and edge
+The client-supplied `Authorizer` receives the authenticated subject, registered
+resource type, stable entity key, and read/write permission. Orchid invokes it
+for insertions and each new event; it does not cache decisions. Your trusted
+client integration owns permission evaluation and any expiring cache policy.
+An authorization error fails the operation; a denial never exposes the payload.
+Bounded queries authorize before executing Cypher, including aggregates and edge
 traversals. Edges are visible only when their endpoints are visible. Streaming
 subscriptions are authorized event feeds, not a permission-change feed: revocation
-blocks future events but does not retract data already delivered. Applications
-that display a retained view must clear/reload it when access changes. Permission
-checks and Kafka writes are separate systems, not a distributed transaction.
+blocks events after the authorizer observes it, but does not retract data already
+delivered. A client cache can delay observation until expiry. Applications with a
+retained view must clear/reload it when access changes. Permission checks and
+Kafka writes are separate systems, not a distributed transaction.
 
-For the runnable insertion/subscription example, grant `edit` and `view` on the
-configured `person:<ORCHID_ENTITY>` object to `user:<ORCHID_SUBJECT>` in SpiceDB,
-create the Kafka topic, and set the environment variables listed in
-[`examples/kafka_stream.rs`](examples/kafka_stream.rs). Then run:
+The runnable [`examples/kafka_stream.rs`](examples/kafka_stream.rs) supplies a
+small client-owned policy for one configured user and entity. Replace that policy
+with your application's trusted authorizer, create the Kafka topic, and set the
+environment variables listed in the example:
 
 ```sh
-cargo run --features kafka,spicedb --example kafka_stream
-cargo test --features kafka,spicedb --test streaming
+cargo run --features kafka --example kafka_stream
+cargo test --features kafka --test streaming
 ```
 
-The feature tests exercise librdkafka's local mock brokers and the SpiceDB HTTP
-contract; they do not require Docker. Production deployment must configure Kafka
-TLS/SASL through `ClientConfig`, Kafka ACLs so producers cannot bypass the trusted
-insertion service, and Flink/Iceberg checkpoint publication. Orchid does not
-provision those services or deploy Flink jobs.
+The feature tests exercise librdkafka's local mock brokers and authorization
+contracts without Docker. The opt-in live test uses the isolated Kafka Compose
+stack. Production deployment must configure Kafka TLS/SASL through `ClientConfig`,
+Kafka ACLs so producers cannot bypass the trusted insertion service, and
+Flink/Iceberg checkpoint publication. Orchid does not provision those services or
+deploy Flink jobs.
+
+Use `insert(subject, change)` and `subscription.next()` for ordinary single-record
+traffic. Reuse the connection and allow independent insert calls to overlap;
+awaiting each broker acknowledgement before issuing the next write limits
+throughput to the inverse of acknowledgement latency. Preserve per-key ordering
+when topic compaction is enabled. Set librdkafka `linger.ms=0` for low-volume,
+latency-sensitive traffic, or measure a small linger under sustained load. Kafka
+can coalesce concurrent records internally without an application batch API.
+
+For occasional batches, use `insert_batch(&subject, &changes)` and
+`subscription.next_batch(256, Duration::from_millis(5))`. Batches accept up to
+4096 records. Insertions validate and authorize the entire batch before producing;
+repeated keys are sent sequentially in input order, and receipts preserve input
+order. Broker failures can still leave partially delivered batches. Subscription
+batches stop before repeated keys so every version retains its own replacement
+result. Process all `FrameBatch.frames` before persisting `FrameBatch.offsets`,
+including empty batches that advance past denied or duplicate records.
+
+Streaming queries compile once and execute the shared Cypher row kernels for
+individual records or batches. A client can override `Authorizer::check_many`
+when its policy service supports bulk checks. Batch size and collection wait trade
+throughput against latency; the wait bounds input collection, not authorization
+or execution time.
+
+The isolated local benchmark uses Docker Compose (Kafka), six Kafka
+partitions, identical JSON envelopes, idempotent producers with `acks=all`, and
+`read_committed` consumers. Run from the repository root:
+
+```sh
+docker compose -p orchid-stream-bench -f tools/diagnostics/streaming.compose.yml up -d
+cargo build --release --features kafka --example kafka_bench
+python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/run.jsonl 50000 native-read native-project orchid-read orchid-batch-read native-write orchid-write orchid-batch-write
+cargo test --features kafka --test streaming live_kafka_client_authorization_and_revocation -- --ignored
+```
+
+`BENCH_BATCH` selects batch size (default 256); `BENCH_INFLIGHT` controls
+concurrent single-record writes (default 4096), and `BENCH_LINGER_MS` defaults
+to 5. Producer batches allow 1 MiB. A 256-request producer window with 5 ms
+linger artificially constrains throughput: it is not a Kafka capacity benchmark.
+Use several million writes and repeated runs when comparing producer capacity:
+
+```sh
+BENCH_INFLIGHT=4096 BENCH_BATCH=4096 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/producer.jsonl 4000000 native-write orchid-write orchid-batch-write
+```
+
+The probe checks query result counts and checksums. Writer measurements exclude 256 warmup deliveries; readers
+report both total throughput and throughput after initial warmup. Read benchmarks
+drain an existing backlog, not a sustained producer/consumer pipeline. Latency
+percentiles in those probes measure API calls (batches for batch modes), not
+event end-to-end latency; the separate live probe measures produce-to-frame latency. `native-project` decodes JSON and reads projected properties; raw
+`native-read` only consumes bytes. The current throughput probe uses an explicit
+no-op client authorizer to isolate execution cost. The local stack uses one
+broker with replication factor one; these results do not
+represent replicated production durability, TLS, or Flink materialization cost.
+Remove this isolated
+stack with the same Compose command followed by `down` when finished.
+
+Local measurements on an Apple M3 Pro (18 GiB), Kafka 4.1.1 with four Docker
+CPUs are recorded in
+[`artifacts/streaming-benchmark`](artifacts/streaming-benchmark). These are local
+capacity probes, not production guarantees. Envelopes are approximately 350–360
+bytes. Single-record APIs are the primary path; batching remains optional.
+
+| Measurement | Native Kafka | OrchidDB |
+| --- | ---: | ---: |
+| Single-record insertion, 4096 in flight, 5 ms linger | 314,831 records/s | 295,738 records/s |
+| Single-record insertion, 256 in flight, zero linger | 176,978 records/s | 176,690 records/s |
+| Serial insertion, zero linger | 2,725 records/s | 2,600 records/s |
+| Backlog drain with JSON projection / Cypher frames | 770,884 records/s | 100,830 records/s |
+| Live produce-to-frame latency, median / p99 | 0.376 / 1.368 ms | 0.424 / 1.222 ms |
+
+This table isolates transport/query cost with a no-op authorizer. The first row
+is the median of three four-million-write runs; native ranged from 292k–433k/s
+and Orchid from 268k–363k/s. Read throughput is the median of three one-million-
+record runs using individual `next()` calls. Live latency measures 3000 serial
+produce/read operations with 300 warmup events excluded from percentiles; it
+includes Kafka acknowledgement and consumer delivery but not Flink computation.
+The single-frame execution path compiles once; its backlog call latency was
+8 microseconds median and 12 microseconds p99. In matched 3000-record probes,
+prepared kernels improved warm single-frame throughput from 1,359 to 93,235/s.
+
+After removing the direct streaming SpiceDB adapter, the final build was checked
+again: one million individual frames at 103,924/s, and live produce-to-frame
+latency of 0.393 ms median / 1.337 ms p99 (native: 0.349 / 1.397 ms). See
+`final-client-authorizer.jsonl` and `final-client-live.jsonl` in the artifact folder.
+These checks also use the no-op client authorizer to isolate engine overhead.
+
+Authorization service latency is owned by the client integration and is not
+included in the table. Historical probes of the removed SpiceDB streaming adapter
+are preserved in the artifacts: a fresh RPC per event limited one subscription
+to about 510/s; an experimental client cache with a fixed 5-second expiry achieved
+73,197/s for one million updates over 1000 entities, including 2962 actual
+permission checks and 997,038 cache hits. Those remote-auth/cache probes describe
+the earlier diagnostic setup, not a cache or SpiceDB dependency shipped by Orchid.
+The current benchmark rejects those retired modes instead of silently bypassing
+their authorization.
+
+Reproduce the live latency probe (distinct from the backlog throughput probe):
+
+```sh
+BENCH_LINGER_MS=0 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/live.jsonl 3000 native-live orchid-live
+```
+
+The initial `before.jsonl` and `after-256.jsonl` are exploratory runs; their small
+producer window/startup effects do not measure Kafka capacity. Use
+`producer-final.jsonl`, `single-write-zero-linger.jsonl`, `read-final.jsonl`, and
+`live-output.jsonl` for the comparisons above. Binary hashes, settings, raw
+latency percentiles, and checksums are retained with the measurements.
 
 ## Optional DuckDB extension
 
@@ -1672,54 +1784,3 @@ An exact retrieval request is rejected when routed to Weaviate. BM25, hybrid
 search, embedding generation, and general collection scans are not implemented.
 Complex edge bodies continue through the existing relational planner; the
 single-target vector ranking shown above uses the shared ranked-retrieval path.
-
-For throughput, use `insert_batch(&subject, &changes)` and
-`subscription.next_batch(256, Duration::from_millis(5))`. Batches accept up to
-4096 records. Insertions validate and authorize the entire batch before producing;
-repeated keys are sent sequentially in input order, and receipts preserve input
-order. Broker failures can still leave partially delivered batches. Subscription
-batches stop before repeated keys so every version retains its own replacement
-result. Process all `FrameBatch.frames` before persisting `FrameBatch.offsets`,
-including empty batches that advance past denied or duplicate records.
-
-Streaming queries compile once and execute the shared Cypher row kernels over
-batches. SpiceDB uses `CheckBulkPermissions` with fully consistent reads and no
-permission cache across batches. This amortizes network round trips while keeping
-revocations effective for subsequent checks. Batch size and collection wait trade
-throughput against latency; the wait bounds input collection, not authorization
-or execution time.
-
-The isolated local benchmark uses Docker Compose (Kafka and SpiceDB), six Kafka
-partitions, identical JSON envelopes, idempotent producers with `acks=all`, and
-`read_committed` consumers. Run from the repository root:
-
-```sh
-docker compose -p orchid-stream-bench -f tools/diagnostics/streaming.compose.yml up -d
-python3 tools/diagnostics/setup_stream_bench.py 50000
-cargo build --release --features kafka,spicedb --example kafka_bench
-python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/run.jsonl 50000 native-read native-project orchid-read orchid-batch-read orchid-spice-batch-read native-write orchid-write orchid-batch-write orchid-spice-batch-write
-cargo test --features kafka,spicedb --test streaming live_kafka_spicedb_batches_and_revocation -- --ignored
-```
-
-`BENCH_BATCH` selects batch size (default 256); `BENCH_INFLIGHT` controls
-concurrent single-record writes (default 4096), and `BENCH_LINGER_MS` defaults
-to 5. Producer batches allow 1 MiB. A 256-request producer window with 5 ms
-linger artificially constrains throughput: it is not a Kafka capacity benchmark.
-Use several million writes and repeated runs when comparing producer capacity:
-
-```sh
-BENCH_INFLIGHT=4096 BENCH_BATCH=4096 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/producer.jsonl 4000000 native-write orchid-write orchid-batch-write
-```
-
-The probe checks query result
-counts and checksums. Writer measurements exclude 256 warmup deliveries; readers
-report both total throughput and throughput after initial warmup. Read benchmarks
-drain an existing backlog, not a sustained producer/consumer pipeline. Latency
-percentiles measure API calls (batches for batch modes), not event end-to-end
-latency. `native-project` decodes JSON and reads projected properties; raw
-`native-read` only consumes bytes. Modes without `spice` use an explicit no-op
-authorizer to isolate execution cost. The local stack uses one broker with
-replication factor one and an in-memory SpiceDB datastore; these results do not
-represent replicated production durability, TLS, or Flink materialization cost.
-The Compose credentials are local benchmark-only credentials. Remove this isolated
-stack with the same Compose command followed by `down` when finished.

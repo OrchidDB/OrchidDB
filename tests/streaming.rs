@@ -356,74 +356,6 @@ async fn kafka_wire_roundtrip_with_librdkafka_mock_brokers() {
     assert_eq!(strings(&batch), vec![vec!["wire"]]);
 }
 
-#[cfg(feature = "spicedb")]
-#[tokio::test]
-async fn spicedb_http_contract_and_fail_closed_decisions() {
-    use std::io::{Read, Write};
-    for (decision, expected) in [
-        ("PERMISSIONSHIP_HAS_PERMISSION", Some(true)),
-        ("PERMISSIONSHIP_NO_PERMISSION", Some(false)),
-        ("PERMISSIONSHIP_CONDITIONAL_PERMISSION", Some(false)),
-        ("unknown", None),
-    ] {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = std::thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
-            socket
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            let mut bytes = Vec::new();
-            let mut buffer = [0; 4096];
-            loop {
-                let n = socket.read(&mut buffer).unwrap();
-                assert!(n > 0);
-                bytes.extend_from_slice(&buffer[..n]);
-                if let Some(end) = bytes.windows(4).position(|v| v == b"\r\n\r\n") {
-                    let headers = std::str::from_utf8(&bytes[..end]).unwrap();
-                    let length: usize = headers
-                        .lines()
-                        .find_map(|l| {
-                            l.to_ascii_lowercase()
-                                .strip_prefix("content-length: ")
-                                .map(str::to_owned)
-                        })
-                        .unwrap()
-                        .parse()
-                        .unwrap();
-                    if bytes.len() >= end + 4 + length {
-                        assert!(headers.starts_with("POST /v1/permissions/check "));
-                        assert!(
-                            headers
-                                .to_ascii_lowercase()
-                                .contains("authorization: bearer test-token")
-                        );
-                        let body: serde_json::Value =
-                            serde_json::from_slice(&bytes[end + 4..end + 4 + length]).unwrap();
-                        assert_eq!(body["consistency"], json!({"fullyConsistent":true}));
-                        assert_eq!(
-                            body["resource"],
-                            json!({"objectType":"person","objectId":"a"})
-                        );
-                        assert_eq!(body["permission"], "edit");
-                        assert_eq!(body["subject"]["object"]["objectId"], "alice");
-                        break;
-                    }
-                }
-            }
-            let body = json!({"permissionship":decision}).to_string();
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
-        });
-        let auth = SpiceDb::new(&endpoint, "test-token".into()).unwrap();
-        let result = auth
-            .check(&Authorization::new("user", "alice"), "person", "a", "edit")
-            .await;
-        assert_eq!(result.ok(), expected);
-        server.join().unwrap();
-    }
-    assert!(SpiceDb::new("http://example.com", "token".into()).is_err());
-}
-
 #[tokio::test]
 async fn authorization_filters_before_aggregates_and_denies_new_stream_events() {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -843,10 +775,10 @@ async fn batch_cancellation_retains_input_and_does_not_reuse_authorization() {
     assert_eq!(batch.offsets[&0], 2);
 }
 
-#[cfg(all(feature = "kafka", feature = "spicedb"))]
+#[cfg(feature = "kafka")]
 #[tokio::test]
-#[ignore = "requires the isolated tools/diagnostics/streaming.compose.yml stack and setup_stream_bench.py"]
-async fn live_kafka_spicedb_batches_and_revocation() {
+#[ignore = "requires the isolated tools/diagnostics/streaming.compose.yml stack"]
+async fn live_kafka_client_authorization_and_revocation() {
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     let topic = format!(
@@ -867,25 +799,29 @@ async fn live_kafka_spicedb_batches_and_revocation() {
         .await
         .unwrap();
     assert!(result.iter().all(Result::is_ok));
-    let auth =
-        Arc::new(SpiceDb::new("http://127.0.0.1:18443", "orchid-benchmark-only".into()).unwrap());
+    struct ClientPolicy(Mutex<std::collections::BTreeSet<String>>);
+    #[async_trait]
+    impl Authorizer for ClientPolicy {
+        async fn check(
+            &self,
+            s: &Authorization,
+            rt: &str,
+            id: &str,
+            permission: &str,
+        ) -> Result<bool, String> {
+            Ok(s.subject_type == "user"
+                && s.subject_id == "alice"
+                && rt == "event"
+                && ["view", "edit"].contains(&permission)
+                && self.0.lock().unwrap().contains(id))
+        }
+    }
     let subject = Authorization::new("user", "alice");
     let a = format!("{topic}-a");
     let b = format!("{topic}-b");
-    let client = reqwest::Client::new();
-    let update = |keys: Vec<String>, op: &str| {
-        let updates:Vec<_>=keys.iter().flat_map(|key|["viewer","editor"].map(|relation|json!({"operation":op,"relationship":{"resource":{"objectType":"event","objectId":key},"relation":relation,"subject":{"object":{"objectType":"user","objectId":"*"}}}}))).collect();
-        client
-            .post("http://127.0.0.1:18443/v1/relationships/write")
-            .bearer_auth("orchid-benchmark-only")
-            .json(&json!({"updates":updates}))
-    };
-    update(vec![a.clone(), b.clone()], "OPERATION_TOUCH")
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
+    let auth = Arc::new(ClientPolicy(Mutex::new(
+        [a.clone(), b.clone()].into_iter().collect(),
+    )));
     let decisions = auth
         .check_many(
             &subject,
@@ -908,7 +844,7 @@ async fn live_kafka_spicedb_batches_and_revocation() {
     let mut s = schema();
     s.tables.get_mut("people").unwrap().resource_type = "event".into();
     let log = Arc::new(KafkaLog::new(config, topic.clone()).unwrap());
-    let c = StreamConnection::new(s, topic.clone(), log, auth, Limits::default()).unwrap();
+    let c = StreamConnection::new(s, topic.clone(), log, auth.clone(), Limits::default()).unwrap();
     c.insert_batch(
         &subject,
         &[change(&a, 1, Some("A")), change(&b, 1, Some("B"))],
@@ -950,12 +886,7 @@ async fn live_kafka_spicedb_batches_and_revocation() {
         );
     }
     c.insert(&subject, change(&b, 2, Some("B2"))).await.unwrap();
-    update(vec![b.clone()], "OPERATION_DELETE")
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
+    auth.0.lock().unwrap().remove(&b);
     assert!(
         c.insert(&subject, change(&b, 3, Some("forbidden")))
             .await
@@ -971,103 +902,9 @@ async fn live_kafka_spicedb_batches_and_revocation() {
         strings(&c.query(query("MATCH (p) RETURN p.name")).await.unwrap()),
         vec![vec!["A"]]
     );
-    update(vec![a, b], "OPERATION_DELETE")
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
     let result = admin
         .delete_topics(&[&topic], &AdminOptions::new())
         .await
         .unwrap();
     assert!(result.iter().all(Result::is_ok));
-}
-
-#[cfg(feature = "spicedb")]
-#[tokio::test]
-async fn spicedb_bulk_rejects_incomplete_mismatched_and_unknown_decisions() {
-    use std::io::{Read, Write};
-    for case in [
-        "allow",
-        "deny",
-        "conditional",
-        "unknown",
-        "missing",
-        "wrong-key",
-        "error",
-    ] {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = std::thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
-            socket
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            let mut bytes = Vec::new();
-            let mut buffer = [0; 4096];
-            let request = loop {
-                let n = socket.read(&mut buffer).unwrap();
-                assert!(n > 0);
-                bytes.extend_from_slice(&buffer[..n]);
-                if let Some(end) = bytes.windows(4).position(|v| v == b"\r\n\r\n") {
-                    let headers = std::str::from_utf8(&bytes[..end]).unwrap();
-                    let length: usize = headers
-                        .lines()
-                        .find_map(|line| {
-                            line.to_ascii_lowercase()
-                                .strip_prefix("content-length: ")
-                                .map(str::to_owned)
-                        })
-                        .unwrap()
-                        .parse()
-                        .unwrap();
-                    if bytes.len() >= end + 4 + length {
-                        assert!(headers.starts_with("POST /v1/permissions/checkbulk "));
-                        let body: serde_json::Value =
-                            serde_json::from_slice(&bytes[end + 4..end + 4 + length]).unwrap();
-                        assert_eq!(body["consistency"], json!({"fullyConsistent":true}));
-                        break body["items"][0].clone();
-                    }
-                }
-            };
-            let decision = match case {
-                "deny" => "PERMISSIONSHIP_NO_PERMISSION",
-                "conditional" => "PERMISSIONSHIP_CONDITIONAL_PERMISSION",
-                "unknown" => "UNKNOWN",
-                _ => "PERMISSIONSHIP_HAS_PERMISSION",
-            };
-            let mut pair = json!({"request":request,"item":{"permissionship":decision}});
-            if case == "wrong-key" {
-                pair["request"]["resource"]["objectId"] = json!("someone-else");
-            }
-            if case == "error" {
-                pair["error"] = json!({"code":13});
-            }
-            let body = if case == "missing" {
-                json!({"pairs":[]})
-            } else {
-                json!({"pairs":[pair]})
-            }
-            .to_string();
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
-        });
-        let result = SpiceDb::new(&endpoint, "test-token".into())
-            .unwrap()
-            .check_many(
-                &Authorization::new("user", "alice"),
-                &[PermissionCheck {
-                    resource_type: "person",
-                    resource_id: "a",
-                    permission: "view",
-                }],
-            )
-            .await;
-        match case {
-            "allow" => assert_eq!(result.unwrap(), vec![true]),
-            "deny" | "conditional" => assert_eq!(result.unwrap(), vec![false]),
-            _ => assert!(result.is_err(), "{case}"),
-        }
-        server.join().unwrap();
-    }
 }

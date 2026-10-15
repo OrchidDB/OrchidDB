@@ -21,7 +21,6 @@ orchid-catalog = ["orchiddb/orchid-catalog"]
 quickwit = ["orchiddb/quickwit"]
 elasticsearch = ["orchiddb/elasticsearch"]
 kafka = ["orchiddb/kafka"]
-spicedb = ["orchiddb/spicedb"]
 duckdb = ["orchiddb/duckdb"]
 bundled-test-driver = ["duckdb/bundled"]
 

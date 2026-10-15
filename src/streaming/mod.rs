@@ -21,10 +21,6 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 mod kafka;
 #[cfg(feature = "kafka")]
 pub use kafka::KafkaLog;
-#[cfg(feature = "spicedb")]
-mod spicedb;
-#[cfg(feature = "spicedb")]
-pub use spicedb::SpiceDb;
 #[cfg(feature = "duckdb")]
 mod iceberg;
 #[cfg(feature = "duckdb")]
@@ -93,7 +89,8 @@ pub trait Authorizer: Send + Sync {
         resource_id: &str,
         permission: &str,
     ) -> Result<bool, String>;
-    /// Results must correspond one-for-one to input order. No permission cache.
+    /// Results must correspond one-for-one to input order. Implementations own
+    /// consistency and any client-side expiry policy; Orchid does not cache decisions.
     async fn check_many(
         &self,
         subject: &Authorization,

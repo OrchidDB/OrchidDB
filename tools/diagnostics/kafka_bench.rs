@@ -1,5 +1,5 @@
 //! Local Kafka throughput probe. Environment: KAFKA_BOOTSTRAP, BENCH_TOPIC,
-//! BENCH_N, BENCH_MODE, SPICEDB_ENDPOINT. JSON output includes measured boundaries.
+//! BENCH_N, BENCH_MODE, BENCH_INFLIGHT, BENCH_KEYS, BENCH_LINGER_MS.
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use orchiddb::{compiler::Authorization, session::Query, streaming::*};
@@ -13,7 +13,7 @@ use rdkafka::{
 use serde_json::json;
 use std::{
     collections::BTreeMap,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 struct LocalAuth;
@@ -23,11 +23,19 @@ impl Authorizer for LocalAuth {
         Ok(true)
     }
 }
+static KEY_COUNT: OnceLock<usize> = OnceLock::new();
 fn change(i: usize) -> Change {
+    let keys = *KEY_COUNT.get_or_init(|| {
+        std::env::var("BENCH_KEYS")
+            .ok()
+            .map(|s| s.parse::<usize>().expect("BENCH_KEYS integer"))
+            .unwrap_or(usize::MAX)
+            .max(1)
+    });
     Change {
         table: "events".into(),
-        key: format!("{i}"),
-        version: 1,
+        key: format!("{}", i % keys),
+        version: (i / keys + 1) as u64,
         data: Some(
             json!({"name":format!("event-{i}"),"score":i as i64,"body":"x".repeat(256)})
                 .as_object()
@@ -66,7 +74,7 @@ fn report(
     let at = |p: f64| us[((us.len() - 1) as f64 * p) as usize];
     println!(
         "{}",
-        json!({"mode":mode,"n":n,"elapsed_s":elapsed,"records_s":n as f64/elapsed,"warmup":warmup,"steady_records_s":(n-warmup) as f64/steady_s,"call_p50_us":at(0.5),"call_p95_us":at(0.95),"call_p99_us":at(0.99),"checksum":checksum,"latency_unit":if mode.contains("batch"){"batch"}else{"record"},"producer_warmup":if mode.contains("write"){256.min(n)}else{0}})
+        json!({"mode":mode,"n":n,"elapsed_s":elapsed,"records_s":n as f64/elapsed,"warmup":warmup,"steady_records_s":(n-warmup) as f64/steady_s,"call_p50_us":at(0.5),"call_p95_us":at(0.95),"call_p99_us":at(0.99),"checksum":checksum,"latency_unit":if mode.ends_with("live"){"produce-to-frame"}else if mode.contains("batch"){"batch"}else{"record"},"producer_warmup":if mode.contains("write"){256.min(n)}else{0}})
     );
 }
 #[tokio::main]
@@ -75,6 +83,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or("3000".into())
         .parse::<usize>()?;
     let mode = std::env::var("BENCH_MODE").unwrap_or("native-read".into());
+    if ![
+        "seed",
+        "native-read",
+        "native-project",
+        "native-write",
+        "native-wire-write",
+        "native-live",
+        "orchid-live",
+        "orchid-read",
+        "orchid-batch-read",
+        "orchid-write",
+        "orchid-batch-write",
+    ]
+    .contains(&mode.as_str())
+    {
+        return Err("unknown benchmark mode (authorization is client supplied)".into());
+    }
     let topic = std::env::var("BENCH_TOPIC").unwrap_or("orchid-bench-v1".into());
     let brokers = std::env::var("KAFKA_BOOTSTRAP").unwrap_or("127.0.0.1:19092".into());
     let inflight = std::env::var("BENCH_INFLIGHT")
@@ -108,14 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let log = Arc::new(KafkaLog::new(config.clone(), topic.clone())?);
-    let auth: Arc<dyn Authorizer> = if mode.contains("spice") {
-        Arc::new(SpiceDb::new(
-            &std::env::var("SPICEDB_ENDPOINT").unwrap_or("http://127.0.0.1:18443".into()),
-            "orchid-benchmark-only".into(),
-        )?)
-    } else {
-        Arc::new(LocalAuth)
-    };
+    let auth: Arc<dyn Authorizer> = Arc::new(LocalAuth);
     let connection = StreamConnection::new(
         schema(),
         topic.clone(),
@@ -130,6 +148,92 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or("256".into())
         .parse::<usize>()?;
     let subject = Authorization::new("user", "bench");
+    if mode.ends_with("live") {
+        // A live materializer probe: start the consumer before producing each
+        // event, then measure produce-start through delivery of its single frame.
+        // This serial probe measures latency, not saturation throughput.
+        let producer: FutureProducer = config.create()?;
+        let mut q = Query::cypher(
+            "MATCH (e:Event) WHERE e.score >= 0 RETURN e.name AS name, e.score AS score",
+        );
+        q.authorization = Some(subject.clone());
+        let mut sub = if mode.starts_with("orchid") {
+            Some(
+                connection
+                    .subscribe(q, (0..6).map(|p| (p, 0)).collect())
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let consumer: Option<StreamConsumer> = if sub.is_none() {
+            let mut cfg = config.clone();
+            cfg.set("group.id", "orchid-live-native")
+                .set("enable.auto.commit", "false")
+                .set("enable.auto.offset.store", "false")
+                .set("auto.offset.reset", "error")
+                .set("isolation.level", "read_committed");
+            let c: StreamConsumer = cfg.create()?;
+            let mut assignment = TopicPartitionList::new();
+            for p in 0..6 {
+                assignment.add_partition_offset(&topic, p, Offset::Offset(0))?;
+            }
+            c.assign(&assignment)?;
+            Some(c)
+        } else {
+            None
+        };
+        let start = Instant::now();
+        let mut steady = start;
+        let warmup = (n / 10).min(1000);
+        let mut samples = Vec::new();
+        let mut checksum = 0;
+        for i in 0..n {
+            let t = Instant::now();
+            let c = change(i);
+            let key = c.kafka_key();
+            let payload = serde_json::to_vec(&c)?;
+            producer
+                .send(
+                    FutureRecord::to(&topic).key(&key).payload(&payload),
+                    Duration::from_secs(10),
+                )
+                .await
+                .map_err(|(e, _)| e)?;
+            if let Some(sub) = &mut sub {
+                let frame = tokio::time::timeout(Duration::from_secs(15), sub.next())
+                    .await??
+                    .ok_or("stream ended")?;
+                assert_eq!(frame.key, c.key);
+                let rows = frame.rows.ok_or("missing result")?;
+                assert_eq!(rows.num_rows(), 1);
+                checksum += rows
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Int64Array>()
+                    .ok_or("score type")?
+                    .value(0) as u64;
+            } else {
+                let message = tokio::time::timeout(
+                    Duration::from_secs(15),
+                    consumer.as_ref().unwrap().recv(),
+                )
+                .await??;
+                let got: Change = serde_json::from_slice(message.payload().ok_or("payload")?)?;
+                assert_eq!(got.key, c.key);
+                checksum += got.data.unwrap()["score"].as_u64().ok_or("score")?;
+            }
+            if i >= warmup {
+                samples.push(t.elapsed().as_micros());
+            }
+            if i + 1 == warmup {
+                steady = Instant::now();
+            }
+        }
+        assert_eq!(checksum, (n * (n - 1) / 2) as u64);
+        report(&mode, n, start, steady, warmup, samples, checksum);
+        return Ok(());
+    }
     if mode.contains("write") || mode == "seed" {
         let producer: FutureProducer = config.create()?;
         // Warm the active producer, metadata, authorization connection and broker.
