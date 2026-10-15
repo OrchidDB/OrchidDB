@@ -318,6 +318,11 @@ impl HttpSession {
         request: &Value,
         columns: &[TransferColumn],
     ) -> Result<Vec<RecordBatch>, String> {
+        #[cfg(feature = "weaviate")]
+        if self.engine == Engine::Weaviate {
+            return self.execute_weaviate_many(std::slice::from_ref(request), columns)
+                .await.map(|mut results| results.remove(0));
+        }
         let request = request
             .as_object()
             .ok_or("remote request must be an object")?;
@@ -374,12 +379,6 @@ impl HttpSession {
             )?]);
         }
         let mut body = bound_body(&root, &parameters)?;
-        #[cfg(feature = "weaviate")]
-        if self.engine == Engine::Weaviate {
-            return self
-                .execute_weaviate(&root, &body, projections, columns, &parameters)
-                .await;
-        }
         let projections = self.score_projections(projections, &body)?;
         let projections = projections.as_slice();
         if let Some(requirements) = request.get("requirements").and_then(Value::as_array) {

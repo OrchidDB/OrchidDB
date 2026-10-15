@@ -450,3 +450,150 @@ async fn query_timeout_and_response_size_limits_are_enforced() {
     assert!(requests.recv().is_ok());
     server.join().unwrap();
 }
+
+#[cfg(feature = "weaviate")]
+fn vector_request(source: i64) -> Value {
+    json!({"version":1,"engine":"weaviate","api":"weaviate","operation":"search",
+        "index":"Docs","metric":"cosine","limit":1,"parameters":[source],
+        "columns":[{"source":"parameter","parameter":0},{"source":"field","path":["doc_id"]}],
+        "body":{"vector":[1.0,0.0],"query":{"match_all":{}},"score_filters":[]}})
+}
+#[cfg(feature = "weaviate")]
+fn vector_schema() -> Value {
+    json!({"properties":[{"name":"doc_id","dataType":["int"]}],"vectorIndexConfig":{"distance":"cosine"}})
+}
+#[cfg(feature = "weaviate")]
+#[tokio::test]
+async fn weaviate_batches_aliases_chunks_and_source_identity() {
+    let row = |id| json!([{"doc_id":id,"_additional":{"id":"uuid","distance":0.1}}]);
+    let (endpoint, seen, server) = serve(vec![
+        (200, vector_schema()),
+        (200, json!({"data":{"Get":{"q1":row(20),"q0":row(10)}}})),
+        (200, json!({"data":{"Get":{"q0":row(30)}}})),
+    ]);
+    let mut options = HttpOptions::new(&endpoint);
+    options.batch_size = 2;
+    let mut session = HttpSession::new(Engine::Weaviate, options, None).unwrap();
+    let columns = [
+        column("source", "int64", false),
+        column("doc", "int64", false),
+    ];
+    let result = session
+        .execute_many(
+            &[
+                vector_request(100),
+                vector_request(200),
+                vector_request(300),
+            ],
+            &columns,
+        )
+        .await
+        .unwrap();
+    for (i, batches) in result.iter().enumerate() {
+        assert_eq!(
+            ScalarValue::try_from_array(batches[0].column(0), 0).unwrap(),
+            ScalarValue::Int64(Some((i as i64 + 1) * 100))
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(batches[0].column(1), 0).unwrap(),
+            ScalarValue::Int64(Some((i as i64 + 1) * 10))
+        );
+    }
+    let calls: Vec<_> = seen.iter().take(3).collect();
+    server.join().unwrap();
+    assert!(calls[0].starts_with("GET /v1/schema/Docs"));
+    assert!(calls[1].contains("q0:Docs") && calls[1].contains("q1:Docs"));
+    assert!(calls[2].contains("q0:Docs") && !calls[2].contains("q1:Docs"));
+}
+#[cfg(feature = "weaviate")]
+#[tokio::test]
+async fn weaviate_empty_requests_keep_positions_without_network_queries() {
+    let (endpoint, seen, server) = serve(vec![(200, vector_schema())]);
+    let mut session = HttpSession::weaviate(&endpoint).unwrap();
+    let mut zero = vector_request(1);
+    zero["limit"] = json!(0);
+    let mut null = vector_request(2);
+    null["body"]["vector"] = Value::Null;
+    null["null_query_paths"] = json!(["/body/vector"]);
+    let mut cosine_zero = vector_request(3);
+    cosine_zero["body"]["vector"] = json!([0, 0]);
+    let results = session
+        .execute_many(
+            &[zero, null, cosine_zero],
+            &[
+                column("source", "int64", false),
+                column("doc", "int64", false),
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 3);
+    assert!(results.iter().all(|r| r[0].num_rows() == 0));
+    assert!(seen.recv().unwrap().starts_with("GET"));
+    server.join().unwrap();
+    assert!(seen.try_recv().is_err());
+}
+#[cfg(feature = "weaviate")]
+#[tokio::test]
+async fn weaviate_batch_partial_errors_and_missing_aliases_fail_closed() {
+    for response in [
+        json!({"data":{"Get":{"q0":[]}},"errors":[{"message":"failed q1"}]}),
+        json!({"data":{"Get":{"q0":[]}}}),
+    ] {
+        let (endpoint, seen, server) = serve(vec![(200, vector_schema()), (200, response)]);
+        let mut session = HttpSession::weaviate(&endpoint).unwrap();
+        assert!(
+            session
+                .execute_many(
+                    &[vector_request(1), vector_request(2)],
+                    &[
+                        column("source", "int64", false),
+                        column("doc", "int64", false)
+                    ]
+                )
+                .await
+                .is_err()
+        );
+        seen.recv().unwrap();
+        seen.recv().unwrap();
+        server.join().unwrap();
+    }
+}
+
+#[cfg(feature = "weaviate")]
+#[tokio::test]
+async fn weaviate_batch_keeps_thresholds_and_rejects_oversized_results() {
+    let row = json!({"doc_id":1,"_additional":{"distance":0.2}});
+    let (endpoint, seen, server) = serve(vec![
+        (200, vector_schema()),
+        (
+            200,
+            json!({"data":{"Get":{"q0":[row.clone()],"q1":[row.clone()]}}}),
+        ),
+        (200, json!({"data":{"Get":{"q0":[row.clone(),row]}}})),
+    ]);
+    let mut session = HttpSession::weaviate(&endpoint).unwrap();
+    let mut strict = vector_request(1);
+    strict["body"]["score_filters"] = json!([{"op":"gte","value":0.9}]);
+    let columns = [
+        column("source", "int64", false),
+        column("doc", "int64", false),
+    ];
+    let result = session
+        .execute_many(&[strict, vector_request(2)], &columns)
+        .await
+        .unwrap();
+    assert_eq!(result[0][0].num_rows(), 0);
+    assert_eq!(result[1][0].num_rows(), 1);
+    assert!(
+        session
+            .execute_many(&[vector_request(3)], &columns)
+            .await
+            .unwrap_err()
+            .contains("more rows")
+    );
+    for _ in 0..3 {
+        seen.recv().unwrap();
+    }
+    server.join().unwrap();
+}

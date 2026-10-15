@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "recorded_at": "2026-10-15T00:58:34.736305+00:00",
+  "base_revision": "799bb6e410e7e5f96cc4fc7ebc0b0da771988f9a",
+  "implementation": "Shared Weaviate transport batches function-backed edge lookups as independently aliased GraphQL Get fields. HTTP batching does not combine the vector searches inside Weaviate.",
+  "unit_tests": {
+    "command": "cargo test --locked --features weaviate --lib remote::transport --no-fail-fast",
+    "passed": 21,
+    "failed": 0,
+    "checks": [
+      "chunking and alias correlation",
+      "source identity and request order",
+      "zero-limit/null/zero-vector empty results",
+      "partial GraphQL errors",
+      "missing aliases",
+      "independent score thresholds",
+      "oversized per-source result rejection",
+      "existing transport tests"
+    ]
+  },
+  "live": {
+    "command": "extension/vendor/test-env/bin/python scripts/weaviate_smoke.py --no-build",
+    "server": "Weaviate 1.34.0 in an isolated Docker container",
+    "client": "Python -> shared native execution -> shared HTTP transport",
+    "measurement": "Loopback forwarding proxy counts actual POST /v1/graphql requests; schema GETs excluded.",
+    "cases": [
+      "cosine",
+      "dot",
+      "L2",
+      "named-vector cosine"
+    ],
+    "each_case": {
+      "source_lookups": 5,
+      "default_batch_size": 64,
+      "default_http_requests": 1,
+      "configured_batch_size": 2,
+      "configured_http_requests": 3
+    },
+    "checks": [
+      "per-source top-k",
+      "tenant filtering and authoritative SQL recheck",
+      "duplicate vectors retain distinct source identities",
+      "derived edge joins to local documents/authors",
+      "score conversion",
+      "metric mismatch rejection",
+      "exact-retrieval rejection",
+      "authentication rejection/redaction"
+    ]
+  },
+  "configuration": "RemoteEngine(..., batch_size=64) / HttpOptions.batch_size; 1 disables combining lookups.",
+  "cleanup": "Owned Weaviate container and forwarding proxy removed; pre-existing containers preserved."
+}

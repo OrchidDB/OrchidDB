@@ -8,6 +8,10 @@ impl HttpSession {
         if requests.is_empty() {
             return Ok(vec![]);
         }
+        #[cfg(feature = "weaviate")]
+        if self.engine == Engine::Weaviate {
+            return self.execute_weaviate_many(requests, columns).await;
+        }
         let bounded_elastic = requests.iter().all(|request| {
             request
                 .get("api")

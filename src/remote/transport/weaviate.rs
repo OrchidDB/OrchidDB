@@ -194,14 +194,101 @@ fn filter(schema: &Value, value: &Value, negate: bool) -> Result<Filter, String>
 }
 
 impl HttpSession {
-    pub(super) async fn execute_weaviate(
+    pub(super) async fn execute_weaviate_many(
+        &mut self,
+        requests: &[Value],
+        columns: &[TransferColumn],
+    ) -> Result<Vec<Vec<RecordBatch>>, String> {
+        let mut output = Vec::with_capacity(requests.len());
+        for chunk in requests.chunks(self.options.batch_size) {
+            let mut jobs = Vec::with_capacity(chunk.len());
+            let mut fields = Vec::new();
+            for (position, request) in chunk.iter().enumerate() {
+                if request["version"] != 1
+                    || request["engine"] != "weaviate"
+                    || request["api"] != "weaviate"
+                    || request["operation"] != "search"
+                {
+                    return Err("invalid Weaviate batch request".into());
+                }
+                let projections = request["columns"].as_array().ok_or("missing projections")?;
+                let projections =
+                    parameter_null_projections(projections, request.get("parameter_nulls"))?;
+                validate_projections(&projections, columns)?;
+                let parameters = request["parameters"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                let (limit, offset) = request_bounds(request)?;
+                if offset != 0 {
+                    return Err("Weaviate retrieval does not support offsets".into());
+                }
+                self.check_rows(limit.ok_or("Weaviate retrieval requires a limit")?)?;
+                let empty = limit == Some(0)
+                    || request["null_query_paths"].as_array().is_some_and(|paths| {
+                        paths.iter().any(|p| {
+                            p.as_str()
+                                .and_then(|p| request.pointer(p))
+                                .is_some_and(Value::is_null)
+                        })
+                    });
+                let body = if empty {
+                    Value::Null
+                } else {
+                    bound_body(request, &parameters)?
+                };
+                let field = if empty {
+                    None
+                } else {
+                    self.prepare_weaviate(request, &body, &projections).await?
+                };
+                let active = field.is_some();
+                if let Some(field) = field {
+                    fields.push(format!("q{position}:{field}"));
+                }
+                jobs.push((request, body, projections, parameters, active));
+            }
+            let response = if fields.is_empty() {
+                Value::Null
+            } else {
+                let query = format!("{{Get{{{}}}}}", fields.join(" "));
+                let response = self
+                    .request_json(
+                        Method::POST,
+                        &["v1", "graphql"],
+                        Some(&json!({"query":query})),
+                    )
+                    .await?;
+                if response
+                    .get("errors")
+                    .is_some_and(|errors| errors.as_array().is_none_or(|errors| !errors.is_empty()))
+                {
+                    return Err("Weaviate GraphQL batch failed".into());
+                }
+                response
+            };
+            for (position, (request, body, projections, parameters, active)) in
+                jobs.into_iter().enumerate()
+            {
+                let batches = if active {
+                    let rows = response["data"]["Get"][format!("q{position}")]
+                        .as_array()
+                        .ok_or("Weaviate batch response omitted a result alias")?;
+                    self.decode_weaviate(request, &body, rows, &projections, columns, &parameters)?
+                } else {
+                    vec![decode_rows(&[], &projections, columns, &parameters, false)?]
+                };
+                output.push(batches);
+            }
+        }
+        Ok(output)
+    }
+    async fn prepare_weaviate(
         &mut self,
         request: &Value,
         body: &Value,
         projections: &[Value],
-        columns: &[TransferColumn],
-        parameters: &[Value],
-    ) -> Result<Vec<RecordBatch>, String> {
+    ) -> Result<Option<String>, String> {
         if request["api"] != "weaviate" || request["operation"] != "search" {
             return Err("Weaviate supports typed ranked retrieval requests".into());
         }
@@ -263,14 +350,12 @@ impl HttpSession {
         {
             return Err("Weaviate query vector must contain finite numbers".into());
         }
-        let empty =
-            || decode_rows(&[], projections, columns, parameters, false).map(|batch| vec![batch]);
         if metric == "cosine" && vector.iter().all(|value| value.as_f64() == Some(0.0)) {
-            return empty();
+            return Ok(None);
         }
         let where_filter = filter(schema, &body["query"], false)?;
         if matches!(where_filter, Filter::None) {
-            return empty();
+            return Ok(None);
         }
         let mut near = json!({"vector":vector});
         if let Some(name) = vector_name {
@@ -282,7 +367,7 @@ impl HttpSession {
         let mut distance: Option<f64> = None;
         for threshold in thresholds {
             if threshold["value"].is_null() {
-                return empty();
+                return Ok(None);
             }
             let value = threshold["value"]
                 .as_f64()
@@ -293,14 +378,14 @@ impl HttpSession {
                 "dot" => -value,
                 "l2" => {
                     if value < 0.0 {
-                        return empty();
+                        return Ok(None);
                     }
                     value * value
                 }
                 _ => unreachable!(),
             };
             if metric == "cosine" && bound < 0.0 {
-                return empty();
+                return Ok(None);
             }
             if bound.is_finite() {
                 distance = Some(distance.map_or(bound, |current| current.min(bound)));
@@ -334,26 +419,26 @@ impl HttpSession {
             }
         }
         let query = format!(
-            "{{Get{{{collection}({}){{{} _additional{{id distance}}}}}}}}",
+            "{collection}({}){{{} _additional{{id distance}}}}",
             arguments.join(","),
             fields.into_iter().collect::<Vec<_>>().join(" ")
         );
-        let response = self
-            .request_json(
-                Method::POST,
-                &["v1", "graphql"],
-                Some(&json!({"query":query})),
-            )
-            .await?;
-        if response
-            .get("errors")
-            .is_some_and(|errors| errors.as_array().is_none_or(|errors| !errors.is_empty()))
-        {
-            return Err("Weaviate GraphQL request failed".into());
-        }
-        let rows = response["data"]["Get"][collection]
+        Ok(Some(query))
+    }
+    fn decode_weaviate(
+        &self,
+        request: &Value,
+        body: &Value,
+        rows: &[Value],
+        projections: &[Value],
+        columns: &[TransferColumn],
+        parameters: &[Value],
+    ) -> Result<Vec<RecordBatch>, String> {
+        let limit = request["limit"].as_u64().ok_or("missing limit")?;
+        let metric = request["metric"].as_str().ok_or("missing metric")?;
+        let thresholds = body["score_filters"]
             .as_array()
-            .ok_or("invalid Weaviate retrieval response")?;
+            .ok_or("missing score predicates")?;
         if rows.len() as u64 > limit {
             return Err("Weaviate returned more rows than requested".into());
         }

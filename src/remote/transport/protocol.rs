@@ -204,8 +204,10 @@ mod tests {
     async fn lifecycle_empty_results_and_invalid_options() {
         let adapter = if cfg!(feature = "quickwit") {
             "quickwit"
-        } else {
+        } else if cfg!(feature = "elasticsearch") {
             "elasticsearch"
+        } else {
+            "weaviate"
         };
         let open =
             json!({"op":"open","adapter":adapter,"options":{"endpoint":"http://127.0.0.1:1"}});

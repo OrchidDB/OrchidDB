@@ -1706,6 +1706,18 @@ back to the mapped SQL tables. There is no Weaviate SDK dependency. Rust users
 opt in with the `weaviate` feature; the native clients and CLI include the adapter.
 Weaviate runs separately.
 
+Function-backed retrieval edges batch source lookups automatically through the
+shared `Session::execute_requests` interface. Weaviate combines lookups into one
+GraphQL request using a distinct alias for each source. `batch_size` on the remote
+session controls the maximum lookups per request (default 64); set it to 1 for
+single-lookup requests. Each lookup keeps its own vector, filters, threshold,
+and top-k limit. Equal vectors from different sources keep separate results.
+Missing aliases or GraphQL errors fail the operation without returning partial
+results. Request/response byte limits still apply to the combined HTTP request.
+This combines network round trips; Weaviate still performs each vector search.
+Other function-backed adapters can implement the same batch interface; adapters
+without a batch implementation retain their sequential fallback.
+
 For mapped `Question` and `Document` nodes with `embedding` and `tenant_id`
 properties, register this edge in the catalog:
 
@@ -1775,13 +1787,14 @@ from orchiddb import Connection, DuckDBEngine, RemoteEngine
 local = DuckDBEngine(duckdb_connection)
 with RemoteEngine(
     "weaviate", "https://vectors.example.com",
+    batch_size=64,
     authentication={"type": "api_key", "token": os.environ["WEAVIATE_API_KEY"]},
 ) as vectors:
     with Connection(local, schema=schema, engines={"local": local, "vectors": vectors}) as graph:
         with graph.query(
             "MATCH (q:Question)-[r:RELEVANT_TO {score: $score, limit: $limit}]->(d:Document) "
-            "WHERE q.id = $questionId RETURN d.title, r.score ORDER BY r.score DESC",
-            parameters={"questionId": 10, "score": 0.7, "limit": 5},
+            "RETURN q.id AS question, d.title, r.score ORDER BY q.id, r.score DESC",
+            parameters={"score": 0.7, "limit": 5},
         ) as result:
             rows = result.read_all().to_pylist()
 ```

@@ -9,6 +9,9 @@ import secrets
 import subprocess
 import sys
 import time
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +47,7 @@ def main():
                '-e','DEFAULT_VECTORIZER_MODULE=none','-e','DISABLE_TELEMETRY=true','-e','CLUSTER_HOSTNAME=orchid-smoke',
                'cr.weaviate.io/semitechnologies/weaviate:1.34.0']
     subprocess.run(command, env=environment, check=True, stdout=subprocess.DEVNULL)
+    proxy = None
     try:
         for _ in range(30):
             published = subprocess.run(['docker','port',container,'8080/tcp'],text=True,capture_output=True)
@@ -69,6 +73,25 @@ def main():
             except Exception:
                 if attempt == 119: raise
                 time.sleep(0.5)
+        graphql_calls = []
+        # Count actual HTTP round trips, not just adapter method invocations.
+        class Proxy(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def forward(self):
+                data = self.rfile.read(int(self.headers.get('Content-Length', 0))) if self.command == 'POST' else None
+                if self.path == '/v1/graphql': graphql_calls.append(json.loads(data)['query'])
+                headers = {key:value for key,value in self.headers.items() if key.lower() not in ('host','content-length','connection')}
+                try: response = urlopen(Request(endpoint+self.path, data=data, headers=headers, method=self.command), timeout=30)
+                except HTTPError as error: response = error
+                with response:
+                    raw = response.read(); self.send_response(response.status)
+                    self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(raw)))
+                    self.end_headers(); self.wfile.write(raw)
+            do_GET = forward
+            do_POST = forward
+        proxy = ThreadingHTTPServer(('127.0.0.1',0),Proxy)
+        worker = threading.Thread(target=proxy.serve_forever,daemon=True); worker.start()
+        proxy_endpoint = 'http://127.0.0.1:'+str(proxy.server_port)
         db = duckdb.connect()
         db.execute("CREATE TABLE questions(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[]); INSERT INTO questions VALUES (10,'a',[1,0]),(20,'a',[0,1]); CREATE TABLE documents(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[], title VARCHAR); INSERT INTO documents VALUES (1,'a',[1,0],'Graph storage'),(2,'a',[0.8,0.6],'Graph retrieval'),(3,'b',[1,0],'Other tenant'); CREATE TABLE authors(id BIGINT,name VARCHAR); INSERT INTO authors VALUES (100,'Ada'),(200,'Grace'); CREATE TABLE written_by(id BIGINT,document_id BIGINT,author_id BIGINT); INSERT INTO written_by VALUES(1,1,100),(2,2,200)")
         table = lambda name, columns:dict(name=name,engine='local',columns=[dict(name=n,data_type=t) for n,t in columns])
@@ -77,7 +100,7 @@ def main():
             nodes=[dict(label='Question',table='questions',id='id',properties={'id':'id','tenant_id':'tenant_id','embedding':'embedding'}),dict(label='Document',table='documents',id='id',properties={'id':'id','tenant_id':'tenant_id','embedding':'embedding','title':'title'}),dict(label='Author',table='authors',id='id',properties={'name':'name'})],
             edges=[dict(label='WRITTEN_BY',table='written_by',id='id',source='document_id',target='author_id',source_label='Document',target_label='Author')])
         local = DuckDBEngine(db)
-        with ObservedRemote('weaviate',endpoint,authentication={'type':'api_key','token':token}) as remote:
+        with ObservedRemote('weaviate',proxy_endpoint,batch_size=2,authentication={'type':'api_key','token':token}) as remote:
             for metric,function,distance,named in [('cosine','vector.cosine_similarity','cosine',False),('dot','vector.dot','dot',False),('l2','vector.l2_distance','l2-squared',False),('cosine','vector.cosine_similarity','cosine',True)]:
                 collection = 'Orchid'+metric.title()+('Named' if named else '')
                 definition=dict(**{'class':collection},vectorizer='none',vectorIndexType='hnsw',vectorIndexConfig={'distance':distance},invertedIndexConfig={'indexNullState':True},properties=[dict(name='doc_id',dataType=['int']),dict(name='tenant_id',dataType=['text'],tokenization='field')])
@@ -110,6 +133,23 @@ def main():
                     assert [row['id'] for row in limited]==[1],limited
                     per_source=rows('MATCH (q:Question)-[r:RELEVANT_TO {score:$score,limit:1}]->(d:Document) RETURN q.id AS question,d.id AS document ORDER BY question',{'score':2 if metric=='l2' else 0})
                     assert per_source==[{'question':10,'document':1},{'question':20,'document':2}],per_source
+                    db.execute("INSERT INTO questions VALUES (30,'a',[1,0]),(40,'b',[1,0]),(50,'a',[0,1])")
+                    before_http = len(graphql_calls)
+                    batched=rows('MATCH (q:Question)-[r:RELEVANT_TO {score:$score,limit:1}]->(d:Document) RETURN q.id AS question,d.id AS document ORDER BY question',{'score':2 if metric=='l2' else 0})
+                    assert batched==[{'question':10,'document':1},{'question':20,'document':2},{'question':30,'document':1},{'question':40,'document':3},{'question':50,'document':2}],batched
+                    calls = graphql_calls[before_http:]
+                    assert len(calls)==3, calls
+                    assert sum(query.count('nearVector:') for query in calls)==5, calls
+                    assert all(query.count('nearVector:')<=2 for query in calls), calls
+                    with RemoteEngine('weaviate',proxy_endpoint,authentication={'type':'api_key','token':token}) as default_batch:
+                        with Connection(local,schema=config,engines={'local':local,'vectors':default_batch}) as default_graph:
+                            before_default = len(graphql_calls)
+                            with default_graph.query('MATCH (q:Question)-[r:RELEVANT_TO {score:$score,limit:1}]->(d:Document) RETURN q.id AS question,d.id AS document ORDER BY question',parameters={'score':2 if metric=='l2' else 0}) as result:
+                                assert result.read_all().to_pylist()==batched
+                            assert len(graphql_calls)-before_default==1, graphql_calls[before_default:]
+                            assert graphql_calls[-1].count('nearVector:')==5
+                    db.execute("DELETE FROM questions WHERE id>=30")
+                    print('PASS HTTP batching: 5 source lookups in 1 request (default), 3 requests (batch_size=2); separate tenants, duplicate vectors, per-source top-k',flush=True)
                     rejected=rows(query,{'score':-.1 if metric=='l2' else 1.1,'limit':2})
                     assert rejected==[],rejected
                     db.execute("UPDATE documents SET tenant_id='b' WHERE id=2")
@@ -145,6 +185,8 @@ def main():
             print('PASS Weaviate: exact-retrieval rejection, metric validation, authentication rejection, authoritative tenant recheck',flush=True)
         db.close()
     finally:
+        if proxy is not None:
+            proxy.shutdown(); proxy.server_close(); worker.join()
         subprocess.run(['docker','rm','-f',container],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
 
