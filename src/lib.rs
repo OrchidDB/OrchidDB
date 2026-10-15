@@ -29,6 +29,7 @@ pub mod mapped_engine;
 #[cfg(feature = "duckdb")]
 pub mod rdf_engine;
 pub mod storage;
+pub mod streaming;
 
 /// Minimal placeholder for the syntax-tree wrapper that the Gremlin AST
 /// keeps alongside its lowered `Traversal`. The full parser tree lives

@@ -34,6 +34,8 @@ weaviate = ["dep:reqwest"]
 quickwit = ["dep:reqwest"]
 elasticsearch = ["dep:reqwest"]
 orchid-catalog = ["dep:reqwest"]
+kafka = ["dep:rdkafka"]
+spicedb = ["dep:reqwest"]
 
 [dependencies]
 toml = "0.9.12"
@@ -75,7 +77,8 @@ peg = "0.8"
 rand = "0.9"
 thiserror = "2"
 unicode-segmentation = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+rdkafka = { version = "0.39", features = ["ssl", "sasl"], optional = true }
 
 [dev-dependencies]
 parquet = { version = "58.2.0", features = ["arrow"] }
@@ -132,3 +135,13 @@ path = "tools/diagnostics/statistics_plans.rs"
 
 [profile.release]
 strip = "symbols"
+
+[[example]]
+name = "kafka_stream"
+path = "examples/kafka_stream.rs"
+required-features = ["kafka", "spicedb"]
+
+[[example]]
+name = "kafka_bench"
+path = "tools/diagnostics/kafka_bench.rs"
+required-features = ["kafka", "spicedb"]

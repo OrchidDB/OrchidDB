@@ -6,6 +6,7 @@ pub use orchiddb::compiler::CompiledSql as SqlWork;
 pub use orchiddb::compiler::{Authorization, PermissionRelation, PermissionScope};
 pub use orchiddb::execution::{SqlDialect, SqlSession};
 pub use orchiddb::session::{Query, Schema};
+pub use orchiddb::streaming;
 pub use orchiddb::catalog::{Catalog, CatalogAuth, Credential, InMemoryCatalog, CatalogSnapshot, CatalogGraph, CatalogPublish, CatalogGrants, CatalogRecord, CatalogManifest, CatalogPrincipal, ResolvedCatalog, RelationshipDeclaration, CypherRelationship, RelationshipParameter, RelationshipReturns};
 #[cfg(feature = "orchid-catalog")]
 pub use orchiddb::catalog::OrchidCatalog;

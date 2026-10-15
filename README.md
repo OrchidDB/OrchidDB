@@ -615,6 +615,125 @@ Run the original Cypher, Gremlin, and SPARQL catalogs against StarRocks with
 StarRocks driver, records SQL engine counts, and writes reports under
 `target/conformance/starrocks`. Only the existing SPARQL omissions are allowed.
 
+## Kafka, Flink materializations, and streaming Cypher
+
+The Rust API `orchiddb::streaming` (also re-exported by `orchiddb-client`) provides
+Kafka insertion, bounded Kafka queries, hybrid Iceberg/Kafka queries, and a
+pull-based streaming Cypher subscription. Enable `kafka` for the librdkafka
+transport and `spicedb` for live permission checks. These are optional; default
+library builds do not require Kafka, SpiceDB, or DuckDB. This API is separate from
+the DuckDB extension SQL interface.
+
+Register `StreamSchema` on `StreamConnection::new` once. Each table specifies its
+node label (or edge endpoints), JSON Schema for properties, and SpiceDB resource
+type/read/write permissions. Supply query text and parameters separately using
+`Query::cypher`; set `query.authorization` to the authenticated caller. The host
+must derive this identity from its authentication layer, not accept it from an
+untrusted request. `insert(subject, Change)` validates schema and checks write
+permission **before** producing. It returns a partition/offset receipt only after
+Kafka acknowledges delivery. Errors can have an uncertain delivery outcome;
+retry the identical entity version. Multi-call batches are not transactional.
+
+Every record is a JSON `Change` envelope, for example:
+
+```json
+{"table":"people","key":"alice","version":12,"data":{"name":"Alice"}}
+```
+
+The Kafka key is the JSON-encoded pair `["people","alice"]`. The entity identity
+is `(table,key)`; versions must increase for each entity and come from the source
+of truth/materializer, not timestamps. Identical retries reuse the same version
+and payload. `data:null` is a versioned deletion, **not** a bare Kafka tombstone.
+Flink must preserve this envelope and key on its materialized output. If topic
+compaction is enabled, writes must be ordered by increasing entity version;
+compaction keeps the last physical record, not the highest application version.
+Cypher `id()` uses the same encoded pair, so equal keys in different tables do
+not collide. Property names/values come from `data`.
+
+`query` captures Kafka high offsets and returns one Arrow batch after consuming
+that bounded range. It resolves versions and deletes before authorization,
+filtering, joining, or aggregation; different entities with identical properties
+remain different rows. The shared Cypher engine executes the resulting graph.
+Bounded reads currently materialize the selected graph in memory, with entity,
+record, and timeout limits. Set `Limits` for your workload. Kafka-only queries
+start at offset zero and reject retained-history gaps rather than silently
+returning partial data.
+
+`query_hybrid(query, snapshot_source)` loads a `Snapshot` containing the complete
+versioned state (including tombstones) and **next Kafka offsets for every
+partition**, atomically published from the same Flink checkpoint. It then reads
+Kafka from those offsets up to captured high offsets and reconciles both sources
+by `(table,key,version)`. The greatest version wins, duplicate copies disappear,
+and equal versions with different payloads are errors. A newer tombstone prevents
+an older Iceberg row from reappearing, even when replay arrives out of order.
+Never push user filters or permission filters into the snapshot read: doing so
+can discard a newer version and resurrect stale data. Checkpoint gaps, missing
+partitions, and mismatched source incarnation IDs fail closed.
+
+Implement `SnapshotSource` for your checkpoint storage, or enable `duckdb` and
+use `DuckDbSnapshot` with a caller-owned DuckDB session. Configure Iceberg in that
+session. Its trusted `snapshot_sql` must return exactly one VARCHAR containing a
+serialized `Snapshot`, read from one pinned Iceberg snapshot. For example, a
+materializer can atomically write a checkpoint manifest row to an Iceberg table:
+
+```rust,ignore
+let mut snapshot = orchiddb::streaming::DuckDbSnapshot {
+    connection: &duckdb,
+    snapshot_sql: "SELECT manifest_json FROM iceberg_scan('s3://bucket/checkpoints/metadata/00042.metadata.json') WHERE checkpoint_id = 42".into(),
+};
+let batch = connection.query_hybrid(query, &mut snapshot).await?;
+```
+
+The manifest JSON has `source`, `offsets` (partition numbers as JSON object keys),
+and `changes` (versioned envelopes). For larger checkpoints, implement
+`SnapshotSource` to assemble the same contract from versioned Iceberg rows and
+checkpoint metadata pinned to the same commit. The application configures an
+immutable source incarnation ID and changes it if the Kafka topic is recreated.
+Partition expansion requires a new complete checkpoint. Keep tombstones until
+older versions can no longer be replayed. Kafka transactions still open at the
+captured high offset can make a bounded read time out; no partial result is returned.
+
+`subscribe(query, offsets)` follows explicit next offsets without group commits
+or rebalancing. Use `log.bounds().await?.high` to start with new events. The
+supported Cypher shape is a single-node `MATCH`, property predicates, parameters,
+and projections (including `WITH`). Joins, temporal joins, aggregates, DISTINCT,
+sorting, and limits are rejected: compute those in Flink and publish each result
+as a node record. Each authorized change yields a replacement `Frame` with the
+entity key/version, Arrow rows, and next offsets. Empty rows mean the key no
+longer matches; a delete has `deleted=true` and no batch. Apply frames as keyed
+replacements, and persist the checkpoint only after processing the frame.
+Reconnects can replay records; consumers must retain the greatest applied version
+per key. Cancellation preserves an in-flight record; dropping the subscription
+closes its consumer. Errors terminate the subscription. Deduplication state is
+bounded by `Limits.entities`; reaching the limit errors rather than evicting keys
+and risking duplicate results.
+
+SpiceDB checks use the registered resource type and stable entity key, with fully
+consistent reads on every write and on each new visible event. Denials and caveated
+results do not authorize data; network/unknown-decision failures error. Bounded
+queries authorize before executing Cypher, including aggregates and edge
+traversals. Edges are visible only when their endpoints are visible. Streaming
+subscriptions are authorized event feeds, not a permission-change feed: revocation
+blocks future events but does not retract data already delivered. Applications
+that display a retained view must clear/reload it when access changes. Permission
+checks and Kafka writes are separate systems, not a distributed transaction.
+
+For the runnable insertion/subscription example, grant `edit` and `view` on the
+configured `person:<ORCHID_ENTITY>` object to `user:<ORCHID_SUBJECT>` in SpiceDB,
+create the Kafka topic, and set the environment variables listed in
+[`examples/kafka_stream.rs`](examples/kafka_stream.rs). Then run:
+
+```sh
+cargo run --features kafka,spicedb --example kafka_stream
+cargo test --features kafka,spicedb --test streaming
+```
+
+The feature tests exercise librdkafka's local mock brokers and the SpiceDB HTTP
+contract; they do not require Docker. Production deployment must configure Kafka
+TLS/SASL through `ClientConfig`, Kafka ACLs so producers cannot bypass the trusted
+insertion service, and Flink/Iceberg checkpoint publication. Orchid does not
+provision those services or deploy Flink jobs.
+
 ## Optional DuckDB extension
 
 The following guide and SQL examples use the extension interface. DuckDB owns
@@ -1553,3 +1672,54 @@ An exact retrieval request is rejected when routed to Weaviate. BM25, hybrid
 search, embedding generation, and general collection scans are not implemented.
 Complex edge bodies continue through the existing relational planner; the
 single-target vector ranking shown above uses the shared ranked-retrieval path.
+
+For throughput, use `insert_batch(&subject, &changes)` and
+`subscription.next_batch(256, Duration::from_millis(5))`. Batches accept up to
+4096 records. Insertions validate and authorize the entire batch before producing;
+repeated keys are sent sequentially in input order, and receipts preserve input
+order. Broker failures can still leave partially delivered batches. Subscription
+batches stop before repeated keys so every version retains its own replacement
+result. Process all `FrameBatch.frames` before persisting `FrameBatch.offsets`,
+including empty batches that advance past denied or duplicate records.
+
+Streaming queries compile once and execute the shared Cypher row kernels over
+batches. SpiceDB uses `CheckBulkPermissions` with fully consistent reads and no
+permission cache across batches. This amortizes network round trips while keeping
+revocations effective for subsequent checks. Batch size and collection wait trade
+throughput against latency; the wait bounds input collection, not authorization
+or execution time.
+
+The isolated local benchmark uses Docker Compose (Kafka and SpiceDB), six Kafka
+partitions, identical JSON envelopes, idempotent producers with `acks=all`, and
+`read_committed` consumers. Run from the repository root:
+
+```sh
+docker compose -p orchid-stream-bench -f tools/diagnostics/streaming.compose.yml up -d
+python3 tools/diagnostics/setup_stream_bench.py 50000
+cargo build --release --features kafka,spicedb --example kafka_bench
+python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/run.jsonl 50000 native-read native-project orchid-read orchid-batch-read orchid-spice-batch-read native-write orchid-write orchid-batch-write orchid-spice-batch-write
+cargo test --features kafka,spicedb --test streaming live_kafka_spicedb_batches_and_revocation -- --ignored
+```
+
+`BENCH_BATCH` selects batch size (default 256); `BENCH_INFLIGHT` controls
+concurrent single-record writes (default 4096), and `BENCH_LINGER_MS` defaults
+to 5. Producer batches allow 1 MiB. A 256-request producer window with 5 ms
+linger artificially constrains throughput: it is not a Kafka capacity benchmark.
+Use several million writes and repeated runs when comparing producer capacity:
+
+```sh
+BENCH_INFLIGHT=4096 BENCH_BATCH=4096 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/producer.jsonl 4000000 native-write orchid-write orchid-batch-write
+```
+
+The probe checks query result
+counts and checksums. Writer measurements exclude 256 warmup deliveries; readers
+report both total throughput and throughput after initial warmup. Read benchmarks
+drain an existing backlog, not a sustained producer/consumer pipeline. Latency
+percentiles measure API calls (batches for batch modes), not event end-to-end
+latency. `native-project` decodes JSON and reads projected properties; raw
+`native-read` only consumes bytes. Modes without `spice` use an explicit no-op
+authorizer to isolate execution cost. The local stack uses one broker with
+replication factor one and an in-memory SpiceDB datastore; these results do not
+represent replicated production durability, TLS, or Flink materialization cost.
+The Compose credentials are local benchmark-only credentials. Remove this isolated
+stack with the same Compose command followed by `down` when finished.
