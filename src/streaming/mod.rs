@@ -827,3 +827,6 @@ impl Subscription<'_> {
         }
     }
 }
+
+#[cfg(feature = "kafka")]
+pub mod wire;

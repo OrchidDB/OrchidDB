@@ -7,3 +7,6 @@ from .remote import RemoteEngine
 from .starrocks import StarRocksEngine
 __all__ = ["Catalog", "CatalogAuth", "Credential", "CypherEdge", "Connection", "StarRocksEngine", "DuckDBEngine", "PostgresEngine", "ArrowEngine", "QueryError",
            "RemoteEngine", "Authorization", "PermissionRelation", "PermissionScope"]
+
+from .streaming import StreamConnection
+__all__.append("StreamConnection")

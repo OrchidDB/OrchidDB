@@ -2,6 +2,7 @@
 #include "arrow_abi.h"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -258,6 +259,60 @@ public:
 };
 /** Optional HTTP engine backed by the shared native transport. Closing the engine
  * never closes caller-owned SQL sessions. Each instance owns one native handle. */
+/** Kafka execution with application-owned (for example SpiceDB) permission checks.
+ * Results contain base64 Arrow IPC. Checkpoint only after an entire frame batch.
+ */
+class StreamConnection final {
+ public:
+  using Authorizer = std::function<std::vector<bool>(const Json&, const Json&)>;
+  StreamConnection(Json schema, Json options, Authorizer authorizer, const std::string& library = detail::Compiler::default_path())
+      : compiler_(library), authorizer_(std::move(authorizer)) {
+    if (!authorizer_) throw std::invalid_argument("authorizer callback required");
+    options["op"]="stream_open";options["schema"]=std::move(schema);
+    id_=compiler_.command(options).at("id").get<std::string>();
+  }
+  StreamConnection(const StreamConnection&)=delete;
+  StreamConnection& operator=(const StreamConnection&)=delete;
+  ~StreamConnection() {try {close();} catch (...) {}}
+  Json insert(const Json& change, const Json& subject) {return run("insert",{{"change",change},{"subject",subject}});}
+  Json insert_batch(const Json& changes, const Json& subject) {return run("insert_batch",{{"changes",changes},{"subject",subject}});}
+  Json query(const std::string& text,const Json& subject,Json parameters=Json::object()) {
+    return run("query",{{"text",text},{"subject",subject},{"parameters",parameters}});
+  }
+  Json query_hybrid(const std::string& text,const Json& subject,const Json& snapshot,Json parameters=Json::object()) {
+    return run("hybrid",{{"text",text},{"subject",subject},{"parameters",parameters},{"snapshot",snapshot}});
+  }
+  void subscribe(const std::string& text,const Json& subject,const Json& offsets,Json parameters=Json::object()) {
+    run("subscribe",{{"text",text},{"subject",subject},{"parameters",parameters},{"offsets",offsets}});
+  }
+  Json next_batch(size_t max_records=1,size_t wait_ms=100) {return run("next",{{"max_records",max_records},{"wait_ms",wait_ms}});}
+  void unsubscribe() {run("unsubscribe",Json::object());}
+  void close() {if (!closed_.exchange(true)) compiler_.command({{"op","stream_close"},{"id",id_}});}
+ private:
+  detail::Compiler compiler_; Authorizer authorizer_; std::string id_;
+  std::atomic<bool> closed_{false},busy_{false};
+  Json command(const std::string& op,Json values=Json::object()) {
+    if(closed_) throw std::runtime_error("Stream connection is closed");
+    values["op"]=op;values["id"]=id_;return compiler_.command(values);
+  }
+  Json run(const std::string& action,Json values) {
+    if(busy_.exchange(true)) throw std::runtime_error("Stream connection is busy");
+    struct Release {std::atomic<bool>& flag;~Release(){flag=false;}} release{busy_};
+    values["action"]=action;command("stream_start",values);
+    for(;;) {
+      auto event=command("stream_poll");
+      if(event.at("state")=="done") return event.at("result");
+      if(event.at("state")=="authorize") {
+        try {
+          auto decisions=authorizer_(event.at("subject"),event.at("checks"));
+          if(decisions.size()!=event.at("checks").size()) throw std::runtime_error("authorizer must return one bool per check");
+          command("stream_authorize",{{"nonce",event.at("nonce")},{"decisions",decisions}});
+        } catch (...) {close();throw;}
+      }
+    }
+  }
+};
+
 class RemoteEngine final : public ExecutionEngine {
   detail::Compiler compiler_;
   std::string adapter_;

@@ -140,3 +140,6 @@ export class Catalog {
       graph_version:publication.graphVersion, object_versions:publication.objectVersions}});
   }
 }
+
+export {StreamConnection} from "./streaming.js";
+export type {StreamOptions, StreamAuthorizer, PermissionCheck, StreamQueryOptions} from "./streaming.js";

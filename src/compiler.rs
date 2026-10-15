@@ -1158,6 +1158,12 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
     let message: serde_json::Value = serde_json::from_str(input).map_err(|e|e.to_string())?;
+    if message["op"].as_str().is_some_and(|op| op.starts_with("stream_")) {
+        #[cfg(feature = "kafka")]
+        { return crate::streaming::wire::command(message).await.map(|v| v.to_string()); }
+        #[cfg(not(feature = "kafka"))]
+        { return Err("Kafka streaming support is disabled in this runtime".into()); }
+    }
     if message["op"] == "catalog" {
         return serde_json::to_string(&crate::catalog::command(&message).await?).map_err(|e| e.to_string());
     }
