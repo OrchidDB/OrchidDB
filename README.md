@@ -738,6 +738,28 @@ Kafka ACLs so producers cannot bypass the trusted insertion service, and
 Flink/Iceberg checkpoint publication. Orchid does not provision those services or
 deploy Flink jobs.
 
+A reproducible local Flink integration test runs a stateful sum materializer with
+transactional Kafka output, stops/restores a savepoint, kills/restarts its worker,
+and verifies streaming frames, authorization, duplicate versions, deletes, and
+DuckDB/Iceberg hybrid reconciliation:
+
+```sh
+# Set DUCKDB_LIB_DIR to your DuckDB shared library directory if needed.
+mvn -f tools/diagnostics/flink-e2e/pom.xml package
+extension/vendor/test-env/bin/python tools/diagnostics/flink-e2e/run.py
+```
+
+Use the extension test environment (including PyArrow and PyIceberg), Docker,
+Maven, and Java 17 or newer. The runner builds the Rust test, owns the isolated
+`orchid-flink-e2e` Compose project on local ports 19092/18083, and removes its
+containers/volume afterward. `--test-binary PATH` reuses a freshly built test;
+`--keep` retains services for inspection. Results go to
+`artifacts/e2e/flink.json`, with phase logs under `target/flink-e2e/`.
+The fixture uses Flink 2.0.1 and its compatible Kafka connector. PyIceberg publishes
+the checkpoint manifest after the stream is quiescent at a successful savepoint;
+this tests the snapshot contract, not a continuously running Flink Iceberg sink.
+It uses one broker and one worker, so it does not establish cluster HA behavior.
+
 Use `insert(subject, change)` and `subscription.next()` for ordinary single-record
 traffic. Reuse the connection and allow independent insert calls to overlap;
 awaiting each broker acknowledgement before issuing the next write limits

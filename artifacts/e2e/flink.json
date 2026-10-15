@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "flink_version": "2.0.1",
+  "job": "3023d9c9ac87e19da57662409f541f5c",
+  "restored_job": "d7cfaffd9afa8bf47fc940bf37e72fbc",
+  "restored_checkpoints": 2,
+  "source_revision": "8f35b5c25c5013e1f9cd00b49e5c6da91d8d9ffc",
+  "checks": [
+    "Kafka insertion authorization",
+    "stateful sums",
+    "duplicate input suppression",
+    "versioned deletes",
+    "single-frame filtered replacements",
+    "read authorization",
+    "savepoint stop and restore",
+    "SIGKILL taskmanager recovery",
+    "real Iceberg manifest",
+    "hybrid latest-version merge and tombstone suppression"
+  ],
+  "scope": "single broker, single Flink worker; Iceberg manifest published by PyIceberg after quiescent savepoint, not a Flink Iceberg connector sink; no production failover claim"
+}

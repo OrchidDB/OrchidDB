@@ -283,7 +283,7 @@ async fn sql_prefix_then_datafusion_jvm_and_datafusion_suffix() {
         stats.physical_plan
     );
     assert!(
-        stats.physical_plan.contains("DuckDbExec"),
+        stats.physical_plan.to_ascii_lowercase().contains("duckdbexec"),
         "{}",
         stats.physical_plan
     );

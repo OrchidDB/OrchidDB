@@ -12,7 +12,9 @@ use std::collections::BTreeMap;
 
 fn graph() -> PropertyGraph {
     let graph = PropertyGraph::new();
-    let a = graph.insert_node("Person", BTreeMap::new());
+    let a = graph.insert_node("Person", BTreeMap::from([(
+        "name".into(), orchiddb::ir::value::Value::String("Ada".into()),
+    )]));
     let b = graph.insert_node("Person", BTreeMap::new());
     let c = graph.insert_node("Person", BTreeMap::new());
     graph.insert_edge("KNOWS", &a, &b, BTreeMap::new()).unwrap();
@@ -92,8 +94,10 @@ async fn catalog_identity_eliminates_dedup_but_expansion_multiplicity_does_not()
         .await
         .unwrap();
     assert_eq!(result.batch.num_rows(), 3);
-    let (rows, explain) = run("MATCH (p:Person)-[:KNOWS]->(q) WITH DISTINCT p RETURN p").await;
-    assert_eq!(rows.len(), 1);
+    // This test uses plain SQL execution, which cannot return native graph values.
+    // Keep DISTINCT on the entity, then project a scalar property for the host.
+    let (rows, explain) = run("MATCH (p:Person)-[:KNOWS]->(q) WITH DISTINCT p RETURN p.name").await;
+    assert_eq!(rows, vec![vec!["Ada"]]);
     assert!(explain.contains("WindowAggr"), "{explain}");
 }
 

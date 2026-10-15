@@ -1,0 +1,49 @@
+services:
+  kafka:
+    image: apache/kafka:4.1.1
+    ports: ["127.0.0.1:19092:19092"]
+    mem_limit: 1536m
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: HOST://:19092,INTERNAL://:29092,CONTROLLER://:19093
+      KAFKA_ADVERTISED_LISTENERS: HOST://127.0.0.1:19092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:19093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+  jobmanager:
+    image: flink:2.0.1-java17
+    command: jobmanager
+    ports: ["127.0.0.1:18083:8081"]
+    mem_limit: 1536m
+    volumes: ["./target:/jobs:ro", "checkpoints:/checkpoints"]
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        jobmanager.memory.process.size: 1024m
+        state.checkpoints.dir: file:///checkpoints/checkpoints
+        state.savepoints.dir: file:///checkpoints/savepoints
+        heartbeat.timeout: 10000
+        restart-strategy.type: fixed-delay
+        restart-strategy.fixed-delay.attempts: 5
+        restart-strategy.fixed-delay.delay: 1 s
+  taskmanager:
+    image: flink:2.0.1-java17
+    command: taskmanager
+    mem_limit: 1536m
+    volumes: ["checkpoints:/checkpoints"]
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 1
+        taskmanager.memory.process.size: 1024m
+        state.checkpoints.dir: file:///checkpoints/checkpoints
+        state.savepoints.dir: file:///checkpoints/savepoints
+        heartbeat.timeout: 10000
+volumes:
+  checkpoints:

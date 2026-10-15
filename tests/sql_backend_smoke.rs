@@ -504,9 +504,9 @@ fn duckdb_replaces_changed_materialization_blocks() {
 }
 
 #[cfg(feature = "postgres")]
-#[tokio::test]
+#[test]
 #[ignore = "needs a live Postgres server via GRAPH_PG_URL"]
-async fn cypher_match_filter_expand_order_on_postgres() {
+fn cypher_match_filter_expand_order_on_postgres() {
     let Some(mut executor) = sql::PostgresExecutor::from_env().expect("postgres connect") else {
         eprintln!("GRAPH_PG_URL unset; skipping postgres smoke test");
         return;
@@ -516,10 +516,13 @@ async fn cypher_match_filter_expand_order_on_postgres() {
         "MATCH (p:Person)-[:KNOWS]->(f) WHERE p.name = 'alice' RETURN f.name ORDER BY f.name",
     );
     let lowered = RelBackend::new().lower(&plan, &graph).expect("lower");
-    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
-        .await
+    // The synchronous PostgreSQL driver owns its runtime. Only SQL preparation
+    // runs inside Tokio; connection use and destruction stay outside it.
+    let prepared = tokio::runtime::Runtime::new().unwrap()
+        .block_on(sql::prepare(&lowered, SqlDialect::Postgres)).unwrap();
+    let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
         .expect("postgres execute");
-    assert_eq!(batch_lines(&returned.batch), vec!["bob", "carol"]);
+    assert_eq!(rows, vec![vec![sql::SqlValue::Text("bob".into())], vec![sql::SqlValue::Text("carol".into())]]);
 }
 
 #[tokio::test]

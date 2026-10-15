@@ -41,6 +41,14 @@ def build_native_clients():
     run([sys.executable,ROOT/'scripts/clients.py','metadata'])
 
 
+def elixir_env(base):
+    env = dict(base, MIX_BUILD_PATH=str(ROOT / 'target/elixir'))
+    erl = list(Path('/opt/homebrew/Cellar/erlang').glob('*/lib/erlang/bin')) if platform.system() == 'Darwin' else []
+    if erl:
+        env['PATH'] = str(max(erl)) + os.pathsep + env['PATH']
+    return env
+
+
 def clients(only):
     env = os.environ.copy()
     library = duckdb_library()
@@ -69,16 +77,8 @@ def clients(only):
         run(['c++','-std=c++17','-O0','-Iclients/cpp/include','-Iclients/cpp/build/_deps/json-src/single_include','-Iextension/vendor/duckdb-1.5.6/src/include',SOURCES/'cpp.cpp','-L'+str(library),'-lduckdb','-o',binary],env=env)
         run([binary],env=env)
     if 'elixir' in selected:
-        erl=list(Path('/opt/homebrew/Cellar/erlang').glob('*/lib/erlang/bin')) if platform.system()=='Darwin' else []
-        if erl:
-            env['PATH']=str(max(erl))+os.pathsep+env['PATH']
-        command=['elixir']
-        for path in (ROOT/'target/elixir/lib').glob('*/ebin'):
-            command.extend(['-pa',path])
-        for path in ('runtime.ex','catalog_auth.ex','catalog.ex'):
-            command.extend(['-r',ROOT/'clients/elixir/lib/orchid_db'/path])
-        command.extend(['-r',ROOT/'clients/elixir/lib/orchid_db.ex',SOURCES/'elixir.exs'])
-        run(command,env=env)
+        subprocess.run(['mix', 'run', str(SOURCES / 'elixir.exs')],
+                       cwd=ROOT / 'clients/elixir', env=elixir_env(env), check=True)
     if 'rust' in selected:
         binary=output/'rust-smoke'
         command=['rustc','--edition=2024','-C','debuginfo=0','-C','strip=debuginfo','-L','dependency='+str(ROOT/'target/debug/deps'),'-L',str(library),SOURCES/'rust.rs','-o',binary]
@@ -142,6 +142,11 @@ def main():
             java_env['JAVA_HOME']=subprocess.check_output(['/usr/libexec/java_home','-F','-v','21'],text=True).strip()
         subprocess.run(['mvn','-pl','orchiddb-java','-am','-Dmaven.test.skip=true','compile'],cwd=ROOT/'clients/java',env=java_env,check=True)
         subprocess.run(['mvn','-q','-pl','orchiddb-java','dependency:build-classpath','-DincludeScope=runtime','-Dmdep.outputFile='+str(ROOT/'clients/java/target/native-smoke-classpath.txt')],cwd=ROOT/'clients/java',env=java_env,check=True)
+    if not args.no_build and (not args.only or 'elixir' in args.only):
+        env = elixir_env(os.environ)
+        for command in (['mix', 'deps.get'], ['mix', 'compile'],
+                        ['mix', 'run', '-e', 'Adbc.download_driver!(:duckdb)']):
+            subprocess.run(command, cwd=ROOT / 'clients/elixir', env=env, check=True)
     command=[sys.executable,args.catalog/'tools/auth_smoke.py','--clients',sys.executable,Path(__file__).resolve(),'--no-build']
     if args.only:
         command.extend(['--only',*args.only])

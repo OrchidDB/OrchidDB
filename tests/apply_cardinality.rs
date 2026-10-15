@@ -113,15 +113,17 @@ async fn inner_apply_prefers_the_right_gremlin_path_on_an_uncorrelated_join() {
             input: Box::new(Node::GraphApply {
                 kind: ApplyKind::Inner,
                 correlation: Vec::new(),
-                outputs: vec!["__path".into()],
+                // A traversal-producing apply returns current as well as its path.
+                // Without current this is a probe, which requires a parent join.
+                outputs: vec!["current".into(), "__path".into()],
                 optional_missing: OptionalMissing::Null,
                 left: Box::new(Node::GraphValues {
-                    bindings: vec!["__path".into(), "left_only".into()],
+                    bindings: vec!["__path".into(), "current".into()],
                     rows: vec![vec![Value::String("outer-path".into()), Value::Int(1)]],
                     bulk: None,
                 }),
                 right: Box::new(Node::GraphValues {
-                    bindings: vec!["__path".into(), "right_only".into()],
+                    bindings: vec!["__path".into(), "current".into()],
                     rows: vec![vec![Value::String("inner-path".into()), Value::Int(2)]],
                     bulk: None,
                 }),

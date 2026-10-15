@@ -161,6 +161,8 @@ fn setup_timeout_preserves_the_file_backed_session() {
             )
             .unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
+        // Recovery verifies session state, not another 1ms setup deadline.
+        executor.set_timeouts(Duration::from_secs(2), Duration::from_secs(2));
         assert_eq!(
             executor.run(&[], "SELECT n FROM keeper").unwrap(),
             vec![vec![SqlValue::Int(42)]]
