@@ -77,7 +77,11 @@ rand = "0.9"
 thiserror = "2"
 unicode-segmentation = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-rdkafka = { version = "0.39", features = ["ssl", "sasl"], optional = true }
+rdkafka = { version = "0.39", features = ["ssl-vendored", "sasl"], optional = true }
+
+# Cross-built Linux clients cannot use the build host's Cyrus SASL/Kerberos.
+[target.'cfg(target_os = "linux")'.dependencies]
+rdkafka = { version = "0.39", features = ["gssapi-vendored"], optional = true }
 
 [dev-dependencies]
 parquet = { version = "58.2.0", features = ["arrow"] }

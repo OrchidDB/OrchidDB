@@ -252,6 +252,13 @@ class Release:
             command += ['--target', triple + '.2.28']
             rustc = subprocess.check_output(['rustup', 'which', 'rustc'], text=True).strip()
             env['PATH'] = str(Path(rustc).parent) + ':' + env['PATH']
+            # Cyrus SASL uses generic autotools variables; cargo-zigbuild also
+            # supplies target-specific compilers to OpenSSL and Kerberos.
+            zig_target = ('aarch64' if target == 'linux_arm64' else 'x86_64') + '-linux-gnu.2.28'
+            env.update(CC='zig cc -target ' + zig_target, AR='zig ar', RANLIB='zig ranlib',
+                       CFLAGS='-std=gnu17 -Wno-error=incompatible-pointer-types-discards-qualifiers',
+                       CPPFLAGS='', krb5_cv_attr_constructor_destructor='yes',
+                       ac_cv_func_regcomp='yes', ac_cv_printf_positional='yes')
         for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
             command += ['-p', package]
         run(command, env=env)
