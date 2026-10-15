@@ -20,6 +20,15 @@ type StreamConfig struct {
 	Topic, Source, Library string
 	Authorizer             StreamAuthorizer
 	AuthTimeoutMS          uint64
+	Limits                 *StreamLimits
+}
+
+// StreamLimits bounds retained entities, bounded-read input records, and query time.
+// Zero fields use the shared defaults.
+type StreamLimits struct {
+	Entities  uint64 `json:"entities,omitempty"`
+	Records   uint64 `json:"records,omitempty"`
+	TimeoutMS uint64 `json:"timeout_ms,omitempty"`
 }
 
 // StreamConnection owns a Kafka connection. Its results contain base64 Arrow IPC.
@@ -48,7 +57,7 @@ func NewStream(schema json.RawMessage, config StreamConfig) (*StreamConnection, 
 	var opened struct {
 		ID string `json:"id"`
 	}
-	err = command(map[string]any{"op": "stream_open", "schema": schema, "kafka": config.Kafka, "topic": config.Topic, "source": config.Source, "auth_timeout_ms": timeout}, &opened)
+	err = command(map[string]any{"op": "stream_open", "schema": schema, "kafka": config.Kafka, "topic": config.Topic, "source": config.Source, "auth_timeout_ms": timeout, "limits": config.Limits}, &opened)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +113,9 @@ func (c *StreamConnection) run(ctx context.Context, action string, values map[st
 		}
 		if event.State == "authorize" {
 			decisions, err := c.auth(ctx, event.Subject, event.Checks)
+			if err == nil {
+				err = ctx.Err()
+			}
 			if err != nil {
 				c.Close()
 				return nil, err
@@ -152,7 +164,8 @@ func (c *StreamConnection) Unsubscribe(ctx context.Context) error {
 	return err
 }
 
-// Close cancels pending work. Context cancellation also closes the connection.
+// Close cancels pending work. Cancellation of an in-flight operation also closes
+// the connection.
 func (c *StreamConnection) Close() error {
 	c.mu.Lock()
 	id := c.id

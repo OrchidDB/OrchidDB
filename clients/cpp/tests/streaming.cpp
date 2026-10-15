@@ -24,10 +24,10 @@ int main(){
  c.insert(change("a",1),subject);c.insert_batch(Json::array({change("b",1),change("hidden",1),change("a",2)}),subject);
  auto query=c.query(f.at("query"),subject);
  auto hybrid=c.query_hybrid(f.at("query"),subject,{{"source",f.at("source")},{"offsets",f.at("offsets")},{"changes",Json::array({change("a",1),change("b",1)})}});
- c.subscribe(f.at("stream_query"),subject,f.at("offsets"));Json frames=Json::array(),offsets;
- for(int i=0;i<20;++i){auto b=c.next_batch(16,100);for(auto frame:b.at("frames"))frames.push_back(frame);offsets=b.at("offsets");if(offsets.at("0")==4)break;}
+ c.subscribe(f.at("stream_query"),subject,f.at("offsets"));Json frames=Json::array(),offsets,raw_batches=Json::array();
+ for(int i=0;i<20;++i){auto b=c.next_batch(16,100);raw_batches.push_back(b);for(auto frame:b.at("frames"))frames.push_back(frame);offsets=b.at("offsets");if(offsets.at("0")==4)break;}
  assert(frames.size()==3&&offsets.at("0")==4);c.unsubscribe();c.close();
- std::ofstream("/tmp/orchid-stream-cpp-result.json")<<Json({{"query",query},{"hybrid",hybrid},{"frames",frames},{"offsets",offsets}}).dump();
+ std::ofstream("/tmp/orchid-stream-cpp-result.json")<<Json({{"query",query},{"hybrid",hybrid},{"frames",frames},{"offsets",offsets},{"raw_batches",raw_batches}}).dump();
  orchiddb::StreamConnection bad(f.at("schema"),options,[](const Json&,const Json&){return std::vector<bool>{};});
  bool failed=false;try{bad.insert(change("a",3),subject);}catch(const std::exception&){failed=true;}assert(failed);
  curl_global_cleanup();std::cout<<"Kafka/SpiceDB streaming passed\n";

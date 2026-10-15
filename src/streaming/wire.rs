@@ -11,7 +11,7 @@ use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
 
 type Reply = oneshot::Sender<Vec<bool>>;
 enum Event {
-    Auth(Value, Reply),
+    Auth(Value, Reply, std::time::Instant),
     Result(Result<Value, String>),
 }
 struct HostAuth {
@@ -49,14 +49,24 @@ impl Authorizer for HostAuth {
         let (tx, rx) = oneshot::channel();
         let checks: Vec<_> = checks.iter().map(|c| json!({"resource_type":c.resource_type,"resource_id":c.resource_id,"permission":c.permission})).collect();
         let count = checks.len();
+        let deadline = std::time::Instant::now() + self.timeout;
         self.events
-            .send(Event::Auth(json!({"subject":subject,"checks":checks}), tx))
+            .send(Event::Auth(
+                json!({"subject":subject,"checks":checks}),
+                tx,
+                deadline,
+            ))
             .await
             .map_err(|_| "authorization client closed")?;
-        let decisions = tokio::time::timeout(self.timeout, rx)
+        let decisions = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), rx)
             .await
             .map_err(|_| "authorization callback timed out")?
             .map_err(|_| "authorization callback cancelled")?;
+        // Tokio polls a ready receiver before its timer. Check wall-clock expiry
+        // too, so executor starvation cannot turn a late grant into a write.
+        if std::time::Instant::now() >= deadline {
+            return Err("authorization callback timed out".into());
+        }
         if decisions.len() != count {
             return Err("authorization must return one boolean per check".into());
         }
@@ -66,7 +76,7 @@ impl Authorizer for HostAuth {
 struct Handle {
     commands: mpsc::Sender<Value>,
     events: AsyncMutex<mpsc::Receiver<Event>>,
-    pending: Mutex<Option<(u64, Reply)>>,
+    pending: Mutex<Option<(u64, Reply, std::time::Instant)>>,
     busy: AtomicBool,
     task: futures::future::AbortHandle,
 }
@@ -85,6 +95,14 @@ fn next_id() -> u64 {
 }
 fn parse<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T, String> {
     serde_json::from_value(v.clone()).map_err(|e| e.to_string())
+}
+fn integer(v: &Value, key: &str, default: u64) -> Result<u64, String> {
+    match v.get(key) {
+        None => Ok(default),
+        Some(n) => n
+            .as_u64()
+            .ok_or_else(|| format!("{key} must be a nonnegative integer")),
+    }
 }
 fn query(v: &Value) -> Result<Query, String> {
     let mut q = Query::cypher(v["text"].as_str().ok_or("query text required")?);
@@ -108,8 +126,74 @@ fn frames(batch_value: Option<FrameBatch>) -> Result<Value, String> {
     let Some(b) = batch_value else {
         return Ok(Value::Null);
     };
-    let frames = b.frames.into_iter().map(|f| Ok(json!({"table":f.table,"key":f.key,"version":f.version.to_string(),"deleted":f.deleted,"result":f.rows.map(batch).transpose()?,"offsets":f.offsets}))).collect::<Result<Vec<Value>, String>>()?;
-    Ok(json!({"frames":frames,"offsets":b.offsets}))
+    // Share Arrow schemas and buffers across frames instead of encoding a full
+    // IPC stream per entity. Separate groups preserve heterogeneous projections.
+    let mut groups: Vec<(arrow::datatypes::SchemaRef, Vec<RecordBatch>, usize)> = Vec::new();
+    let mut frames = Vec::with_capacity(b.frames.len());
+    for f in b.frames {
+        let result = if let Some(rows) = f.rows {
+            let mut metadata = rows.schema().metadata().clone();
+            // Typed row metadata contains values, so it differs for every
+            // frame even when the Arrow fields match. Preserve its presence
+            // while excluding its payload from schema grouping.
+            if let Some(value) = metadata.get_mut("orchiddb.cypher.typed_rows.v1") {
+                value.clear();
+            }
+            let normalized = Arc::new(arrow::datatypes::Schema::new_with_metadata(
+                rows.schema().fields().clone(),
+                metadata,
+            ));
+            let index = groups
+                .iter()
+                .position(|(schema, _, _)| schema == &normalized)
+                .unwrap_or_else(|| {
+                    groups.push((normalized, Vec::new(), 0));
+                    groups.len() - 1
+                });
+            let group = &mut groups[index];
+            let reference = json!({"batch":index,"offset":group.2,"length":rows.num_rows()});
+            group.2 += rows.num_rows();
+            group.1.push(rows);
+            reference
+        } else {
+            Value::Null
+        };
+        frames.push(json!({"table":f.table,"key":f.key,"version":f.version.to_string(),"deleted":f.deleted,"result":result}));
+    }
+    let batches = groups
+        .into_iter()
+        .map(|(schema, mut chunks, _)| {
+            let combined = if chunks.len() == 1 {
+                chunks.pop().unwrap()
+            } else {
+                let mut metadata = schema.metadata().clone();
+                let key = "orchiddb.cypher.typed_rows.v1";
+                if metadata.contains_key(key) {
+                    let mut typed_rows = Vec::<Value>::new();
+                    for chunk in &chunks {
+                        let rows: Vec<Value> =
+                            serde_json::from_str(&chunk.schema().metadata()[key])
+                                .map_err(|e| e.to_string())?;
+                        if rows.len() != chunk.num_rows() {
+                            return Err("typed frame metadata row count mismatch".into());
+                        }
+                        typed_rows.extend(rows);
+                    }
+                    metadata.insert(
+                        key.into(),
+                        serde_json::to_string(&typed_rows).map_err(|e| e.to_string())?,
+                    );
+                }
+                let schema = Arc::new(arrow::datatypes::Schema::new_with_metadata(
+                    schema.fields().clone(),
+                    metadata,
+                ));
+                arrow::compute::concat_batches(&schema, &chunks).map_err(|e| e.to_string())?
+            };
+            batch(combined)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(json!({"frames":frames,"batches":batches,"offsets":b.offsets}))
 }
 // The worker owns its connection and subscription together: no leaked connections
 // or unsafe borrowed lifetimes. Only one operation per handle may be outstanding.
@@ -138,8 +222,17 @@ async fn worker(
                             break;
                         }
                         let result = if v["action"] == "next" {
-                            let max = v["max_records"].as_u64().unwrap_or(1);
-                            let wait = v["wait_ms"].as_u64().unwrap_or(100);
+                            let max = integer(&v, "max_records", 1);
+                            let wait = integer(&v, "wait_ms", 100);
+                            let (max, wait) = match (max, wait) {
+                                (Ok(max), Ok(wait)) => (max, wait),
+                                (Err(e), _) | (_, Err(e)) => {
+                                    if events.send(Event::Result(Err(e))).await.is_err() {
+                                        return;
+                                    }
+                                    continue;
+                                }
+                            };
                             if max == 0 || max > 4096 || wait == 0 || wait > 60_000 {
                                 Err("invalid stream batch bounds".into())
                             } else {
@@ -268,11 +361,11 @@ pub async fn command(v: Value) -> Result<Value, String> {
                     h.busy.store(false, Ordering::Release);
                     Err("stream worker closed".into())
                 }
-                Ok(Some(Event::Auth(mut request, reply))) => {
+                Ok(Some(Event::Auth(mut request, reply, deadline))) => {
                     let nonce = next_id();
                     request["state"] = json!("authorize");
                     request["nonce"] = json!(nonce.to_string());
-                    *h.pending.lock().unwrap() = Some((nonce, reply));
+                    *h.pending.lock().unwrap() = Some((nonce, reply, deadline));
                     Ok(request)
                 }
                 Ok(Some(Event::Result(result))) => {
@@ -292,19 +385,18 @@ pub async fn command(v: Value) -> Result<Value, String> {
             if pending.as_ref().map(|p| p.0) != Some(nonce) {
                 return Err("stale authorization reply".into());
             }
-            pending
-                .take()
-                .unwrap()
-                .1
-                .send(decisions)
-                .map_err(|_| "authorization expired")?;
+            let (_, reply, deadline) = pending.take().unwrap();
+            if std::time::Instant::now() >= deadline {
+                return Err("authorization expired".into());
+            }
+            reply.send(decisions).map_err(|_| "authorization expired")?;
             Ok(json!({}))
         }
         _ => Err("unknown stream command".into()),
     }
 }
 fn open(v: Value, log: Arc<dyn ChangeLog>) -> Result<Value, String> {
-    let timeout = v["auth_timeout_ms"].as_u64().unwrap_or(30_000);
+    let timeout = integer(&v, "auth_timeout_ms", 30_000)?;
     if timeout == 0 || timeout > 300_000 {
         return Err("auth timeout must be 1..=300000ms".into());
     }
@@ -313,6 +405,23 @@ fn open(v: Value, log: Arc<dyn ChangeLog>) -> Result<Value, String> {
         events: event_tx.clone(),
         timeout: Duration::from_millis(timeout),
     });
+    let options = &v["limits"];
+    if !options.is_null() && !options.is_object() {
+        return Err("limits must be an object".into());
+    }
+    let timeout_ms = integer(options, "timeout_ms", 60_000)?;
+    if timeout_ms == 0 || timeout_ms > 86_400_000 {
+        return Err("query timeout must be 1..=86400000ms".into());
+    }
+    let limits = Limits {
+        entities: integer(options, "entities", 1_000_000)?
+            .try_into()
+            .map_err(|_| "entity limit too large")?,
+        records: integer(options, "records", 10_000_000)?
+            .try_into()
+            .map_err(|_| "record limit too large")?,
+        timeout: Duration::from_millis(timeout_ms),
+    };
     let connection = StreamConnection::new(
         parse(&v["schema"])?,
         v["source"]
@@ -321,7 +430,7 @@ fn open(v: Value, log: Arc<dyn ChangeLog>) -> Result<Value, String> {
             .into(),
         log,
         auth,
-        Limits::default(),
+        limits,
     )?;
     let (tx, rx) = mpsc::channel(1);
     let (task, registration) = futures::future::AbortHandle::new_pair();
@@ -462,6 +571,101 @@ mod tests {
             .next()
             .unwrap()
             .unwrap()
+    }
+    #[test]
+    fn frame_buffers_are_shared_and_lossless() {
+        use arrow::array::{ArrayRef, UInt64Array};
+        let frames_value = (0..64)
+            .map(|i| {
+                let b = RecordBatch::try_from_iter([(
+                    "id",
+                    Arc::new(UInt64Array::from(vec![u64::MAX - i])) as ArrayRef,
+                )])
+                .unwrap();
+                let schema = Arc::new(arrow::datatypes::Schema::new_with_metadata(
+                    b.schema().fields().clone(),
+                    std::collections::HashMap::from([
+                        ("orchiddb.cypher.typed_columns.v1".into(), "[\"id\"]".into()),
+                        (
+                            "orchiddb.cypher.typed_rows.v1".into(),
+                            json!([[{"type":"uint64","value":u64::MAX-i}]]).to_string(),
+                        ),
+                    ]),
+                ));
+                Frame {
+                    table: "docs".into(),
+                    key: i.to_string(),
+                    version: u64::MAX,
+                    deleted: false,
+                    rows: Some(RecordBatch::try_new(schema, b.columns().to_vec()).unwrap()),
+                    offsets: BTreeMap::from([(0, i as i64 + 1)]),
+                }
+            })
+            .collect();
+        let wire = frames(Some(FrameBatch {
+            frames: frames_value,
+            offsets: BTreeMap::from([(0, 64)]),
+        }))
+        .unwrap();
+        assert_eq!(wire["batches"].as_array().unwrap().len(), 1);
+        let batch = decode(&wire["batches"][0]);
+        assert_eq!(batch.num_rows(), 64);
+        let typed: Vec<Value> =
+            serde_json::from_str(&batch.schema().metadata()["orchiddb.cypher.typed_rows.v1"])
+                .unwrap();
+        assert_eq!(typed.len(), 64);
+        assert_eq!(typed[63][0]["value"], json!(u64::MAX - 63));
+        let values = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        for i in 0..64 {
+            assert_eq!(
+                wire["frames"][i]["result"],
+                json!({"batch":0,"offset":i,"length":1})
+            );
+            assert_eq!(wire["frames"][i]["version"], u64::MAX.to_string());
+            assert_eq!(values.value(i), u64::MAX - i as u64);
+        }
+        assert!(integer(&json!({"wait_ms":-1}), "wait_ms", 100).is_err());
+        assert!(integer(&json!({"wait_ms":"100"}), "wait_ms", 100).is_err());
+    }
+    #[tokio::test]
+    async fn late_permission_grant_cannot_write() {
+        let log = Arc::new(Log::default());
+        let mut opts = options();
+        opts["auth_timeout_ms"] = json!(10);
+        let id = open(opts, log.clone()).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        call(
+            &id,
+            "stream_start",
+            json!({"action":"insert","subject":subject(),"change":change("a",1)}),
+        )
+        .await
+        .unwrap();
+        let event = loop {
+            let e = call(&id, "stream_poll", json!({})).await.unwrap();
+            if e["state"] == "authorize" {
+                break e;
+            }
+        };
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            call(
+                &id,
+                "stream_authorize",
+                json!({"nonce":event["nonce"],"decisions":[true]})
+            )
+            .await
+            .unwrap_err()
+            .contains("expired")
+        );
+        assert!(log.0.lock().unwrap().is_empty());
+        call(&id, "stream_close", json!({})).await.unwrap();
     }
     #[tokio::test]
     async fn host_auth_guards_insertion_queries_hybrid_and_streams() {

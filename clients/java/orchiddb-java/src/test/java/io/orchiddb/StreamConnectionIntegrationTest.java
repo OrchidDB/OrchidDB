@@ -66,9 +66,11 @@ class StreamConnectionIntegrationTest {
       JsonNode hybrid = c.queryHybrid(f.path("query").asText(), subject, Map.of(), snapshot);
       c.subscribe(f.path("stream_query").asText(), subject, Map.of(), Map.of(0, 0L));
       ArrayNode frames = JSON.createArrayNode();
+      ArrayNode rawBatches = JSON.createArrayNode();
       JsonNode offsets = null;
       for (int i = 0; i < 20; i++) {
         JsonNode b = c.nextBatch(16, 100);
+        rawBatches.add(b);
         frames.addAll((ArrayNode) b.get("frames"));
         offsets = b.get("offsets");
         if (offsets.path("0").asInt() == 4) break;
@@ -80,6 +82,7 @@ class StreamConnectionIntegrationTest {
       report.set("query", query);
       report.set("hybrid", hybrid);
       report.set("frames", frames);
+      report.set("raw_batches", rawBatches);
       report.set("offsets", offsets);
       Files.writeString(Path.of("/tmp/orchid-stream-java-result.json"), report.toString());
     }

@@ -23,6 +23,9 @@ type Session interface {
 type Config struct {
 	Dialect string
 	Library string
+	// Engines supplies additional SQL or remote sessions for federation. The
+	// primary session passed to New remains the execution engine.
+	Engines map[string]Engine
 }
 
 // QueryOptions supplies query inputs separately from the registered schema.
@@ -40,7 +43,7 @@ type Authorization struct {
 }
 
 var ErrClosed = errors.New("orchiddb: connection is closed")
-var ErrUnsupportedPlan = errors.New("orchiddb: multi-engine execution is not supported by the Go client")
+var ErrUnsupportedPlan = errors.New("orchiddb: multi-engine execution requires Config.Engines")
 
 type commandFunc func(any, any) error
 
@@ -51,6 +54,7 @@ type Connection struct {
 	dialect string
 	schema  map[string]json.RawMessage
 	command commandFunc
+	engines map[string]Engine
 	closed  atomic.Bool
 }
 
@@ -79,7 +83,11 @@ func New(session Session, schema json.RawMessage, config Config) (*Connection, e
 	if validated == nil {
 		return nil, errors.New("orchiddb: runtime returned an invalid schema")
 	}
-	return &Connection{session: session, dialect: config.Dialect, schema: validated, command: command}, nil
+	engines := make(map[string]Engine, len(config.Engines))
+	for name, engine := range config.Engines {
+		engines[name] = engine
+	}
+	return &Connection{session: session, dialect: config.Dialect, schema: validated, command: command, engines: engines}, nil
 }
 
 // Query executes graph text and returns driver-native rows. The caller must close
@@ -110,20 +118,31 @@ func (c *Connection) Query(ctx context.Context, text string, options QueryOption
 	if options.Authorization != nil {
 		request["authorization"] = options.Authorization
 	}
+	var raw json.RawMessage
 	var plan struct {
 		Version   int               `json:"version"`
 		Dialect   string            `json:"dialect"`
 		SQL       string            `json:"sql"`
 		Transfers []json.RawMessage `json:"transfers"`
 	}
-	if err := c.command(request, &plan); err != nil {
+	if err := c.command(request, &raw); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
 		return nil, err
 	}
 	if plan.Version != 1 || plan.Dialect != c.dialect || strings.TrimSpace(plan.SQL) == "" {
 		return nil, errors.New("orchiddb: invalid execution plan from native runtime")
 	}
 	if len(plan.Transfers) != 0 {
-		return nil, ErrUnsupportedPlan
+		if len(c.engines) == 0 {
+			return nil, ErrUnsupportedPlan
+		}
+		sql, err := c.federate(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+		plan.SQL = sql
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

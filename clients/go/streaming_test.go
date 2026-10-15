@@ -83,12 +83,14 @@ func TestLiveStreamAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	var frames []json.RawMessage
+	var rawBatches []json.RawMessage
 	var offsets map[int32]int64
 	for i := 0; i < 20; i++ {
 		raw, err := c.NextBatch(ctx, 16, 100)
 		if err != nil {
 			t.Fatal(err)
 		}
+		rawBatches = append(rawBatches, raw)
 		var batch struct {
 			Frames  []json.RawMessage `json:"frames"`
 			Offsets map[int32]int64   `json:"offsets"`
@@ -108,7 +110,7 @@ func TestLiveStreamAuthorization(t *testing.T) {
 	if err = c.Unsubscribe(ctx); err != nil {
 		t.Fatal(err)
 	}
-	report, _ := json.Marshal(map[string]any{"query": query, "hybrid": hybrid, "frames": frames, "offsets": offsets})
+	report, _ := json.Marshal(map[string]any{"query": query, "hybrid": hybrid, "frames": frames, "offsets": offsets, "raw_batches": rawBatches})
 	if err = os.WriteFile("/tmp/orchid-stream-go-result.json", report, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -117,5 +119,34 @@ func TestLiveStreamAuthorization(t *testing.T) {
 	cancel()
 	if _, err = c.Query(cancelled, f.Query, f.Subject, nil); err != context.Canceled {
 		t.Fatalf("cancel: %v", err)
+	}
+}
+
+func TestStreamCancellationDuringAuthorizationDoesNotGrant(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &StreamConnection{id: "test"}
+	c.auth = func(context.Context, Authorization, []PermissionCheck) ([]bool, error) {
+		cancel()
+		return []bool{true}, nil
+	}
+	closed := false
+	c.command = func(value any, result any) error {
+		request := value.(map[string]any)
+		switch request["op"] {
+		case "stream_start":
+			return json.Unmarshal([]byte(`{}`), result)
+		case "stream_poll":
+			return json.Unmarshal([]byte(`{"state":"authorize","nonce":"1","subject":{"subject_type":"user","subject_id":"alice"},"checks":[{"resource_type":"document","resource_id":"a","permission":"edit"}]}`), result)
+		case "stream_close":
+			closed = true
+			return json.Unmarshal([]byte(`{}`), result)
+		default:
+			t.Fatalf("permission sent after cancellation: %v", request["op"])
+			return nil
+		}
+	}
+	_, err := c.Insert(ctx, Authorization{SubjectType: "user", SubjectID: "alice"}, map[string]any{})
+	if err != context.Canceled || !closed {
+		t.Fatalf("cancel=%v closed=%v", err, closed)
 	}
 }

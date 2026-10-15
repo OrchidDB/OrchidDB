@@ -13,14 +13,14 @@ class StreamConnection:
     this connection, cancelling pending work without advancing its checkpoint.
     """
     def __init__(self, schema, *, kafka, topic, source, authorizer, library=None,
-                 auth_timeout_ms=30000):
+                 auth_timeout_ms=30000, limits=None):
         if not callable(authorizer):
             raise TypeError("authorizer callback required")
         self._runtime = _Runtime(library)
         self._authorizer = authorizer
         self._lock = threading.Lock()
         self._id = self._runtime.operation_command(dict(op="stream_open", schema=schema,
-            kafka=kafka, topic=topic, source=source, auth_timeout_ms=auth_timeout_ms))["id"]
+            kafka=kafka, topic=topic, source=source, auth_timeout_ms=auth_timeout_ms, limits=limits))["id"]
 
     def _command(self, op, **values):
         if self._id is None:

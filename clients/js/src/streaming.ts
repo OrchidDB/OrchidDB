@@ -6,6 +6,7 @@ export type StreamAuthorizer = (subject: Authorization, checks: readonly Permiss
 export interface StreamOptions {
   kafka: Record<string,string>; topic: string; source: string; authorizer: StreamAuthorizer;
   library?: string; auth_timeout_ms?: number;
+  limits?: {entities?: number; records?: number; timeout_ms?: number};
 }
 export interface StreamQueryOptions {subject: Authorization; parameters?: Record<string,unknown>; snapshot?: unknown}
 /** A single independent Kafka reader/writer. Results carry base64 Arrow IPC.
@@ -22,7 +23,7 @@ export class StreamConnection {
     this.runtime = new Compiler(options.library);
     this.authorize = options.authorizer;
     this.id = this.runtime.operationCommand({op:'stream_open',schema,kafka:options.kafka,
-      topic:options.topic,source:options.source,auth_timeout_ms:options.auth_timeout_ms}).id;
+      topic:options.topic,source:options.source,auth_timeout_ms:options.auth_timeout_ms,limits:options.limits}).id;
   }
   private command(op: string, values: Record<string,unknown> = {}): any {
     if (this.id === undefined) throw new Error('Stream connection is closed');

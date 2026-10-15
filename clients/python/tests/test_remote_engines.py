@@ -20,7 +20,7 @@ def test_live_remote_federation(case):
         for sql in case.get("setup_sql", []):
             connection.execute(sql)
         request = case["request"]
-        with RemoteEngine(case["adapter"], case["endpoint"], page_size=2) as remote:
+        with RemoteEngine(case["adapter"], **dict({"endpoint": case["endpoint"], "page_size": 2}, **case.get("options", {}))) as remote:
             engines = {name: remote if desc["dialect"] == case["adapter"] else DuckDBEngine(connection)
                        for name, desc in request["engines"].items()}
             with query_federated(compiler, request, engines, batch_size=2) as reader:

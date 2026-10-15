@@ -44,7 +44,29 @@ defmodule OrchidDB.StreamConnection do
     do: run(server, "next", %{max_records: max_records, wait_ms: wait_ms})
 
   def unsubscribe(server), do: run(server, "unsubscribe", %{})
-  def close(server), do: GenServer.stop(server)
+
+  def close(server) do
+    # Cancel native work without waiting behind a long-running GenServer call.
+    case GenServer.whereis(server) do
+      nil ->
+        :ok
+
+      pid ->
+        case Process.info(pid, :dictionary) do
+          {:dictionary, entries} ->
+            case List.keyfind(entries, {__MODULE__, :handle}, 0) do
+              {_, {id, opts}} -> Runtime.compile(%{op: "stream_close", id: id}, opts)
+              nil -> :ok
+            end
+
+          nil ->
+            :ok
+        end
+
+        GenServer.cast(pid, :close)
+    end
+  end
+
   defp run(server, action, values), do: GenServer.call(server, {:run, action, values}, :infinity)
 
   @impl true
@@ -55,8 +77,12 @@ defmodule OrchidDB.StreamConnection do
       |> Map.merge(%{"op" => "stream_open", "schema" => schema})
 
     case Runtime.compile(request, opts) do
-      {:ok, %{"id" => id}} -> {:ok, %{id: id, authorizer: authorizer, opts: opts}}
-      {:error, reason} -> {:stop, reason}
+      {:ok, %{"id" => id}} ->
+        Process.put({__MODULE__, :handle}, {id, opts})
+        {:ok, %{id: id, authorizer: authorizer, opts: opts}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
@@ -77,6 +103,9 @@ defmodule OrchidDB.StreamConnection do
       kind, _reason -> {:stop, :normal, {:error, "authorization callback failed: #{kind}"}, state}
     end
   end
+
+  @impl true
+  def handle_cast(:close, state), do: {:stop, :normal, state}
 
   defp poll(state) do
     case command(state, "stream_poll") do

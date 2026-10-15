@@ -1,3 +1,5 @@
+#[cfg(feature = "kafka")]
+mod stream;
 use arrow::{ipc::writer::StreamWriter, util::pretty::pretty_format_batches};
 use duckdb::Connection;
 #[path = "../../clients/rust/src/statistics.rs"]
@@ -15,6 +17,9 @@ Usage: orchiddb query QUERY --schema SCHEMA.json [--language cypher|gremlin|spar
        orchiddb query QUERY --catalog URL --scope SCOPE --graph GRAPH
        orchiddb query --file QUERY_FILE --schema SCHEMA.json
        orchiddb statistics --schema SCHEMA.json --output SNAPSHOT.json
+       orchiddb stream --schema SCHEMA.json --config KAFKA.json --subject SUBJECT.json
+         --authorizer EXECUTABLE (--insert CHANGE.json | --insert-batch CHANGES.json |
+           --query CYPHER | --subscribe CYPHER --offsets OFFSETS.json)
        orchiddb --version
 
 Schema files contain graph mappings and source metadata only, never query text.
@@ -55,6 +60,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
     if command == "--version" {
         println!("orchiddb {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    if command == "stream" {
+        #[cfg(feature = "kafka")]
+        { return stream::run(args.collect()).await; }
+        #[cfg(not(feature = "kafka"))]
+        { return Err("build with the kafka feature for streaming".into()); }
     }
     if command != "query" && command != "statistics" {
         return Err(format!("unknown command: {command}").into());

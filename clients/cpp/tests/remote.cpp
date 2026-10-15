@@ -74,7 +74,9 @@ int main() {
     else sql(database.connection,test.at("setup_sql"));
     auto remote=[&] {
       orchiddb::detail::Compiler scoped_compiler;
-      orchiddb::RemoteEngine opened(test.at("adapter"),{{"endpoint",test.at("endpoint")},{"page_size",1},{"batch_size",2}});
+      orchiddb::Json options={{"endpoint",test.at("endpoint")},{"page_size",1},{"batch_size",2}};
+      options.update(test.value("options",orchiddb::Json::object()));
+      orchiddb::RemoteEngine opened(test.at("adapter"),options);
       return orchiddb::RemoteEngine(std::move(opened));
     }(); // The moved session retains its compiler after the original scope ends.
 

@@ -34,12 +34,17 @@ public final class StreamConnection implements AutoCloseable {
       String source,
       Authorizer authorizer)
       throws Exception {
+    this(schema, Map.of("kafka", kafka, "topic", topic, "source", source), authorizer);
+  }
+
+  /** Options include kafka, topic, source, auth_timeout_ms and limits. */
+  public StreamConnection(JsonNode schema, Map<String, ?> options, Authorizer authorizer)
+      throws Exception {
     this.authorizer = Objects.requireNonNull(authorizer, "authorizer required");
     NativeSqlCompiler.ensureLoaded();
-    ObjectNode request =
-        JSON.createObjectNode().put("op", "stream_open").put("topic", topic).put("source", source);
+    ObjectNode request = JSON.valueToTree(options);
+    request.put("op", "stream_open");
     request.set("schema", schema);
-    request.set("kafka", JSON.valueToTree(kafka));
     id = invoke(request).path("id").asText();
     if (id.isEmpty()) throw new IllegalStateException("Missing stream handle");
   }
@@ -68,6 +73,8 @@ public final class StreamConnection implements AutoCloseable {
         if (event.path("state").asText().equals("authorize")) {
           try {
             boolean[] decisions = authorizer.check(event.get("subject"), event.get("checks"));
+            if (Thread.currentThread().isInterrupted())
+              throw new InterruptedException("Stream operation cancelled during authorization");
             if (decisions == null || decisions.length != event.get("checks").size())
               throw new IllegalArgumentException("authorizer must return one boolean per check");
             ObjectNode reply = JSON.createObjectNode().put("nonce", event.path("nonce").asText());

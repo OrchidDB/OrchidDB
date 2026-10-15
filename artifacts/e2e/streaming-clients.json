@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-14",
+  "services": {
+    "kafka": "apache/kafka:4.1.1",
+    "authorization": "authzed/spicedb:v1.56.2 via application callback, fully consistent checks"
+  },
+  "scope": "Client Kafka insert/query/hybrid/subscription and host-owned authorization; no embedded SpiceDB dependency",
+  "checks": [
+    "Denied writes never append",
+    "Authorized single and batch inserts",
+    "Unauthorized rows filtered from bounded, hybrid and streaming reads",
+    "Overlapping snapshot/Kafka versions deduplicated",
+    "Streaming next offsets and Arrow contents verified",
+    "Shared native Arrow buffers preserve uint64 and per-row typed metadata",
+    "Expired authorization grants cannot write",
+    "Callback failure, cancellation and close fail closed"
+  ],
+  "clients": {
+    "python": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "js": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "go": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "java": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "cpp": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "elixir": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "rust": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    },
+    "cli": {
+      "query_rows": 2,
+      "hybrid_rows": 2,
+      "streamed_frames": 3,
+      "checkpoint": {
+        "0": 4
+      },
+      "denied_write": true,
+      "hidden_rows_filtered": true
+    }
+  },
+  "additional_validation": {
+    "wire_unit_tests": 4,
+    "go": "race suite using CGO_ENABLED=1 and -ldflags=-linkmode=external; federation preserves exact integers/decimals and batches remote transfers",
+    "weaviate": "artifacts/e2e/weaviate-all-clients.json: all eight clients, authenticated real service, HTTP batch counts checked",
+    "previous_broader_e2e": "artifacts/e2e/summary.json records earlier Flink/Iceberg and repository checks, including unrelated failures; this report does not claim all repository tests pass"
+  },
+  "reproduction": [
+    "tools/diagnostics/stream_clients_fixture.py",
+    "tools/diagnostics/check_stream_clients.py",
+    "tools/diagnostics/test_stream_cli.py",
+    "scripts/weaviate_smoke.py --clients"
+  ],
+  "performance": "artifacts/streaming-benchmark/foreign-clients.json"
+}

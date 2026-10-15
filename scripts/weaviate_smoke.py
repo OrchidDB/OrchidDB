@@ -33,6 +33,7 @@ class ObservedRemote(RemoteEngine):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--no-build',action='store_true')
+    parser.add_argument('--clients',action='store_true',help='Validate every client against the counted authenticated proxy')
     args=parser.parse_args()
     if not args.no_build:
         from catalog_smoke import build_native_clients
@@ -93,7 +94,8 @@ def main():
         worker = threading.Thread(target=proxy.serve_forever,daemon=True); worker.start()
         proxy_endpoint = 'http://127.0.0.1:'+str(proxy.server_port)
         db = duckdb.connect()
-        db.execute("CREATE TABLE questions(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[]); INSERT INTO questions VALUES (10,'a',[1,0]),(20,'a',[0,1]); CREATE TABLE documents(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[], title VARCHAR); INSERT INTO documents VALUES (1,'a',[1,0],'Graph storage'),(2,'a',[0.8,0.6],'Graph retrieval'),(3,'b',[1,0],'Other tenant'); CREATE TABLE authors(id BIGINT,name VARCHAR); INSERT INTO authors VALUES (100,'Ada'),(200,'Grace'); CREATE TABLE written_by(id BIGINT,document_id BIGINT,author_id BIGINT); INSERT INTO written_by VALUES(1,1,100),(2,2,200)")
+        setup_sql = "CREATE TABLE questions(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[]); INSERT INTO questions VALUES (10,'a',[1,0]),(20,'a',[0,1]); CREATE TABLE documents(id BIGINT, tenant_id VARCHAR, embedding DOUBLE[], title VARCHAR); INSERT INTO documents VALUES (1,'a',[1,0],'Graph storage'),(2,'a',[0.8,0.6],'Graph retrieval'),(3,'b',[1,0],'Other tenant'); CREATE TABLE authors(id BIGINT,name VARCHAR); INSERT INTO authors VALUES (100,'Ada'),(200,'Grace'); CREATE TABLE written_by(id BIGINT,document_id BIGINT,author_id BIGINT); INSERT INTO written_by VALUES(1,1,100),(2,2,200)"
+        db.execute(setup_sql)
         table = lambda name, columns:dict(name=name,engine='local',columns=[dict(name=n,data_type=t) for n,t in columns])
         schema = dict(engines={'local':{'dialect':'duckdb'},'vectors':{'dialect':'weaviate'}},execution_engine='local',
             tables=[table('questions',[('id','int64'),('tenant_id','string'),('embedding','list:float64')]),table('documents',[('id','int64'),('tenant_id','string'),('embedding','list:float64'),('title','string')]),table('authors',[('id','int64'),('name','string')]),table('written_by',[('id','int64'),('document_id','int64'),('author_id','int64')])],
@@ -148,6 +150,10 @@ def main():
                                 assert result.read_all().to_pylist()==batched
                             assert len(graphql_calls)-before_default==1, graphql_calls[before_default:]
                             assert graphql_calls[-1].count('nearVector:')==5
+                    if args.clients and metric == 'cosine' and not named:
+                        sys.path.insert(0, str(ROOT / 'tools/diagnostics'))
+                        from weaviate_clients import run_clients
+                        run_clients(config, setup_sql, proxy_endpoint, token, graphql_calls)
                     db.execute("DELETE FROM questions WHERE id>=30")
                     print('PASS HTTP batching: 5 source lookups in 1 request (default), 3 requests (batch_size=2); separate tenants, duplicate vectors, per-source top-k',flush=True)
                     rejected=rows(query,{'score':-.1 if metric=='l2' else 1.1,'limit':2})

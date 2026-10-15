@@ -84,7 +84,9 @@ defmodule OrchidDBRemoteEngineTest do
       plan =
         put_in(plan, ["transfers", Access.at(0), "sql"], "SELECT 2::BIGINT AS seed WHERE FALSE")
 
-      assert {:ok, []} = OrchidDB.Internal.Runtime.execute_federated(engines, plan, consume(plan["fields"]))
+      assert {:ok, []} =
+               OrchidDB.Internal.Runtime.execute_federated(engines, plan, consume(plan["fields"]))
+
       assert {:ok, _} = Adbc.Connection.query(connection, "SELECT 1")
     end)
   end
@@ -104,11 +106,17 @@ defmodule OrchidDBRemoteEngineTest do
             do: assert({:ok, _} = Adbc.Connection.query(connection, statement))
 
         {:ok, remote} =
-          OrchidDB.RemoteEngine.start_link(test["adapter"], %{
-            endpoint: test["endpoint"],
-            page_size: 1,
-            batch_size: 2
-          })
+          OrchidDB.RemoteEngine.start_link(
+            test["adapter"],
+            Map.merge(
+              %{
+                "endpoint" => test["endpoint"],
+                "page_size" => 1,
+                "batch_size" => 2
+              },
+              Map.get(test, "options", %{})
+            )
+          )
 
         try do
           engines =
@@ -132,7 +140,9 @@ defmodule OrchidDBRemoteEngineTest do
                    OrchidDB.RemoteEngine.execute_requests(remote, [%{invalid: true}], [])
 
           assert_raise RuntimeError, "consumer failed", fn ->
-            OrchidDB.Internal.Runtime.query_federated(engines, test["request"], fn _ -> raise "consumer failed" end)
+            OrchidDB.Internal.Runtime.query_federated(engines, test["request"], fn _ ->
+              raise "consumer failed"
+            end)
           end
 
           assert {:ok, test["expected_rows"]} ==

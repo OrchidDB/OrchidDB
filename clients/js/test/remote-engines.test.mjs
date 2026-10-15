@@ -25,7 +25,7 @@ for (const fixture of cases) test(`live remote federation: ${fixture.name ?? fix
   let remote;
   try {
     for (const sql of fixture.setup_sql ?? []) connection.query(sql);
-    remote = new RemoteEngine(compiler, fixture.adapter, {endpoint: fixture.endpoint, page_size: 2});
+    remote = new RemoteEngine(compiler, fixture.adapter, {endpoint: fixture.endpoint, page_size: 2, ...fixture.options});
     const engines = new Map(Object.entries(fixture.request.engines).map(([id, descriptor]) =>
       [id, descriptor.dialect === fixture.adapter ? remote : arrowEngine(connection)]));
     const rows = await queryFederated(compiler, fixture.request, engines, async result => {

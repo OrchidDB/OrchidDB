@@ -7,3 +7,5 @@ import "errors"
 func loadRuntime(string) (commandFunc, error) {
 	return nil, errors.New("orchiddb: native runtime requires macOS or Linux on amd64 or arm64")
 }
+
+func loadRemoteRuntime(path string) (commandFunc, error) { return loadRuntime(path) }

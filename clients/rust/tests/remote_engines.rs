@@ -33,9 +33,11 @@ async fn live_remote_engines_compose_with_caller_owned_duckdb() {
         for sql in case["setup_sql"].as_array().unwrap() {
             db.execute_batch(sql.as_str().unwrap()).unwrap();
         }
+        let mut options = json!({"endpoint":case["endpoint"],"page_size":2,"batch_size":2});
+        if let Some(extra) = case["options"].as_object() { options.as_object_mut().unwrap().extend(extra.clone()); }
         let remote = HttpSession::from_json_options(
             case["adapter"].as_str().unwrap(),
-            json!({"endpoint":case["endpoint"],"page_size":2,"batch_size":2}),
+            options,
         )
         .unwrap();
         let mut sessions: BTreeMap<String, Box<dyn Session>> = BTreeMap::from([

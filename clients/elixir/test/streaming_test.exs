@@ -51,10 +51,10 @@ defmodule OrchidDB.StreamingTest do
         assert {:ok, hybrid} = Stream.query_hybrid(c, f["query"], f["subject"], snapshot)
         assert {:ok, _} = Stream.subscribe(c, f["stream_query"], f["subject"], f["offsets"])
 
-        {frames, offsets} =
-          Enum.reduce_while(1..20, {[], %{}}, fn _, {frames, _} ->
+        {frames, offsets, raw_batches} =
+          Enum.reduce_while(1..20, {[], %{}, []}, fn _, {frames, _, raw_batches} ->
             {:ok, b} = Stream.next_batch(c, 16, 100)
-            result = {frames ++ b["frames"], b["offsets"]}
+            result = {frames ++ b["frames"], b["offsets"], raw_batches ++ [b]}
             if b["offsets"]["0"] == 4, do: {:halt, result}, else: {:cont, result}
           end)
 
@@ -64,11 +64,55 @@ defmodule OrchidDB.StreamingTest do
 
         File.write!(
           "/tmp/orchid-stream-elixir-result.json",
-          Jason.encode!(%{query: query, hybrid: hybrid, frames: frames, offsets: offsets})
+          Jason.encode!(%{
+            query: query,
+            hybrid: hybrid,
+            frames: frames,
+            offsets: offsets,
+            raw_batches: raw_batches
+          })
         )
       after
         Stream.close(c)
       end
+    end
+  end
+
+  test "close cancels native work while the host callback is pending" do
+    if path = System.get_env("ORCHIDDB_STREAM_FIXTURE") do
+      f = path |> File.read!() |> Jason.decode!()
+      parent = self()
+
+      authorizer = fn _, checks ->
+        send(parent, {:authorizing, self()})
+
+        receive do
+          :continue -> Enum.map(checks, fn _ -> true end)
+        after
+          5_000 -> raise "test callback timed out"
+        end
+      end
+
+      {:ok, c} =
+        Stream.start_link(
+          f["schema"],
+          %{kafka: f["kafka"], topic: f["topic_prefix"] <> "-elixir", source: f["source"]},
+          authorizer
+        )
+
+      pending =
+        Task.async(fn ->
+          Stream.insert(
+            c,
+            %{table: "docs", key: "a", version: 999, data: %{name: "cancelled-write"}},
+            f["subject"]
+          )
+        end)
+
+      assert_receive {:authorizing, ^c}, 5_000
+      assert :ok = Stream.close(c)
+      send(c, :continue)
+      assert {:error, _} = Task.await(pending, 5_000)
     end
   end
 end

@@ -65,6 +65,12 @@ var runtimeCache = struct {
 }{handles: make(map[string]*nativeRuntime)}
 
 func loadRuntime(path string) (commandFunc, error) {
+	return loadCommand(path, "orchiddb_execution_command")
+}
+func loadRemoteRuntime(path string) (commandFunc, error) {
+	return loadCommand(path, "orchiddb_remote_json")
+}
+func loadCommand(path, symbol string) (commandFunc, error) {
 	if path == "" {
 		path = os.Getenv("ORCHIDDB_NATIVE_LIBRARY")
 	}
@@ -88,6 +94,14 @@ func loadRuntime(path string) (commandFunc, error) {
 		}
 		runtimeCache.handles[path] = rt
 	}
+	command := rt.command
+	if symbol != "orchiddb_execution_command" {
+		address, err := purego.Dlsym(rt.handle, symbol)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s: %w", symbol, err)
+		}
+		purego.RegisterFunc(&command, address)
+	}
 	return func(request any, result any) error {
 		data, err := json.Marshal(request)
 		if err != nil {
@@ -95,7 +109,7 @@ func loadRuntime(path string) (commandFunc, error) {
 		}
 		// purego keeps a NUL-terminated copy alive for this synchronous call.
 		// The native ABI copies the request before dispatching to its workers.
-		output := rt.command(string(data))
+		output := command(string(data))
 		if output == nil {
 			return errors.New("orchiddb: native runtime returned null")
 		}

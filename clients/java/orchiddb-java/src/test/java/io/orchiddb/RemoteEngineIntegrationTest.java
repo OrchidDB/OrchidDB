@@ -34,18 +34,17 @@ class RemoteEngineIntegrationTest {
     for (var test : fixture.path("cases")) {
       String adapter = test.path("adapter").asText();
       adapters.add(adapter);
+      var options = new LinkedHashMap<String, Object>();
+      options.put("endpoint", test.path("endpoint").asText());
+      options.put("page_size", 2);
+      options.put("batch_size", 2);
+      test.path("options")
+          .fields()
+          .forEachRemaining(
+              entry ->
+                  options.put(entry.getKey(), JSON.convertValue(entry.getValue(), Object.class)));
       try (var duck = DriverManager.getConnection("jdbc:duckdb:");
-          var remote =
-              new RemoteEngine(
-                  "search",
-                  adapter,
-                  Map.of(
-                      "endpoint",
-                      test.path("endpoint").asText(),
-                      "page_size",
-                      2,
-                      "batch_size",
-                      2))) {
+          var remote = new RemoteEngine("search", adapter, options)) {
         for (var sql : test.path("setup_sql")) {
           try (var statement = duck.createStatement()) {
             statement.execute(sql.asText());
@@ -92,7 +91,11 @@ class RemoteEngineIntegrationTest {
         assertThrows(SQLException.class, remote::openSession);
       }
     }
-    assertEquals(Set.of("quickwit", "elasticsearch"), adapters, "Exercise both real engines");
+    var expectedAdapters = new HashSet<String>();
+    if (fixture.has("expected_adapters"))
+      fixture.get("expected_adapters").forEach(v -> expectedAdapters.add(v.asText()));
+    else expectedAdapters.addAll(Set.of("quickwit", "elasticsearch"));
+    assertEquals(expectedAdapters, adapters, "Exercise every configured real engine");
   }
 
   @Test

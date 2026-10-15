@@ -126,10 +126,17 @@ library loader searches for `liborchiddb_compiler.dylib` or `.so`. Build the
 runtime from the same checkout; the loader checks ABI 2 and retains its native
 worker runtime for the lifetime of the process.
 
-This initial Go API supports single-engine SQL execution. Federation transfers
-return `ErrUnsupportedPlan` before any database execution. Arrow streams,
-statistics collection, remote-engine sessions, and catalog management helpers
-are not yet exposed by the Go client.
+Go also supports federation through `Config.Engines`. Register additional SQL
+sessions as `Engine{Dialect: "duckdb", Session: session}` and remote sessions as
+`Engine{Remote: remote}`. Create the latter with
+`NewRemoteEngine("weaviate", options, library)`; options include `endpoint`,
+`authentication`, and `batch_size`. The primary SQL session remains the execution
+engine. All routes are checked before execution, source cursors close before
+dependent operations, and function-backed remote edges use shared request
+batching. Without registered routes, transfers return `ErrUnsupportedPlan`.
+Go's final SQL query returns driver-native `*sql.Rows`; streaming Kafka queries
+return Arrow IPC payloads. Statistics collection and catalog management helpers
+are not yet exposed as Go convenience methods.
 
 ## Optional Orchid Catalog
 
@@ -623,6 +630,75 @@ pull-based streaming Cypher subscription. Enable `kafka` for the librdkafka
 transport. Authorization is supplied by your client through `Authorizer`; the
 streaming API has no SpiceDB dependency. Default library builds do not require
 Kafka or DuckDB. This API is separate from the DuckDB extension SQL interface.
+
+Python, JavaScript/TypeScript, Go, Java, C++, and Elixir expose the same operations
+through `StreamConnection` (`NewStream` in Go). The native and JNI distributions
+include the `kafka` feature. Each connection requires an application callback
+`authorizer(subject, checks)` returning one boolean per check, in order. Route
+that callback to your existing SpiceDB client; credentials, consistency choices,
+and any expiring permission cache stay in your application. There is no built-in
+allow-all mode or server-side permission cache. Denials prevent insertion or
+filter reads; callback errors and malformed responses fail closed.
+
+Foreign-client results contain base64 Arrow IPC in `ipc`. Subscription batches
+contain `frames`, `batches`, and `offsets`; each frame has `table`, `key`, a
+decimal-string `version`, `deleted`, and an optional `result` reference
+`{batch, offset, length}` into the shared Arrow buffers in `batches`. Decode each
+buffer once and slice its rows for each frame; the same range selects the
+corresponding typed-row metadata. This avoids repeating Arrow
+schemas and IPC headers for every entity. Process the entire batch
+before persisting its checkpoint. Close the connection to cancel pending work.
+One operation runs at a time per connection; use separate connections for
+concurrent work. `insert_batch`/`insertBatch` accepts up to 4,096 changes, while
+`insert` remains a single-record call. `next_batch`/`nextBatch` independently
+controls delivery batching; where arguments are optional, it defaults to one record. Configure `limits`
+(`entities`, `records`, `timeout_ms`) for your workload; defaults are 1,000,000
+retained entities, 10,000,000 input records per bounded read, and 60 seconds.
+`auth_timeout_ms` defaults to 30 seconds. Expired replies fail closed even when
+the native worker was delayed.
+
+For example, with your registered stream schema and authenticated identity:
+
+```python
+from orchiddb import StreamConnection
+
+with StreamConnection(schema, kafka={"bootstrap.servers": "localhost:9092"},
+                      topic="materialized-docs", source="docs-incarnation-1",
+                      authorizer=application.check_permissions) as stream:
+    stream.insert(change, subject=authenticated_subject)
+    stream.subscribe("MATCH (d:Doc) RETURN d.name", subject=authenticated_subject,
+                     offsets=saved_next_offsets)
+    batch = stream.next_batch(max_records=256, wait_ms=100)
+    application.process_and_checkpoint(batch)
+```
+
+`query` uses Kafka alone. Foreign clients' hybrid-query method accepts an immutable
+snapshot `{source, offsets, changes}` loaded by the application's Iceberg reader
+from one published Flink checkpoint. The shared core validates the source and
+partition coverage and performs version/tombstone reconciliation; callers must
+not concatenate Iceberg rows with Kafka results. Rust additionally provides
+`DuckDbSnapshot` for loading a published Iceberg snapshot directly.
+
+The CLI's `stream` command accepts separate `--schema`, `--config` (Kafka options,
+`topic`, `source`), and `--subject` JSON files. Supply `--authorizer EXECUTABLE`:
+the CLI writes `{subject, checks}` to its stdin and expects a JSON boolean array
+on stdout. It executes the program directly without a shell, bounds output, and
+times out after 30 seconds. Choose `--insert CHANGE.json`, `--insert-batch
+CHANGES.json`, `--query CYPHER` (optionally `--snapshot SNAPSHOT.json`), or
+`--subscribe CYPHER --offsets OFFSETS.json --batches N`. Results are JSON lines
+containing Arrow IPC. This is a trusted host callback, not an HTTP login endpoint.
+
+Live Kafka/SpiceDB checks cover all eight clients, including denied insertion,
+hybrid reconciliation, filtered streaming results, and checkpoints; see
+[`artifacts/e2e/streaming-clients.json`](artifacts/e2e/streaming-clients.json).
+A local release Python benchmark (50,000 records, six partitions, Arrow decoding,
+local permission callback) measured median steady output of **9.4k records/s**
+with single-record reads and **68.5k records/s** with explicit 256-record reads.
+Shared Arrow buffers improved the latter from 35.8k records/s and reduced encoded
+IPC bytes by about 91%. Single-record foreign-client throughput remains below the
+native Rust path. These numbers exclude network authorization latency and are not
+Kafka broker capacity; methodology and all trials are in
+[`foreign-clients.json`](artifacts/streaming-benchmark/foreign-clients.json).
 
 Register `StreamSchema` on `StreamConnection::new` once. Each table specifies its
 node label (or edge endpoints), JSON Schema for properties, and authorization resource

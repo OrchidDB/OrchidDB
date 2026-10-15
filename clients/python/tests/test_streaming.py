@@ -31,9 +31,10 @@ def test_streaming_spicedb_route():
         hybrid=c.query(f['query'],subject=f['subject'],snapshot=dict(source=f['source'],offsets=f['offsets'],changes=[change('a',1),change('b',1)]))
         assert rows(hybrid)==rows(result)
         c.subscribe(f['stream_query'],subject=f['subject'],offsets=f['offsets'])
-        frames=[]; offsets=None
+        frames=[]; offsets=None; raw_batches=[]
         for _ in range(20):
             batch=c.next_batch(16,100)
+            raw_batches.append(batch)
             frames.extend(batch['frames']); offsets=batch['offsets']
             if offsets['0']==4: break
         assert offsets=={'0':4}
@@ -42,8 +43,27 @@ def test_streaming_spicedb_route():
         c.subscribe(f['stream_query'],subject=f['subject'],offsets=offsets)
         assert c.next_batch(16,20)['frames']==[]
         c.unsubscribe()
-        Path('/tmp/orchid-stream-python-result.json').write_text(json.dumps(dict(query=result,hybrid=hybrid,frames=frames,offsets=offsets)))
+        Path('/tmp/orchid-stream-python-result.json').write_text(json.dumps(dict(query=result,hybrid=hybrid,frames=frames,offsets=offsets,raw_batches=raw_batches)))
     assert {x['permission'] for x in checks}=={'edit','view'}
     with connection(lambda s,c: [True]*(len(c)-1)) as c:
         with pytest.raises(ValueError): c.insert(change('a',3),subject=f['subject'])
         with pytest.raises(RuntimeError,match='closed'): c.query(f['query'],subject=f['subject'])
+
+@pytest.mark.skipif(not os.environ.get('ORCHIDDB_STREAM_FIXTURE'), reason='live Kafka fixture required')
+def test_expired_auth_and_configured_limits_fail_closed():
+    import time
+    import pyarrow as pa
+    f = json.loads(Path(os.environ['ORCHIDDB_STREAM_FIXTURE']).read_text())
+    options=dict(kafka=f['kafka'],topic=f['topic_prefix']+'-python',source=f['source'])
+    def late(subject, checks):
+        time.sleep(.03)
+        return [True]*len(checks)
+    with StreamConnection(f['schema'],authorizer=late,auth_timeout_ms=5,**options) as c:
+        with pytest.raises(Exception,match='expired|timed out'):
+            c.insert(dict(table='docs',key='a',version=999,data=dict(name='late-write')),subject=f['subject'])
+    with StreamConnection(f['schema'],authorizer=lambda s,c:[True]*len(c),**options) as c:
+        result=c.query("MATCH (d:Doc) WHERE d.name = 'late-write' RETURN d.name",subject=f['subject'])
+        assert pa.ipc.open_stream(base64.b64decode(result['ipc'])).read_all().num_rows==0
+    with StreamConnection(f['schema'],authorizer=lambda s,c:[True]*len(c),limits=dict(records=1),**options) as c:
+        with pytest.raises(Exception,match='record limit'):
+            c.query(f['query'],subject=f['subject'])
