@@ -1728,6 +1728,10 @@ Rust release binaries are stripped of symbols. Java packaging uses runtime
 dependencies only and skips test compilation; the JavaScript release install
 excludes the test workspace and its database drivers.
 
+The macOS release packages require macOS 15 or newer, matching the build
+toolchain's Rust standard library. Kafka TLS libraries are bundled statically;
+Linux packages also bundle Cyrus SASL and Kerberos for cross-platform portability.
+
 | Component | GitHub assets |
 | --- | --- |
 | DuckDB extension | Three platform archives, pinned to DuckDB 1.5.6 |

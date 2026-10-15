@@ -24,7 +24,7 @@ from publish_extension import bundle as extension_bundle
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = {
-    'osx_arm64': ('aarch64-apple-darwin', 'macos-aarch64', 'darwin-arm64', 'macosx_11_0_arm64'),
+    'osx_arm64': ('aarch64-apple-darwin', 'macos-aarch64', 'darwin-arm64', 'macosx_15_0_arm64'),
     'linux_arm64': ('aarch64-unknown-linux-gnu', 'linux-aarch64', 'linux-arm64', 'manylinux_2_28_aarch64'),
     'linux_amd64': ('x86_64-unknown-linux-gnu', 'linux-x86_64', 'linux-x64', 'manylinux_2_28_x86_64'),
 }
@@ -246,7 +246,7 @@ class Release:
         command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
         cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
         env['CARGO_TARGET_DIR'] = str(cache)
-        if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '11.0'
+        if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '15.0'
         if target != 'osx_arm64':
             run(['rustup', 'target', 'add', triple], env=env)
             command += ['--target', triple + '.2.28']
@@ -254,11 +254,17 @@ class Release:
             env['PATH'] = str(Path(rustc).parent) + ':' + env['PATH']
             # Cyrus SASL uses generic autotools variables; cargo-zigbuild also
             # supplies target-specific compilers to OpenSSL and Kerberos.
+            # Keep host build dependencies native. Kerberos's old warning policy
+            # predates Zig's Clang, and librdkafka's export map includes an
+            # optional test symbol; neither should make these builds fail.
             zig_target = ('aarch64' if target == 'linux_arm64' else 'x86_64') + '-linux-gnu.2.28'
-            env.update(CC='zig cc -target ' + zig_target, AR='zig ar', RANLIB='zig ranlib',
-                       CFLAGS='-std=gnu17 -Wno-error=incompatible-pointer-types-discards-qualifiers',
-                       CPPFLAGS='', krb5_cv_attr_constructor_destructor='yes',
-                       ac_cv_func_regcomp='yes', ac_cv_printf_positional='yes')
+            env.update(CC='zig cc -target ' + zig_target, CXX='zig c++ -target ' + zig_target,
+                       AR='zig ar', RANLIB='zig ranlib', HOST_CC='cc', HOST_CXX='c++',
+                       HOST_AR='ar', HOST_RANLIB='ranlib', HOST_CFLAGS='',
+                       CFLAGS='-std=gnu17',
+                       CPPFLAGS='', WARN_CFLAGS='-Wall', LDFLAGS='-Wl,--undefined-version',
+                       krb5_cv_attr_constructor_destructor='yes', ac_cv_func_regcomp='yes',
+                       ac_cv_printf_positional='yes', ac_cv_gssapi_supports_spnego='yes')
         for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
             command += ['-p', package]
         run(command, env=env)
