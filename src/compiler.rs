@@ -30,6 +30,9 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileRequest {
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub rule_context: crate::ir::rules::RuleContext,
     #[serde(default)]
     pub managed_table: Option<String>,
     #[serde(default)]
@@ -318,6 +321,8 @@ fn procedure_catalog(request:&CompileRequest)->Result<crate::ir::procedures::Pro
 
 #[derive(Debug, Serialize)]
 pub struct CompiledSql {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rule_trace: Vec<crate::ir::rules::RuleTrace>,
     pub version: u32,
     pub dialect: String,
     pub sql: String,
@@ -570,6 +575,7 @@ pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<Compi
         let snapshot = catalog.resolve().await?;
         let query = crate::session::Query { text: request.query, language: request.language, parameters: request.parameters, authorization: request.authorization };
         let mut resolved = snapshot.schema.request(&request.dialect, &query)?;
+        resolved.rule_context = request.rule_context;
         resolved.version = request.version;
         resolved.bindings = request.bindings;
         resolved.native_values = request.native_values;
@@ -626,9 +632,10 @@ impl PreparedGraphBindings {
     }
 }
 pub fn prepare_graph(request: &CompileRequest) -> Result<PreparedGraphQuery, String> {
-    prepare_graph_parsed(request, None)
+    let context = request.rule_context.new_query();
+    prepare_graph_parsed(request, None, &context)
 }
-fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargebra::Query>) -> Result<PreparedGraphQuery, String> {
+fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargebra::Query>, context: &crate::ir::rules::RuleContext) -> Result<PreparedGraphQuery, String> {
     if request.catalog.is_some() { return Err("resolve the catalog snapshot before synchronous graph preparation".into()); }
     if request.version != 1 {
         return Err("unsupported compiler protocol version".into());
@@ -837,10 +844,7 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         )
         .with_id(&edge.id);
         if let Some(child) = edge.foreign_key {
-            e = e.foreign_key(child);
-            if e.id_column.as_ref() != Some(&edge.id) {
-                return Err("foreign-key edge ID must match its child key".into());
-            }
+            e = e.foreign_key(child).with_id(&edge.id);
         }
         for (p, c) in &edge.properties {
             check(&edge.table, c, false)?;
@@ -919,11 +923,13 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
     })?;
     let mapping = Arc::new(mapping);
     graph.mapping = Some(mapping.clone());
+    let plan = crate::ir::rel::pipeline::normalize_graph(&plan, context).map_err(|e| e.to_string())?;
     Ok(PreparedGraphQuery { plan, graph, mapping, operators, managed_table: request.managed_table.clone() })
 }
 
-async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebra::Query>) -> Result<CompiledSql, String> {
-    let PreparedGraphQuery { plan, graph, mapping, operators, managed_table } = prepare_graph_parsed(&request, sparql)?;
+async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spargebra::Query>) -> Result<CompiledSql, String> {
+    request.rule_context = request.rule_context.new_query();
+    let PreparedGraphQuery { plan, graph, mapping, operators, managed_table } = prepare_graph_parsed(&request, sparql, &request.rule_context)?;
     if managed_table.is_some() { return Err("Managed graph queries require the host compiled-kernel adapter".into()); }
     let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     let mut lowered = with_operator_table(operators, || -> Result<_, String> {
@@ -933,12 +939,13 @@ async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebr
         )
         .map_err(|e| e.to_string())?;
         RelBackend::with_options(RelBackendOptions {
+            rule_context: request.rule_context.clone(),
             native_values: request.native_values,
             mapping: Some(mapping.clone()),
             rdf_datasets: Some(Arc::new(mapping.rdf_mapping())),
             ..Default::default()
         })
-        .lower(&plan, &graph)
+        .lower_normalized_in_query(&plan, &graph)
         .map_err(|e| e.to_string())
     })?;
     let external: BTreeSet<_> = mapping
@@ -972,7 +979,7 @@ async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebr
         Ok(TreeNodeRecursion::Continue)
     }).map_err(|e| e.to_string())?;
     let (optimized, constraint_proofs) =
-        crate::ir::rel::constraints::optimize(lowered.plan.clone()).map_err(|e| e.to_string())?;
+        crate::ir::rel::pipeline::relational(lowered.plan.clone(), &lowered.rule_context, false).map_err(|e| e.to_string())?;
     lowered.plan = optimized;
     if request.language == "sparql"
         && request.rdf.is_empty()
@@ -1015,7 +1022,7 @@ async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebr
             .map_err(|e| e.to_string())?;
     }
     let selected =
-        crate::ir::rel::representation::select(lowered.plan).map_err(|e| e.to_string())?;
+        crate::ir::rel::pipeline::placement(lowered.plan, &lowered.rule_context).map_err(|e| e.to_string())?;
     let (optimized, mut optimizer_decisions) =
         crate::ir::rel::statistics::optimize(selected.plan).map_err(|e| e.to_string())?;
     optimizer_decisions.extend(selected.access_decisions);
@@ -1024,11 +1031,13 @@ async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebr
         // Preserve source aliases and explicit graph scope barriers. General
         // common-subexpression elimination can erase those SQL scopes.
         use datafusion::optimizer::{Optimizer, OptimizerContext};
-        let optimizer = Optimizer::with_rules(vec![
-            Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
-            Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()),
-            Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
-        ]);
+        let mut rules: Vec<Arc<dyn datafusion::optimizer::OptimizerRule + Send + Sync>> = vec![];
+        if crate::ir::diagnostics::constant_folding_enabled() && crate::ir::rel::conversion_rules::can_fold_plan(&lowered.plan) {
+            rules.push(Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()));
+        }
+        rules.push(Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()));
+        rules.push(Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()));
+        let optimizer = Optimizer::with_rules(rules);
         lowered.plan = optimizer
             .optimize(lowered.plan, &OptimizerContext::new(), |_, _| {})
             .map_err(|e| e.to_string())?;
@@ -1037,8 +1046,10 @@ async fn compile_parsed(request: CompileRequest, sparql: Option<&crate::spargebr
     lowered.plan=crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e|e.to_string())?;
     let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
     lowered.plan = plan;
+    crate::ir::rules::RuleSession::new(lowered.rule_context.clone()).invalidate();
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
+        rule_trace: lowered.rule_context.trace(),
         execution_engine: request.execution_engine,
         transfers,
         version: 1,
@@ -1227,3 +1238,18 @@ fn constant_string_column(plan: &LogicalPlan, name: &str) -> Option<String> {
 
 #[cfg(all(test, feature = "weaviate"))]
 mod vector_lowering_tests;
+
+#[cfg(test)]
+mod rule_context_lifetime_tests {
+    use super::*;
+    #[test]
+    fn public_prepare_graph_has_a_fresh_query_budget() {
+        let mut request: CompileRequest = serde_json::from_value(serde_json::json!({
+            "version":1,"dialect":"duckdb","language":"cypher","query":"RETURN 1 AS x"
+        })).unwrap();
+        request.rule_context.budget.query_visits = 16;
+        request.rule_context.budget.stage_visits = 16;
+        for _ in 0..64 { prepare_graph(&request).unwrap(); }
+        assert_eq!(request.rule_context.visits(),0);
+    }
+}

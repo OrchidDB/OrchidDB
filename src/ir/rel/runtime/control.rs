@@ -82,6 +82,7 @@ impl Compiler<'_> {
                     .any(observable)
         }
         let compiler = Compiler {
+            rule_context: self.rule_context.clone(),
             graph: self.graph,
             policy: self.policy.clone(),
             language_functions: self.language_functions,
@@ -1291,7 +1292,7 @@ mod host_boundary_tests {
     fn injected_runner_keeps_empty_frontier_distinct_and_restores_state_on_error() {
         let graph = PropertyGraph::new();
         for fail in [false, true] {
-            let mut state = KernelState::for_host(graph.clone(), Arc::new(FrontierRunner { fail }));
+            let mut state = KernelState::for_host(graph.clone(), Arc::new(FrontierRunner { fail }), &Default::default());
             for frontier in [vec![], vec![Row::new()]] {
                 let expected = frontier.len();
                 let result = body().run_internal(frontier, &graph, &mut state.context, Some("correlation".into()));

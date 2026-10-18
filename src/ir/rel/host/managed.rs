@@ -360,7 +360,7 @@ mod tests {
         )
         .map_err(|e| e.message)?;
         let runner = Arc::new(HostRunner::default());
-        let mut state = KernelState::for_host(graph, runner.clone());
+        let mut state = KernelState::for_host(graph, runner.clone(), &Default::default());
         host.execute(HostRequest::new("BEGIN TRANSACTION"))?;
         let result = runner
             .run(&compiled, &mut state)

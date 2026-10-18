@@ -3,11 +3,48 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    pub(super) fn compact_distinct_collect(&self, plan: &LogicalPlan, agg: &AggCall) -> RelResult<Option<Expr>> {
+        if self.language != Language::Cypher || !self.options.language_functions || self.options.native_values
+            || agg.kind != AggKind::CollectNonNull || !agg.distinct || !compact_collection_input(plan) {
+            return Ok(None);
+        }
+        let Some(arg) = &agg.arg else { return Ok(None) };
+        if collections::is_encoded_property(plan, arg) { return Ok(None); }
+        if matches!(arg, IrExpr::Binding(binding) if has_binding_shape(plan,binding).is_some()) {return Ok(None);}
+        let mut value = self.lower_expr(plan, arg)?;
+        let mut ty = value.get_type(plan.schema())?;
+        if ty == DataType::Null { ty = DataType::Int64; value = value.cast_to(&ty, plan.schema())?; }
+        if !matches!(ty, DataType::Boolean | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+            | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
+            | DataType::Float32 | DataType::Float64 | DataType::Utf8) { return Ok(None); }
+        let list = df_array_agg(value);
+        let list_type = list.get_type(plan.schema())?;
+        // Coalesce in SQL as well: default SQL null handling must not turn an
+        // empty aggregate input into NULL before the helper sees it.
+        let empty = Expr::Cast(Cast::new(Box::new(lit(ScalarValue::List(ScalarValue::new_list_nullable(&[], &ty)))), list_type.clone()));
+        Ok(Some(language_functions::collect_distinct(df_core::coalesce(vec![list, empty]), list_type)))
+    }
+
     /// A uniform scalar collection has a lossless native SQL list carrier.
     /// Graph/domain values and heterogeneous carriers retain their runtime path.
     pub(super) fn lower_collect_non_null(
-        &self, plan: &LogicalPlan, agg: &AggCall, ordinal: &str, rank: Option<&str>,
+        &self, plan: &LogicalPlan, agg: &AggCall, ordinal: Option<&str>, rank: Option<&str>,
     ) -> RelResult<Expr> {
+        let rule = super::pipeline::descriptor(
+            "aggregate.collect_non_null.typed_sql",
+            crate::ir::rules::Stage::SemanticResolve,
+            crate::ir::rules::RuleKind::ImplementationLowering,
+            true,
+        );
+        self.scalar_rule(rule, || self.build_collect_non_null(plan, agg, ordinal, rank).map(Some))?
+            .ok_or_else(|| RelError::Unsupported("collection implementation not selected".into()))
+    }
+
+    fn build_collect_non_null(
+        &self, plan: &LogicalPlan, agg: &AggCall, ordinal: Option<&str>, rank: Option<&str>,
+    ) -> RelResult<Expr> {
+        let contract = crate::ir::rules::aggregate::CollectionContract::for_aggregate(agg)
+            .ok_or_else(|| RelError::Unsupported("collection implementation requires a null-eliding collection contract".into()))?;
         fn encoded_collection_input(plan: &LogicalPlan, expr: &IrExpr) -> bool {
             collections::is_encoded_property(plan, expr)
                 || matches!(expr, IrExpr::Binding(binding)
@@ -18,7 +55,10 @@ impl<'a> LoweringContext<'a> {
         if agg.arg.as_ref().is_some_and(|arg| encoded_collection_input(plan, arg)) {
             return Err(RelError::Unsupported("Cypher collection of encoded properties requires native values".into()));
         }
-        let mut value = self.lower_required_agg_arg(plan, &agg.arg)?;
+        let mut value = if let Some(IrExpr::Binding(binding))=&agg.arg
+            && has_binding_shape(plan,binding).is_some() {
+            self.lower_element_value(plan,binding)?
+        } else {self.lower_required_agg_arg(plan, &agg.arg)?};
         fn concrete_null_leaves(ty: &DataType) -> DataType {
             match ty {
                 DataType::Null => DataType::Int64,
@@ -37,6 +77,7 @@ impl<'a> LoweringContext<'a> {
             value = value.cast_to(&element, plan.schema())?;
         }
         fn primitive_collection_type(ty: &DataType) -> bool {
+            if entity_values::is_type(ty) {return true;}
             match ty {
                 DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16
                 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16
@@ -49,7 +90,7 @@ impl<'a> LoweringContext<'a> {
         }
         // DISTINCT currently partitions by scalar Cypher keys. A nested list
         // needs a recursive semantic key before SQL equality may deduplicate it.
-        if agg.distinct && element.is_nested() {
+        if contract.distinct && element.is_nested() && !entity_values::is_type(&element) {
             return Err(RelError::Unsupported("Distinct nested collection requires recursive Cypher identity".into()));
         }
         if !primitive_collection_type(&element) {
@@ -59,8 +100,10 @@ impl<'a> LoweringContext<'a> {
         if let Some(rank) = rank {
             predicate = predicate.and(col_exact(rank).eq(lit(1_u64)));
         }
-        let collected = df_array_agg(value.clone()).filter(predicate)
-            .order_by(vec![col_exact(ordinal).sort(true, false)]).build()?;
+        let collected = df_array_agg(value.clone()).filter(predicate);
+        let collected = if let Some(ordinal) = ordinal {
+            collected.order_by(vec![col_exact(ordinal).sort(true, false)])
+        } else { collected }.build()?;
         let empty_type = DataType::List(Arc::new(Field::new("item", element.clone(), true)));
         // The SQL literal `[]` has no nested element evidence. Keep an explicit
         // cast even when its Arrow type already matches the aggregate result.
@@ -332,11 +375,15 @@ pub(super) fn scan_order_keys(plan: &LogicalPlan) -> Vec<datafusion::logical_exp
         .collect()
 }
 
-/// A single scan with projections, filters, and aliases does not need the unparser's
-/// join/UNWIND count workaround. Keep unfamiliar plan shapes conservative.
+/// Scans, literal singleton sources and unions of those inputs do not need
+/// the unparser's join/UNWIND count workaround. UNION becomes a derived table
+/// under an aggregate; filters retain their WHERE even without a table source.
+/// Keep unfamiliar plan shapes conservative.
 pub(super) fn has_simple_count_input(plan: &LogicalPlan) -> bool {
     match plan {
         LogicalPlan::TableScan(_) => true,
+        LogicalPlan::EmptyRelation(empty) => empty.produce_one_row,
+        LogicalPlan::Union(union) => union.inputs.iter().all(|input| has_simple_count_input(input)),
         LogicalPlan::Projection(p) => has_simple_count_input(&p.input),
         LogicalPlan::Filter(p) => has_simple_count_input(&p.input),
         LogicalPlan::SubqueryAlias(p) => has_simple_count_input(&p.input),
@@ -392,4 +439,52 @@ pub(super) fn distinct_if(expr: Expr, distinct: bool) -> RelResult<Expr> {
     } else {
         Ok(expr)
     }
+}
+
+// Collection helpers can consume a simple Cartesian literal expansion without
+// losing order-sensitive sorts, unlike the count-specific SQL workaround.
+fn compact_collection_input(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::Join(j) if j.join_type == JoinType::Inner && j.on.is_empty() && j.filter.is_none() =>
+            compact_collection_input(&j.left) && compact_collection_input(&j.right),
+        LogicalPlan::Projection(p) => compact_collection_input(&p.input),
+        LogicalPlan::SubqueryAlias(p) => compact_collection_input(&p.input),
+        _ => has_simple_count_input(plan),
+    }
+}
+
+/// Scalar finishing expressions belong above the aggregate, not inside its
+/// aggregate-call list. This is required by DataFusion's physical planner and
+/// exposes every ordered aggregate dependency to projection pruning.
+pub(super) fn normalize_outputs(plan: LogicalPlan) -> RelResult<LogicalPlan> {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let LogicalPlan::Aggregate(aggregate) = &plan else {return Ok(plan);};
+    fn bare(expr: &Expr) -> bool {
+        match expr {Expr::Alias(a)=>bare(&a.expr),Expr::AggregateFunction(_)=>true,_=>false}
+    }
+    if aggregate.aggr_expr.iter().all(bare) {return Ok(plan);}
+    if aggregate.group_expr.iter().any(|e|matches!(e,Expr::GroupingSet(_))) {return Ok(plan);}
+    let mut reserved=plan.schema().fields().iter().chain(aggregate.input.schema().fields().iter())
+        .map(|f|f.name().clone()).collect::<BTreeSet<_>>();
+    let mut calls: Vec<(Expr,String)>=Vec::new();
+    let mut finals=aggregate.schema.columns().into_iter().take(aggregate.group_expr.len()).map(Expr::Column).collect::<Vec<_>>();
+    for (index,expr) in aggregate.aggr_expr.iter().enumerate() {
+        let expr=match expr {Expr::Alias(a)=>a.expr.as_ref(),expr=>expr};
+        let expression=expr.clone().transform_up(|expr| {
+            if matches!(expr,Expr::AggregateFunction(_)) {
+                let name=if let Some((_,name))=calls.iter().find(|(e,_)|e==&expr) {name.clone()}
+                    else {
+                        let mut n=calls.len();
+                        let name=loop {let name=format!("__aggregate_value_{n}");if reserved.insert(name.clone()) {break name;}n+=1;};
+                        calls.push((expr,name.clone())); name
+                    };
+                return Ok(Transformed::yes(col_exact(name)));
+            }
+            Ok(Transformed::no(expr))
+        })?.data;
+        finals.push(expression.alias(aggregate.schema.field(aggregate.group_expr.len()+index).name()));
+    }
+    let input=LogicalPlanBuilder::from(aggregate.input.as_ref().clone())
+        .aggregate(aggregate.group_expr.clone(),calls.into_iter().map(|(expr,name)|expr.alias(name)).collect::<Vec<_>>())?.build()?;
+    Ok(LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(finals,Arc::new(input),aggregate.schema.clone())?))
 }

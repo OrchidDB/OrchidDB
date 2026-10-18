@@ -117,6 +117,7 @@ pub(super) fn lower_plan(
         })))?.data
     } else { plan };
     Ok(LoweredPlan {
+            rule_context: ctx.options.rule_context.clone(),
         plan,
         fields,
         result_form,

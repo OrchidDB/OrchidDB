@@ -404,6 +404,19 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    if name.trim_matches('"') == super::super::conversion_rules::NATIVE_FLOAT {
+        if dialect != SqlDialect::DuckDb {
+            return Err(SqlError::Unsupported("native string-to-float requires its owning DuckDB adapter".into()));
+        }
+        let ast::FunctionArguments::List(arguments) = &function.args else {
+            return Err(SqlError::Unsupported("native string-to-float signature".into()));
+        };
+        let [ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(value))] = arguments.args.as_slice() else {
+            return Err(SqlError::Unsupported("native string-to-float signature".into()));
+        };
+        *expr = template("TRY_CAST(__arg0 AS DOUBLE)", &[value.clone()])?;
+        return Ok(());
+    }
     // DataFusion represents COUNT(*) as COUNT(1). Recover the idiomatic SQL
     // spelling without changing DISTINCT, nullable arguments, filters, or windows.
     if dialect == SqlDialect::DuckDb && name == "count"

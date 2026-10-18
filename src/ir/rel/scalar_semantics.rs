@@ -1,30 +1,16 @@
 //! Proven primitive Cypher semantics. Unsupported domains retain runtime validation.
 use super::*;
 
-fn stable_scalar_input(expr: &IrExpr) -> bool {
-    match expr {
-        IrExpr::Lit(_) | IrExpr::Binding(_) | IrExpr::Property { .. } => true,
-        IrExpr::List(items) => items.iter().all(stable_scalar_input),
-        _ => false,
-    }
+pub(super) fn stable_scalar_input(expr: &IrExpr) -> bool {
+    crate::ir::rules::effects::effects_for_bound_scalar(expr).safe_to_duplicate()
 }
 
-// These expressions are deterministic and total after successful SQL type
-// validation. Repetition cannot read a clock, invoke a callback, or change
-// error timing. Keep arithmetic and arbitrary functions outside this proof.
+// The shared adapter preserves this membership-specific proof domain; it is
+// intentionally wider than scalar stability and remains conditional on binding.
 pub(super) fn repeatable_membership_input(expr: &IrExpr) -> bool {
-    match expr {
-        IrExpr::Lit(_) | IrExpr::Binding(_) | IrExpr::Property { .. } => true,
-        IrExpr::List(items) => items.iter().all(repeatable_membership_input),
-        IrExpr::ListTransform { .. } => collection_evaluation::lowercase_label_transform(expr).is_some(),
-        IrExpr::Not(inner) | IrExpr::IsNull(inner) | IrExpr::IsNotNull(inner) => repeatable_membership_input(inner),
-        IrExpr::Binary { op, lhs, rhs } if matches!(op, BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte | BinaryOp::And | BinaryOp::Or) => repeatable_membership_input(lhs) && repeatable_membership_input(rhs),
-        IrExpr::Call { name, args } if matches!(name.as_str(), "cypher_eq" | "cypher_neq" | "cypher_lt" | "cypher_lte" | "cypher_gt" | "cypher_gte" | "xor") => args.iter().all(repeatable_membership_input),
-        IrExpr::Call { name, args } if matches!(name.as_str(), "keys" | "labels") => matches!(args.as_slice(), [IrExpr::Binding(_)]),
-        // A constant integer list subscript is total (out of bounds is NULL).
-        IrExpr::Call { name, args } if name == "cypher_subscript" => matches!(args.as_slice(), [target, IrExpr::Lit(Lit::Int(_))] if repeatable_membership_input(target)),
-        _ => false,
-    }
+    crate::ir::rules::effects::effects_for_bound_membership(expr, &|expr|
+        collection_evaluation::lowercase_label_transform(expr).is_some()
+    ).safe_to_duplicate()
 }
 
 // A finite set of possible outputs does not prove total evaluation. Follow
@@ -99,6 +85,17 @@ fn list_item_type(ty: &DataType) -> Option<&DataType> {
     }
 }
 
+/// Orchid v1 string conversion SQL implementation; selected only after typed
+/// policy/capability resolution. Repeated token evaluation requires stable input.
+pub(super) fn conformant_string_to_float(value: Expr) -> RelResult<Expr> {
+    let token = df_string::replace(cypher_trim(value), lit("_"), lit(""));
+    let valid = df_regex::regexp_like(token.clone(),
+        lit(r"^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$"), None);
+    let parsed = Expr::TryCast(TryCast::new(Box::new(token), DataType::Float64));
+    Ok(datafusion::logical_expr::when(valid.and(finite_float(parsed.clone())), parsed)
+        .otherwise(lit(ScalarValue::Float64(None)))?)
+}
+
 impl LoweringContext<'_> {
     pub(super) fn lower_cypher_conversion(
         &self,
@@ -156,21 +153,7 @@ impl LoweringContext<'_> {
                 )
             }
             "cypher_convert.tofloat" if null || int || float => Ok(cast(value, DataType::Float64)),
-            "cypher_convert.tofloat" if text && stable_scalar_input(arg) => {
-                // The runtime removes underscores, parses Rust's decimal float grammar,
-                // and rejects nonfinite string results. Guard SQL's broader cast grammar.
-                let token = df_string::replace(cypher_trim(value), lit("_"), lit(""));
-                let valid = df_regex::regexp_like(
-                    token.clone(),
-                    lit(r"^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$"),
-                    None,
-                );
-                let parsed = try_cast(token, DataType::Float64);
-                Ok(
-                    datafusion::logical_expr::when(valid.and(finite_float(parsed.clone())), parsed)
-                        .otherwise(lit(ScalarValue::Float64(None)))?,
-                )
-            }
+            "cypher_convert.tofloat" if text => self.select_string_to_float(value, arg, &ty),
             "cypher_convert.tointeger" if text => {
                 // Compiler-owned immutable snapshots and literal UNWIND inputs
                 // can prove the complete string domain. Evaluate each distinct

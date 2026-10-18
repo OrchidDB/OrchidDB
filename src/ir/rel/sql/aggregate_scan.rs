@@ -14,36 +14,56 @@ fn value(expr: &Expr) -> Option<Expr> {
 pub(super) fn rewrite(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     Ok(plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Aggregate(aggregate) = &node else { return Ok(Transformed::no(node)); };
-        // Constant grouping keys have dialect-specific ordinal interpretation.
-        // Keep grouping sets and grouped aggregates outside this narrow rule.
-        if !aggregate.group_expr.is_empty() { return Ok(Transformed::no(node)); }
         let LogicalPlan::Projection(projection) = aggregate.input.as_ref() else { return Ok(Transformed::no(node)); };
         let LogicalPlan::TableScan(scan) = projection.input.as_ref() else { return Ok(Transformed::no(node)); };
         if scan.fetch.is_some() || !scan.filters.is_empty() { return Ok(Transformed::no(node)); }
         let Some(values) = projection.expr.iter().map(value).collect::<Option<Vec<_>>>() else { return Ok(Transformed::no(node)); };
         let mut subquery = false;
-        for expr in &aggregate.aggr_expr {
+        for expr in aggregate.group_expr.iter().chain(&aggregate.aggr_expr) {
             expr.apply(|expr| {
-                if matches!(expr, Expr::ScalarSubquery(_) | Expr::Exists(_) | Expr::InSubquery(_) | Expr::OuterReferenceColumn(..)) {
+                if matches!(expr, Expr::ScalarSubquery(_) | Expr::Exists(_) | Expr::InSubquery(_) | Expr::SetComparison(_) | Expr::OuterReferenceColumn(..) | Expr::GroupingSet(_)) {
                     subquery = true;
                 }
                 Ok(TreeNodeRecursion::Continue)
             })?;
         }
         if subquery { return Ok(Transformed::no(node)); }
-        let expressions = aggregate.aggr_expr.iter().zip(aggregate.schema.iter())
-            .map(|(expr, (qualifier, field))| {
-                let expr = expr.clone().transform_up(|expr| {
-                    if let Expr::Column(column) = &expr {
-                        let index = projection.schema.index_of_column(column)?;
-                        return Ok(Transformed::yes(values[index].clone()));
-                    }
-                    Ok(Transformed::no(expr))
-                })?.data;
-                let expr = match expr { Expr::Alias(alias) => *alias.expr, expr => expr };
-                Ok(expr.alias_qualified(qualifier.cloned(), field.name()))
-            }).collect::<datafusion::common::Result<Vec<_>>>()?;
-        let rewritten = Aggregate::try_new_with_schema(projection.input.clone(), vec![], expressions, aggregate.schema.clone())?;
+        let substitute = |expr: &Expr| -> datafusion::common::Result<Expr> {
+            Ok(expr.clone().transform_up(|expr| {
+                if let Expr::Column(column) = &expr {
+                    let index = projection.schema.index_of_column(column)?;
+                    return Ok(Transformed::yes(values[index].clone()));
+                }
+                Ok(Transformed::no(expr))
+            })?.data)
+        };
+        let groups = aggregate.group_expr.iter().map(substitute)
+            .collect::<datafusion::common::Result<Vec<_>>>()?;
+        // Do not expose a projected literal as GROUP BY 1 (an SQL ordinal),
+        // or let an emitter turn a constant group into a global aggregate.
+        // Inspect after substitution: a named grouping column may be a literal.
+        for group in &groups {
+            let mut bound_column = false;
+            group.apply(|expr| {
+                if matches!(expr, Expr::Column(_)) { bound_column = true; }
+                Ok(TreeNodeRecursion::Continue)
+            })?;
+            if !bound_column { return Ok(Transformed::no(node)); }
+        }
+        // Retain every output name/qualifier, including group-key fields read by
+        // parent operators. Only operands change; aggregate filters, ordering,
+        // distinctness, null treatment and grouping-key functions stay intact.
+        let preserve_name = |expr: Expr, index: usize| {
+            let (qualifier, field) = aggregate.schema.qualified_field(index);
+            let expr = match expr { Expr::Alias(alias) => *alias.expr, expr => expr };
+            expr.alias_qualified(qualifier.cloned(), field.name())
+        };
+        let group_count = groups.len();
+        let groups = groups.into_iter().enumerate().map(|(i, expr)| preserve_name(expr, i)).collect();
+        let expressions = aggregate.aggr_expr.iter().enumerate()
+            .map(|(i, expr)| substitute(expr).map(|expr| preserve_name(expr, group_count + i)))
+            .collect::<datafusion::common::Result<Vec<_>>>()?;
+        let rewritten = Aggregate::try_new_with_schema(projection.input.clone(), groups, expressions, aggregate.schema.clone())?;
         Ok(Transformed::yes(LogicalPlan::Aggregate(rewritten)))
     })?.data)
 }
@@ -82,9 +102,39 @@ mod tests {
         assert_eq!(rewrite(plan.clone()).unwrap(), plan);
     }
     #[test]
-    fn keeps_grouping_scope() {
+    fn grouped_columns_use_physical_scan_and_preserve_schema() {
         let input = LogicalPlanBuilder::from(scan()).project(vec![col("age").alias("person_age")]).unwrap().build().unwrap();
         let plan = LogicalPlanBuilder::from(input).aggregate(vec![col("person_age")], vec![datafusion::functions_aggregate::count::count_all()]).unwrap().build().unwrap();
+        let schema = plan.schema().clone();
+        let rewritten = rewrite(plan).unwrap();
+        assert_eq!(rewritten.schema(), &schema);
+        let LogicalPlan::Aggregate(aggregate) = &rewritten else { panic!("aggregate expected") };
+        assert!(matches!(aggregate.input.as_ref(), LogicalPlan::TableScan(_)));
+        let sql = super::super::unparse_plan(rewritten, SqlDialect::DuckDb).unwrap();
+        assert!(!sql.contains("FROM (SELECT"), "{sql}");
+        assert!(sql.contains("GROUP BY"), "{sql}");
+    }
+    #[test]
+    fn literal_grouping_keys_and_grouping_sets_keep_their_scope() {
+        use datafusion::logical_expr::GroupingSet;
+        let input = LogicalPlanBuilder::from(scan()).project(vec![
+            col("age").alias("person_age"), lit(1_i64).alias("constant_key"),
+        ]).unwrap().build().unwrap();
+        for groups in [vec![col("constant_key")], vec![Expr::GroupingSet(GroupingSet::Rollup(vec![col("person_age")]))]] {
+            let plan = LogicalPlanBuilder::from(input.clone()).aggregate(groups,
+                vec![datafusion::functions_aggregate::count::count_all()]).unwrap().build().unwrap();
+            assert_eq!(rewrite(plan.clone()).unwrap(), plan);
+        }
+    }
+
+    #[test]
+    fn correlated_grouping_expression_keeps_its_input_scope() {
+        let input = LogicalPlanBuilder::from(scan()).project(vec![col("age").alias("person_age")]).unwrap().build().unwrap();
+        let correlated = Expr::OuterReferenceColumn(Arc::new(Field::new("outer_age", DataType::Int64, true)),
+            Column::new_unqualified("outer_age"));
+        let plan = LogicalPlanBuilder::from(input).aggregate(vec![col("person_age") + correlated],
+            vec![datafusion::functions_aggregate::count::count_all()]).unwrap().build().unwrap();
         assert_eq!(rewrite(plan.clone()).unwrap(), plan);
     }
+
 }

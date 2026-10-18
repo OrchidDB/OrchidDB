@@ -1,16 +1,45 @@
 #[path = "../gremlin_bindings.rs"]
 mod gremlin_bindings;
-#[path = "../fixture_cache.rs"]
-mod fixture_cache;
+#[path = "../relational_fixture.rs"]
+mod relational_fixture;
 #[path = "../starrocks.rs"]
 mod starrocks;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
-use orchiddb::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value as GValue,
+use orchiddb::{engine::GraphEngine,ir::value::Value as GValue,
  ir::rel::rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},
  rdf_engine::{RdfTermValue,SparqlResults}};
 use serde_json::{Value,json};
+
+/// Observations from the executed DAG, never a second compilation of the query.
+/// Keep this in the existing cost envelope so every assertion transport (including
+/// the pinned Java Gremlin runner) preserves it without changing query results.
+fn query_evidence(stats: &orchiddb::ir::exec::ExecStats) -> Value {
+ let mut cost = stats.cost.report();
+ let has_sql = !stats.sql_queries.is_empty() || !stats.write_queries.is_empty();
+ // Multiple regions can require dependent execution even when every individual
+ // region is SQL. Only a single region with no residual work is fully lowered.
+ let fully_sql = stats.fully_pushed_down() && stats.sql_queries.len() == 1
+     && stats.native_source_queries.is_empty() && stats.write_queries.is_empty();
+ cost["execution_plan"] = json!({
+  "format_version": 1,
+  "capture": "executed",
+  "logical_plan": stats.logical_plan,
+  "physical_plan": stats.physical_plan,
+  "sql_queries": stats.sql_queries,
+  "write_queries": stats.write_queries,
+  "storage": "mapped_relational_tables",
+  "native_source_queries": stats.native_source_queries,
+  "sql_regions": {"duckdb": stats.duckdb_regions, "postgres": stats.postgres_regions,
+                  "other": stats.other_sql_regions},
+  "residual_operators": stats.datafusion_ops,
+  "fully_lowered_to_sql": fully_sql,
+  "lowering": if fully_sql { "full_sql" } else if has_sql { "mixed" } else { "runtime" }
+ });
+ cost
+}
+
 fn configure_sql_engine(engine: &mut GraphEngine) -> Result<(), String> {
  let Some(config) = std::env::var("ORCHIDDB_SQL_ENGINE_JSON").ok() else { return Ok(()); };
  let config: Value = serde_json::from_str(&config).map_err(|e| format!("Invalid SQL engine JSON: {e}"))?;
@@ -52,7 +81,8 @@ fn typed_cell(a:&dyn Array,i:usize)->Value {
  _=>cell(a,i)
  }
 }
-use orchiddb::ir::catalog::import::{parameter as param,typed_property as fixture_property,import_graph as fixture_graph};
+use orchiddb::ir::catalog::import::parameter as param;
+#[cfg(test)] use orchiddb::ir::catalog::import::typed_property as fixture_property;
 // Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.
 // Capture typed planner diagnostics before its public String error boundary.
 fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&orchiddb::ir::procedures::ProcedureCatalog)->Result<orchiddb::ir::plan::GraphPlan,(String,Option<Value>)>{
@@ -61,11 +91,11 @@ fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&orchiddb::ir:
 }
 fn term(t:RdfTermValue)->Value{match t{RdfTermValue::Iri(v)=>json!({"type":"uri","value":v}),RdfTermValue::BlankNode(v)=>json!({"type":"bnode","value":v}),RdfTermValue::Literal{lexical,datatype,language}=>json!({"type":"literal","value":lexical,"datatype":datatype,"lang":language})}}
 async fn rdf(req:&Value)->Result<Value,String>{
- let fields=["g","s","s_kind","s_dt","s_lang","p","p_kind","p_dt","p_lang","o","o_kind","o_dt","o_lang"];
+ let fields=["graph","subject","subject_kind","subject_datatype","subject_language","predicate","predicate_kind","predicate_datatype","predicate_language","object","object_kind","object_datatype","object_language"];
  let schema=Arc::new(Schema::new(fields.iter().map(|n|Field::new(*n,DataType::Utf8,true)).collect::<Vec<_>>()));
  let batch=RecordBatch::new_empty(schema.clone());
  let mut mapping=RdfDatasetMapping::new();
- mapping.register_table("terms",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).map_err(|e|e.to_string())?)).map_typed_quads("default",IriQuadSource::table("terms","s","p","o").graph_column("g").writable().typed_term_columns(RdfTermColumns::new("s","s_kind").datatype("s_dt").language("s_lang"),RdfTermColumns::new("p","p_kind").datatype("p_dt").language("p_lang"),RdfTermColumns::new("o","o_kind").datatype("o_dt").language("o_lang")));
+ mapping.register_table("terms",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).map_err(|e|e.to_string())?)).map_typed_quads("default",IriQuadSource::table("terms","subject","predicate","object").graph_column("graph").writable().typed_term_columns(RdfTermColumns::new("subject","subject_kind").datatype("subject_datatype").language("subject_language"),RdfTermColumns::new("predicate","predicate_kind").datatype("predicate_datatype").language("predicate_language"),RdfTermColumns::new("object","object_kind").datatype("object_datatype").language("object_language")));
  let conn=duckdb::Connection::open_in_memory().map_err(|e|e.to_string())?;
  let graphs_schema=Arc::new(Schema::new(vec![Field::new("iri",DataType::Utf8,false)]));
  mapping.register_table("graph_names",Arc::new(MemTable::try_new(graphs_schema.clone(),vec![vec![RecordBatch::new_empty(graphs_schema)]]).map_err(|e|e.to_string())?)).map_writable_named_graphs("default","graph_names","iri");
@@ -78,6 +108,8 @@ async fn rdf(req:&Value)->Result<Value,String>{
  let values=row.as_array().ok_or("quad row must be array")?.iter().map(|v|v.as_str().map(str::to_string)).collect::<Vec<_>>();
  conn.execute("INSERT INTO terms VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",duckdb::params_from_iter(values)).map_err(|e|e.to_string())?;
  }}
+ let schema_sql=conn.prepare("SELECT sql FROM duckdb_tables() WHERE NOT internal ORDER BY table_name").map_err(|e|e.to_string())?
+  .query_map([],|row|row.get::<_,String>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
  let mut engine=GraphEngine::mapped(conn,Arc::new(orchiddb::ir::rel::mapping::GraphMapping::new().with_rdf_mapping(mapping)))?;
  engine.set_sql_timeout(std::time::Duration::from_secs(8));
  configure_sql_engine(&mut engine)?;
@@ -98,24 +130,36 @@ async fn rdf(req:&Value)->Result<Value,String>{
  SparqlResults::Graph(rows)=>Ok(json!({"graph":rows.into_iter().map(|r|r.into_iter().map(term).collect::<Vec<_>>()).collect::<Vec<_>>()}))
  };
  let mut output=response?;
- output["query_cost"]=stats.cost.report();
+ output["query_cost"]=query_evidence(&stats);
+ output["query_cost"]["execution_plan"]["schema_sql"]=json!(schema_sql);
  output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"postgres":stats.postgres_regions,"starrocks":stats.other_sql_regions});
  Ok(output)
 }
 #[tokio::main]
 async fn main(){
- let mut engine=GraphEngine::in_memory().unwrap();engine.set_sql_timeout(std::time::Duration::from_secs(8));
- configure_sql_engine(&mut engine).expect("SQL engine configuration");
- let mut fixtures=fixture_cache::FixtureCache::default();
+ let mut fixture=relational_fixture::RelationalFixture::new().unwrap();
+ fixture.engine.set_sql_timeout(std::time::Duration::from_secs(8));
+ configure_sql_engine(&mut fixture.engine).expect("SQL engine configuration");
  for line in io::stdin().lock().lines(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
  let op=req["op"].as_str().unwrap_or("cypher");
  let request_started=std::time::Instant::now();
+ if matches!(op,"fixture"|"fixture-reset") {
+  fixture.allow_relationship_expansion=req["allow_relationship_expansion"].as_bool().unwrap_or(true);
+ }
  let result:Result<Value,String>=match op{
- "fixture"=>fixture_graph(&req).and_then(|graph|fixtures.install(&mut engine,req["fixture_key"].as_str(),graph).map(|_|json!({"ok":true}))),
- "fixture-reset"=>req["fixture_key"].as_str().ok_or_else(||"fixture_key is required".to_string()).and_then(|key|fixtures.reset(&mut engine,key)).map(|_|json!({"ok":true})),
- "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
- "cypher-snapshot"=>engine.cypher_state_snapshot().map(|snapshot|json!({"native_snapshot":snapshot})),
+ "fixture"=>fixture.install(&req).map(|_|json!({"ok":true})),
+ "fixture-reset"=>req["fixture_key"].as_str().ok_or_else(||"fixture_key is required".to_string()).and_then(|key|fixture.restore(key)).map(|_|json!({"ok":true})),
+ "reset"=>fixture.reset().map(|_|json!({"ok":true})),
+ "schema"=>fixture.schema_sql().map(|statements|json!({"statements":statements})),
+ "configure-schema"=>{
+  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
+  let plans=req["queries"].as_array().into_iter().flatten().filter_map(|query|
+   cypher_plan(query.as_str().unwrap_or(""),&params,fixture.engine.procedure_catalog()).ok()
+  ).collect::<Vec<_>>();
+  fixture.configure_cypher(&plans).map(|_|json!({"ok":true}))
+ },
+ "cypher-snapshot"=>fixture.snapshot().map(|snapshot|json!({"native_snapshot":snapshot})),
  "rdf"=>rdf(&req).await,
  "register-procedure"=>{
   use orchiddb::ir::procedures::{ProcedureField,ProcedureSignature,TableProcedure};
@@ -124,7 +168,7 @@ async fn main(){
   }).collect();
   let procedure=TableProcedure{signature:ProcedureSignature{inputs:fields("inputs"),outputs:fields("outputs")},
    rows:req["rows"].as_array().into_iter().flatten().map(|row|row.as_array().into_iter().flatten().map(param).collect()).collect()};
-  engine.register_table_procedure(req["name"].as_str().unwrap_or("").into(),procedure).map(|_|json!({"ok":true}))
+  fixture.engine.register_table_procedure(req["name"].as_str().unwrap_or("").into(),procedure).map(|_|json!({"ok":true}))
  },
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();
   if req["update"].as_bool().unwrap_or(false){orchiddb::language::sparql::parse_update(q,base).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}
@@ -133,20 +177,38 @@ async fn main(){
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");
  let mut classification=None;
- let r=if op=="gremlin"{match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)}}else{match cypher_plan(q,&params,engine.procedure_catalog()){
-  Ok(plan)=>engine.execute_plan_with_diagnostics(&plan).await.map_err(|error|{
+ let prepared=if op=="gremlin" {
+  (|| {
+   let bindings=gremlin_bindings::bindings(&req["bindings"])?;
+   let (source,values)=orchiddb::language::gremlin::callables::prepare(q,&bindings).map_err(|e|e.to_string())?;
+   let parsed=orchiddb::language::gremlin::parse_traversal_with_bindings(&source,&values).map_err(|e|e.to_string())?;
+   orchiddb::language::gremlin::GremlinPlanner::new().plan(&parsed).map_err(|e|e.to_string())
+  })().map_err(|error|(error,None))
+ }else{cypher_plan(q,&params,fixture.engine.procedure_catalog())};
+ let r=match prepared {
+  Ok(plan)=>match fixture.prepare(&plan) {
+   Ok(()) if op=="gremlin"=>match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>fixture.engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)},
+   Ok(())=>fixture.engine.execute_plan_with_diagnostics(&plan).await.map_err(|error|{
    classification=error.diagnosis.map(|code|{let (kind,detail,phase)=code.classification();json!({"type":kind,"detail":detail,"phase":phase})});
    error.to_string()
-  }),
+   }),
+   Err(error)=>Err(error),
+  },
+  Err(_) if op=="gremlin"=>match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>fixture.engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)},
   Err((message,detail))=>{classification=detail;Err(message)}
- }};
- r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions,"starrocks":r.stats.other_sql_regions},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
+ };
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions,"starrocks":r.stats.other_sql_regions},"query_cost":query_evidence(&r.stats),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
  let mut output=result.unwrap_or_else(|e|json!({"error":e}));
  if matches!(op,"cypher"|"gremlin"|"rdf"|"sparql-syntax") {
   if output.get("query_cost").is_none() {output["query_cost"]=json!({"metric_version":1,"coverage":"elapsed_only","work_units":null,"reason":if op=="sparql-syntax"{"syntax_only"}else if output.get("error").is_some(){"query_error"}else{"non_dag_update"}});}
   if let Some(regions) = output.get("sql_regions").cloned() { output["query_cost"]["sql_regions"] = regions; }
   output["query_cost"]["request_elapsed_micros"]=json!(request_started.elapsed().as_micros().min(u64::MAX as u128) as u64);
+ }
+ output["storage_profile"]=json!("mapped_relational_tables");
+ if let Some(plan)=output.get_mut("query_cost").and_then(|cost|cost.get_mut("execution_plan")) {
+  plan["tables"]=if op=="rdf" {json!(["terms","graph_names"])} else {json!(fixture.storage_tables())};
+  if op!="rdf" {match fixture.schema_sql(){Ok(statements)=>plan["schema_sql"]=json!(statements),Err(error)=>plan["schema_error"]=json!(error)}}
  }
  output["engine_instance"]=json!(std::process::id().to_string());println!("{output}");io::stdout().flush().unwrap();
  }

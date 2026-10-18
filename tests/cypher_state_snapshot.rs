@@ -50,7 +50,7 @@ fn normalize(value: &Value) -> Value {
                 ))
                 .collect::<BTreeMap<_, _>>()
         ),
-        "scalar" => value.clone(),
+        "scalar" | "bigdecimal" => value.clone(),
         _ => panic!("unhandled test value {value}"),
     }
 }

@@ -117,7 +117,8 @@ fn literal_source(value: &GValue) -> Option<String> {
     })
 }
 
-pub(crate) fn prepare(
+#[doc(hidden)]
+pub fn prepare(
     input: &str,
     bindings: &HashMap<String, GremlinBinding>,
 ) -> Result<(String, HashMap<String, GValue>)> {

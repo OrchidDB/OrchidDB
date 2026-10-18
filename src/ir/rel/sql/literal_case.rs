@@ -9,6 +9,17 @@ fn simplify(expr: Expr, schema: &DFSchema) -> datafusion::error::Result<Transfor
     // Simple CASE compares its operand to each WHEN value; a Boolean WHEN is
     // not itself a condition in that form.
     if case.expr.is_some() { return Ok(Transformed::no(expr)); }
+    if let [(condition, value)] = case.when_then_expr.as_slice()
+        && let Expr::IsNotNull(tested) = condition.as_ref()
+        && tested == value
+        && matches!(value.as_ref(), Expr::Column(_) | Expr::AggregateFunction(_))
+        && !value.is_volatile()
+        && let Some(otherwise) = &case.else_expr
+    {
+        return Ok(Transformed::yes(datafusion::functions::core::expr_fn::coalesce(vec![
+            value.as_ref().clone(), otherwise.as_ref().clone(),
+        ]).cast_to(&expr.get_type(schema)?, schema)?));
+    }
     let mut arms = Vec::new();
     let mut otherwise = case.else_expr.clone();
     let mut changed = false;

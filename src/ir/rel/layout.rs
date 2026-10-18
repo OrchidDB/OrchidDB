@@ -591,7 +591,9 @@ pub(crate) fn push_filters(plan: LogicalPlan) -> Result<LogicalPlan> {
         simplify_expressions::SimplifyExpressions,
     };
     let mut rules: Vec<Arc<dyn datafusion::optimizer::OptimizerRule + Send + Sync>> = vec![];
-    if crate::ir::diagnostics::constant_folding_enabled() { rules.push(Arc::new(SimplifyExpressions::new())); }
+    if crate::ir::diagnostics::constant_folding_enabled() && super::conversion_rules::can_fold_plan(&plan) {
+        rules.push(Arc::new(SimplifyExpressions::new()));
+    }
     rules.push(Arc::new(PushDownFilter::new()));
     Optimizer::with_rules(rules)
     .optimize(

@@ -2,6 +2,7 @@
 #include "duckdb.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_search_path.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_context_state.hpp"
@@ -62,6 +63,7 @@
 #include <thread>
 
 extern "C" char *orchid_bridge(const char *);
+extern "C" int orchid_cypher_to_float_v1(const uint8_t **, const size_t *, size_t, double *, uint8_t *);
 extern "C" char *orchid_bridge_catalog(const char *, void *, char *(*)(void *, const char *, ArrowSchema *), void (*)(char *));
 extern "C" void orchid_bridge_free(char *);
 extern "C" char *orchid_update(const char *, void *, char *(*)(void *, const char *), void (*)(char *));
@@ -376,6 +378,8 @@ Json HostQuery(ClientContext &context, const Json &request) {
     return {{"columns", result->names}, {"rows", rows}};
 }
 
+void CypherToFloat(DataChunk &, ExpressionState &, Vector &);
+
 // Bind user calls without optimization or execution: volatile functions and
 // macros are never evaluated merely to discover a return type.
 char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
@@ -384,7 +388,25 @@ char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
         auto &context=*static_cast<ClientContext *>(state);
         auto request=Json::parse(input);
         Json value;
-        if (request.at("op")=="functions") {
+        if (request.at("op")=="float_helper_capability") {
+            // Resolve through this caller's search path and inspect the actual
+            // callback. A same-named macro/UDF is not evidence of our contract.
+            value = nullptr;
+            try {
+                auto &entry = Catalog::GetEntry<ScalarFunctionCatalogEntry>(context, INVALID_CATALOG, INVALID_SCHEMA, "__orchiddb_cypher_to_float_v1");
+                if (entry.functions.functions.size() == 1) {
+                    auto &function = entry.functions.functions[0];
+                    auto callback = function.GetFunctionCallback();
+                    auto pointer = callback.target<void (*)(DataChunk &, ExpressionState &, Vector &)>();
+                    if (pointer && *pointer == &CypherToFloat && function.arguments == vector<LogicalType>{LogicalType::VARCHAR}
+                        && function.return_type == LogicalType::DOUBLE && function.null_handling == FunctionNullHandling::SPECIAL_HANDLING
+                        && function.GetStability() == FunctionStability::CONSISTENT) {
+                        value = {{"registration_identity", "duckdb-extension:" + std::to_string(reinterpret_cast<uintptr_t>(&context)) + ":" + std::to_string(entry.oid)},
+                                 {"version", DuckDB::LibraryVersion()}};
+                    }
+                }
+            } catch (const std::exception &) { /* Unavailable: conformant SQL. */ }
+        } else if (request.at("op")=="functions") {
             value=HostQuery(context,{{"sql","SELECT function_name, function_type, stability, schema_name, database_name FROM duckdb_functions()"}}).at("rows");
         } else {
             auto statement=Select(context,request.at("sql").get<string>());
@@ -786,6 +808,31 @@ void NativeSort(DataChunk &args, ExpressionState &, Vector &result) {
     }
 }
 
+// Immutable, null-preserving, typed batch compatibility kernel. Unlike the
+// generic native-value wrappers this never serializes a row or invokes a planner.
+void CypherToFloat(DataChunk &args, ExpressionState &, Vector &result) {
+    UnifiedVectorFormat input;
+    args.data[0].ToUnifiedFormat(args.size(), input);
+    auto strings = UnifiedVectorFormat::GetData<string_t>(input);
+    vector<const uint8_t *> pointers(args.size());
+    vector<size_t> lengths(args.size());
+    vector<uint8_t> valid(args.size());
+    for (idx_t row = 0; row < args.size(); row++) {
+        auto index = input.sel->get_index(row);
+        if (input.validity.RowIsValid(index)) {
+            pointers[row] = reinterpret_cast<const uint8_t *>(strings[index].GetData());
+            lengths[row] = strings[index].GetSize();
+        } else { pointers[row] = nullptr; lengths[row] = 0; }
+    }
+    result.SetVectorType(VectorType::FLAT_VECTOR);
+    auto values = FlatVector::GetData<double>(result);
+    if (orchid_cypher_to_float_v1(pointers.data(), lengths.data(), args.size(), values, valid.data()) != 0) {
+        throw InvalidInputException("Orchid string-to-float batch conversion failed");
+    }
+    auto &validity = FlatVector::Validity(result);
+    for (idx_t row = 0; row < args.size(); row++) { validity.Set(row, valid[row] != 0); }
+}
+
 void SparqlScalar(DataChunk &args, ExpressionState &, Vector &result) {
     auto rows = Json::array();
     for (idx_t row = 0; row < args.size(); row++) {
@@ -899,6 +946,10 @@ void LoadOrchid(ExtensionLoader &loader) {
     ScalarFunction native_sort("__orchiddb_value_sort",{LogicalType::VARCHAR,LogicalType::ANY},LogicalType::ANY,NativeSort,NativeSortBind);
     native_sort.null_handling=FunctionNullHandling::SPECIAL_HANDLING;
     loader.RegisterFunction(native_sort);
+    ScalarFunction cypher_float("__orchiddb_cypher_to_float_v1", {LogicalType::VARCHAR}, LogicalType::DOUBLE, CypherToFloat);
+    cypher_float.null_handling = FunctionNullHandling::SPECIAL_HANDLING;
+    cypher_float.SetStability(FunctionStability::CONSISTENT);
+    loader.RegisterFunction(cypher_float);
     ScalarFunction sparql_scalar("__orchiddb_sparql_scalar", vector<LogicalType>(5, LogicalType::VARCHAR),
                                  LogicalType::VARCHAR, SparqlScalar);
     sparql_scalar.null_handling = FunctionNullHandling::SPECIAL_HANDLING;

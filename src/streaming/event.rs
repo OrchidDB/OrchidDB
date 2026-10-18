@@ -90,6 +90,7 @@ impl EventProgram {
             &normalized,
             &PropertyGraph::new(),
             CompileOptions {
+                rule_context: Default::default(),
                 sql_islands: false,
                 language_functions: false,
                 native_values: false,
@@ -97,7 +98,7 @@ impl EventProgram {
             },
         )
         .map_err(|e| e.to_string())?;
-        let program = CompiledProgram::new(&logical).map_err(|e| e.to_string())?;
+        let program = CompiledProgram::new(&logical, &Default::default()).map_err(|e| e.to_string())?;
         for stage in &program.stages {
             if !matches!(stage.operation, StageOperation::Kernel(_)) {
                 return Err("event program requires a native kernel".into());
@@ -120,7 +121,7 @@ impl EventProgram {
         graph: PropertyGraph,
         timeout: Duration,
     ) -> Result<(RecordBatch, std::collections::HashMap<String, usize>), String> {
-        let mut state = KernelState::for_host(graph, Arc::new(NoSubplans));
+        let mut state = KernelState::for_host(graph, Arc::new(NoSubplans), &Default::default());
         let now = chrono::Utc::now().timestamp_micros();
         state.start_clocks(now, now).map_err(|e| e.to_string())?;
         state.set_deadline(Instant::now().checked_add(timeout));

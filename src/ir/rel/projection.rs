@@ -3,6 +3,44 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    /// Resolve a filter through a scan's pure naming projection. Binding by
+    /// schema index handles shadowed names without relying on SQL alias lookup.
+    pub(super) fn filter_through_scan_projection(
+        &self, plan: &LogicalPlan, condition: &Expr,
+    ) -> RelResult<Option<LogicalPlan>> {
+        use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, Transformed};
+        use crate::ir::rules::{RuleSession, Stage, RuleKind};
+        let rule = pipeline::descriptor("rel.filter.scan_projection", Stage::RelationalOptimize,
+            RuleKind::EquivalentRewrite, false);
+        let mut session = RuleSession::new(self.options.rule_context.clone());
+        if !session.visit(rule).map_err(RelError::RulePipeline)? { return Ok(None); }
+        let LogicalPlan::Projection(projection) = plan else { return Ok(None) };
+        if !matches!(projection.input.as_ref(), LogicalPlan::TableScan(_)) { return Ok(None); }
+        let values = projection.expr.iter().map(|expr| {
+            let expr = match expr { Expr::Alias(a) => a.expr.as_ref(), expr => expr };
+            matches!(expr, Expr::Column(_) | Expr::Literal(..)).then(|| expr.clone())
+        }).collect::<Option<Vec<_>>>();
+        let Some(values) = values else { return Ok(None) };
+        let mut scoped = false;
+        condition.apply(|expr| {
+            if matches!(expr, Expr::ScalarSubquery(_) | Expr::Exists(_) | Expr::InSubquery(_)
+                | Expr::SetComparison(_) | Expr::OuterReferenceColumn(..)) { scoped = true; }
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        if scoped { return Ok(None); }
+        let predicate = condition.clone().transform_up(|expr| {
+            if let Expr::Column(column) = &expr {
+                return Ok(Transformed::yes(values[projection.schema.index_of_column(column)?].clone()));
+            }
+            Ok(Transformed::no(expr))
+        })?.data;
+        let filtered = LogicalPlanBuilder::from(projection.input.as_ref().clone()).filter(predicate)?.build()?;
+        let projected = datafusion::logical_expr::Projection::try_new_with_schema(
+            projection.expr.clone(), Arc::new(filtered), projection.schema.clone())?;
+        session.changed(rule, || "filter bound through pure column/literal scan aliases; output schema preserved".into());
+        Ok(Some(LogicalPlan::Projection(projected)))
+    }
+
     pub(super) fn return_projection(
         &self,
         plan: &LogicalPlan,
@@ -136,13 +174,16 @@ impl<'a> LoweringContext<'a> {
             return Ok(vec![history.alias(alias)]);
         }
         if self.options.mapping.is_some() || self.options.tolerate_internal_path_state {
-            // A label bound once is fully represented by its relational element
-            // columns. Repeated labels still require real traverser history.
+            // Unobserved histories are removed by the frontend's liveness
+            // proof. Any append left here is observable; dropping it loses
+            // first/all-pop occurrences when the label is rebound.
             if let Some(label) = alias.strip_prefix("__gremlin_select_history_")
                 && !label.is_empty()
                 && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
             {
-                return Ok(Vec::new());
+                return Err(RelError::Unsupported(
+                    "Gremlin element label history requires traverser state".into(),
+                ));
             }
             if alias == "__path_labels"
                 && matches!(expr, IrExpr::Call { name, .. } if name == "path_attach_label")
@@ -344,17 +385,23 @@ impl LoweringContext<'_> {
         items: &[ProjectionItem],
         input: &Node,
     ) -> RelResult<LoweredNode> {
-        if self.language == Language::Cypher && !self.options.native_values
-            && let Some((items, input)) = super::cypher_maps::scalarize_collected_map_projection(mode, items, input)
-        {
+        if let Some((items, input)) = self.run_projection_rules(mode, items, input)? {
             return self.lower_project(mode, &items, &input);
         }
-        if self.language == Language::Cypher
-            && let Some((items, input)) = super::cypher_maps::scalarize_projection(mode, items, input)
-        {
-            return self.lower_project(mode, &items, &input);
+        let previous = self.unordered_collects.clone();
+        if self.language == Language::Cypher && mode == ProjectMode::ReplaceScope {
+            let rule = pipeline::descriptor("rel.collection.order_demand", crate::ir::rules::Stage::RelationalOptimize,
+                crate::ir::rules::RuleKind::EquivalentRewrite, false);
+            let mut session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+            if session.visit(rule).map_err(RelError::RulePipeline)? {
+                let producers = unordered_collection_producers(items, input);
+                if !producers.is_empty() { session.changed(rule, || "all free consumers are order-insensitive identity quantifiers through closed renames".into()); }
+                self.unordered_collects.extend(producers);
+            }
         }
-        let input = self.lower_node(input)?;
+        let lowered = self.lower_node(input);
+        self.unordered_collects = previous;
+        let input = lowered?;
         let (input, prepared_items) = self.prepare_collection_projection(input, items)?;
         let items = prepared_items.as_slice();
         let projected_aliases = items
@@ -517,5 +564,134 @@ impl LoweringContext<'_> {
         }
         self.lower_expr(plan, &key.expr)
             .map(|expr| vec![expr.sort(asc, nulls_first)])
+    }
+}
+
+/// Backward demand through closed rename scopes. A list is unordered only if
+/// every free use is an order-insensitive identity quantifier. Returned lists,
+/// indexing, alternate consumers, and shadowed bindings retain their order.
+fn unordered_collection_producers(items: &[ProjectionItem], mut input: &Node) -> BTreeSet<usize> {
+    use crate::ir::rules::graph::{walk_expr, Scope};
+    fn reads(expr: &IrExpr, unordered: &mut BTreeSet<String>, ordered: &mut BTreeSet<String>) {
+        let mut expr = expr.clone();
+        walk_expr(&mut expr, &Scope::default(), &mut |expr, scope| {
+            if let IrExpr::Quantifier { list, item, predicate, .. } = expr
+                && matches!(predicate.as_ref(), IrExpr::Binding(name) if name == item)
+                && let IrExpr::Binding(name) = list.as_ref() && !scope.is_bound(name) {
+                unordered.insert(name.clone()); **list = IrExpr::Lit(Lit::Null);
+            }
+        });
+        walk_expr(&mut expr, &Scope::default(), &mut |expr, scope| {
+            let name = match expr {
+                IrExpr::Binding(n) | IrExpr::Id(n) | IrExpr::Label(n) | IrExpr::IsBound(n) | IrExpr::SimplePath(n) => Some(n),
+                IrExpr::Property { binding, .. } | IrExpr::HasLabel { binding, .. } => Some(binding),
+                _ => None,
+            };
+            if let Some(name) = name && !scope.is_bound(name) { ordered.insert(name.clone()); }
+        });
+    }
+    let mut unordered = BTreeSet::new();
+    let mut ordered = BTreeSet::new();
+    for item in items { reads(&item.expr, &mut unordered, &mut ordered); }
+    loop {
+        match input {
+            Node::GraphQuantifier { input_expr, item_binding, predicate, output, input: next, .. } => {
+                ordered.remove(output); unordered.remove(output);
+                if matches!(predicate, IrExpr::Binding(name) if name == item_binding)
+                    && let IrExpr::Binding(name) = input_expr {
+                    unordered.insert(name.clone());
+                } else {
+                    reads(input_expr, &mut unordered, &mut ordered);
+                    // External predicate references still observe their values.
+                    let mut deps = BTreeSet::new();
+                    reads(predicate, &mut BTreeSet::new(), &mut deps);
+                    deps.remove(item_binding); ordered.extend(deps);
+                }
+                input = next;
+            }
+            Node::GraphProject { mode: ProjectMode::ReplaceScope, items, input: next, .. } => {
+                let mut next_unordered = BTreeSet::new();
+                let mut next_ordered = BTreeSet::new();
+                for item in items {
+                    if unordered.contains(&item.alias) && !ordered.contains(&item.alias)
+                        && let IrExpr::Binding(name) = &item.expr {
+                        next_unordered.insert(name.clone());
+                    } else { reads(&item.expr, &mut next_unordered, &mut next_ordered); }
+                }
+                unordered = next_unordered; ordered = next_ordered; input = next;
+            }
+            Node::GraphAggregate { aggs, .. } => {
+                return aggs.iter().filter(|agg| agg.kind == AggKind::CollectNonNull && !agg.distinct
+                    && unordered.contains(&agg.alias) && !ordered.contains(&agg.alias))
+                    .map(|agg| agg as *const AggCall as usize).collect();
+            }
+            _ => return BTreeSet::new(),
+        }
+    }
+}
+
+impl LoweringContext<'_> {
+    /// Push total property equality through a fixed traversal over real tables.
+    /// The predicate cannot read a newly bound endpoint/edge, cross an optional
+    /// boundary, or change evaluation of computed graph sources.
+    pub(super) fn push_expand_equality(&self, condition: &IrExpr, input: &Node) -> RelResult<Option<Node>> {
+        if self.language != Language::Cypher { return Ok(None); }
+        let Some(mapping) = &self.options.mapping else { return Ok(None); };
+        if mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|n|
+            !matches!(n.source, mapping::MappedSource::Table(_))))
+            || mapping.rel_types().iter().any(|kind| mapping.edge_partitions(kind).iter().any(|e|
+                !matches!(e.source, mapping::MappedSource::Table(_)))) { return Ok(None); }
+        fn binding(condition: &IrExpr) -> Option<&str> {
+            match condition {
+                IrExpr::Binary { op: BinaryOp::Eq, lhs, rhs } => match (lhs.as_ref(),rhs.as_ref()) {
+                    (IrExpr::Property { binding, .. }, IrExpr::Lit(_)) |
+                    (IrExpr::Lit(_), IrExpr::Property { binding, .. }) => Some(binding),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        fn push(condition: &IrExpr, input: &Node, name: &str, moved: &mut bool) -> Node {
+            if let Node::GraphFilter { condition: other, input } = input
+                && binding(other).is_some() {
+                return Node::GraphFilter { condition: other.clone(),
+                    input: Box::new(push(condition,input,name,moved)) };
+            }
+            let mut node=input.clone();
+            let child = match &mut node {
+                Node::GraphExpand { input, target, target_mode, rel_binding, path, length, .. }
+                    if length.min == 1 && length.max == Some(1)
+                        && !(*target_mode == TargetMode::BindNew && target == name)
+                        && rel_binding.as_deref() != Some(name) && path.as_deref() != Some(name) => input,
+                Node::GraphProject { input, items, .. } if items.iter().all(|item|
+                    matches!(&item.expr, IrExpr::Binding(binding) if binding == &item.alias))
+                    && items.iter().any(|item| item.alias == name) => input,
+                Node::GraphApply { kind: ApplyKind::Inner, left, right, .. }
+                    if matches!(left.as_ref(), Node::GraphOneRow) => right,
+                _ => return Node::GraphFilter { condition: condition.clone(), input: Box::new(node) },
+            };
+            *moved=true;
+            **child=push(condition,child,name,moved);
+            node
+        }
+        if let IrExpr::Binary { op: BinaryOp::And, lhs, rhs } = condition
+            && binding(lhs).is_some() && binding(rhs).is_some() {
+            let right = self.push_expand_equality(rhs, input)?;
+            let right_moved = right.is_some();
+            let right = right.unwrap_or_else(|| Node::GraphFilter { condition: *rhs.clone(), input: Box::new(input.clone()) });
+            let left = self.push_expand_equality(lhs, &right)?;
+            return Ok(if left.is_some() { left } else if right_moved {
+                Some(Node::GraphFilter { condition: *lhs.clone(), input: Box::new(right) })
+            } else { None });
+        }
+        let Some(name)=binding(condition) else { return Ok(None); };
+        let rule=pipeline::descriptor("rel.filter.fixed_expand",crate::ir::rules::Stage::RelationalOptimize,
+            crate::ir::rules::RuleKind::EquivalentRewrite,false);
+        let mut session=crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+        if !session.visit(rule).map_err(RelError::RulePipeline)? {return Ok(None);}
+        let mut moved=false;
+        let node=push(condition,input,name,&mut moved);
+        if moved {session.changed(rule,||"total property equality moved through fixed table expansions; introduced bindings and optional scopes fenced".into());}
+        Ok(moved.then_some(node))
     }
 }

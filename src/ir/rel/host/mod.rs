@@ -18,6 +18,12 @@ pub struct HostRelation {
     pub name: String,
     pub batch: RecordBatch,
 }
+/// SQL submitted to storage, with the sizes of its typed input relations.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WriteStatement {
+    pub sql: String,
+    pub inputs: Vec<(String, usize)>,
+}
 #[derive(Debug, Clone)]
 pub struct HostRequest {
     pub sql: String,
@@ -58,6 +64,7 @@ pub trait HostRelational: Debug {
     ) -> Result<(RecordBatch, Vec<String>), String> {
         let _ = mapping;
         let lowered = super::LoweredPlan {
+            rule_context: Default::default(),
             fields: plan
                 .schema()
                 .fields()

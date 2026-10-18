@@ -281,6 +281,7 @@ fn correlated_and_prepare_time_table_functions_return_the_same_rows() {
         .build()
         .unwrap();
     let lowered = orchiddb::ir::rel::LoweredPlan {
+            rule_context: Default::default(),
         plan: parent,
         fields: vec!["value".into()],
         result_form: orchiddb::ir::policy::ResultForm::RowSet,
@@ -382,6 +383,7 @@ fn two_table_functions_compose_in_one_sql_scope() {
         .build()
         .unwrap();
     let lowered = orchiddb::ir::rel::LoweredPlan {
+            rule_context: Default::default(),
         plan,
         fields: vec!["left_value".into(), "right_value".into()],
         result_form: orchiddb::ir::policy::ResultForm::RowSet,

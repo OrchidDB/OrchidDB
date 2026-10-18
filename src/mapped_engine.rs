@@ -141,19 +141,23 @@ impl MappedGraphEngine {
         self.sql_for_plan(&plan).await
     }
 
-    fn backend(&self) -> RelBackend {
-        RelBackend::with_options(RelBackendOptions {
+    fn backend(&self) -> Result<RelBackend, String> {
+        let mut context = crate::ir::rules::RuleContext::default();
+        context.capabilities.language_functions_enabled = self.executor.language_functions_enabled();
+        context.capabilities.float_helper = self.executor.float_helper_capability().map_err(|e| e.to_string())?;
+        Ok(RelBackend::with_options(RelBackendOptions {
+            rule_context: context,
             mapping: Some(self.mapping.clone()),
             language_functions: self.executor.language_functions_enabled(),
             ..RelBackendOptions::default()
-        })
+        }))
     }
 
     /// Lower a plan and return only the generated query text.
     async fn sql_for_plan(&self, plan: &GraphPlan) -> Result<String, String> {
         reject_mutations(plan)?;
         let lowered = self.with_functions(|| {
-            self.backend()
+            self.backend()?
                 .lower(plan, &PropertyGraph::new())
                 .map_err(|err| err.to_string())
         })?;

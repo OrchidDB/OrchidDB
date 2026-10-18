@@ -600,6 +600,7 @@ async fn direct_relational_execution_accepts_deep_plans() {
         plan = LogicalPlanBuilder::from(plan).filter(lit(true)).unwrap().build().unwrap();
     }
     let result = execute_lowered(LoweredPlan {
+            rule_context: Default::default(),
         plan,
         fields: vec![],
         result_form: orchiddb::ir::policy::ResultForm::RowSet,

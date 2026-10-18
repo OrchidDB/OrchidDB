@@ -80,6 +80,7 @@ impl PropertyGraph {
         name: &str,
         properties: &mut BTreeMap<String, Value>,
         supplied: Option<&Value>,
+        endpoints: Option<(&str, &str)>,
     ) -> CatalogResult<Option<ElementId>> {
         let Some(mapping) = self.write_mapping() else {
             if self.source_keys {
@@ -90,9 +91,11 @@ impl PropertyGraph {
             return Ok(None);
         };
         let (column, props) = if edge {
-            let m = mapping.edge(name).ok_or_else(|| {
-                CatalogError::Schema(format!("unmapped relationship type `{name}`"))
-            })?;
+            let m = if let Some((src, dst)) = endpoints {
+                mapping.edge_for_endpoints(name, src, dst).map_err(CatalogError::Schema)?
+            } else {
+                mapping.edge(name).ok_or_else(|| CatalogError::Schema(format!("unmapped relationship type `{name}`")))?
+            };
             (m.id_column.as_ref().unwrap_or(&m.src_column), &m.properties)
         } else {
             let m = mapping
@@ -102,6 +105,10 @@ impl PropertyGraph {
         };
         let key = if let Some(value) = supplied {
             ElementId::try_from(value).map_err(CatalogError::Schema)?
+        } else if column.len() == 1 && !props.iter().any(|(property, physical)|
+            column.contains(physical) && properties.contains_key(property))
+            && let Some(generated) = self.source.as_ref().and_then(|source| match endpoints { Some((src, dst)) => source.generated_edge_key(name, src, dst), None => source.generated_key(edge, name) }) {
+            generated.map_err(CatalogError::Schema)?
         } else {
             let components = column.columns().iter().map(|column| {
                 let value = props.iter().find_map(|(property, c)| (c == column)
@@ -163,10 +170,14 @@ impl PropertyGraph {
         for edge in [false, true] {
             let pending = self.pending.borrow();
             for (name, id) in if edge { &pending.edges } else { &pending.nodes } {
+                let mapped_edge = if edge {
+                    let endpoints = self.edge_endpoints(name, id.clone())
+                        .or_else(|| self.source.as_ref().and_then(|source| source.endpoints(name, id)));
+                    let Some((src, _, dst, _)) = endpoints else { continue; };
+                    Some(mapping.edge_for_endpoints(name, &src, &dst)?)
+                } else { None };
                 let (props, key_column) = if edge {
-                    let m = mapping
-                        .edge(name)
-                        .ok_or_else(|| format!("unmapped relationship `{name}`"))?;
+                    let m = mapped_edge.unwrap();
                     (&m.properties, m.id_column.as_ref().unwrap_or(&m.src_column))
                 } else {
                     let m = mapping
@@ -185,7 +196,7 @@ impl PropertyGraph {
                     {
                         continue;
                     }
-                    if !props.contains_key(&key) {
+                    if !props.contains_key(&key) && (!edge || self.edge_property(name, id.clone(), &key) != Value::Null) {
                         return Err(format!("unmapped property `{name}.{key}`"));
                     }
                 }
@@ -216,7 +227,7 @@ impl PropertyGraph {
                     }
                 }
                 if edge {
-                    let m = mapping.edge(name).unwrap();
+                    let m = mapped_edge.unwrap();
                     if let Some((_, src, _, dst)) = self.live_edge_endpoints(name, id.clone()) {
                         for (columns, expected) in [(&m.src_column, src), (&m.dst_column, dst)] {
                             let components = columns.values(&expected)?;

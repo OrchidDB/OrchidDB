@@ -99,3 +99,51 @@ async fn graph_union_distinct_preserves_duplicate_outer_occurrences() {
     ).collect::<Vec<_>>().join("|")).collect::<Vec<_>>();
     assert_eq!(rows, vec!["1|1", "1|1", "3|0"], "{sql}");
 }
+
+#[tokio::test]
+async fn grouped_mapped_sum_uses_scan_directly_and_preserves_null_and_empty_groups() {
+    use arrow::datatypes::{DataType, Field, Schema};
+    use orchiddb::ir::rel::{RelBackendOptions, mapping::{GraphMapping, NodeMapping}, sql};
+    use std::sync::Arc;
+    orchiddb::ir::diagnostics::without_constant_folding(async {
+        for helpers in [false, true] {
+            let mut mapping = GraphMapping::new();
+            mapping.register_table_schema("numbers", Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int64, false),
+                Field::new("name", DataType::Utf8, true),
+                Field::new("num", DataType::Int64, true),
+            ])));
+            mapping.map_node(NodeMapping::table("", "numbers", "id")
+                .property("name", "name").property("num", "num"));
+            let options = RelBackendOptions { mapping: Some(Arc::new(mapping.clone())),
+                language_functions: helpers, ..Default::default() };
+            let mut executor = DuckDbExecutor::new();
+            executor.set_language_functions(helpers).unwrap();
+            executor.connection().unwrap().execute_batch("CREATE TABLE numbers(id BIGINT, name VARCHAR, num BIGINT)").unwrap();
+            for (query, mut expected) in [
+                ("MATCH (n) RETURN n.name, sum(n.num)", vec!["a|108", "b|0", "|5"]),
+                ("MATCH (n) RETURN n.name, sum(n.num), count(*)", vec!["a|108|4", "b|0|1", "|5|2"]),
+            ] {
+                executor.connection().unwrap().execute_batch("INSERT INTO numbers VALUES (1,'a',33),(2,'a',NULL),(3,'a',42),(4,'a',33),(5,'b',NULL),(6,NULL,2),(7,NULL,3)").unwrap();
+                let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+                let lowered = RelBackend::with_options(options.clone()).lower(&plan, &PropertyGraph::new()).unwrap();
+                let prepared = sql::prepare_with_external(&lowered, SqlDialect::DuckDb, &mapping.physical_table_names()).await.unwrap();
+                assert!(!prepared.query.contains("FROM (SELECT"), "{query}: {}", prepared.query);
+                assert!(prepared.query.contains("GROUP BY"), "{}", prepared.query);
+                assert!(prepared.query.contains("coalesce(sum("), "{}", prepared.query);
+                let result = sql::execute_prepared(&mut executor, &prepared)
+                    .unwrap_or_else(|error| panic!("{query}: {error}\n{}", prepared.query));
+                assert_eq!(result.batch.schema().field(0).name(), "n.name");
+                let mut rows = (0..result.batch.num_rows()).map(|i| result.batch.columns().iter()
+                    .map(|a| arrow::util::display::array_value_to_string(a, i).unwrap())
+                    .collect::<Vec<_>>().join("|")).collect::<Vec<_>>();
+                rows.sort(); expected.sort();
+                assert_eq!(rows, expected, "{}", prepared.query);
+                executor.connection().unwrap().execute_batch("DELETE FROM numbers").unwrap();
+                // Grouped empty input must stay zero rows, unlike a global sum.
+                let empty = sql::execute_prepared(&mut executor, &prepared).unwrap();
+                assert_eq!(empty.batch.num_rows(), 0, "{}", prepared.query);
+            }
+        }
+    }).await;
+}

@@ -3,6 +3,11 @@
 use super::*;
 
 pub trait RegionSession: std::fmt::Debug + Send {
+    #[doc(hidden)]
+    fn validate_float_helper(&self, required: &super::super::language_functions::FloatHelperCapability) -> SqlResult<()> {
+        Err(SqlError::Unsupported(format!("SQL region cannot verify float helper registration {}", required.registration_identity())))
+    }
+
     fn dialect(&self) -> SqlDialect;
     fn query(&mut self, sql: &str, schema: SchemaRef) -> SqlResult<RecordBatch>;
 }

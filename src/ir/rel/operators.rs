@@ -7,7 +7,7 @@ impl LoweringContext<'_> {
         self.memoized_lower_node(node)
     }
     pub(super) fn lower_node_inner(&mut self, node: &Node) -> RelResult<LoweredNode> {
-        if let Some(replacement) = table_procedures::specialize_call(node, self.graph) {
+        if let Some(replacement) = pipeline::bind_procedure_call(node, self.graph, &self.options.rule_context)? {
             return self.lower_node(&replacement);
         }
         use Node::*;
@@ -25,11 +25,24 @@ impl LoweringContext<'_> {
                 result_form,
                 input,
             } => {
+                let saved_distincts = self.unordered_distincts.clone();
+                if self.language == Language::Cypher && self.correlate_plan.is_none() {
+                    let rule = pipeline::descriptor("rel.distinct.order_demand", crate::ir::rules::Stage::RelationalOptimize,
+                        crate::ir::rules::RuleKind::EquivalentRewrite, false);
+                    let mut session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+                    if session.visit(rule).map_err(RelError::RulePipeline)? {
+                        if let Some(distinct) = terminal_distinct(input) {
+                            self.unordered_distincts.insert(distinct);
+                            session.changed(rule, || "terminal bag consumer does not observe first-seen ordering; sorted slices retain their sort".into());
+                        }
+                    }
+                }
                 let input = if let GraphCap { labels, input } = input.as_ref() {
                     self.lower_terminal_cap(labels, input)?
                 } else if let GraphGroupMap { key, value, output, input } = input.as_ref() {
                     self.lower_group_map(key, value, output, input)?
                 } else { self.lower_node(input)? };
+                self.unordered_distincts = saved_distincts;
                 if self.rdf_typed_terms_used
                     && fields.iter().any(|field| {
                         rdf::binding_identity_columns(field)
@@ -185,8 +198,14 @@ impl LoweringContext<'_> {
             }
             GraphPathFilter {condition,input,..} if self.options.native_values => self.lower_node(&GraphFilter{condition:condition.clone(),input:input.clone()})?,
             GraphFilter { condition, input } => {
+                if let Some(pushed) = self.push_expand_equality(condition, input)? {
+                    return self.lower_node(&pushed);
+                }
                 let input = self.lower_node(input)?;
                 let condition = self.lower_case_condition(&input.plan, condition)?;
+                if let Some(plan) = self.filter_through_scan_projection(&input.plan, &condition)? {
+                    return Ok(input.with_plan(plan));
+                }
                 // The filter reads projection outputs. SQL WHERE reads input
                 // columns, so flattening an alias that shadows an input name
                 // changes its meaning (e.g. edge current -> vertex current).
@@ -235,12 +254,19 @@ impl LoweringContext<'_> {
                 if !group.is_empty() && (group.iter().any(|item| has_temporal_constructor(&item.expr)) || input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type()))) {
                     return Err(RelError::Unsupported("Temporal grouping requires typed runtime evaluation".into()));
                 }
+                let mut compact_collections = BTreeMap::new();
+                for agg in aggs {
+                    if let Some(expr) = self.compact_distinct_collect(&input.plan, agg)? {
+                        compact_collections.insert(agg.alias.clone(), expr);
+                    }
+                }
                 // COLLECT observes incoming ORDER BY even when its sort keys
                 // are projected away. Record that ordering once, before the
                 // aggregate, and share it across all collected expressions.
                 let collect_ordinal = if self.language == Language::Cypher
                     && !self.options.native_values
-                    && aggs.iter().any(|agg| agg.kind == AggKind::CollectNonNull)
+                    && aggs.iter().any(|agg| !self.unordered_collects.contains(&(agg as *const AggCall as usize)) && !compact_collections.contains_key(&agg.alias) && crate::ir::rules::aggregate::CollectionContract::for_aggregate(agg)
+                        .is_some_and(|contract| contract.order == crate::ir::rules::aggregate::CollectionOrder::PreserveInput))
                 {
                     let ordinal = unique_internal_alias(&input.plan, &BTreeSet::new(), "__cypher_collect_ordinal");
                     let numbered = with_distinct_ordinal(input.plan.clone(), &ordinal)?;
@@ -331,7 +357,7 @@ impl LoweringContext<'_> {
                 let mut collect_ranks = std::collections::BTreeMap::new();
                 if let Some(ordinal) = &collect_ordinal {
                     let mut windows = Vec::new();
-                    for agg in aggs.iter().filter(|agg| agg.kind == AggKind::CollectNonNull && agg.distinct) {
+                    for agg in aggs.iter().filter(|agg| agg.kind == AggKind::CollectNonNull && agg.distinct && !compact_collections.contains_key(&agg.alias)) {
                         // These expressions can be repeated safely in the partition
                         // key and aggregate. More complex expressions need explicit
                         // materialization before extending this path.
@@ -342,7 +368,6 @@ impl LoweringContext<'_> {
                             || !agg.arg.as_ref().is_some_and(stable) {
                             return Err(RelError::Unsupported(format!("Distinct collection expression requires materialization: group={group:?}, arg={:?}", agg.arg)));
                         }
-                        let value = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
                         let mut partition = apply_correlation_key_columns(&input.plan).iter().map(col_exact).collect::<Vec<_>>();
                         for item in group {
                             if let Some(keys) = self.graph_group_keys(&input.plan, &item.expr)? {
@@ -351,7 +376,12 @@ impl LoweringContext<'_> {
                                 partition.push(language_functions::key(self.lower_expr(&input.plan, &item.expr)?, &input.plan)?);
                             }
                         }
-                        partition.push(language_functions::key(value, &input.plan)?);
+                        if let Some(arg)=&agg.arg && let Some(keys)=self.graph_group_keys(&input.plan,arg)? {
+                            partition.extend(keys);
+                        } else {
+                            let value=self.lower_required_agg_arg(&input.plan,&agg.arg)?;
+                            partition.push(language_functions::key(value,&input.plan)?);
+                        }
                         let rank = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_collect_rank_{}", collect_ranks.len()));
                         hidden_keys.insert(rank.clone());
                         windows.push(df_window::row_number()
@@ -383,6 +413,7 @@ impl LoweringContext<'_> {
                 let mut aggs = aggs
                     .iter()
                     .map(|agg| {
+                        if let Some(expr) = compact_collections.get(&agg.alias) { return Ok(expr.clone().alias(&agg.alias)); }
                         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
                             && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction|AggKind::StDev|AggKind::StDevP|AggKind::PercentileCont|AggKind::PercentileDisc)
                             && let Some(arg)=&agg.arg {
@@ -470,8 +501,9 @@ impl LoweringContext<'_> {
                                 }
                             }
                             AggKind::CollectNonNull => {
-                                let ordinal = collect_ordinal.as_ref().ok_or_else(|| RelError::Unsupported(
-                                    "Distinct collection requires semantic representative selection".into()))?;
+                                let ordinal = if self.unordered_collects.contains(&(agg as *const AggCall as usize)) { None }
+                                    else { Some(collect_ordinal.as_deref().ok_or_else(|| RelError::Unsupported(
+                                        "Distinct collection requires semantic representative selection".into()))?) };
                                 self.lower_collect_non_null(&input.plan, agg, ordinal, collect_ranks.get(&agg.alias).map(String::as_str))?
                             }
                             AggKind::CollectRows | AggKind::CollectTraversers => {
@@ -533,6 +565,7 @@ impl LoweringContext<'_> {
                 let plan = LogicalPlanBuilder::from(aggregate_input)
                     .aggregate(group_exprs, aggs)?
                     .build()?;
+                let plan=aggregates::normalize_outputs(plan)?;
                 let plan=if native_drop_empty {LogicalPlanBuilder::from(plan).filter(col_exact(&empty_guard).gt(lit(0_i64)))?.build()?} else {plan};
                 let plan = if group.is_empty() {
                     gremlin::with_empty_count_defaults(
@@ -582,7 +615,14 @@ impl LoweringContext<'_> {
                 } else if self.options.language_functions && self.language == Language::Cypher {
                     let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
                         .map(|e| language_functions::key(e, &input.plan)).collect::<RelResult<Vec<_>>>()?;
-                    keyed_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                    let order_rule = pipeline::descriptor("rel.distinct.order_demand", crate::ir::rules::Stage::RelationalOptimize,
+                        crate::ir::rules::RuleKind::EquivalentRewrite, false);
+                    let mut order_session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+                    if self.unordered_distincts.contains(&(node as *const Node as usize))
+                        && order_session.visit(order_rule).map_err(RelError::RulePipeline)? {
+                        order_session.changed(order_rule, || "query-root order demand retained across SQL island placement".into());
+                        unordered_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                    } else { keyed_distinct_partition(input.plan.clone(), partition, barrier_id)? }
                 } else { keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)? };
                 input.with_plan(plan)
             }
@@ -651,6 +691,7 @@ impl LoweringContext<'_> {
                 self.lower_node(&GraphSlice { slice: Slice { offset, fetch, tail: None }, input: input.clone() })?
             }
             GraphSlice { slice, input } => {
+                let pure = !crate::ir::analysis::contains_source_mutation(input);
                 let input = self.lower_node(input)?;
                 let Slice {
                     offset,
@@ -661,7 +702,13 @@ impl LoweringContext<'_> {
                     return Err(RelError::Unsupported("tail slice".into()));
                 }
                 let correlation_keys = apply_correlation_key_columns(&input.plan);
-                let plan = if correlation_keys.is_empty() {
+                let plan = if pure && *fetch == Some(0) {
+                    // Do not construct a zero-sized physical TopK (DF53
+                    // panics); a read-only LIMIT 0 has no output rows.
+                    LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+                        produce_one_row: false, schema: input.plan.schema().clone(),
+                    })
+                } else if correlation_keys.is_empty() {
                     LogicalPlanBuilder::from(input.plan.clone())
                         .limit(*offset as usize, fetch.map(|n| n as usize))?
                         .build()?
@@ -766,5 +813,18 @@ impl LoweringContext<'_> {
             }
         };
         Ok(lowered)
+    }
+}
+
+// A terminal bag has no first-seen ordering contract. Stop at any consumer
+// that can observe occurrence order (notably unsorted slices and collections).
+pub(super) fn terminal_distinct(node: &Node) -> Option<usize> {
+    match node {
+        Node::GraphReturn { input, .. } => terminal_distinct(input),
+        Node::GraphDistinct { .. } => Some(node as *const Node as usize),
+        Node::GraphProject { items, input, .. } if items.iter().all(|item| matches!(item.expr, IrExpr::Binding(_))) => terminal_distinct(input),
+        Node::GraphSort { input, .. } | Node::GraphFilter { input, .. } => terminal_distinct(input),
+        Node::GraphSlice { input, .. } if matches!(input.as_ref(), Node::GraphSort { .. }) => terminal_distinct(input),
+        _ => None,
     }
 }

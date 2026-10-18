@@ -3,6 +3,8 @@
 //! Reference: `README.md`.
 
 pub mod analysis;
+#[doc(hidden)]
+pub mod rules;
 pub mod bridge;
 pub mod catalog;
 pub mod df;

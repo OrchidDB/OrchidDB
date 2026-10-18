@@ -10,7 +10,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::{LoweredPlan, RelResult, sql};
+use super::{LoweredPlan, RelError, RelResult, sql};
 use crate::ir::runtime::ReturnedBatches;
 #[cfg(feature = "duckdb")]
 use async_trait::async_trait;
@@ -45,6 +45,7 @@ mod scalar_inputs;
 
 #[derive(Debug, Clone, Default)]
 pub struct DagStats {
+    pub rule_trace: Vec<crate::ir::rules::RuleTrace>,
     pub cost: crate::ir::QueryCost,
     pub duckdb_regions: usize,
     pub postgres_regions: usize,
@@ -59,6 +60,7 @@ pub struct DagStats {
     pub plan_estimates: Vec<super::statistics::PlanEstimate>,
     pub optimizer_decisions: Vec<super::statistics::OptimizerDecision>,
     pub sql_queries: Vec<String>,
+    pub write_queries: Vec<super::host::WriteStatement>,
     pub native_source_queries: Vec<String>,
     pub native_source_rows: usize,
 }
@@ -67,6 +69,7 @@ pub struct DagStats {
 /// SQL source tables are content-addressed by DuckDbExecutor; logical plans and
 /// graph snapshots are rebuilt for every query.
 pub(crate) struct DagSession {
+    rule_template: crate::ir::rules::RuleContext,
     session: SessionContext,
     #[cfg(feature = "duckdb")]
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
@@ -76,6 +79,24 @@ pub(crate) struct DagSession {
     pub(crate) region_session: Option<sql::region::SharedRegionSession>,
 }
 impl DagSession {
+    pub(crate) fn rule_context(&self) -> RelResult<crate::ir::rules::RuleContext> {
+        let mut context = self.rule_template.new_query();
+        #[cfg(feature = "duckdb")]
+        if self.region_session.is_none() {
+            let mut executor = self.executor.lock().map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?;
+            context.capabilities.language_functions_enabled = executor.language_functions_enabled();
+            context.capabilities.float_helper = executor.prepare_float_helper_capability().map_err(|e| RelError::Unsupported(e.to_string()))?;
+        }
+        Ok(context)
+    }
+
+    pub(crate) fn recreated(&self, timeout: Option<std::time::Duration>) -> Self {
+        let mut next = Self::new(timeout);
+        next.rule_template = self.rule_template.clone();
+        next.region_session = self.region_session.clone();
+        next
+    }
+    pub(crate) fn set_rule_context(&mut self, context: crate::ir::rules::RuleContext) { self.rule_template = context; }
     pub(crate) fn language_functions_enabled(&self) -> bool {
         #[cfg(feature = "duckdb")]
         { self.region_session.is_none() && self.executor.lock().is_ok_and(|e| e.language_functions_enabled()) }
@@ -94,6 +115,7 @@ impl DagSession {
         let state = datafusion::execution::session_state::SessionStateBuilder::new_from_existing(session.state())
             .with_optimizer_rules(rules).build();
         Self {
+            rule_template: Default::default(),
             #[cfg(feature = "duckdb")]
             external: Default::default(),
             optimize: true,
@@ -110,7 +132,7 @@ impl DagSession {
 
     #[cfg(feature = "duckdb")]
     pub(crate) fn with_shared(executor: Arc<Mutex<sql::DuckDbExecutor>>, external: std::collections::BTreeSet<String>) -> Self {
-        Self { session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor, external, optimize: false, region_session: None }
+        Self { rule_template: Default::default(), session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor, external, optimize: false, region_session: None }
     }
 
     #[cfg(feature = "duckdb")]
@@ -255,6 +277,10 @@ impl SqlEligibility {
                     }
                 }
                 if let Expr::ScalarFunction(function) = expr {
+                    if function.func.name() == super::conversion_rules::NATIVE_FLOAT {
+                        if self.dialect != Some(sql::SqlDialect::DuckDb) { reason.get_or_insert("native conversion requires its owning DuckDB engine"); }
+                        return Ok(TreeNodeRecursion::Continue);
+                    }
                     if super::language_functions::supported(function.func.name()) {
                         if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb) {
                             return Ok(TreeNodeRecursion::Continue);
@@ -314,6 +340,7 @@ fn partition<'a>(
     dialect: sql::SqlDialect,
     bind_inputs: bool,
     source_executor: &'a Arc<Mutex<sql::DuckDbExecutor>>,
+    rule_context: &'a crate::ir::rules::RuleContext,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
         let explain = std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some();
@@ -339,6 +366,7 @@ fn partition<'a>(
                 )?
                 .build()?;
             let candidate = LoweredPlan {
+            rule_context: rule_context.clone(),
                 plan: projected,
                 fields: (0..plan.schema().fields().len())
                     .map(|i| format!("__region_{i}"))
@@ -368,6 +396,7 @@ fn partition<'a>(
             if explain && let Err(error) = &prepared {
                 eprintln!("DuckDB boundary: SQL preparation: {error}");
             }
+            if let Err(sql::SqlError::RulePipeline(error)) = &prepared { return Err(DataFusionError::Plan(error.to_string())); }
             if let Ok(prepared) = prepared {
                 if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
                     eprintln!("DuckDB candidate: {}", prepared.query);
@@ -392,7 +421,7 @@ fn partition<'a>(
                     || template.parameters != source.schema().fields().len() {
                     return Err(DataFusionError::Plan("dependent relational lowering changed its execution contract".into()));
                 }
-                let source = partition(&source, stats, eligibility, external, dialect, bind_inputs, source_executor).await?;
+                let source = partition(&source, stats, eligibility, external, dialect, bind_inputs, source_executor, rule_context).await?;
                 match dialect {
                     sql::SqlDialect::DuckDb => stats.duckdb_regions += 1,
                     sql::SqlDialect::Postgres => stats.postgres_regions += 1,
@@ -403,14 +432,14 @@ fn partition<'a>(
             }
             Some(RelationLowering::Rewrite(rewritten)) => {
                 if &rewritten == plan { return Err(DataFusionError::Plan("relational rewrite made no progress".into())); }
-                return partition(&rewritten, stats, &mut SqlEligibility {dialect:Some(dialect), language_functions: eligibility.language_functions, ..Default::default()}, external, dialect, bind_inputs, source_executor).await;
+                return partition(&rewritten, stats, &mut SqlEligibility {dialect:Some(dialect), language_functions: eligibility.language_functions, ..Default::default()}, external, dialect, bind_inputs, source_executor, rule_context).await;
             }
             Some(RelationLowering::Sql(_)) => return Err(DataFusionError::Plan("required relational operation could not form a SQL island".into())),
             None => {},
         }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
-            inputs.push(partition(input, stats, eligibility,external,dialect,bind_inputs,source_executor).await?);
+            inputs.push(partition(input, stats, eligibility,external,dialect,bind_inputs,source_executor,rule_context).await?);
         }
         stats.datafusion_operators += 1;
         // DataFusion 53 reports UNNEST execution columns as expressions, but
@@ -529,8 +558,11 @@ impl ExecutionPlan for DuckDbExec {
         let work = async move {
             tokio::task::spawn_blocking(move || {
                 let returned = if let Some(session) = region_session {
-                    session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?
-                        .query(&prepared.query, prepared.output_schema())
+                    let mut session = session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?;
+                    if let Some(required) = &prepared.float_helper {
+                        session.validate_float_helper(required).map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                    }
+                    session.query(&prepared.query, prepared.output_schema())
                         .map_err(|e| DataFusionError::Execution(e.to_string()))?
                 } else {
                 let mut executor = executor
@@ -574,6 +606,7 @@ pub(crate) async fn prepare_with_extensions(
     extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     resources: &DagSession,
     _cost: Arc<Mutex<crate::ir::QueryCost>>,
+    rule_context: &crate::ir::rules::RuleContext,
 ) -> RelResult<(Arc<dyn ExecutionPlan>, Arc<TaskContext>, DagStats)> {
     let session = &resources.session;
     // Optimize while relational scans and expressions remain visible, before
@@ -581,7 +614,7 @@ pub(crate) async fn prepare_with_extensions(
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let (initial, mut proofs) = super::constraints::optimize(logical.clone())?;
+    let (initial, mut proofs) = super::pipeline::relational(logical.clone(), rule_context, false)?;
     let optimized = if resources.optimize { query_state.optimize(&initial)? } else {
         // Mapped SQL placement skips optional optimizer rewrites, but residual
         // DataFusion operators still require type coercion and function analysis.
@@ -592,7 +625,7 @@ pub(crate) async fn prepare_with_extensions(
     // SimplifyExpressions respects function volatility and leaves row-dependent
     // calls (and engine-only calls) in place. Reuse the query's execution context
     // so stable functions see the same clock as the rest of the query.
-    let optimized = if !resources.optimize && crate::ir::diagnostics::constant_folding_enabled() {
+    let optimized = if !resources.optimize && crate::ir::diagnostics::constant_folding_enabled() && super::conversion_rules::can_fold_plan(&optimized) {
         datafusion::optimizer::Optimizer::with_rules(vec![
             Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
         ]).optimize(optimized, &query_state, |_, _| {})?
@@ -611,13 +644,16 @@ pub(crate) async fn prepare_with_extensions(
             Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
         ]).optimize(optimized,&query_state,|_,_|{})?
     } else {optimized};
+    crate::ir::rules::RuleSession::new(rule_context.clone()).invalidate();
     let optimized=super::search::bind_seeds(optimized)?;
-    let (optimized, more) = super::constraints::optimize(optimized)?;
+    crate::ir::rules::RuleSession::new(rule_context.clone()).invalidate();
+    let (optimized, more) = super::pipeline::relational(optimized, rule_context, true)?;
     proofs.extend(more);
-    let selected = super::representation::select(optimized)?;
+    let selected = super::pipeline::placement(optimized, rule_context)?;
     let (optimized, mut optimizer_decisions) = super::statistics::optimize(selected.plan)?;
     optimizer_decisions.extend(selected.access_decisions);
     let optimized=super::search::push_source_filters(optimized)?;
+    crate::ir::rules::RuleSession::new(rule_context.clone()).invalidate();
     let mut stats = DagStats { optimizer_decisions, plan_estimates: super::statistics::explain(&optimized), constraint_proofs: proofs, layout_selections: selected.layout_selections, representation_selections: selected.representation_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
@@ -634,7 +670,7 @@ pub(crate) async fn prepare_with_extensions(
         eligibility.dialect = Some(dialect);
         eligibility.language_functions = resources.region_session.is_none()
             && resources.executor.lock().map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?.language_functions_enabled();
-        partition(&optimized, &mut stats, &mut eligibility,&resources.external,dialect,resources.region_session.is_some(),&resources.executor).await?
+        partition(&optimized, &mut stats, &mut eligibility,&resources.external,dialect,resources.region_session.is_some(),&resources.executor,rule_context).await?
     };
     #[cfg(not(feature = "duckdb"))]
     let plan = {
@@ -655,10 +691,12 @@ pub(crate) async fn prepare_with_extensions(
         }));
         extensions
     };
+    super::pipeline::validate_host_contract(&plan)?;
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
         .create_physical_plan(&plan, &query_state)
         .await?;
+    stats.rule_trace = rule_context.trace();
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
         .to_string();
@@ -681,7 +719,7 @@ pub(crate) async fn execute_with_extensions(
         }
     };
     let cost = Arc::new(Mutex::new(crate::ir::QueryCost::default()));
-    let (physical, task, mut stats) = prepare_with_extensions(&lowered.plan, extensions, resources, cost.clone()).await?;
+    let (physical, task, mut stats) = prepare_with_extensions(&lowered.plan, extensions, resources, cost.clone(), &lowered.rule_context).await?;
     let prepared_at = std::time::Instant::now();
     let planned_at = std::time::Instant::now();
     let schema = physical.schema();
@@ -757,6 +795,7 @@ pub(crate) fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::d
 impl DagStats {
     pub(crate) fn merge_execution(&mut self, nested: &Self) {
         self.cost.add_work(&nested.cost);
+        // Rule traces are one bounded query snapshot, not additive work counters.
         self.constraint_proofs.extend(nested.constraint_proofs.iter().cloned());
         self.layout_selections.extend(nested.layout_selections.iter().cloned());
         self.representation_selections.extend(nested.representation_selections.iter().cloned());
@@ -771,6 +810,7 @@ impl DagStats {
         self.other_sql_regions += nested.other_sql_regions;
         self.datafusion_operators += nested.datafusion_operators;
         self.sql_queries.extend(nested.sql_queries.iter().cloned());
+        self.write_queries.extend(nested.write_queries.iter().cloned());
         if !nested.physical_plan.is_empty() && !self.physical_plan.contains(&nested.physical_plan) {
             self.physical_plan.push_str("\nExecuted subplan:\n");
             self.physical_plan.push_str(&nested.physical_plan);
@@ -783,6 +823,10 @@ impl DagStats {
 struct EmbeddedRegionSession(Arc<Mutex<sql::DuckDbExecutor>>);
 #[cfg(feature = "duckdb")]
 impl sql::region::RegionSession for EmbeddedRegionSession {
+    fn validate_float_helper(&self, required: &super::language_functions::FloatHelperCapability) -> sql::SqlResult<()> {
+        let executor = self.0.lock().map_err(|_| sql::SqlError::Execution("embedded SQL session poisoned".into()))?;
+        sql::SqlExecutor::validate_float_helper(&*executor, required)
+    }
     fn dialect(&self) -> sql::SqlDialect {sql::SqlDialect::DuckDb}
     fn query(&mut self, query:&str, schema:arrow::datatypes::SchemaRef) -> sql::SqlResult<RecordBatch> {
         self.0.lock().map_err(|_| sql::SqlError::Execution("embedded SQL session poisoned".into()))?

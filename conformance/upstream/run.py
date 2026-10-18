@@ -43,7 +43,7 @@ def execution_profile(engine):
  return {'traversal_language':'gremlin-groovy' if engine in (*JVM_ENGINES,'arcadedb') else 'gremlin-language',
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
-         'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='orchiddb' else 'provider default',
+         'null_properties':'stored null' if engine in JVM_ENGINES else 'null removes property; stored-null fixtures reported as adapter limitations' if engine=='orchiddb' else 'provider default',
          'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+sql_engine+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph','arcadedb')}
 def jvm_build(classpath):
@@ -105,7 +105,14 @@ class Gremlin:
   finally:
    if self.fixture_directory:self.fixture_directory.cleanup()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','arcadedb','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','arcadedb','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);p.add_argument('--jobs',type=int,default=1,help='Independent native Cypher/RDF workers; Gremlin requires one instance');p.add_argument('--case-file',type=Path,help='JSON array of exact case IDs');args=p.parse_args()
+ if args.jobs<1:p.error('--jobs must be positive')
+ if args.jobs>1 and (args.engine!='orchiddb' or args.suite=='tinkerpop'):p.error('Parallel workers require native OrchidDB Cypher or RDF; Gremlin uses one uninterrupted instance')
+ if args.jobs>1 and args.resume:p.error('Use --jobs 1 to resume a journal')
+ if args.case_file:
+  selected=json.loads(args.case_file.read_text())
+  if not isinstance(selected,list) or not selected or not all(isinstance(case,str) for case in selected):p.error('--case-file must contain a non-empty JSON array of case IDs')
+  args.case.extend(selected)
  if args.resume and args.engine=='orchiddb' and args.suite=='tinkerpop':p.error('OrchidDB Gremlin conformance requires one uninterrupted instance; resume is not permitted')
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
@@ -113,6 +120,10 @@ def main():
   if missing:p.error('Unknown or filtered case IDs: '+', '.join(sorted(missing)))
  if (args.limit or args.filter or args.case) and not args.output:p.error('Subset runs require --output')
  output=args.output or REPO/'target/conformance'/f'{args.engine}-{args.suite}.json';output.parent.mkdir(parents=True,exist_ok=True);journal=output.with_suffix('.jsonl')
+ if args.jobs>1:
+  from parallel import run
+  run(args,cases,catalog,output)
+  return
  results=[]
  if args.resume and journal.exists():
   for line in journal.read_text().splitlines():
@@ -220,6 +231,8 @@ def main():
   content['execution_profile']['single_instance_verified']=len(instances)==1 and all(r.get('engine_instance')==instances[0] for r in results)
  if args.engine=='orchiddb':
   from query_cost import summarize
+  storage_profiles={q.get('cost',{}).get('execution_plan',{}).get('storage') for r in results for q in r.get('query_cost',{}).get('queries',[]) if isinstance(q.get('cost'),dict)}-{None}
+  if len(storage_profiles)==1:content.setdefault('execution_profile',{})['storage']=next(iter(storage_profiles))
   baseline=json.loads(args.cost_baseline.read_text()) if args.cost_baseline else None
   content['query_cost_summary']=summarize(results,args.cost_work_threshold,baseline)
  content['build']=build

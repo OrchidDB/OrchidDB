@@ -39,6 +39,11 @@ impl<'a> LoweringContext<'a> {
     }
 
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        // An engine-owned semantic operation must never enter the compatible
+        // native-value evaluator, including through an enclosing expression.
+        if self.native_float_dependency(expr) {
+            return self.lower_sql_expr(plan, expr);
+        }
         if let Some(value) = self.lower_graph_scalar(plan, expr)? {
             return Ok(value);
         }
@@ -128,16 +133,7 @@ impl<'a> LoweringContext<'a> {
                 return Ok(folded);
             }
         }
-        if self.language == Language::Cypher
-            && let Some(value) = super::temporal_semantics::lower_runtime_date(self, plan, expr) {
-            return Ok(value);
-        }
-        if self.language == Language::Cypher
-            && let Some(value) = super::temporal_semantics::runtime_typed::lower(self, plan, expr) {
-            return Ok(value);
-        }
-        if self.language == Language::Cypher
-            && let Some(value) = super::temporal_semantics::lower_finite(self, plan, expr) {
+        if let Some(value) = self.run_temporal_rules(plan, expr)? {
             return Ok(value);
         }
         // The temporal envelope transports exact values; SQL string/struct
@@ -152,16 +148,10 @@ impl<'a> LoweringContext<'a> {
             && super::temporal_semantics::needs_temporal_semantics(plan, expr) {
             return Err(RelError::Unsupported("Temporal operand requires typed runtime evaluation".into()));
         }
-        if self.language == Language::Cypher && matches!(expr, IrExpr::ListFilter { .. } | IrExpr::ListTransform { .. })
-            && let Some(value) = self.lower_primitive_list_comprehension(plan, expr)? {
+        if let Some(value) = self.run_collection_comparison_rules(plan, expr)? {
             return Ok(value);
         }
         match expr {
-            IrExpr::Quantifier { kind, list, item, predicate } => {
-                let list = self.lower_expr(plan, list)?;
-                self.lower_scalar_quantifier(plan, *kind, item, list, predicate)?
-                    .ok_or_else(|| RelError::Unsupported("Quantifier requires typed runtime evaluation".into()))
-            }
             IrExpr::ListTransform { .. } if self.language == Language::Cypher
                 && collection_evaluation::lowercase_label_transform(expr).is_some() => self.lower_label_transform(plan, expr),
             IrExpr::Lit(Lit::Int(value))
@@ -183,7 +173,12 @@ impl<'a> LoweringContext<'a> {
                 }
                 let values = items
                     .iter()
-                    .map(|item| self.lower_expr(plan, item))
+                    .map(|item| {
+                        if let IrExpr::Binding(binding)=item && has_binding_shape(plan,binding).is_some() {
+                            return self.lower_element_value(plan,binding);
+                        }
+                        self.lower_expr(plan,item)
+                    })
                     .collect::<RelResult<Vec<_>>>()?;
                 // SQL arrays must not silently coerce mixed Cypher values to
                 // strings. Unsupported heterogeneous shapes use the runtime.
@@ -544,24 +539,6 @@ impl<'a> LoweringContext<'a> {
                 // Their SQL ordering implements the Cypher key; GraphSort keeps
                 // the requested direction and null placement.
                 Ok(value)
-            }
-            IrExpr::Call { name, args } if name == "list_slice" && args.len() == 3 => {
-                let array = self.lower_list_operand(plan, &args[0])?;
-                let start = self.lower_expr(plan, &args[1])?;
-                let end = self.lower_expr(plan, &args[2])?;
-                if matches!(
-                    array.get_type(plan.schema())?,
-                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
-                ) && !collections::is_encoded_property(plan, &args[0])
-                {
-                    return Ok(collections::string_slice_expr(array, start, end));
-                }
-                Ok(datafusion::functions_nested::expr_fn::array_slice(
-                    array, start, end, None,
-                ))
-            }
-            IrExpr::Call { name, args } if is_constant_collection_function(name) => {
-                self.lower_constant_collection_function(plan, name, args)
             }
             IrExpr::Call { name, args } if name == "cypher_has_label" && args.len() == 2 => {
                 let [IrExpr::Binding(binding), IrExpr::Lit(Lit::String(wanted))] = args.as_slice() else {
@@ -1028,133 +1005,8 @@ impl<'a> LoweringContext<'a> {
                 }
                 Ok(value.cast_to(&DataType::Utf8, plan.schema())?)
             }
-            IrExpr::Call { name, args } if name == "cypher_in" && args.len() == 2 => {
-                match &args[1] {
-                    IrExpr::Lit(Lit::Null) => {
-                        if !scalar_semantics::repeatable_membership_input(&args[0]) {
-                            return Err(RelError::Unsupported("Cypher IN null requires operand evaluation".into()));
-                        }
-                        self.lower_expr(plan, &args[0])?;
-                        Ok(lit(ScalarValue::Boolean(None)))
-                    }
-                    IrExpr::List(items) => {
-                        if !scalar_semantics::repeatable_membership_input(&args[0])
-                            || items.iter().any(|item| !scalar_semantics::repeatable_membership_input(item)) {
-                            return Err(RelError::Unsupported("Cypher IN with computed operands requires single-evaluation runtime semantics".into()));
-                        }
-                        // Validate even an empty RHS: its constant false result
-                        // must not hide an unsupported/invalid left expression.
-                        self.lower_expr(plan, &args[0])?;
-                        // Only repeat stable scalar reads, never a UDF/volatile
-                        // call. Existing equality preserves type/NaN checks,
-                        // three-valued OR and empty=false.
-                        let mut result = lit(false);
-                        for item in items {
-                            let equality = IrExpr::Call {
-                                name: "cypher_eq".into(),
-                                args: vec![args[0].clone(), item.clone()],
-                            };
-                            result = result.or(self.lower_expr(plan, &equality)?);
-                        }
-                        Ok(result)
-                    }
-                    _ if scalar_semantics::repeatable_membership_input(&args[0])
-                        && scalar_semantics::repeatable_membership_input(&args[1]) => {
-                        let list = self.lower_native_list(plan, &args[1])?;
-                        let value = self.lower_expr(plan, &args[0])?;
-                        let DataType::List(element) = list.get_type(plan.schema())? else {
-                            return Err(RelError::Unsupported("Cypher IN requires a native SQL list".into()));
-                        };
-                        if !matches!(element.data_type(), DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
-                            return Err(RelError::Unsupported("Cypher IN element equality requires typed runtime semantics".into()));
-                        }
-                        let value_type = value.get_type(plan.schema())?;
-                        if value_type != DataType::Null && value_type != *element.data_type() {
-                            return Err(RelError::Unsupported("Heterogeneous Cypher IN requires native comparison semantics".into()));
-                        }
-                        // The nested-function signature requires an element-typed
-                        // NULL; an untyped Null cannot coerce to List(Boolean).
-                        // All-null lists can use an arbitrary concrete carrier.
-                        let element_type = if *element.data_type() == DataType::Null {
-                            DataType::Int64
-                        } else { element.data_type().clone() };
-                        let list = if *element.data_type() == DataType::Null {
-                            list.cast_to(&DataType::List(Arc::new(element.as_ref().clone()
-                                .with_data_type(element_type.clone()))), plan.schema())?
-                        } else { list };
-                        let value = value.cast_to(&element_type, plan.schema())?;
-                        let null = lit(ScalarValue::try_from(&element_type)?);
-                        let position = datafusion::functions_nested::expr_fn::array_position(list.clone(), value.clone(), lit(1_i64));
-                        let null_position = datafusion::functions_nested::expr_fn::array_position(list.clone(), null, lit(1_i64));
-                        let empty = datafusion::functions_nested::expr_fn::array_length(list.clone()).eq(lit(0_u64));
-                        Ok(datafusion::logical_expr::when(empty, lit(false))
-                            .when(list.is_null().or(value.clone().is_null()), lit(ScalarValue::Boolean(None)))
-                            .when(position.is_not_null(), lit(true))
-                            .when(null_position.is_not_null(), lit(ScalarValue::Boolean(None)))
-                            .otherwise(lit(false))?)
-                    }
-                    _ => Err(RelError::Unsupported("Cypher IN with computed operands requires single-evaluation runtime semantics".into())),
-                }
-            }
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {
-                let op = match name.as_str() {
-                    "cypher_eq" => BinaryOp::Eq,
-                    "cypher_neq" => BinaryOp::Neq,
-                    "cypher_lt" => BinaryOp::Lt,
-                    "cypher_lte" => BinaryOp::Lte,
-                    "cypher_gt" => BinaryOp::Gt,
-                    "cypher_gte" => BinaryOp::Gte,
-                    _ => {
-                        return Err(RelError::Unsupported(format!(
-                            "function `{name}` is not relationally lowered yet"
-                        )));
-                    }
-                };
-                let lhs = self.lower_expr(plan, &args[0])?;
-                let rhs = self.lower_expr(plan, &args[1])?;
-                if let Some(value) = scalar_union::comparison(plan, &args[0], &args[1], lhs.clone(), rhs.clone(), op)? { return Ok(value); }
-                let lt = lhs.get_type(plan.schema())?;
-                let rt = rhs.get_type(plan.schema())?;
-                if lt != rt && lt.is_numeric() && rt.is_numeric()
-                    && !exact_float_literal(&lhs, &rt)
-                    && !exact_float_literal(&rhs, &lt)
-                    // Widening within the signed integer family is lossless.
-                    // In particular, mapped INTEGER columns must compare with
-                    // Cypher's BIGINT literals without requiring a runtime kernel.
-                    && !(matches!(lt, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64)
-                        && matches!(rt, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64))
-                    && !(matches!(lt, DataType::Float32 | DataType::Float64)
-                        && matches!(rt, DataType::Float32 | DataType::Float64)) {
-                    // SQL numeric promotion can round an integer before it is
-                    // compared with a float (notably beyond 2^53). Native
-                    // Cypher comparison preserves the exact operand values.
-                    return Err(RelError::Unsupported(
-                        "Mixed Cypher numeric comparison requires lossless runtime values".into(),
-                    ));
-                }
-                // Arrow string encodings represent the same Cypher value type.
-                let text = |t: &DataType| matches!(t, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View);
-                if lt != rt && !(lt.is_numeric() && rt.is_numeric())
-                    && !(text(&lt) && text(&rt))
-                    && lt != DataType::Null && rt != DataType::Null {
-                    return Err(RelError::Unsupported("Cypher comparisons must not coerce unrelated operand types".into()));
-                }
-                if let Some(value) = self.lower_primitive_list_equality(plan, lhs.clone(), rhs.clone(), op)? {
-                    return Ok(value);
-                }
-                if matches!(lt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_))
-                    || matches!(rt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_)) {
-                    return Err(RelError::Unsupported("Cypher compound comparison requires three-valued element semantics".into()));
-                }
-                let comparison = self.lower_comparison_or_binary(plan, &args[0], op, &args[1])?;
-                if lt.is_numeric() && rt.is_numeric() {
-                    let mut nan = lit(false);
-                    if matches!(lt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(lhs)); }
-                    if matches!(rt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(rhs)); }
-                    return Ok(Expr::Case(Case::new(None,
-                        vec![(Box::new(nan), Box::new(lit(matches!(op,BinaryOp::Neq))))], Some(Box::new(comparison)))));
-                }
-                Ok(comparison)
+                Err(RelError::Unsupported(format!("function `{name}` is not relationally lowered yet")))
             }
             IrExpr::Call { name, args } if name == "gremlin_compare" && args.len() == 3 => {
                 let IrExpr::Lit(Lit::String(op)) = &args[0] else {
@@ -1332,7 +1184,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn try_constant_fold_with_row(&self, expr: &IrExpr, row: &KernelRow) -> RelResult<Option<Expr>> {
-        if !crate::ir::diagnostics::constant_folding_enabled() { return Ok(None); }
+        if !crate::ir::diagnostics::constant_folding_enabled() || self.native_float_dependency(expr) { return Ok(None); }
         match eval_scalar(expr, row, self.graph) {
             Ok(Value::Map(_)) if self.language == Language::Cypher => {
                 // Rendering a map here destroys its key/value types before
@@ -1410,7 +1262,7 @@ impl<'a> LoweringContext<'a> {
 // SQL may promote an integer constant to the floating column's type when the
 // constant is exactly representable. Never apply this to an integer column:
 // unknown values above 2^53 could lose information during numeric promotion.
-fn exact_float_literal(expr: &Expr, target: &DataType) -> bool {
+pub(super) fn exact_float_literal(expr: &Expr, target: &DataType) -> bool {
     let Expr::Literal(value, _) = expr else { return false; };
     let integer = match value {
         ScalarValue::Int8(Some(n)) => i128::from(*n),
@@ -1684,8 +1536,17 @@ impl LoweringContext<'_> {
         {
             return Ok(value);
         }
-        let mut lhs = self.lower_expr(plan, left)?;
-        let mut rhs = self.lower_expr(plan, right)?;
+        let lhs = self.lower_expr(plan, left)?;
+        let rhs = self.lower_expr(plan, right)?;
+        self.lower_bound_binary(plan, left, op, right, lhs, rhs)
+    }
+
+    /// Finish construction using already-bound operands. Semantic comparison
+    /// rules must not repeat operand lowering (and its query-scoped budgets).
+    pub(super) fn lower_bound_binary(
+        &self, plan: &LogicalPlan, left: &IrExpr, op: BinaryOp, right: &IrExpr,
+        mut lhs: Expr, mut rhs: Expr,
+    ) -> RelResult<Expr> {
         if self.language == Language::Cypher && matches!(op,BinaryOp::Eq|BinaryOp::Neq|BinaryOp::Lt|BinaryOp::Lte|BinaryOp::Gt|BinaryOp::Gte) {
             if let Some(value)=scalar_union::comparison(plan,left,right,lhs.clone(),rhs.clone(),op)? {return Ok(value);}
         }

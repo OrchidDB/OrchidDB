@@ -172,7 +172,7 @@ pub(super) fn cypher_equal(left: &Value, right: &Value) -> Option<bool> {
     }
 }
 
-pub(super) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
+pub(crate) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
         return Value::Null;
     }

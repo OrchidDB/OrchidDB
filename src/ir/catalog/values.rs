@@ -51,10 +51,17 @@ pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) 
     if crate::ir::functions::scalar_union::is_type(array.data_type()) {
         return datafusion::common::ScalarValue::try_from_array(array,row).ok().and_then(|v|crate::ir::functions::scalar_union::decode(&v)).unwrap_or(Value::Null);
     }
+    if crate::ir::temporal::transport::is_type(array.data_type()) {
+        return datafusion::common::ScalarValue::try_from_array(array, row).ok()
+            .and_then(|value| crate::ir::temporal::transport::decode(&value).ok())
+            .map(Value::Temporal).unwrap_or(Value::Null);
+    }
     if crate::ir::functions::domain::descriptor(array.data_type()).is_some() {
         return datafusion::common::ScalarValue::try_from_array(array, row).map(Value::Scalar).unwrap_or(Value::Null);
     }
     match array.data_type() {
+        DataType::Date32 => datafusion::common::ScalarValue::try_from_array(array, row).ok()
+            .and_then(|value| crate::ir::value::scalar_semantic_value(&value)).unwrap_or(Value::Null),
         DataType::Int64 => Value::Int(
             array
                 .as_any()
@@ -104,7 +111,8 @@ pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) 
         // so updating another property never replaces it with NULL.
         DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) =>
             datafusion::common::ScalarValue::try_from_array(array, row)
-                .map(Value::Scalar).unwrap_or(Value::Null),
+                .map(|value| crate::ir::value::scalar_semantic_value(&value)
+                    .unwrap_or(Value::Scalar(value))).unwrap_or(Value::Null),
         kind if crate::ir::rel::mapping::is_identity_type(kind) => datafusion::common::ScalarValue::try_from_array(array,row).map(Value::Scalar).unwrap_or(Value::Null),
         _ => datafusion::common::ScalarValue::try_from_array(array, row)
             .map(Value::Scalar).unwrap_or(Value::Null),

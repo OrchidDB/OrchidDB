@@ -127,6 +127,7 @@ async fn fixture(name: &str, strings: bool, extra: Vec<Expr>) -> (SessionContext
     (
         ctx,
         LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields: vec!["value".into()],
             result_form: ResultForm::RowSet,
@@ -163,6 +164,7 @@ async fn arity_mappings_coexist_and_variadic_arguments_remain_expressions() {
         .unwrap()
         .into_unoptimized_plan();
     let lowered = LoweredPlan {
+            rule_context: Default::default(),
         plan,
         fields: vec!["one".into(), "two".into(), "many".into()],
         result_form: ResultForm::RowSet,
@@ -426,6 +428,7 @@ async fn portable_calls_place_sql_and_native_residuals_by_capability() {
         .build()
         .unwrap();
     let (_, stats) = orchiddb::ir::rel::dag::execute(LoweredPlan {
+            rule_context: Default::default(),
         plan,
         fields: vec!["value".into()],
         result_form: ResultForm::RowSet,
@@ -460,6 +463,7 @@ async fn sql_templates_evaluate_volatile_arguments_once() {
             .build()
             .unwrap();
         let lowered = LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields: vec!["value".into()],
             result_form: ResultForm::RowSet,
@@ -857,6 +861,7 @@ async fn expanded_catalog_matches_native_columns() {
             rows.into_iter().map(|r| r["value"].clone()).collect()
         };
         let plan = LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields: vec!["value".into()],
             result_form: ResultForm::RowSet,
@@ -1259,6 +1264,7 @@ fn portable_results_round_trip_through_both_executors() {
                 .await
                 .unwrap();
             let plan = LoweredPlan {
+            rule_context: Default::default(),
                 plan,
                 fields: vec!["value".into()],
                 result_form: ResultForm::RowSet,
@@ -1317,6 +1323,7 @@ fn prepared_temporal_literals_cannot_bypass_postgres_precision_checks() {
             .build()
             .unwrap();
         let plan = LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields: vec!["value".into()],
             result_form: ResultForm::RowSet,
@@ -1394,6 +1401,7 @@ async fn postgres_nul_and_nanosecond_constraints_are_explicit() {
         (call("to_timestamp_nanos", vec![lit(1001_i64)]), false),
     ] {
         let plan = LoweredPlan {
+            rule_context: Default::default(),
             plan: LogicalPlanBuilder::empty(true)
                 .project(vec![expr.alias("value")])
                 .unwrap()

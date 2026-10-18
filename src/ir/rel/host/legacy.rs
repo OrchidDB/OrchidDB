@@ -44,12 +44,19 @@ fn request_sql(connection: &Connection, request: HostRequest) -> Result<String, 
             .relations
             .into_iter()
             .map(|relation| {
-                let pointers = arrow_recordbatch_to_query_params(relation.batch);
+                // ArrowVTab emits one batch into one DuckDB vector. Splitting
+                // at the live vector capacity also preserves nested validity
+                // buffers and prevents writes past its fixed-size children.
+                let capacity = unsafe { duckdb::ffi::duckdb_vector_size() as usize };
+                let rows = relation.batch.num_rows();
+                let chunks = (0..rows.max(1)).step_by(capacity).map(|offset| {
+                    let batch = relation.batch.slice(offset, rows.saturating_sub(offset).min(capacity));
+                    let pointers = arrow_recordbatch_to_query_params(batch);
+                    format!("SELECT * FROM __orchiddb_write_values({}::UBIGINT, {}::UBIGINT)", pointers[0], pointers[1])
+                }).collect::<Vec<_>>().join(" UNION ALL ");
                 format!(
-                    "{} AS (SELECT * FROM __orchiddb_write_values({}::UBIGINT, {}::UBIGINT))",
+                    "{} AS ({chunks})",
                     super::mapped_storage::quote(&relation.name),
-                    pointers[0],
-                    pointers[1]
                 )
             })
             .collect::<Vec<_>>()
@@ -91,7 +98,7 @@ impl HostRelational for ConnectionHost<'_> {
 impl HostRelational for ExecutorHost {
     fn query(&self, request: HostRequest) -> Result<RecordBatch, String> {
         let mut executor = self.0.lock().map_err(|e| e.to_string())?;
-        ConnectionHost(executor.connection().map_err(|e| e.to_string())?).query(request)
+        ConnectionHost(executor.source_query_connection().map_err(|e| e.to_string())?).query(request)
     }
     fn execute(&self, request: HostRequest) -> Result<(), String> {
         let mut executor = self.0.lock().map_err(|e| e.to_string())?;
@@ -126,6 +133,7 @@ fn execute_plan(
                 runtime.block_on(async move {
                     let session = crate::ir::rel::dag::DagSession::with_shared(executor, external);
                     let lowered = crate::ir::rel::LoweredPlan {
+            rule_context: Default::default(),
                         fields: plan
                             .schema()
                             .fields()

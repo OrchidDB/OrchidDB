@@ -128,13 +128,33 @@ impl PropertyGraph {
                  do not match the declared endpoint labels"
             )));
         }
-        let mut properties=self.mapped_insert_properties(true,&rel_type,properties)?;
-        // An FK edge is identified by its child row. Graph callers supply the
-        // endpoints, not a second primary key for the relationship.
-        let child_id = self
-            .write_mapping()
-            .and_then(|m| m.edge(&rel_type))
-            .and_then(|m| m.foreign_key)
+        let mut properties = properties;
+        if let Some(defaults) = self.source.as_ref().and_then(|source| source.edge_insert_defaults(&rel_type, &src_label, &dst_label)) {
+            let (defaults, unsupported) = defaults.map_err(CatalogError::Schema)?;
+            for key in unsupported {
+                if !properties.contains_key(&key) {
+                    return Err(CatalogError::Schema(format!("property `{rel_type}.{key}` requires an explicit value; its source default is not a scalar constant")));
+                }
+            }
+            for (key, value) in defaults { properties.entry(key).or_insert(value); }
+        } else {
+            properties = self.mapped_insert_properties(true, &rel_type, properties)?;
+        }
+        let fk_mapping=self.write_mapping().and_then(|mapping|mapping.edge_for_endpoints(&rel_type,&src_label,&dst_label).ok());
+        if let Some(child)=fk_mapping.and_then(|mapping|mapping.foreign_key) {
+            let existing=match child {
+                crate::ir::rel::mapping::ForeignKeyEndpoint::Source => self.out_edges(&src_label,src_id.clone(),std::slice::from_ref(&rel_type)),
+                crate::ir::rel::mapping::ForeignKeyEndpoint::Destination => self.in_edges(&dst_label,dst_id.clone(),std::slice::from_ref(&rel_type)),
+            };
+            let parent_label=if child==crate::ir::rel::mapping::ForeignKeyEndpoint::Source { &dst_label } else { &src_label };
+            if existing.iter().any(|(_,_,label,_)| label == parent_label) {
+                return Err(CatalogError::Schema(format!("foreign-key relationship `{rel_type}` already exists for this child")));
+            }
+        }
+        // FK mappings default to the child's key, but may declare a separate
+        // unique relationship ID on that same row.
+        let child_id = fk_mapping
+            .and_then(|m| m.foreign_key_columns().filter(|(_,key,_,_)|m.id_column.as_ref()==Some(*key)).and(m.foreign_key))
             .map(|child| match child {
                 crate::ir::rel::mapping::ForeignKeyEndpoint::Source => &src_id,
                 crate::ir::rel::mapping::ForeignKeyEndpoint::Destination => &dst_id,
@@ -153,6 +173,7 @@ impl PropertyGraph {
             &rel_type,
             &mut properties,
             derived_key.as_ref().or(supplied_key),
+            Some((&src_label, &dst_label)),
         )?;
         let base = self
             .edge_row_counts
@@ -242,7 +263,7 @@ impl PropertyGraph {
     ) -> CatalogResult<Value> {
         let label = label.into();
         let mut properties=self.mapped_insert_properties(false,&label,properties)?;
-        let mapped_id = self.mapped_insert_key(false, &label, &mut properties, supplied_key)?;
+        let mapped_id = self.mapped_insert_key(false, &label, &mut properties, supplied_key, None)?;
         let base_rows = self
             .nodes
             .get(&label)

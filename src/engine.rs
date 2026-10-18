@@ -109,7 +109,7 @@ impl Drop for ManagedStatement<'_> {
         if let Some(before) = self.before.take() {
             self.engine.graph = before;
             let region_session = self.engine.dag_session.region_session.clone();
-            self.engine.dag_session = crate::ir::rel::dag::DagSession::new(self.engine.sql_timeout);
+            self.engine.dag_session = self.engine.dag_session.recreated(self.engine.sql_timeout);
             self.engine.dag_session.region_session = region_session;
             if self.automatic && self.engine.in_transaction {
                 if self.engine.rollback().is_err() {
@@ -211,6 +211,19 @@ impl GraphEngine {
     }
     pub fn statistics(&self) -> Option<&Arc<crate::ir::rel::statistics::StatisticsSnapshot>> {
         self.mapping.as_ref().and_then(|m|m.statistics())
+    }
+
+    /// Rebind a caller-owned relational schema after committed DDL. Query text
+    /// and parameters remain separate from schema registration.
+    pub fn set_mapping(&mut self, mapping: Arc<GraphMapping>) -> EngineResult<()> {
+        if self.mapping.is_none() || self.in_transaction {
+            return Err("rebind requires a mapped graph outside a transaction".into());
+        }
+        let mut graph = mapped_storage::metadata(&self.storage, mapping.clone())?;
+        graph.procedures = self.graph.procedures.clone();
+        self.mapping = Some(mapping);
+        self.graph = graph;
+        Ok(())
     }
 
     pub fn open(path: impl AsRef<Path>) -> EngineResult<Self> {
@@ -327,8 +340,14 @@ impl GraphEngine {
         self.dag_session.executor()?.set_language_functions(enabled).map_err(|e| e.to_string())?;
         if enabled && !self.language_functions { sql::language_functions::register(&self.storage).map_err(|e| e.to_string())?; }
         self.backend = self.backend.clone().with_language_functions(enabled);
+        self.backend.options_rule_context(self.strict_executor.prepare_float_helper_capability().map_err(|e| e.to_string())?, enabled);
         self.language_functions = enabled;
         Ok(())
+    }
+
+    pub(crate) fn set_rule_context(&mut self, context: crate::ir::rules::RuleContext) {
+        self.backend.set_rule_context(context.clone());
+        self.dag_session.set_rule_context(context);
     }
 
     pub fn set_read_mode(&mut self, mode: ReadMode) {
@@ -341,7 +360,7 @@ impl GraphEngine {
         self.sql_timeout = Some(timeout);
         self.strict_executor = sql::DuckDbExecutor::with_timeout(timeout);
         let region_session = self.dag_session.region_session.clone();
-        self.dag_session = crate::ir::rel::dag::DagSession::new(Some(timeout));
+        self.dag_session = self.dag_session.recreated(Some(timeout));
         self.dag_session.region_session = region_session;
     }
 
@@ -645,6 +664,10 @@ impl GraphEngine {
         &self.graph.procedures
     }
 
+    pub fn clear_table_procedures(&mut self) {
+        std::sync::Arc::make_mut(&mut self.graph.procedures).clear();
+    }
+
     pub async fn cypher_with_params(
         &mut self,
         query: &str,
@@ -690,7 +713,7 @@ impl GraphEngine {
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
             let region_session = self.dag_session.region_session.clone();
-            self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
+            self.dag_session = self.dag_session.recreated(self.sql_timeout);
             self.dag_session.region_session = region_session;
         }
         result
@@ -772,6 +795,7 @@ impl GraphEngine {
                         elapsed_micros: cost_started.elapsed().as_micros().min(u64::MAX as u128) as u64,
                         ..Default::default()
                     },
+                    rule_trace: lowered.rule_context.trace(),
                     islands: 1,
                     island_rows: returned.batch.num_rows(),
                     ..ExecStats::default()
@@ -813,26 +837,26 @@ impl Drop for GraphEngine {
 /// Compatibility entry point sharing the runtime and storage adapter while
 /// retaining the caller's exact DuckDB connection and active transaction.
 pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<ReturnedBatches> {
-    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers, None).await.map(|(returned,_)|returned)
+    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers, None).await.map(|(returned,_)|returned).map_err(|error| error.to_string())
 }
 
-async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool, region_session: Option<sql::region::SharedRegionSession>) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool, region_session: Option<sql::region::SharedRegionSession>) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
     let automatic = !executor.in_transaction();
     if automatic { executor.begin().map_err(|e|e.to_string())?; }
     let shared=Arc::new(std::sync::Mutex::new(std::mem::take(executor)));
     let mut lease=MappedExecutorLease {target:executor,shared:shared.clone(),automatic,finished:false};
     let mut session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
     session.region_session = region_session;
-    let result = async {
+    let result: Result<_, QueryExecutionError> = async {
         let rdf=mapping.rdf_mapping();
         if crate::ir::rel::sparql::handles(plan) {
             let mut context=crate::rdf_engine::RdfSession {resources:&session,mapping:Arc::new(rdf),dataset:"default".into(),scalar_registered:false,last_query_stats:None};
-            return context.execute_plan(plan).await;
+            return context.execute_plan(plan).await.map_err(Into::into);
         }
         if contains_mutation(&plan.root) { mapping.validate_partitioned_writes()?; }
         let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
         graph.procedures = procedures;
-        let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await.map_err(|e|e.to_string())?;
+        let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await?;
         if contains_mutation(&plan.root) {
             // Populate only touched records before holding the SQL connection.
             let pending=graph.pending_changes();
@@ -840,14 +864,19 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
                 for (name,id) in pending.nodes { source.exists(false,&name,&id); }
                 for (name,id) in pending.edges {
                     source.exists(true,&name,&id);
-                    if let Some((child, _, _, _)) = mapping.edge(&name).and_then(|m| m.foreign_key_columns()) {
-                        source.exists(false,child,&id);
+                    if let Some((src_label,src,dst_label,dst))=graph.edge_endpoints(&name,id.clone()) {
+                        if let Ok(edge)=mapping.edge_for_endpoints(&name,&src_label,&dst_label) {
+                            if let Some((child, _, _, _)) = edge.foreign_key_columns() {
+                                let child_id=if edge.foreign_key==Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source) {src} else {dst};
+                                source.exists(false,child,&child_id);
+                            }
+                        }
                     }
                 }
             }
             graph.check_source()?;
             let mut executor=session.executor()?;
-            mapped_storage::persist(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping)?;
+            result.1.write_queries = mapped_storage::persist_observed(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping)?;
         }
         if let Some(source)=&graph.source {let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;result.1.optimizer_decisions.extend(source.access_decisions());}
         Ok(result)

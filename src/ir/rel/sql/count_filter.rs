@@ -17,6 +17,16 @@ fn rewrite_expr(expr: Expr) -> datafusion::common::Result<Transformed<Expr>> {
     let [(condition, value)] = case.when_then_expr.as_slice() else {
         return Ok(Transformed::no(Expr::AggregateFunction(aggregate)));
     };
+    if case.expr.is_none()
+        && let Expr::IsNotNull(test) = condition.as_ref()
+        && matches!(value.as_ref(), Expr::Column(_)) && test == value
+        && matches!(case.else_expr.as_deref(), Some(Expr::Literal(v,_)) if !v.is_null())
+    {
+        // Both CASE branches are non-null. Counting it counts input rows,
+        // including an optional match's null-extended occurrence.
+        aggregate.params.args=vec![lit(1_i64)];
+        return Ok(Transformed::yes(Expr::AggregateFunction(aggregate)));
+    }
     if case.expr.is_some()
         || !matches!(value.as_ref(), Expr::Literal(value, _) if !value.is_null())
         || case.else_expr.as_ref().is_some_and(|value| !matches!(value.as_ref(), Expr::Literal(value, _) if value.is_null()))

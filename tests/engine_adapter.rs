@@ -291,6 +291,7 @@ fn render(plan: datafusion::logical_expr::LogicalPlan) -> String {
         .collect();
     sql::unparse(
         &LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields,
             result_form: ResultForm::RowSet,

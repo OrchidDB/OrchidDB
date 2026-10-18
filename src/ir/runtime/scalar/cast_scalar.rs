@@ -463,18 +463,10 @@ pub(super) fn strict_cast_f64(value: &Value) -> IrResult<f64> {
         Value::BigDecimal(n) => n.to_f64().ok_or_else(cast_overflow_error),
         Value::Bool(true) => Ok(1.0),
         Value::Bool(false) => Ok(0.0),
-        Value::String(s) => s
-            .trim()
-            .replace('_', "")
-            .parse::<f64>()
-            .map_err(|_| cast_conversion_error())
-            .and_then(|f| {
-                if f.is_finite() {
-                    Ok(f)
-                } else {
-                    Err(cast_overflow_error())
-                }
-            }),
+        Value::String(s) => crate::ir::functions::cypher_float::parse_string(s).map_err(|error| match error {
+            crate::ir::functions::cypher_float::ParseError::Invalid => cast_conversion_error(),
+            crate::ir::functions::cypher_float::ParseError::NonFinite => cast_overflow_error(),
+        }),
         _ => Err(cast_conversion_error()),
     }?;
     Ok(converted)

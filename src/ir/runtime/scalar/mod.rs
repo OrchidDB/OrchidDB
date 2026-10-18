@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub(crate) use cast_scalar::CastMode;
 pub(super) use dispatch::eval_call;
 pub(crate) use graph::{graph_element_property, shortest_paths};
-pub(crate) use maps::runtime_list;
+pub(crate) use maps::{runtime_list, cypher_compare_value};
 pub(crate) use strings::{display_for_concat, display_for_kuzu_map_item};
 
 #[cfg(test)]

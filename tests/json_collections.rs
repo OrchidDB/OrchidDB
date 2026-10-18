@@ -85,6 +85,7 @@ fn sql(plan: LogicalPlan, dialect: orchiddb::ir::rel::sql::SqlDialect) -> String
         .collect();
     orchiddb::ir::rel::sql::unparse(
         &orchiddb::ir::rel::LoweredPlan {
+            rule_context: Default::default(),
             plan,
             fields,
             result_form: orchiddb::ir::policy::ResultForm::RowSet,

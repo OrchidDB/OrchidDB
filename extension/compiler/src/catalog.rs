@@ -80,3 +80,22 @@ pub unsafe fn with_catalog<T>(
     ));
     orchiddb::ir::functions::with_operator_table(catalog, run)
 }
+
+/// Read-only adapter attestation. Only the registered C++ callback can supply
+/// this result; there is no serialized query/request capability override.
+pub fn rule_context() -> Result<orchiddb::ir::rules::RuleContext, String> {
+    let mut context = orchiddb::ir::rules::RuleContext::default();
+    if !ACTIVE.with_borrow(|callbacks| !callbacks.is_empty()) { return Ok(context); }
+    let capability = query(json!({"op":"float_helper_capability"}), std::ptr::null_mut())?;
+    context.capabilities.language_functions_enabled = true;
+    if let Some(identity) = capability["registration_identity"].as_str() {
+        context.capabilities.float_helper = Some(unsafe {
+            orchiddb::ir::rules::FloatHelperCapability::from_verified_adapter(identity.to_string())
+        });
+        context.session_fingerprint = identity.to_string();
+        context.owner = Some(orchiddb::ir::rules::EngineIdentity {
+            name: "duckdb".into(), version: capability["version"].as_str().unwrap_or("").into(),
+        });
+    }
+    Ok(context)
+}

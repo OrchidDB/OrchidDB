@@ -10,6 +10,7 @@ use arrow::datatypes::{DataType, Field};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecStats {
+    pub rule_trace: Vec<crate::ir::rules::RuleTrace>,
     pub cost: crate::ir::QueryCost,
     /// Physical DAG scheduled for this execution, including SQL island boundaries.
     pub physical_plan: String,
@@ -31,6 +32,8 @@ pub struct ExecStats {
     pub island_rows: usize,
     /// SQL emitted for the executed islands (before DuckDB optimization).
     pub sql_queries: Vec<String>,
+    /// DML submitted to mapped tables after graph mutation kernels complete.
+    pub write_queries: Vec<crate::ir::rel::host::WriteStatement>,
     /// Demand-driven source SQL used by residual graph kernels.
     pub native_source_queries: Vec<String>,
     /// Source rows fetched by residual kernels, excluding SQL island output.
@@ -255,6 +258,9 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
     if row >= array.len() || array.is_null(row) {
         return Some(Value::Null);
     }
+    if crate::ir::rel::entity_values::is_type(array.data_type()) {
+        return crate::ir::rel::entity_values::decode(array,row);
+    }
     if crate::ir::functions::scalar_union::is_type(array.data_type()) {
         return crate::ir::functions::scalar_union::decode(&datafusion::common::ScalarValue::try_from_array(array,row).ok()?);
     }
@@ -271,6 +277,8 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
         return datafusion::common::ScalarValue::try_from_array(array, row).ok().map(Value::Scalar);
     }
     match array.data_type() {
+        DataType::Date32 => crate::ir::value::scalar_semantic_value(
+            &datafusion::common::ScalarValue::try_from_array(array, row).ok()?),
         DataType::Null => Some(Value::Null),
         DataType::Boolean | DataType::Int32 | DataType::Float64 | DataType::Utf8 => {
             Some(array_value(array, row, field))
@@ -377,6 +385,7 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             cost,
             physical_plan: stats.physical_plan,
             logical_plan: stats.logical_plan,
+            rule_trace: stats.rule_trace,
             constraint_proofs: stats.constraint_proofs,
             layout_selections: stats.layout_selections,
             representation_selections: stats.representation_selections,
@@ -388,6 +397,7 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             other_sql_regions: stats.other_sql_regions,
             datafusion_ops: stats.datafusion_operators,
             sql_queries: stats.sql_queries,
+            write_queries: stats.write_queries,
             native_source_queries: stats.native_source_queries,
             native_source_rows: stats.native_source_rows,
             ..Default::default()

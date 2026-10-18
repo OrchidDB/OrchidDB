@@ -279,7 +279,7 @@ impl<'a> LoweringContext<'a> {
                 })
             }).collect::<datafusion::common::Result<Vec<_>>>()?;
             let plan = if rows.is_empty() {
-                LogicalPlanBuilder::empty(true).filter(lit(false))?.project(schema.fields().iter().map(|field| {
+                LogicalPlanBuilder::empty(false).project(schema.fields().iter().map(|field| {
                     Ok(lit(ScalarValue::try_from(field.data_type())?).alias(field.name()))
                 }).collect::<datafusion::common::Result<Vec<_>>>()?)?.build()?
             } else {
@@ -510,6 +510,34 @@ impl<'a> LoweringContext<'a> {
         };
         match shape {
             BindingShape::Node => {
+                if self.options.language_functions {
+                    let mut properties = Vec::new();
+                    let mut supported = true;
+                    for key in self.element_property_keys(plan, binding, shape) {
+                        let name = prop_col(binding, &key);
+                        let Some(ty) = plan_column_type(plan, &name) else { continue };
+                        // Keep domain/nested formatting on its existing path.
+                        if !(ty.is_numeric() || matches!(ty, DataType::Utf8 | DataType::Boolean)) {
+                            supported = false; break;
+                        }
+                        let column = col_exact(name);
+                        let rendered = render_property_text_expr(column.clone(), &ty);
+                        let rendered = if ty == DataType::Boolean {
+                            datafusion::logical_expr::when(column.is_null(), lit(ScalarValue::Utf8(None)))
+                                .otherwise(rendered)?
+                        } else { rendered };
+                        properties.extend([lit(key), rendered]);
+                    }
+                    if supported {
+                        let properties = if properties.is_empty() { df_core::named_struct(vec![lit("__empty"), lit(ScalarValue::Utf8(None))]) }
+                            else { df_core::named_struct(properties) };
+                        return Ok(language_functions::node_text(vec![
+                            node_index(col_exact(label_col(binding))),
+                            identity_text_expr(plan, id_col(binding)),
+                            col_exact(label_col(binding)), properties,
+                        ]));
+                    }
+                }
                 let mut parts = vec![
                     lit("{_ID: "),
                     node_index(col_exact(label_col(binding))),

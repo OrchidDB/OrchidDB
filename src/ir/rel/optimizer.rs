@@ -68,7 +68,7 @@ impl OptimizerRule for ScopedConstantFolding {
     fn supports_rewrite(&self) -> bool { true }
     fn apply_order(&self) -> Option<datafusion::optimizer::ApplyOrder> { self.inner.apply_order() }
     fn rewrite(&self, plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<Transformed<LogicalPlan>> {
-        if crate::ir::diagnostics::constant_folding_enabled() { self.inner.rewrite(plan, config) }
+        if crate::ir::diagnostics::constant_folding_enabled() && super::conversion_rules::can_fold_plan(&plan) { self.inner.rewrite(plan, config) }
         else { Ok(Transformed::no(plan)) }
     }
 }
@@ -102,7 +102,7 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
 }
 
 pub(super) fn simplify_bound_expressions(plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<LogicalPlan> {
-    if !crate::ir::diagnostics::constant_folding_enabled() { return Ok(plan); }
+    if !crate::ir::diagnostics::constant_folding_enabled() || !super::conversion_rules::can_fold_plan(&plan) { return Ok(plan); }
     use datafusion::common::tree_node::TreeNode;
     use datafusion::logical_expr::Expr;
     use datafusion::optimizer::{simplify_expressions::SimplifyExpressions, utils::NamePreserver};
@@ -158,4 +158,44 @@ mod diagnostic_folding_tests {
         }).await;
         assert!(!context.state().optimize(&plan).unwrap().display_indent().to_string().contains("+"));
     }
+}
+
+/// Run demand pruning at the SQL boundary too: source/representation lowering
+/// exposes columns after the ordinary relational optimization stage. Recursive
+/// worktable layouts must be updated together with their consumers.
+pub(super) fn prune_sql_outputs(plan: LogicalPlan) -> Result<LogicalPlan> {
+    use datafusion::optimizer::{OptimizerContext, optimize_projections::OptimizeProjections};
+    use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
+    use datafusion::logical_expr::Expr;
+    // Late per-consumer pruning cannot change occurrence scopes: window
+    // ordinals and volatile values may be shared by several SQL CTE consumers.
+    // It also loses ORDER BY dependencies in wrapped aggregates. The earlier
+    // relational optimizer still prunes these plans with their full contracts.
+    let mut occurrence_sensitive = false;
+    plan.apply_with_subqueries(|node| {
+        node.apply_expressions(|expr| expr.apply(|expr| {
+            occurrence_sensitive |= expr.is_volatile() || matches!(expr, Expr::WindowFunction(_));
+            if let Expr::AggregateFunction(a) = expr {
+                occurrence_sensitive |= !a.params.order_by.is_empty();
+            }
+            Ok(TreeNodeRecursion::Continue)
+        }))?;
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    if occurrence_sensitive {
+        // Shared occurrence scopes are atomic. Independent siblings can still
+        // prune their internal scaffolding without changing any child output
+        // contract or creating consumer-specific copies of a shared window.
+        if matches!(&plan, LogicalPlan::SubqueryAlias(_) | LogicalPlan::Window(_)
+            | LogicalPlan::Aggregate(_) | LogicalPlan::RecursiveQuery(_)) { return Ok(plan); }
+        return Ok(plan.map_children(|child| {
+            let original=child.clone();
+            let pruned=prune_sql_outputs(child)?;
+            Ok(datafusion::common::tree_node::Transformed::new(pruned.clone(),pruned!=original,
+                TreeNodeRecursion::Continue))
+        })?.data);
+    }
+
+    Ok(RecursiveProjection { inner: Arc::new(OptimizeProjections::new()) }
+        .rewrite(plan, &OptimizerContext::new())?.data)
 }

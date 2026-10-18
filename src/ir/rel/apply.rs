@@ -161,7 +161,7 @@ impl LoweringContext<'_> {
         let [AggCall {
             kind: AggKind::CountRows,
             alias: count,
-            arg: None,
+            arg,
             distinct: false,
         }] = aggs.as_slice()
         else {
@@ -184,10 +184,18 @@ impl LoweringContext<'_> {
         else {
             return Ok(None);
         };
+        let existing = *target_mode == TargetMode::Existing;
+        // Expansion success proves the endpoint/relationship argument nonnull.
+        // Other count arguments may be nullable and must retain COUNT semantics.
+        if arg.as_ref().is_some_and(|arg| !matches!(arg, IrExpr::Binding(name)
+            if name == source || name == target || rel_binding.as_ref() == Some(name))) {
+            return Ok(None);
+        }
         if source == target
-            || *target_mode != TargetMode::BindNew
+            || (!existing && *target_mode != TargetMode::BindNew)
             || has_binding_shape(&left.plan, source) != Some(BindingShape::Node)
-            || has_binding_shape(&left.plan, target).is_some()
+            || (existing && has_binding_shape(&left.plan, target) != Some(BindingShape::Node))
+            || (!existing && has_binding_shape(&left.plan, target).is_some())
             || history
                 .as_ref()
                 .is_some_and(|name| has_exact_col(&left.plan, name))
@@ -249,10 +257,12 @@ impl LoweringContext<'_> {
         // a one-row correlated seed instead of scanning the node catalog again.
         let mut seed_columns = Vec::new();
         let mut outer = Vec::new();
-        for (name, inner_name) in [
-            (id_col(source), id_col(&inner_source)),
-            (label_col(source), label_col(&inner_source)),
-        ] {
+        let mut bindings = vec![(source, &inner_source)];
+        if existing { bindings.push((target, &inner_target)); }
+        for (name, inner_name) in bindings.iter().flat_map(|(binding, inner)| [
+            (id_col(binding), id_col(inner)),
+            (label_col(binding), label_col(inner)),
+        ]) {
             let column = Column::new_unqualified(&name);
             let field = left.plan.schema().field_from_column(&column)?.clone();
             let reference = Expr::OuterReferenceColumn(field, column);
@@ -263,14 +273,14 @@ impl LoweringContext<'_> {
             .project(seed_columns)?
             .build()?;
         let seed = Node::GraphCorrelate {
-            bindings: vec![inner_source.clone()],
+            bindings: bindings.iter().map(|(_,inner)| (*inner).clone()).collect(),
         };
         let previous = self.correlate_plan.replace(seed_plan);
         let inner = self.lower_expand(
             &seed,
             &inner_source,
             &inner_target,
-            TargetMode::BindNew,
+            *target_mode,
             target_labels,
             Some(&inner_relationship),
             rel_types,
@@ -331,7 +341,6 @@ impl LoweringContext<'_> {
         outputs: &[String],
     ) -> RelResult<Option<LoweredNode>> {
         if self.language != Language::Cypher
-            || self.options.mapping.is_some()
             || !matches!(
                 kind,
                 ApplyKind::Optional | ApplyKind::Semi | ApplyKind::Anti
@@ -339,6 +348,14 @@ impl LoweringContext<'_> {
         {
             return Ok(None);
         }
+        // Sharing an independently expanded relation must not change effects
+        // of computed sources. Ordinary mapped tables are statement snapshots.
+        if self.options.mapping.as_ref().is_some_and(|mapping| {
+            mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|node|
+                !matches!(&node.source, mapping::MappedSource::Table(_))))
+            || mapping.rel_types().iter().any(|kind| mapping.edge_partitions(kind).iter().any(|edge|
+                !matches!(&edge.source, mapping::MappedSource::Table(_))))
+        }) { return Ok(None); }
         let Some(right) = simple_expand(right) else {
             return Ok(None);
         };
@@ -469,6 +486,27 @@ impl LoweringContext<'_> {
     }
 }
 
+// A structural bound, never a table estimate. DataFusion's max_rows treats
+// even the one-row EmptyRelation as zero, so it cannot prove unions safely.
+pub(super) fn at_most_one(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::EmptyRelation(_) => true,
+        LogicalPlan::Values(values) => values.values.len() <= 1,
+        LogicalPlan::TableScan(scan) => datafusion::datasource::source_as_provider(&scan.source).ok()
+            .and_then(|provider| provider.as_any().downcast_ref::<super::temporal_semantics::Snapshot>()
+                .map(|snapshot| snapshot.batches().iter().map(RecordBatch::num_rows).sum::<usize>() <= 1))
+            .unwrap_or(false),
+        LogicalPlan::Projection(p) => at_most_one(&p.input),
+        LogicalPlan::Filter(p) => at_most_one(&p.input),
+        LogicalPlan::SubqueryAlias(p) => at_most_one(&p.input),
+        LogicalPlan::Sort(p) => at_most_one(&p.input),
+        LogicalPlan::Window(p) => at_most_one(&p.input),
+        LogicalPlan::Aggregate(p) => p.group_expr.is_empty(),
+        LogicalPlan::Limit(p) => matches!(p.get_fetch_type(), Ok(datafusion::logical_expr::logical_plan::FetchType::Literal(Some(n))) if n <= 1) || at_most_one(&p.input),
+        _ => false,
+    }
+}
+
 /// Give each input occurrence its own correlation identity. Binding values alone
 /// cannot distinguish duplicate outer rows: joining on them squares their
 /// multiplicity when the right subtree starts at `GraphCorrelate`.
@@ -478,14 +516,23 @@ pub(super) fn with_row_identity(
     cleanup: &mut BTreeSet<String>,
     barrier_id: usize,
 ) -> RelResult<LogicalPlan> {
+    // Reuse only a proved unique determinant, never a binding-name heuristic.
+    // Keep volatile sources on the materialized occurrence-identity path.
+    if !key_cols.is_empty() && rules::unique_on(&plan, &key_cols.iter().map(col_exact).collect::<Vec<_>>())
+        && super::list_comparison::immutable_source_plan(&plan) {
+        return Ok(plan);
+    }
     let key = unique_internal_alias(&plan, cleanup, "__apply_corr_key_row");
-    let row_number = df_window::row_number()
-        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
-        .build()?
-        .alias(&key);
-    let windowed = LogicalPlanBuilder::from(plan)
-        .window(vec![row_number])?
-        .build()?;
+    let windowed = if at_most_one(&plan) {
+        let mut columns = existing_columns_by_name(&plan, &BTreeSet::new());
+        columns.push(lit(1_u64).alias(&key));
+        LogicalPlanBuilder::from(plan).project(columns)?.build()?
+    } else {
+        let row_number = df_window::row_number()
+            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+            .build()?.alias(&key);
+        LogicalPlanBuilder::from(plan).window(vec![row_number])?.build()?
+    };
     let guard = unique_internal_alias(&windowed, cleanup, "__w_apply_row_guard");
     let mut columns = existing_columns_by_name(&windowed, &BTreeSet::new());
     columns.push(lit(1_i64).alias(&guard));

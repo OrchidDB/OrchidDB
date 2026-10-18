@@ -150,6 +150,8 @@ const INSERT_CHUNK_ROWS: usize = 200;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SqlError {
+    #[error(transparent)]
+    RulePipeline(#[from] crate::ir::rules::RuleError),
     #[error("unsupported sql generation: {0}")]
     Unsupported(String),
     #[error("sql setup: {0}")]
@@ -420,6 +422,8 @@ fn hash_array_data(data: &arrow::array::ArrayData, hasher: &mut impl std::hash::
 /// the returned rows.
 #[derive(Debug, Clone)]
 pub struct PreparedSql {
+    /// Exact session/catalog requirement of emitted compatibility calls.
+    pub(crate) float_helper: Option<super::language_functions::FloatHelperCapability>,
     pub dialect: SqlDialect,
     /// Tables the query reads that the engine must materialize first. Kept
     /// as Arrow data so an engine can load it natively and cache it; see
@@ -437,7 +441,7 @@ pub struct PreparedSql {
 impl PreparedSql {
     pub(crate) fn output_schema(&self) -> SchemaRef { self.schema.clone() }
     pub(crate) fn query_only(query: String, schema: SchemaRef) -> Self {
-        Self { dialect: SqlDialect::DuckDb, fields: schema.fields().iter().map(|f|f.name().clone()).collect(), schema, query, tables: vec![], setup: vec![], result_form: ResultForm::RowSet }
+        Self { float_helper: None, dialect: SqlDialect::DuckDb, fields: schema.fields().iter().map(|f|f.name().clone()).collect(), schema, query, tables: vec![], setup: vec![], result_form: ResultForm::RowSet }
     }
 }
 
@@ -445,6 +449,13 @@ impl PreparedSql {
 /// plain row values. Implementations may retain their session between calls;
 /// setup statements must therefore be safe to present repeatedly.
 pub trait SqlExecutor {
+    /// Validate a prepared compatibility implementation before any setup work.
+    /// Custom/no-install executors conservatively reject helper-dependent plans.
+    #[doc(hidden)]
+    fn validate_float_helper(&self, required: &super::language_functions::FloatHelperCapability) -> SqlResult<()> {
+        Err(SqlError::Unsupported(format!("executor cannot verify float helper registration {}", required.registration_identity())))
+    }
+
     fn dialect(&self) -> SqlDialect;
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>>;
 
@@ -767,7 +778,11 @@ pub async fn prepare_with_external(
     lowered.plan = super::statistics::optimize(super::representation::select(lowered.plan)?.plan)?.0;
     let query = unparse(&lowered, dialect)?;
     let tables = plan_tables_excluding(&lowered.plan, external).await?;
+    let float_helper = if emitted_float_helper(&query)? {
+        Some(lowered.rule_context.capabilities.float_helper.clone().ok_or_else(|| SqlError::Unsupported("float helper SQL has no verified session capability".into()))?)
+    } else { None };
     Ok(PreparedSql {
+        float_helper,
         dialect,
         tables,
         setup: Vec::new(),
@@ -776,6 +791,26 @@ pub async fn prepare_with_external(
         result_form: lowered.result_form,
         schema: result_schema(&lowered.plan),
     })
+}
+
+fn emitted_float_helper(query: &str) -> SqlResult<bool> {
+    use datafusion::sql::sqlparser;
+    use sqlparser::ast::{Visit, Visitor};
+    use std::ops::ControlFlow;
+    if !query.contains(super::language_functions::CYPHER_TO_FLOAT) { return Ok(false); }
+    struct Find;
+    impl Visitor for Find {
+        type Break = ();
+        fn pre_visit_expr(&mut self, expr: &sqlparser::ast::Expr) -> ControlFlow<()> {
+            if let sqlparser::ast::Expr::Function(function) = expr {
+                if function.name.to_string().trim_matches('"') == super::language_functions::CYPHER_TO_FLOAT { return ControlFlow::Break(()); }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let statements = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::DuckDbDialect {}, query)
+        .map_err(|e| SqlError::Unsupported(format!("helper requirement validation: {e}")))?;
+    Ok(matches!(statements.visit(&mut Find), ControlFlow::Break(())))
 }
 
 /// Run prepared SQL on an executor and rebuild the result as Arrow batches
@@ -791,6 +826,7 @@ pub fn execute_prepared(
             executor.dialect().name()
         )));
     }
+    if let Some(required) = &prepared.float_helper { executor.validate_float_helper(required)?; }
     let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)?;
     let batch = if prepared.schema.fields().is_empty() {
         // SQL represents the empty tuple with a physical unit projection.
@@ -907,3 +943,9 @@ mod tests {
         );
     }
 }
+
+mod shared_scans;
+
+mod optional_filter;
+mod predicate_scope;
+mod compact_blocks;

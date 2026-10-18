@@ -47,6 +47,7 @@ fn resources(mode: usize) -> DagSession {
 
 fn lowered(plan: LogicalPlan) -> LoweredPlan {
     LoweredPlan {
+            rule_context: Default::default(),
         fields: plan
             .schema()
             .fields()
@@ -215,6 +216,7 @@ async fn row_dependent_and_volatile_native_calls_are_not_pre_evaluated() {
                 vec![],
                 &resources,
                 Arc::new(Mutex::new(Default::default())),
+                &Default::default(),
             )
             .await
             .unwrap();

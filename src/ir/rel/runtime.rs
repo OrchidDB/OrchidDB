@@ -327,6 +327,7 @@ impl ExecutionPlan for KernelExec {
 }
 
 struct Compiler<'a> {
+    rule_context: crate::ir::rules::RuleContext,
     graph: &'a PropertyGraph,
     policy: crate::ir::policy::GraphPlanPolicy,
     sql: bool,
@@ -411,7 +412,7 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             ))
         {
-            let backend = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, ..Default::default() });
+            let backend = RelBackend::with_options(super::RelBackendOptions { rule_context: self.rule_context.clone(), mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, ..Default::default() });
             // A complete terminal traversal needs only its returned values.
             // Partial islands must retain state for downstream graph operators.
             let backend = if terminal_gremlin { backend } else { backend.preserving_traverser_state() };
@@ -420,6 +421,9 @@ impl Compiler<'_> {
             if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some()
                 && let Err(error) = &lowered {
                 eprintln!("SQL IR lowering boundary: {error}");
+            }
+            if let Err(super::RelError::RulePipeline(error)) = &lowered {
+                return Err(failure(error.to_string()));
             }
             if let Ok(lowered) = lowered {
                 // This mixed runtime may execute a region with DataFusion,
@@ -462,6 +466,16 @@ impl Compiler<'_> {
         self.lower_kernel(node).map(|plan| optimize::annotate(plan, node))
     }
     fn lower_kernel(&self, node: &Node) -> Result<LogicalPlan> {
+        if self.rule_context.profile.string_to_float == crate::ir::rules::StringToFloatPolicy::DuckDbNative {
+            let mut owned_conversion = false;
+            let plan = GraphPlan { policy: self.policy.clone(), root: Box::new(node.clone()) };
+            crate::ir::rules::graph::visit_expressions(&plan, |expr, scope| {
+                if scope.node_path.is_empty() && super::conversion_rules::contains_float_conversion(expr) {
+                    owned_conversion = true;
+                }
+            });
+            if owned_conversion { return Err(failure("native string-to-float requires its owning DuckDB engine; compatible residual evaluation is forbidden")); }
+        }
         use crate::ir::plan::*;
         match node {
             Node::GraphReturn { input, .. } => self.lower(input),
@@ -511,6 +525,30 @@ pub async fn execute_rows_with_jvm(
     scope.complete();
     Ok(result)
 }
+/// Diagnostic preparation uses the execution compiler and physical placement,
+/// but never opens a result stream or invokes a graph kernel.
+#[cfg(feature = "duckdb")]
+pub(crate) async fn inspect_with_session(
+    plan: &GraphPlan, graph: &PropertyGraph, resources: &super::dag::DagSession,
+) -> std::result::Result<super::dag::DagStats, String> {
+    let rule_context = resources.rule_context().map_err(|e| e.to_string())?;
+    let logical = host::compile_for_host(plan, graph, CompileOptions {
+        rule_context: rule_context.clone(), sql_islands: true,
+        language_functions: resources.language_functions_enabled(), native_values: false,
+        prune_return: true,
+    }).map_err(|e| e.to_string())?;
+    let mut context = ExecutionContext::default();
+    context.rule_context = rule_context.clone();
+    let state = Arc::new(Mutex::new(State {
+        graph: graph.clone(), context, frontier: vec![Row::new()], batch_key: None,
+    }));
+    let (_, _, stats) = super::stack::on_query_stack(super::dag::prepare_with_extensions(
+        &logical, vec![Arc::new(KernelPlanner { state })], resources,
+        Arc::new(Mutex::new(crate::ir::QueryCost::default())), &rule_context,
+    )).await.map_err(|e| e.to_string())?;
+    Ok(stats)
+}
+
 async fn execute_rows_inner(
     plan: &GraphPlan,
     graph: &PropertyGraph,
@@ -524,13 +562,16 @@ async fn execute_rows_inner(
     #[cfg(feature = "duckdb")]
     let resources = resources.or(mapped_resources.as_ref());
     graph.begin_statement();
-    let logical = compile_for_host(plan, graph, CompileOptions {
+    let rule_context = resources.map(|r| r.rule_context()).transpose().map_err(QueryExecutionError::from_error)?.unwrap_or_default();
+    let logical = host::compile_for_host(plan, graph, CompileOptions {
+        rule_context: rule_context.clone(),
         sql_islands: true,
         language_functions: resources.is_some_and(|r| r.language_functions_enabled()),
         native_values: false,
         prune_return,
     })?;
     let mut context = ExecutionContext::default();
+    context.rule_context = rule_context.clone();
     context.jvm = jvm;
     context.sql_timeout = timeout;
     let state = Arc::new(Mutex::new(State {
@@ -540,6 +581,7 @@ async fn execute_rows_inner(
         batch_key: None,
     }));
     let lowered = LoweredPlan {
+            rule_context: rule_context.clone(),
         plan: logical,
         fields: vec!["bindings".into(), "bulk".into()],
         result_form: crate::ir::policy::ResultForm::RowSet,
@@ -560,6 +602,7 @@ async fn execute_rows_inner(
     state.context.jvm.check().map_err(QueryExecutionError::from_error)?;
     graph.restore_execution_overlay(&state.graph);
     stats.merge_execution(&state.context.nested_dag_stats);
+    stats.rule_trace = rule_context.trace();
     stats.cost.add_work(&state.context.query_cost);
     Ok((rows, stats))
 }

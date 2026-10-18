@@ -111,6 +111,12 @@ impl LoweringContext<'_> {
     ) -> RelResult<LoweredNode> {
         let original = output_fields(&input.plan);
         let list = self.lower_list_operand(&input.plan, source)?;
+        if let Some(value) = self.lower_scalar_filtered_count(&input.plan, binding, list.clone(), predicate)? {
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
         let ty = list.get_type(input.plan.schema())?;
         if !matches!(
             ty,

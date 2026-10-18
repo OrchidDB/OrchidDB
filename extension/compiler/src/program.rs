@@ -18,7 +18,7 @@ use orchiddb::{
             host::mapped_storage,
             native_values,
             runtime::{
-                CompileOptions, KernelState, SubplanRunner, compile_for_host,
+                CompileOptions, KernelState, SubplanRunner,
                 host::{self as kernel_host, KernelQueryScope, KernelSourceCursor, LogicalPlan},
                 program::{CompiledProgram, StageOperation},
             },
@@ -59,6 +59,7 @@ thread_local! { static ACTIVE: RefCell<HashMap<u64, Callback>> = RefCell::new(Ha
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
 struct Program {
+    rule_context: orchiddb::ir::rules::RuleContext,
     compiled: CompiledProgram,
     prepared: Arc<PreparedGraphBindings>,
     fields: Vec<String>,
@@ -68,6 +69,7 @@ struct Program {
 }
 impl Program {
     fn new(mut request: CompileRequest) -> Result<Self, QueryExecutionError> {
+        request.rule_context = crate::catalog::rule_context()?;
         if request.dialect != "duckdb"
             || !request.engines.is_empty()
             || !matches!(request.language.as_str(), "cypher" | "gremlin")
@@ -84,16 +86,17 @@ impl Program {
         // do not preserve that contract across mutation operators.
         let computed_mutation = mutating && (!request.computed_relationships.is_empty() || !request.cypher_relationships.is_empty());
         let logical = with_operator_table(prepared.operators.clone(), || {
-            compile_for_host(
+            orchiddb::ir::rel::runtime::host::compile_for_host(
                 &prepared.plan,
                 &prepared.graph,
                 CompileOptions {
+                    rule_context: request.rule_context.clone(),
                     sql_islands: prepared.managed_table.is_none() && !computed_mutation,
                     ..Default::default()
                 },
             )
         })?;
-        let compiled = CompiledProgram::new(&logical)?;
+        let compiled = CompiledProgram::new(&logical, &request.rule_context)?;
         // UNION aligns its branches to the left return contract in the existing planner.
         let mut result_node = prepared.plan.root.as_ref();
         while let Node::GraphUnion { left, .. } = result_node { result_node = left; }
@@ -109,6 +112,7 @@ impl Program {
         let policy = prepared.plan.policy.clone();
         let prepared = Arc::new(prepared.bindings());
         Ok(Self {
+            rule_context: request.rule_context,
             compiled,
             prepared,
             fields,
@@ -145,6 +149,7 @@ pub fn compile_request_json(input: Value) -> Result<Value, String> {
 }
 
 struct Services {
+    rule_context: orchiddb::ir::rules::RuleContext,
     host: Arc<DuckDbHost>,
     token: u64,
     prepared: Arc<PreparedGraphBindings>,
@@ -175,7 +180,8 @@ impl SubplanRunner for Services {
             Some(program) => program,
             None => {
                 let program = Arc::new(Program {
-                    compiled: CompiledProgram::new(plan).map_err(runtime_error)?,
+                    rule_context: self.rule_context.clone(),
+                    compiled: CompiledProgram::new(plan, &self.rule_context).map_err(runtime_error)?,
                     prepared: self.prepared.clone(), fields: vec![],
                     result_form: ResultForm::RowSet, policy: self.policy.clone(), mutating: false,
                 });
@@ -451,6 +457,7 @@ pub unsafe extern "C" fn orchid_program_state_new(
         }
         let program = unsafe { program(handle) }?;
         let services = Arc::new(Services {
+            rule_context: program.rule_context.clone(),
             host: DuckDbHost::new(),
             token: NEXT.fetch_add(1, Ordering::Relaxed),
             prepared: program.prepared.clone(),
@@ -459,7 +466,7 @@ pub unsafe extern "C" fn orchid_program_state_new(
         });
         let _scope = unsafe { Scope::enter(&services, context, query, free, nested, catalog) }?;
         let graph = program.prepared.execution_graph(services.host.clone())?;
-        let state = KernelState::for_host(graph, services.clone());
+        let state = KernelState::for_host(graph, services.clone(), &program.rule_context);
         state.start_clocks(statement_micros, transaction_micros)?;
         let scope = state.query_scope();
         let cancelled = state.cancellation_token();

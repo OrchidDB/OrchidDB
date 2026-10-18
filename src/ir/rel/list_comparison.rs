@@ -14,9 +14,33 @@ impl LoweringContext<'_> {
         let lt = lhs.get_type(plan.schema())?;
         let rt = rhs.get_type(plan.schema())?;
         let (DataType::List(l), DataType::List(r)) = (&lt, &rt) else { return Ok(None); };
+        // Keep arithmetic/error-sensitive list producers on their established
+        // runtime path until their evaluation contract is proven compatible.
+        if !repeatable(plan, &lhs) || !repeatable(plan, &rhs) { return Ok(None); }
+        fn semantic_list_item(ty: &DataType) -> bool {
+            match ty {
+                DataType::List(field) => semantic_list_item(field.data_type()),
+                DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16 |
+                DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 |
+                DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64 |
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => true,
+                _ => false,
+            }
+        }
+        // A shared semantic helper avoids expanding list comparisons into an
+        // UNNEST/aggregate subquery. Each operand is evaluated once; the legacy
+        // relational implementation remains available without language helpers.
+        if self.options.language_functions && !self.options.native_values
+            && semantic_list_item(l.data_type()) && semantic_list_item(r.data_type()) {
+            let operation = match op {
+                BinaryOp::Eq => "eq", BinaryOp::Neq => "neq",
+                BinaryOp::Lt => "lt", BinaryOp::Lte => "lte",
+                BinaryOp::Gt => "gt", BinaryOp::Gte => "gte", _ => unreachable!(),
+            };
+            return Ok(Some(language_functions::list_compare(lhs, rhs, operation)));
+        }
         if l.data_type() != r.data_type() || !matches!(l.data_type(), DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Boolean) { return Ok(None); }
-        // Do not duplicate volatile evaluation in the length/null guards and
-        // scalar subquery. Arbitrary UDFs and existing subqueries stay fenced.
+        // The relational fallback repeats operands in guards and subqueries.
         if !repeatable(plan, &lhs) || !repeatable(plan, &rhs) { return Ok(None); }
         let mut outer = Vec::new();
         let mut correlate = |expr: Expr| -> RelResult<Expr> {

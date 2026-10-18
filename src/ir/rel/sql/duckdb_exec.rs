@@ -108,6 +108,23 @@ impl DuckDbExecutor {
 
     pub fn language_functions_enabled(&self) -> bool { self.language_functions }
 
+    /// Verify a previously prepared session without installing or changing it.
+    pub(crate) fn float_helper_capability(&self) -> SqlResult<Option<crate::ir::rel::language_functions::FloatHelperCapability>> {
+        let Some(connection) = self.connection.as_ref().filter(|_| self.language_functions) else { return Ok(None); };
+        super::language_functions::float_capability(connection, true)
+            .map_err(|e| SqlError::Setup(format!("float helper capability: {e}")))
+    }
+
+    /// Prepare optional functions through the session lifecycle, then verify
+    /// their exact live registration. Matching rules only consume this snapshot.
+    pub(crate) fn prepare_float_helper_capability(&mut self) -> SqlResult<Option<crate::ir::rel::language_functions::FloatHelperCapability>> {
+        if !self.language_functions { return Ok(None); }
+        self.ensure_connection()?;
+        super::language_functions::float_capability(self.connection.as_ref().expect("initialized connection"), true)
+            .map_err(|e| SqlError::Setup(format!("float helper capability: {e}")))
+    }
+
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -198,6 +215,14 @@ impl DuckDbExecutor {
         }
         // The caller can roll back transactional registration or drop functions.
         self.language_functions_registered = false;
+        Ok(self.connection.as_ref().expect("connection initialized"))
+    }
+
+    /// Internal source reads do not hand the connection to a caller or change
+    /// its function catalog. Retain registration across these reads; public
+    /// borrows and host writes still invalidate it through `connection()`.
+    pub(crate) fn source_query_connection(&mut self) -> SqlResult<&Connection> {
+        self.ensure_connection()?;
         Ok(self.connection.as_ref().expect("connection initialized"))
     }
 
@@ -440,6 +465,11 @@ impl DuckDbExecutor {
 }
 
 impl SqlExecutor for DuckDbExecutor {
+    fn validate_float_helper(&self, required: &crate::ir::rel::language_functions::FloatHelperCapability) -> SqlResult<()> {
+        if self.float_helper_capability()?.as_ref() == Some(required) { Ok(()) }
+        else { Err(SqlError::Unsupported("prepared float helper registration is disabled, changed, or belongs to another session; reprepare the query".into())) }
+    }
+
     fn dialect(&self) -> SqlDialect {
         SqlDialect::DuckDb
     }
@@ -488,6 +518,7 @@ impl DuckDbExecutor {
     /// Keep island results in Arrow, preserving binary, temporal, decimal and
     /// full-width scalar keys without a lossy row/string round trip.
     pub(crate) fn execute_prepared_arrow(&mut self, prepared: &super::PreparedSql) -> SqlResult<RecordBatch> {
+        if let Some(required) = &prepared.float_helper { self.validate_float_helper(required)?; }
         self.ensure_connection()?;
         self.clear_query_scans()?;
         self.clear_retired_scans()?;

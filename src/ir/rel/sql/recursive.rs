@@ -12,7 +12,7 @@ use std::sync::Arc;
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::datasource::cte_worktable::CteWorkTable;
 use datafusion::datasource::provider_as_source;
-use datafusion::logical_expr::{LogicalPlan, TableScan};
+use datafusion::logical_expr::{Expr, LogicalPlan, TableScan};
 use datafusion::sql::unparser::Unparser;
 
 use super::{SqlDialect, SqlError, SqlResult, restore_aggregate_ordering};
@@ -198,12 +198,47 @@ fn referenced_ctes(plan: &LogicalPlan, names: &BTreeSet<String>) -> BTreeSet<Str
     found
 }
 
+// DataFusion's bare-Aggregate unparser emits aggregate results before group
+// keys, while its logical schema orders group keys first. An explicit output
+// projection fixes that order without adding a derived-table SQL boundary.
+fn needs_aggregate_output_projection(mut plan: &LogicalPlan) -> bool {
+    loop {
+        plan = match plan {
+            // A bare join with a UNION/projection on the left can otherwise
+            // emit that child's SELECT alone, losing its right-hand columns.
+            LogicalPlan::Join(_) | LogicalPlan::Window(_) => return true,
+            LogicalPlan::Aggregate(aggregate) => return !aggregate.group_expr.is_empty()
+                && !aggregate.aggr_expr.is_empty(),
+            LogicalPlan::Sort(sort) => &sort.input,
+            LogicalPlan::Limit(limit) => &limit.input,
+            LogicalPlan::Filter(filter) => &filter.input,
+            // Existing projections already specify order. Do not cross joins,
+            // subquery aliases or other SELECT/representation boundaries.
+            _ => return false,
+        };
+    }
+}
+
 fn unparse_one(
     plan: &LogicalPlan,
     unparser: &Unparser<'_>,
     dialect: SqlDialect,
     repair_scopes: bool,
 ) -> SqlResult<String> {
+    let ordered;
+    let plan = if needs_aggregate_output_projection(plan) {
+        ordered = datafusion::logical_expr::LogicalPlanBuilder::from(plan.clone())
+            .project(plan.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>())?
+            .build()?;
+        &ordered
+    } else { plan };
+    // Generated output projections can retain qualifiers hidden behind a
+    // derived relation. Normalize them after adding that final projection.
+    let scoped;
+    let plan = if !repair_scopes {
+        scoped = super::unparse::strip_column_qualifiers(plan.clone())?;
+        &scoped
+    } else { plan };
     let mut statement = unparser
         .plan_to_sql(plan)
         .map_err(|err| SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name())))?;
@@ -232,6 +267,7 @@ fn unparse_one(
     super::functions::prepare_scoped_ast(&mut statement, dialect, repair_scopes)?;
     if dialect == SqlDialect::DuckDb {
         strip_identity_aliases(&mut statement);
+        super::compact_blocks::rewrite(&mut statement);
     }
     restore_aggregate_ordering(plan, unparser, dialect, statement)
 }
@@ -244,6 +280,16 @@ fn strip_identity_aliases(statement: &mut datafusion::sql::sqlparser::ast::State
     fn body(node: &mut ast::SetExpr) {
         match node {
             ast::SetExpr::Select(select) => {
+                // Projection pruning can expose a zero-column one-row seed.
+                // SQL has no zero-column SELECT; an unobserved constant carries
+                // its cardinality inside the enclosing explicit projection.
+                if select.projection.is_empty() || (select.from.is_empty() && select.projection.iter().all(|p|
+                    matches!(p, ast::SelectItem::Wildcard(_)))) {
+                    select.projection = vec![ast::SelectItem::ExprWithAlias {
+                        expr: ast::Expr::Value(ast::Value::Number("0".into(), false).into()),
+                        alias: ast::Ident::with_quote('"', "__w_one_row"),
+                    }];
+                }
                 for item in &mut select.projection {
                     if let ast::SelectItem::ExprWithAlias { expr: ast::Expr::Identifier(id), alias } = item
                         && id == alias
@@ -293,6 +339,26 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
                 .data,
             );
             Ok(Transformed::yes(LogicalPlan::SubqueryAlias(alias)))
+        }
+        LogicalPlan::Join(mut join) if matches!(join.join_type,
+            datafusion::logical_expr::JoinType::LeftSemi | datafusion::logical_expr::JoinType::LeftAnti) => {
+            let mut changed = false;
+            if !repair_scopes && matches!(join.left.as_ref(), LogicalPlan::Filter(_)) {
+                // DF's EXISTS conversion replaces the SELECT's WHERE rather
+                // than combining it with the preserved-side predicate.
+                join.left = Arc::new(hoist_operator(join.left.as_ref().clone(),
+                    "existence_left_filter", &mut plain_ctes, &mut seen)?.data);
+                changed = true;
+            }
+            if join.right.schema().fields().is_empty()
+                && !matches!(join.right.as_ref(), LogicalPlan::TableScan(_) | LogicalPlan::SubqueryAlias(_)) {
+                // A zero-column RHS can otherwise leak its filter into the
+                // outer WHERE instead of evaluating it inside EXISTS.
+                join.right = Arc::new(hoist_operator(join.right.as_ref().clone(),
+                    "existence_input", &mut plain_ctes, &mut seen)?.data);
+                changed = true;
+            }
+            Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
         }
         LogicalPlan::Unnest(mut unnest) => {
             // Optimizers can push scalar consumers into the named alias that

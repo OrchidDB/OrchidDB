@@ -106,3 +106,36 @@ async fn generated_list_comparison_without_language_functions_still_lowers() {
     let query = "WITH [3,1,2] AS values WITH values, size(values) AS n UNWIND values AS value WITH n, value ORDER BY value WITH n, collect(value) AS xs RETURN xs = range(1,n)";
     assert_eq!(rows_with_options(query, false).await, ["true"]);
 }
+
+#[tokio::test]
+async fn primitive_list_comparison_is_compact_without_constant_folding() {
+    use orchiddb::ir::{diagnostics::without_constant_folding, rel::sql::{unparse, SqlDialect}};
+    without_constant_folding(async {
+        let query = "RETURN [1, null] >= [1] AS result";
+        let plan = orchiddb::language::cypher::preparation::prepare(query, &Default::default(), Some(&Default::default())).unwrap();
+        let lowered = RelBackend::new().with_language_functions(true).lower(&plan, &PropertyGraph::new()).unwrap();
+        let sql = unparse(&lowered, SqlDialect::DuckDb).unwrap();
+        assert!(sql.contains("__orchiddb_cypher_list_compare"), "{sql}");
+        assert!(!sql.to_lowercase().contains("unnest"), "{sql}");
+        assert!(sql.len() < 180, "{sql}");
+        assert_eq!(rows(query).await, ["true"]);
+        // A null in an equal prefix is unknown, while an earlier mismatch wins.
+        assert_eq!(rows("RETURN [1,null] = [1,null], [1,null] >= [1,2], [2,null] > [1,2]").await, ["||true"]);
+    }).await;
+}
+
+#[test]
+fn list_comparison_accepts_duckdb_widened_integer_lists_losslessly() {
+    let mut executor = DuckDbExecutor::default();
+    executor.set_language_functions(true).unwrap();
+    let connection = executor.connection().unwrap();
+    for (left, right, expected) in [
+        ("170141183460469231731687303715884105727", "170141183460469231731687303715884105726", true),
+        ("-170141183460469231731687303715884105728", "-170141183460469231731687303715884105727", false),
+        ("9007199254740993", "9007199254740992", true),
+    ] {
+        let sql = format!("SELECT __orchiddb_cypher_list_compare('gt', [CAST('{left}' AS HUGEINT)], [CAST('{right}' AS HUGEINT)])");
+        let actual: bool = connection.query_row(&sql, [], |row| row.get(0)).unwrap();
+        assert_eq!(actual, expected, "{sql}");
+    }
+}

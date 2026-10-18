@@ -19,6 +19,18 @@ pub(crate) trait GraphSource: std::fmt::Debug + Send + Sync {
     fn supports_dynamic_schema(&self) -> bool {
         false
     }
+    /// Allocate an omitted single-column identity using the owning table's
+    /// database default. None preserves the explicit-key contract.
+    fn generated_key(&self, _edge: bool, _name: &str) -> Option<Result<ElementId, String>> {
+        None
+    }
+    fn generated_edge_key(&self, name: &str, _src: &str, _dst: &str) -> Option<Result<ElementId, String>> {
+        self.generated_key(true, name)
+    }
+    fn edge_insert_defaults(&self, _name: &str, _src: &str, _dst: &str)
+        -> Option<Result<(BTreeMap<String, Value>, std::collections::BTreeSet<String>), String>> {
+        None
+    }
     fn public_addresses(&self, _value: &Value, _edge: bool) -> Vec<(bool, String, ElementId)> {
         vec![]
     }

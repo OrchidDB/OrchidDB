@@ -394,7 +394,8 @@ impl EdgeMapping {
 
     /// Store the relationship on the selected endpoint's row. The other endpoint
     /// column is the foreign key; the child primary key is also the edge identity.
-    /// No relationship table or independently generated edge id is needed.
+    /// No relationship table is needed. A separate unique relationship identity
+    /// on that row can be selected with `with_id` after this call.
     pub fn foreign_key(mut self, child: ForeignKeyEndpoint) -> Self {
         self.foreign_key = Some(child);
         self.id_column = Some(match child {
@@ -577,15 +578,18 @@ impl GraphMapping {
             };
             if edge.source != child.source
                 || &child.id_column != child_key
-                || edge.id_column.as_ref() != Some(child_key)
+                || edge.id_column.is_none()
             {
                 return Err(invalid(
-                    "source and edge identity must match the child table and primary key",
+                    "source and child identity must match the child table and primary key",
                 ));
             }
             let MappedSource::Table(parent_table) = &parent.source else {
                 return Err(invalid("parent must be table-backed"));
             };
+            if edge.id_column.as_ref().is_some_and(|id| id != child_key && id.columns().iter().any(|column| fk.contains(column))) {
+                return Err(invalid("a separate relationship identity cannot overlap its foreign key"));
+            }
             if let (Some(child_provider), Some(parent_provider)) =
                 (self.tables.get(table), self.tables.get(parent_table))
             {
@@ -613,7 +617,7 @@ impl GraphMapping {
             }
             let owns = |column: &str| {
                 !child_key.contains(column)
-                    && (fk.contains(column) || edge.properties.values().any(|c| c == column))
+                    && (fk.contains(column) || edge.id_column.as_ref().is_some_and(|id|id.contains(column)) || edge.properties.values().any(|c| c == column))
             };
             if self
                 .nodes
@@ -641,6 +645,7 @@ impl GraphMapping {
                 if other_key != child_key
                     || other_fk == fk
                     || other_fk.columns().iter().any(|c| owns(c))
+                    || other.id_column.as_ref().is_some_and(|id| id.columns().iter().any(|c| owns(c)))
                     || other.properties.values().any(|c| owns(c))
                 {
                     return Err(invalid(
@@ -845,18 +850,14 @@ impl GraphMapping {
         result
     }
 
-    /// Partitioned writes currently require the same physical column contract
-    /// and a unique endpoint-pair route. Ambiguous layouts remain read-only.
+    /// Each endpoint pair must identify one writable physical mapping.
     pub(crate) fn validate_partitioned_writes(&self) -> Result<(), String> {
         for name in self.edge_partitions.keys() {
-            let first = self.edge(name).unwrap();
             let mut endpoints = BTreeSet::new();
             for edge in self.edge_partitions(name) {
-                if edge.id_column != first.id_column || edge.src_column != first.src_column
-                    || edge.dst_column != first.dst_column || edge.properties != first.properties
-                    || edge.foreign_key.is_some() || !matches!(edge.source, MappedSource::Table(_))
+                if !matches!(edge.source, MappedSource::Table(_))
                     || !endpoints.insert((&edge.src_label, &edge.dst_label)) {
-                    return Err(format!("partitioned relationship `{name}` needs identical writable column mappings and unique endpoint pairs"));
+                    return Err(format!("partitioned relationship `{name}` needs writable tables and unique endpoint pairs"));
                 }
             }
         }

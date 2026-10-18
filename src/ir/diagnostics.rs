@@ -92,3 +92,37 @@ impl From<&str> for QueryExecutionError {
         message.to_string().into()
     }
 }
+
+/// Internal conformance tooling: prepare on the runner's actual mapped catalog.
+/// This is not a customer query API and does not execute the target query.
+#[cfg(feature = "duckdb")]
+#[doc(hidden)]
+pub async fn conformance_sql(
+    connection: duckdb::Connection,
+    mapping: std::sync::Arc<crate::ir::rel::mapping::GraphMapping>,
+    plan: &crate::ir::plan::GraphPlan,
+    procedures: std::sync::Arc<crate::ir::procedures::ProcedureCatalog>,
+) -> Result<serde_json::Value, String> {
+    use crate::ir::rel::{dag::DagSession, sql::DuckDbExecutor};
+    use crate::engine::mapped_source;
+    use std::sync::{Arc, Mutex};
+    if crate::ir::exec::contains_mutation(&plan.root) {
+        return Err("SQL report excludes mutating queries".into());
+    }
+    let mut executor = DuckDbExecutor::from_connection(connection);
+    executor.set_language_functions(true).map_err(|e| e.to_string())?;
+    let resources = DagSession::with_shared(Arc::new(Mutex::new(executor)), mapping.physical_table_names());
+    let mut graph = mapped_source::attach(resources.shared_executor(), mapping)?;
+    graph.procedures = procedures;
+    let stats = crate::ir::rel::runtime::inspect_with_session(plan, &graph, &resources).await?;
+    let full = stats.sql_queries.len() == 1 && stats.datafusion_operators == 0;
+    Ok(serde_json::json!({
+        "schema_mode":"conformance_runner_mapping", "capture":"prepared_not_executed",
+        "sql": if full {stats.sql_queries.first().cloned()} else {None},
+        "regions": if full {Vec::<serde_json::Value>::new()} else {stats.sql_queries.iter().map(|sql| serde_json::json!({"sql":sql})).collect()},
+        "residual_operators":stats.datafusion_operators,
+        "logical_plan":stats.logical_plan, "physical_plan":stats.physical_plan,
+        "execution_kind":if full {"sql"} else {"hybrid"}, "fully_lowered":full,
+        "validation":"prepared_with_conformance_mapping",
+    }))
+}

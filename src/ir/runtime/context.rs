@@ -14,6 +14,7 @@ mod procedure_preparation_tests;
 
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
+    pub(crate) rule_context: crate::ir::rules::RuleContext,
     pub(crate) subplan_runner: Option<std::sync::Arc<dyn crate::ir::rel::runtime::SubplanRunner>>,
     pub(crate) scalar_preparation: std::sync::Arc<super::scalar::preparation::ScalarPreparation>,
     pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
@@ -139,6 +140,7 @@ impl ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
+            rule_context: Default::default(),
             subplan_runner: None,
             scalar_preparation: Default::default(),
             relational_groups: BTreeMap::new(),

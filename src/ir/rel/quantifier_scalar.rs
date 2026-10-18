@@ -3,12 +3,13 @@
 //! expressions retain the general evaluation path. Nested quantifiers preserve
 //! their lexical scope as scalar subqueries, without occurrence joins.
 use super::*;
+use arrow::array::Array;
 use datafusion::common::ExprSchema;
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::logical_expr::Subquery;
 
 fn primitive(ty: &DataType) -> bool {
-    matches!(ty, DataType::Boolean | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)
+    matches!(ty, DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)
 }
 
 fn scalar_collection(expr: &IrExpr) -> bool {
@@ -140,6 +141,19 @@ impl LoweringContext<'_> {
         &self, plan: &LogicalPlan, kind: QuantifierKind, item: &str,
         list: Expr, predicate: &IrExpr,
     ) -> RelResult<Option<Expr>> {
+        self.lower_scalar_collection_reduce(plan, Some(kind), item, list, predicate)
+    }
+
+    pub(super) fn lower_scalar_filtered_count(
+        &self, plan: &LogicalPlan, item: &str, list: Expr, predicate: &IrExpr,
+    ) -> RelResult<Option<Expr>> {
+        self.lower_scalar_collection_reduce(plan, None, item, list, predicate)
+    }
+
+    fn lower_scalar_collection_reduce(
+        &self, plan: &LogicalPlan, kind: Option<QuantifierKind>, item: &str,
+        list: Expr, predicate: &IrExpr,
+    ) -> RelResult<Option<Expr>> {
         if self.options.native_values || !candidate_predicate(predicate)
             || !super::list_comparison::immutable_source_plan(plan)
             || !super::list_comparison::repeatable(plan,&list) { return Ok(None); }
@@ -232,7 +246,8 @@ impl LoweringContext<'_> {
             Ok(TreeNodeRecursion::Continue)
         })?;
         if !scalar { return Ok(None); }
-        if !uses_item {
+        if !uses_item && kind.is_some() {
+            let kind = kind.unwrap();
             // A total predicate independent of the iterator has the same
             // truth value for every item. Only cardinality matters: do not
             // expand and regroup a potentially huge list to repeat it.
@@ -278,8 +293,8 @@ impl LoweringContext<'_> {
         } else { (expanded, predicate) };
         let indicator = |condition| datafusion::logical_expr::when(condition,lit(1_i64))
             .otherwise(lit(ScalarValue::Int64(None)));
-        let mut aggregates = vec![df_count(indicator(predicate.clone().is_null())?).alias(&unknown)];
-        let decisive = if matches!(kind,QuantifierKind::All) {
+        let mut aggregates = if kind.is_some() { vec![df_count(indicator(predicate.clone().is_null())?).alias(&unknown)] } else { vec![] };
+        let decisive = if matches!(kind,Some(QuantifierKind::All)) {
             aggregates.push(df_count(indicator(Expr::IsFalse(Box::new(predicate)))?).alias(&no));
             col_exact(&no)
         } else {
@@ -287,15 +302,16 @@ impl LoweringContext<'_> {
             col_exact(&yes)
         };
         let aggregate = LogicalPlanBuilder::from(expanded).aggregate(Vec::<Expr>::new(),aggregates)?.build()?;
-        let null = lit(ScalarValue::Boolean(None));
+        let null = lit(if kind.is_some() { ScalarValue::Boolean(None) } else { ScalarValue::Int64(None) });
         let truth = match kind {
-            QuantifierKind::All => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(false))
+            None => decisive,
+            Some(QuantifierKind::All) => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(false))
                 .when(col_exact(&unknown).gt(lit(0_i64)),null.clone()).otherwise(lit(true))?,
-            QuantifierKind::Any => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(true))
+            Some(QuantifierKind::Any) => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(true))
                 .when(col_exact(&unknown).gt(lit(0_i64)),null.clone()).otherwise(lit(false))?,
-            QuantifierKind::None => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(false))
+            Some(QuantifierKind::None) => datafusion::logical_expr::when(decisive.gt(lit(0_i64)),lit(false))
                 .when(col_exact(&unknown).gt(lit(0_i64)),null.clone()).otherwise(lit(true))?,
-            QuantifierKind::Single => datafusion::logical_expr::when(decisive.clone().gt(lit(1_i64)),lit(false))
+            Some(QuantifierKind::Single) => datafusion::logical_expr::when(decisive.clone().gt(lit(1_i64)),lit(false))
                 .when(col_exact(&unknown).gt(lit(0_i64)),null.clone()).otherwise(decisive.eq(lit(1_i64)))?,
         };
         let subquery = LogicalPlanBuilder::from(aggregate).project(vec![truth.alias(&result)])?.build()?;
@@ -309,6 +325,7 @@ impl LoweringContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+use arrow::array::Array;
     #[test]
     fn effectful_and_throwing_predicates_stay_out_of_scalar_path() {
         let item=IrExpr::Binding("x".into());
@@ -363,5 +380,83 @@ mod tests {
             Arc::new(|_| panic!("must not evaluate diagnostic function")));
         let plan=LogicalPlanBuilder::empty(true).build().unwrap();
         assert!(!super::super::list_comparison::repeatable(&plan,&function.call(vec![])));
+    }
+}
+
+/// Quantifying the booleans produced by collect needs no list materialization.
+/// Keep the original list output until ordinary demand pruning proves it dead.
+pub(super) fn fuse_boolean_collect(
+    plan: &LogicalPlan, column: &Column, kind: QuantifierKind, output: &str,
+) -> RelResult<Option<LogicalPlan>> {
+    if matches!(kind,QuantifierKind::Single) { return Ok(None); }
+    fn source(e: &Expr) -> Option<&Column> {
+        match e {
+            Expr::Column(c)=>Some(c), Expr::Alias(a)=>source(&a.expr),
+            Expr::ScalarFunction(f) if f.func.name()=="coalesce" && f.args.len()==2 => source(&f.args[0]),
+            Expr::Case(c) if c.expr.is_none() && c.when_then_expr.len()==1 => {
+                let (p,v)=&c.when_then_expr[0];
+                if matches!(p.as_ref(),Expr::IsNotNull(e) if e==v) {source(v)} else {None}
+            }
+            _=>None,
+        }
+    }
+    let index=plan.schema().index_of_column(column)?;
+    match plan {
+        LogicalPlan::Projection(p)=> {
+            let Some(c)=source(&p.expr[index]) else {return Ok(None);};
+            // Only a collect's empty-list default may be bypassed.
+            fn default_empty(e:&Expr)->bool {
+                match e {
+                    Expr::Column(_)=>true, Expr::Alias(a)=>default_empty(&a.expr),
+                    Expr::ScalarFunction(f) if f.func.name()=="coalesce" && f.args.len()==2 => empty(&f.args[1]),
+                    Expr::Case(c)=>c.else_expr.as_deref().is_some_and(empty), _=>false,
+                }
+            }
+            fn empty(e:&Expr)->bool {
+                match e {
+                    Expr::Literal(ScalarValue::List(a),_)=>a.len()==1 && !a.is_null(0) && a.value_length(0)==0,
+                    Expr::Cast(c)=>empty(&c.expr),
+                    Expr::ScalarFunction(f)=>f.func.name()=="make_array" && f.args.is_empty(), _=>false,
+                }
+            }
+            if !default_empty(&p.expr[index]) {return Ok(None);}
+            let Some(input)=fuse_boolean_collect(&p.input,c,kind,output)? else {return Ok(None);};
+            let mut exprs=p.expr.clone();exprs.push(col_exact(output));
+            Ok(Some(LogicalPlanBuilder::from(input).project(exprs)?.build()?))
+        }
+        LogicalPlan::SubqueryAlias(a)=> {
+            let Some(input)=fuse_boolean_collect(&a.input,&a.input.schema().columns()[index],kind,output)? else {return Ok(None);};
+            Ok(Some(LogicalPlanBuilder::from(input).alias(a.alias.clone())?.build()?))
+        }
+        LogicalPlan::Aggregate(a) if index>=a.group_expr.len()=> {
+            let e=&a.aggr_expr[index-a.group_expr.len()];
+            let e=if let Expr::Alias(x)=e {x.expr.as_ref()} else {e};
+            let Expr::AggregateFunction(call)=e else {return Ok(None);};
+            if !call.func.inner().as_any().is::<datafusion::functions_aggregate::array_agg::ArrayAgg>() {return Ok(None);}
+            let [value]=call.params.args.as_slice() else {return Ok(None);};
+            if value.get_type(a.input.schema())?!=DataType::Boolean || value.is_volatile()
+                || !super::list_comparison::arithmetic_is_total(&a.input,value) {return Ok(None);}
+            fn excludes_null(e:&Expr,value:&Expr)->bool {
+                match e {
+                    Expr::IsNotNull(v)=>v.as_ref()==value,
+                    Expr::BinaryExpr(b) if b.op==datafusion::logical_expr::Operator::And => excludes_null(&b.left,value)||excludes_null(&b.right,value),
+                    _=>false,
+                }
+            }
+            if value.nullable(a.input.schema())? && !call.params.filter.as_deref().is_some_and(|p|excludes_null(p,value)) {return Ok(None);}
+            if call.params.filter.as_deref().is_some_and(|p|p.is_volatile() || !super::list_comparison::arithmetic_is_total(&a.input,p)) {return Ok(None);}
+            let condition=if matches!(kind,QuantifierKind::All) {Expr::IsFalse(Box::new(value.clone()))}
+                else {Expr::IsTrue(Box::new(value.clone()))};
+            let indicator=datafusion::logical_expr::when(condition,lit(1_i64)).otherwise(lit(ScalarValue::Int64(None)))?;
+            let mut count=df_count(indicator);
+            if let Expr::AggregateFunction(count)=&mut count {count.params.filter=call.params.filter.clone();}
+            let name=unique_internal_alias(plan,&BTreeSet::from([output.to_owned()]),"__collect_truth_count");
+            let mut aggs=a.aggr_expr.clone();aggs.push(count.alias(&name));
+            let input=LogicalPlanBuilder::from(a.input.as_ref().clone()).aggregate(a.group_expr.clone(),aggs)?.build()?;
+            let truth=if matches!(kind,QuantifierKind::Any) {col_exact(&name).gt(lit(0_i64))} else {col_exact(&name).eq(lit(0_i64))};
+            let mut cols=plan.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>();cols.push(truth.alias(output));
+            Ok(Some(LogicalPlanBuilder::from(input).project(cols)?.build()?))
+        }
+        _=>Ok(None),
     }
 }

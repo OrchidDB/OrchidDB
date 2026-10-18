@@ -281,6 +281,7 @@ pub(crate) fn value_scalar(value: &Value) -> Result<ScalarValue, String> {
         // Property values can contain lists/arrays; ElementId validation is
         // intentionally stricter and must not reject preserved source values.
         Value::Scalar(value) => Ok(value.clone()),
+        Value::Temporal(value) => crate::ir::temporal::transport::scalar(value).map_err(|e| e.to_string()),
         Value::List(items) => {
             let mut values = items.iter().map(value_scalar).collect::<Result<Vec<_>, _>>()?;
             let kind = values.iter().find(|value| !value.is_null()).map(ScalarValue::data_type)
@@ -306,6 +307,23 @@ fn bind_batch(values: Vec<(String, ScalarValue)>) -> Result<RecordBatch, String>
         .map(|(_, value)| value.to_array().map_err(|e| e.to_string()))
         .collect::<Result<Vec<ArrayRef>, _>>()?;
     RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).map_err(|e| e.to_string())
+}
+
+fn temporal_storage(value: ScalarValue, kind: &arrow::datatypes::DataType) -> Result<ScalarValue, String> {
+    use arrow::datatypes::DataType;
+    if *kind == DataType::Date32 && crate::ir::temporal::transport::is_date_type(&value.data_type())
+        && crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
+        return crate::ir::functions::domain::storage(&value).map_err(|e| e.to_string());
+    }
+    if !value.is_null() && let (ScalarValue::List(array), DataType::List(field)) = (&value, kind) {
+        let items = array.value(0);
+        let values = (0..items.len()).map(|i| {
+            let item = ScalarValue::try_from_array(items.as_ref(), i).map_err(|e| e.to_string())?;
+            temporal_storage(item, field.data_type())?.cast_to(field.data_type()).map_err(|e| e.to_string())
+        }).collect::<Result<Vec<_>, String>>()?;
+        return Ok(ScalarValue::List(ScalarValue::new_list_nullable(&values, field.data_type())));
+    }
+    Ok(value)
 }
 /// MATCH SIMPLE lets any nullable FK component disconnect the relationship.
 /// Preserve shared primary-key components and other required FK columns.
@@ -418,8 +436,9 @@ fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
 }
 
 /// Construct dependency waves before executing any SQL. This handles FK inserts,
-/// updates that release an old parent, and child-before-parent deletion. Cycles
-/// requiring deferred constraints are rejected rather than inserting NULL first.
+/// updates that release an old parent, and child-before-parent deletion. Mapping
+/// references do not imply SQL constraints: cyclic writes are submitted to the
+/// backend, which enforces any constraints actually declared by the caller.
 fn write_order(
     connection: &dyn HostRelational,
     rows: &BTreeMap<RowAddress, RowWrite>,
@@ -536,7 +555,8 @@ fn write_order(
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         if ready.is_empty() {
-            return Err("cyclic mapped writes require deferred foreign-key constraints, which are not supported".into());
+            waves.push(dependencies.into_keys().collect());
+            break;
         }
         for key in &ready {
             dependencies.remove(key);
@@ -556,19 +576,6 @@ pub fn persist(
     mapping: &GraphMapping,
 ) -> Result<(), String> {
     mapping.validate_partitioned_writes()?;
-    // A representative mapping cannot supply partition-specific SQL defaults.
-    // Reject this layout before emitting any writes instead of copying another
-    // partition's default into the selected physical table.
-    for name in mapping.rel_types() {
-        let partitions = mapping.edge_partitions(&name);
-        if partitions.len() <= 1 { continue; }
-        for partition in partitions {
-            let MappedSource::Table(table_name) = &partition.source else { continue; };
-            let reference = datafusion::common::TableReference::from(table_name.as_str());
-            let defaults = connection.query(HostRequest::new("SELECT column_name FROM duckdb_columns() WHERE table_name = $1 AND schema_name = coalesce($2, current_schema()) AND database_name = coalesce($3, current_database()) AND column_default IS NOT NULL LIMIT 1").parameters(vec![ScalarValue::Utf8(Some(reference.table().into())), ScalarValue::Utf8(reference.schema().map(str::to_owned)), ScalarValue::Utf8(reference.catalog().map(str::to_owned))]))?;
-            if defaults.num_rows() > 0 { return Err(format!("partition-specific defaults for relationship `{name}` are not yet writable")); }
-        }
-    }
     graph.validate_mapped_changes()?;
     let pending = graph.pending_changes();
     let mut rows = BTreeMap::<RowAddress, RowWrite>::new();
@@ -642,22 +649,19 @@ pub fn persist(
             if edge {
                 let m = mapped_edge.unwrap();
                 if let Some((child, child_key, _, fk)) = m.foreign_key_columns() {
+                    let (_, src, _, dst) = graph.edge_endpoints(name, key.clone())
+                        .ok_or("missing foreign-key relationship endpoints")?;
+                    let (child_id, parent) = if m.foreign_key
+                        == Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source) {
+                        (src,dst)
+                    } else { (dst,src) };
                     // Removing a child already removes its FK edge. Removing an
                     // edge alone never deletes the child row or its properties.
-                    if !graph.node_is_live(child, key.clone()) {
+                    if !graph.node_is_live(child, child_id.clone()) {
                         continue;
                     }
+                    values.extend(child_key.values(&child_id)?);
                     if live {
-                        let (_, src, _, dst) = graph
-                            .edge_endpoints(name, key.clone())
-                            .ok_or("missing edge endpoints")?;
-                        let parent = if m.foreign_key
-                            == Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source)
-                        {
-                            dst
-                        } else {
-                            src
-                        };
                         for (column, value) in fk.values(&parent)? {
                             if values.get(&column).is_some_and(|old| old != &value) {
                                 return Err(format!(
@@ -670,11 +674,14 @@ pub fn persist(
                         for column in nullable_fk_columns(connection, table_name, fk, child_key)? {
                             values.insert(column, ScalarValue::Null);
                         }
+                        if id_column != child_key {
+                            for column in id_column.columns() { values.insert(column.clone(),ScalarValue::Null); }
+                        }
                     }
                     merge_row(
                         &mut rows,
-                        (table_name.clone(), child_key.clone(), key.clone()),
-                        graph.base_exists(false, child, key),
+                        (table_name.clone(), child_key.clone(), child_id.clone()),
+                        graph.base_exists(false, child, &child_id),
                         false,
                         values,
                     )?;
@@ -715,7 +722,7 @@ pub fn persist(
     // created. This also prevents a database FK default from inventing an edge
     // invisible to the statement's graph overlay.
     for name in mapping.rel_types() {
-        let m = mapping.edge(&name).unwrap();
+        for m in mapping.edge_partitions(&name) {
         if let (MappedSource::Table(table_name), Some((_, child_key, _, fk))) =
             (&m.source, m.foreign_key_columns())
         {
@@ -730,7 +737,11 @@ pub fn persist(
                         .columns()
                         .iter()
                         .all(|c| row.values.get(c).is_some_and(|v| !v.is_null()))
-                        && !pending.edges.contains(&(name.clone(), id.clone()))
+                        && !pending.edges.iter().any(|(rel,edge_id)| rel == &name && graph.edge_endpoints(rel,edge_id.clone()).is_some_and(|(src_label,src,dst_label,dst)| {
+                            if src_label != m.src_label || dst_label != m.dst_label { return false; }
+                            let child_id=if m.foreign_key==Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source) {src} else {dst};
+                            child_id==*id
+                        }))
                     {
                         return Err(format!(
                             "creation of this child requires an explicit `{name}` relationship in the same statement"
@@ -739,6 +750,7 @@ pub fn persist(
                 }
             }
         }
+    }
     }
     let refs = references(mapping)?;
     let mut schemas = BTreeMap::new();
@@ -765,7 +777,27 @@ pub fn persist(
                     .ok_or("unsupported value for heterogeneous primitive property")?;
                 *value = crate::ir::functions::scalar_union::scalar(&semantic).map_err(|e| e.to_string())?;
             } else {
+                *value = temporal_storage(value.clone(), kind)?;
                 *value = value.cast_to(kind).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    // Runtime operators can return an unchanged graph snapshot. Do not rewrite
+    // unchanged columns: besides unnecessary work, DuckDB implements updates of
+    // nested/indexed values as delete+insert, which can reject referenced rows.
+    for ((table_name, key, id), row) in &mut rows {
+        if !row.existing || row.delete { continue; }
+        let columns = row.values.keys().filter(|column| !key.contains(column)).cloned().collect::<Vec<_>>();
+        if columns.is_empty() { continue; }
+        let sql = format!("SELECT {} FROM {} WHERE {} IN (SELECT {} FROM __orchiddb_write_values)",
+            columns.iter().map(|column| quote(column)).collect::<Vec<_>>().join(","),
+            table(table_name), key.sql(None), key.sql(None));
+        let input = bind_batch(key.values(id)?.into_iter().collect())?;
+        let old = connection.query(HostRequest::new(sql).relation("__orchiddb_write_values", input))?;
+        if old.num_rows() == 1 {
+            for (index, column) in columns.iter().enumerate() {
+                let value = ScalarValue::try_from_array(old.column(index), 0).map_err(|e| e.to_string())?;
+                if row.values.get(column) == Some(&value) { row.values.remove(column); }
             }
         }
     }
@@ -825,7 +857,7 @@ pub fn persist(
     Ok(())
 }
 
-fn constant_default(expression: &str) -> bool {
+pub(super) fn constant_default(expression: &str) -> bool {
     use datafusion::sql::sqlparser::{
         ast::{Expr, SelectItem, SetExpr, Statement},
         dialect::DuckDbDialect,
@@ -854,7 +886,7 @@ fn constant_default(expression: &str) -> bool {
     matches!(select.projection.as_slice(),[SelectItem::UnnamedExpr(expr)] if constant(expr))
 }
 
-fn text(batch: &RecordBatch, column: usize, row: usize) -> Result<String, String> {
+pub(super) fn text(batch: &RecordBatch, column: usize, row: usize) -> Result<String, String> {
     match ScalarValue::try_from_array(batch.column(column), row).map_err(|e| e.to_string())? {
         ScalarValue::Utf8(Some(value))
         | ScalarValue::LargeUtf8(Some(value))

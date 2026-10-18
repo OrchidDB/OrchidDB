@@ -769,3 +769,28 @@ mod window_tests {
         assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(), 0);
     }
 }
+
+/// Select representatives by Cypher equality without imposing encounter order.
+/// This implementation is only selected for a consumer proven order-insensitive.
+pub(super) fn unordered_distinct_partition(plan: LogicalPlan, mut keys: Vec<Expr>, barrier_id: usize) -> RelResult<LogicalPlan> {
+    let mut unique = Vec::new();
+    for key in keys.drain(..) { if !unique.contains(&key) { unique.push(key); } }
+    let fields = plan.schema().fields();
+    // A uniform primitive carrier has no observable representation choice.
+    // Domain and heterogeneous values retain stable representative selection.
+    if fields.iter().any(|f| !matches!(f.data_type(), DataType::Null | DataType::Boolean |
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)) {
+        return keyed_distinct_partition(plan, unique, barrier_id);
+    }
+    let original = plan.schema().columns();
+    let reserved = fields.iter().map(|f|f.name().clone()).collect::<BTreeSet<_>>();
+    let groups = unique.into_iter().enumerate().map(|(i,key)| {
+        key.alias(unique_internal_alias(&plan, &reserved, format!("__distinct_key_{i}")))
+    }).collect::<Vec<_>>();
+    let values = original.iter().map(|c| datafusion::functions_aggregate::first_last::first_value(
+        Expr::Column(c.clone()), vec![]).alias(&c.name)).collect::<Vec<_>>();
+    let aggregate=LogicalPlanBuilder::from(plan).aggregate(groups,values)?.build()?;
+    Ok(LogicalPlanBuilder::from(aggregate).project(original.iter().map(|c|col_exact(&c.name)).collect::<Vec<_>>())?.build()?)
+}

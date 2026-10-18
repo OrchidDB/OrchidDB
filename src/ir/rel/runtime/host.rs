@@ -14,12 +14,13 @@ pub struct KernelState {
     pub(crate) context: ExecutionContext,
 }
 impl KernelState {
-    pub fn for_host(graph: PropertyGraph, runner: Arc<dyn SubplanRunner>) -> Self {
+    pub fn for_host(graph: PropertyGraph, runner: Arc<dyn SubplanRunner>, rule_context: &crate::ir::rules::RuleContext) -> Self {
         let mut state = Self {
             graph,
             frontier: vec![Row::new()],
             ..Default::default()
         };
+        state.context.rule_context = rule_context.clone();
         state.set_subplan_runner(runner);
         state
     }
@@ -75,8 +76,10 @@ pub trait SubplanRunner: fmt::Debug + Send + Sync {
     fn run(&self, plan: &LogicalPlan, state: &mut KernelState) -> IrResult<Vec<Row>>;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CompileOptions {
+    #[doc(hidden)]
+    pub rule_context: crate::ir::rules::RuleContext,
     pub sql_islands: bool,
     pub language_functions: bool,
     pub native_values: bool,
@@ -85,6 +88,7 @@ pub struct CompileOptions {
 impl Default for CompileOptions {
     fn default() -> Self {
         Self {
+            rule_context: Default::default(),
             sql_islands: true,
             language_functions: false,
             native_values: true,
@@ -101,8 +105,12 @@ pub fn compile_for_host(
     graph: &PropertyGraph,
     options: CompileOptions,
 ) -> std::result::Result<LogicalPlan, QueryExecutionError> {
+    let rule_context = &options.rule_context;
+    let normalized = super::super::pipeline::normalize_graph(plan, rule_context).map_err(QueryExecutionError::from_error)?;
+    let plan = &normalized;
     stacker::maybe_grow(128 * 1024, 64 * 1024 * 1024, || {
         let compiler = Compiler {
+            rule_context: rule_context.clone(),
             graph,
             policy: plan.policy.clone(),
             sql: options.sql_islands
@@ -316,7 +324,7 @@ pub(crate) mod tests {
             ),
         ] {
             let compiled = compile(query, &graph);
-            let mut state = KernelState::for_host(graph.clone(), runner.clone());
+            let mut state = KernelState::for_host(graph.clone(), runner.clone(), &Default::default());
             let rows = runner.run(&compiled, &mut state).unwrap();
             let values = rows
                 .iter()
@@ -332,7 +340,7 @@ pub(crate) mod tests {
             "g.inject('a','b','a').group().by(__.identity()).by(__.count())",
             &graph,
         );
-        let mut state = KernelState::for_host(graph, runner.clone());
+        let mut state = KernelState::for_host(graph, runner.clone(), &Default::default());
         let rows = runner.run(&compiled, &mut state).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(matches!(
@@ -360,7 +368,7 @@ pub(crate) mod tests {
             )
             .unwrap();
             let runner = Arc::new(HostRunner::default());
-            let mut state = KernelState::for_host(prepared.graph, runner.clone());
+            let mut state = KernelState::for_host(prepared.graph, runner.clone(), &Default::default());
             let rows = runner.run(&compiled, &mut state).unwrap();
             assert_eq!(rows.len(), 1, "{function}");
             assert!(matches!(rows[0].bindings.get("path"), Some(Value::Null)));
@@ -374,7 +382,7 @@ pub(crate) mod tests {
         let compiled = compile("g.inject(1,2).aggregate('seen').cap('seen')", &graph);
         let mut prior = None;
         for _ in 0..2 {
-            let mut state = KernelState::for_host(graph.clone(), runner.clone());
+            let mut state = KernelState::for_host(graph.clone(), runner.clone(), &Default::default());
             let rows = runner.run(&compiled, &mut state).unwrap();
             assert_eq!(rows.len(), 1);
             let encoded =

@@ -26,6 +26,9 @@ unsafe fn data_type(t: ffi::duckdb_logical_type) -> Result<DataType> {
         L::Smallint => DataType::Int16,
         L::Integer => DataType::Int32,
         L::Bigint => DataType::Int64,
+        // SUM of BIGINT widens to HUGEINT in DuckDB, including inside lists.
+        // Its full signed 128-bit domain needs 39 decimal digits.
+        L::Hugeint => DataType::Decimal256(39, 0),
         L::UTinyint => DataType::UInt8,
         L::USmallint => DataType::UInt16,
         L::UInteger => DataType::UInt32,
@@ -93,6 +96,11 @@ unsafe fn cell(v: ffi::duckdb_vector, t: &DataType, row: usize) -> Result<Scalar
                 std::slice::from_raw_parts(ffi::duckdb_string_t_data(&mut s).cast::<u8>(), len)
             };
             ScalarValue::Utf8(Some(std::str::from_utf8(bytes)?.into()))
+        }
+        DataType::Decimal256(39, 0) => {
+            let n = get!(ffi::duckdb_hugeint);
+            let n = ((n.upper as i128) << 64) | n.lower as i128;
+            ScalarValue::Decimal256(Some(arrow::datatypes::i256::from_i128(n)), 39, 0)
         }
         DataType::Decimal128(width, scale) => {
             let n = match width {

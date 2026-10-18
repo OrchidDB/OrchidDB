@@ -79,6 +79,9 @@ struct Cache {
     attempted_scans: BTreeSet<(bool, String)>,
     source_order: HashMap<(bool, String), Vec<ElementId>>,
     access_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
+    key_defaults: HashMap<(String, String), Option<String>>,
+    emptiness_checked: BTreeSet<(bool, String)>,
+    edge_defaults: HashMap<(String, String, String), (BTreeMap<String, Value>, BTreeSet<String>)>,
 }
 pub(super) struct Source {
     host: Arc<dyn HostRelational + Send + Sync>,
@@ -210,6 +213,32 @@ impl Source {
     ) -> Result<bool, String> {
         if self.cached_keys(edge, name, column, ids).is_some() {
             return Ok(true);
+        }
+        // A newly created/empty source otherwise incurs a separate identity
+        // lookup for every inserted element. Confirm emptiness from SQL once;
+        // estimates are not evidence that a source contains no rows.
+        let address = (edge, name.to_owned());
+        let first = self.cache.lock().unwrap().emptiness_checked.insert(address.clone());
+        if first {
+            let source = if edge { self.mapping.edge(name).map(|m| &m.source) }
+                else { self.mapping.node(name).map(|m| &m.source) };
+            if let Some(MappedSource::Table(source)) = source
+                && self.mapping.representation_source(source).is_none()
+                && self.mapping.collection_source(source).is_none()
+                && self.mapping.logical_source(source).is_none() {
+                let filter = if edge { self.mapping.edge(name).and_then(|m| m.foreign_key_columns())
+                    .map(|(_, _, _, fk)| format!(" WHERE {}", fk.present_sql())).unwrap_or_default() }
+                    else { String::new() };
+                let sql = format!("SELECT 1 FROM {}{filter} LIMIT 1", table(source));
+                let batch = self.host.query(HostRequest::new(&sql))?;
+                let mut cache = self.cache.lock().unwrap();
+                cache.queries.push(sql);
+                if batch.num_rows() == 0 {
+                    cache.complete_sources.insert(address.clone());
+                    cache.source_order.insert(address, Vec::new());
+                    return Ok(true);
+                }
+            }
         }
         if self
             .cache
@@ -483,6 +512,76 @@ impl Source {
     }
 }
 impl GraphSource for Source {
+    fn generated_edge_key(&self, name: &str, src: &str, dst: &str) -> Option<Result<ElementId, String>> {
+        self.mapping.edge_for_endpoints(name, src, dst).ok()?;
+        self.generated_key(true, name)
+    }
+    fn edge_insert_defaults(&self, name: &str, src: &str, dst: &str)
+        -> Option<Result<(BTreeMap<String, Value>, BTreeSet<String>), String>> {
+        let mapping = self.mapping.edge_for_endpoints(name, src, dst).ok()?;
+        let MappedSource::Table(table_name) = &mapping.source else { return None; };
+        let address = (name.to_owned(), src.to_owned(), dst.to_owned());
+        if let Some(defaults) = self.cache.lock().unwrap().edge_defaults.get(&address).cloned() {
+            return Some(Ok(defaults));
+        }
+        Some((|| {
+            let reference = datafusion::common::TableReference::from(table_name.as_str());
+            let batch = self.host.query(HostRequest::new("SELECT column_name, column_default FROM duckdb_columns() WHERE lower(table_name)=lower($1) AND lower(schema_name)=lower(coalesce($2,current_schema())) AND lower(database_name)=lower(coalesce($3,current_database())) AND column_default IS NOT NULL")
+                .parameters(vec![ScalarValue::Utf8(Some(reference.table().into())), ScalarValue::Utf8(reference.schema().map(str::to_owned)), ScalarValue::Utf8(reference.catalog().map(str::to_owned))]))?;
+            let mut defaults = BTreeMap::new();
+            let mut unsupported = BTreeSet::new();
+            for row in 0..batch.num_rows() {
+                let column = text(&batch, 0, row)?;
+                if mapping.id_column.as_ref().is_some_and(|key| key.contains(&column)) { continue; }
+                let expression = text(&batch, 1, row)?;
+                for (property, _) in mapping.properties.iter().filter(|(_, physical)| **physical == column) {
+                    if mapped_storage::constant_default(&expression) {
+                        let value = self.host.query(HostRequest::new(format!("SELECT {expression} AS value")))?;
+                        defaults.insert(property.clone(), crate::ir::catalog::array_value(value.column(0).as_ref(), 0, None));
+                    } else {
+                        unsupported.insert(property.clone());
+                    }
+                }
+            }
+            let result = (defaults, unsupported);
+            self.cache.lock().unwrap().edge_defaults.insert(address, result.clone());
+            Ok(result)
+        })())
+    }
+
+    fn generated_key(&self, edge: bool, name: &str) -> Option<Result<ElementId, String>> {
+        let (source, key) = if edge {
+            let mapping = self.mapping.edge(name)?;
+            (&mapping.source, mapping.id_column.as_ref()?)
+        } else {
+            let mapping = self.mapping.node(name)?;
+            (&mapping.source, &mapping.id_column)
+        };
+        let MappedSource::Table(table_name) = source else { return None; };
+        if key.len() != 1 { return None; }
+        let reference = datafusion::common::TableReference::from(table_name.as_str());
+        let result = (|| -> Result<Option<ElementId>, String> {
+            // Cache the declaration, never its result: nextval()/UUID defaults
+            // still execute once for every requested identity. The cache is
+            // fenced with the other source metadata after storage effects.
+            let address = (table_name.clone(), key.columns()[0].clone());
+            let cached = self.cache.lock().unwrap().key_defaults.get(&address).cloned();
+            let expression = if let Some(expression) = cached { expression } else {
+            let defaults = self.host.query(HostRequest::new("SELECT column_default FROM duckdb_columns() WHERE lower(table_name)=lower($1) AND lower(column_name)=lower($2) AND lower(schema_name)=lower(coalesce($3,current_schema())) AND lower(database_name)=lower(coalesce($4,current_database())) AND column_default IS NOT NULL")
+                .parameters(vec![ScalarValue::Utf8(Some(reference.table().into())), ScalarValue::Utf8(Some(key.columns()[0].clone())), ScalarValue::Utf8(reference.schema().map(str::to_owned)), ScalarValue::Utf8(reference.catalog().map(str::to_owned))]))?;
+                let expression = if defaults.num_rows() == 0 { None } else { Some(text(&defaults, 0, 0)?) };
+                self.cache.lock().unwrap().key_defaults.insert(address, expression.clone());
+                expression
+            };
+            let Some(expression) = expression else { return Ok(None); };
+            let sql = format!("SELECT {expression} AS generated_identity");
+            let batch = self.host.query(HostRequest::new(&sql))?;
+            self.cache.lock().unwrap().queries.push(sql);
+            let value = ScalarValue::try_from_array(batch.column(0), 0).map_err(|e| e.to_string())?;
+            Ok(Some(ElementId::new(value)?))
+        })();
+        match result { Ok(Some(key)) => Some(Ok(key)), Ok(None) => None, Err(error) => Some(Err(error)) }
+    }
     fn native_state(&self, edge: bool, name: &str, id: &ElementId) -> Option<crate::ir::catalog::source::NativeState> {
         if edge || self.mapping.node(name)?.labels_column.is_none() { return None; }
         let record = self.record(false, name, id)?;
@@ -513,6 +612,9 @@ impl GraphSource for Source {
         cache.complete_sources.clear();
         cache.attempted_scans.clear();
         cache.source_order.clear();
+        cache.key_defaults.clear();
+        cache.emptiness_checked.clear();
+        cache.edge_defaults.clear();
     }
     fn function(&self, name: &str, args: &[Value]) -> Option<Result<Value, String>> {
         if self.operators.overloads(name).is_empty() {
@@ -742,6 +844,16 @@ impl PartitionSources {
     }
 }
 impl GraphSource for PartitionSources {
+    fn generated_key(&self, edge: bool, name: &str) -> Option<Result<ElementId, String>> {
+        self.sources[0].generated_key(edge, name)
+    }
+    fn generated_edge_key(&self, name: &str, src: &str, dst: &str) -> Option<Result<ElementId, String>> {
+        self.sources.iter().find_map(|source| source.generated_edge_key(name, src, dst))
+    }
+    fn edge_insert_defaults(&self, name: &str, src: &str, dst: &str)
+        -> Option<Result<(BTreeMap<String, Value>, BTreeSet<String>), String>> {
+        self.sources.iter().find_map(|source| source.edge_insert_defaults(name, src, dst))
+    }
     #[cfg(feature = "duckdb")]
     fn executor(&self) -> Option<Arc<Mutex<crate::ir::rel::sql::DuckDbExecutor>>> { self.sources[0].executor() }
     fn invalidate(&self) { for source in &self.sources { source.invalidate(); } }

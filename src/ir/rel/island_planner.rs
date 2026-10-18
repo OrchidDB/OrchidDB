@@ -14,13 +14,14 @@ pub(super) struct IslandMemo {
     lowered: BTreeMap<(usize, BTreeMap<String, usize>), Option<LoweredNode>>,
     next_scan: usize,
     scan_logical_labels: bool,
+    terminal_distinct: Option<usize>,
     pub attempts: usize,
     pub hits: usize,
 }
 pub(super) type SharedMemo = Arc<Mutex<IslandMemo>>;
 impl IslandMemo {
     pub fn new(root: &Node) -> SharedMemo {
-        let mut memo = Self { scan_logical_labels: requires_logical_node_labels(root), ..Self::default() };
+        let mut memo = Self { scan_logical_labels: requires_logical_node_labels(root), terminal_distinct: super::operators::terminal_distinct(root), ..Self::default() };
         let mut results = BTreeMap::new();
         let mut pending = vec![(root, false)];
         while let Some((node, ready)) = pending.pop() {
@@ -131,7 +132,9 @@ impl RelBackend {
         memo: SharedMemo,
     ) -> RelResult<LoweredPlan> {
         if policy.language == Language::Sparql {
-            return self.lower(&GraphPlan::new(policy.clone(), root.clone()), graph);
+            // The host normalized the query before island discovery. Reuse its
+            // context so separate SPARQL islands share budgets and diagnostics.
+            return self.lower_normalized_in_query(&GraphPlan::new(policy.clone(), root.clone()), graph);
         }
         stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || {
             let stats = memo
@@ -150,7 +153,10 @@ impl RelBackend {
                     "Gremlin SQL island complexity fence".into(),
                 ));
             }
-            let scan_counter = memo.lock().unwrap().next_scan;
+            let (scan_counter, scan_logical_labels, terminal_distinct) = {
+                let memo = memo.lock().unwrap();
+                (memo.next_scan, memo.scan_logical_labels, memo.terminal_distinct)
+            };
             let mut ctx = LoweringContext {
                 graph,
                 options: self.options.clone(),
@@ -159,7 +165,9 @@ impl RelBackend {
                 scan_counter,
                 correlate_plan: None,
                 rdf_typed_terms_used: false,
-                scan_logical_labels: memo.lock().unwrap().scan_logical_labels,
+                scan_logical_labels,
+                unordered_collects: BTreeSet::new(),
+                unordered_distincts: terminal_distinct.into_iter().collect(),
                 gremlin_label_binds: if policy.language == Language::Gremlin {
                     gremlin::label_bind_counts(root)
                 } else {
@@ -171,6 +179,7 @@ impl RelBackend {
             memo.lock().unwrap().next_scan = ctx.scan_counter;
             let lowered = result?;
             Ok(LoweredPlan {
+            rule_context: self.options.rule_context.clone(),
                 fields: lowered
                     .fields
                     .clone()
@@ -189,7 +198,7 @@ impl LoweringContext<'_> {
         // Temporary rewritten nodes and correlated scopes bypass this memo.
         let key = memo
             .as_ref()
-            .filter(|m| self.correlate_plan.is_none() && m.lock().unwrap().safe(node))
+            .filter(|m| self.correlate_plan.is_none() && self.unordered_collects.is_empty() && self.unordered_distincts.is_empty() && m.lock().unwrap().safe(node))
             .map(|_| {
                 (
                     node as *const Node as usize,
@@ -206,6 +215,7 @@ impl LoweringContext<'_> {
             cache.attempts += 1;
         }
         let result = self.lower_node_inner(node);
+        if matches!(&result, Err(RelError::RulePipeline(_))) { return result; }
         if let (Some(memo), Some(key)) = (memo, key) {
             memo.lock()
                 .unwrap()

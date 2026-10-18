@@ -25,7 +25,7 @@ pub(crate) fn encoded_scalar(value: &TemporalValue) -> Result<ScalarValue> {
 }
 
 pub(crate) fn is_date_type(ty: &DataType) -> bool {
-    domain::descriptor(ty) == Some((NAME, &DataType::Date32))
+    *ty == DataType::Date32 || domain::descriptor(ty) == Some((NAME, &DataType::Date32))
 }
 
 pub(crate) fn encoded_kind(ty: &DataType) -> Option<&str> {
@@ -49,7 +49,8 @@ pub(crate) fn scalar_for_type(value: &TemporalValue, ty: &DataType) -> Result<Sc
     } else if is_date_type(ty) {
         let days=value.calendar_date().ok_or_else(||DataFusionError::Execution("Expected date".into()))?.epoch_days();
         if value.kind()!="date"{return Err(DataFusionError::Execution("Expected date".into()));}
-        domain::scalar(NAME,ScalarValue::Date32(Some(i32::try_from(days).map_err(|_|DataFusionError::Execution("Date exceeds native DATE storage range".into()))?)))?
+        let storage = ScalarValue::Date32(Some(i32::try_from(days).map_err(|_|DataFusionError::Execution("Date exceeds native DATE storage range".into()))?));
+        if *ty == DataType::Date32 { storage } else { domain::scalar(NAME, storage)? }
     } else { encoded_scalar(value)? };
     if result.data_type() != *ty {
         return Err(DataFusionError::Execution("Temporal value does not fit its declared storage type".into()));
@@ -69,7 +70,8 @@ pub(crate) fn contains_type(ty: &DataType) -> bool {
 }
 
 pub(crate) fn decode(value: &ScalarValue) -> Result<TemporalValue> {
-    match domain::storage(value)? {
+    let storage = if value.data_type() == DataType::Date32 { value.clone() } else { domain::storage(value)? };
+    match storage {
         ScalarValue::Date32(Some(days)) => {
             let date = super::CalendarDate::from_epoch_days(i64::from(days))
                 .map_err(DataFusionError::Execution)?;

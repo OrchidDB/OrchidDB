@@ -14,6 +14,8 @@ async fn simple_scan_count_has_no_aggregate_scaffolding() {
     for query in [
         "MATCH () RETURN count(*) AS columnName",
         "MATCH (n:P) RETURN count(*) AS columnName",
+        "OPTIONAL MATCH (n) RETURN count(DISTINCT n) AS columnName",
+        "OPTIONAL MATCH (n) RETURN count(n) AS columnName",
         "MATCH (n) WHERE false RETURN count(*) AS columnName",
     ] {
         let lowered = lower(&graph, query);
@@ -38,6 +40,9 @@ async fn counts_preserve_empty_filtered_joined_and_optional_rows() {
             ("MATCH (a),(b) RETURN count(*) AS columnName", size * size),
             ("MATCH (n) UNWIND [1,2] AS x RETURN count(*) AS columnName", size * 2),
             ("OPTIONAL MATCH (n) RETURN count(*) AS columnName", size.max(1)),
+            ("OPTIONAL MATCH (n) RETURN count(n) AS columnName", size),
+            ("OPTIONAL MATCH (n) RETURN count(DISTINCT n) AS columnName", size),
+            ("UNWIND [1,2] AS x OPTIONAL MATCH (n) RETURN count(DISTINCT n) AS columnName", size),
             ("UNWIND [null,null] AS x RETURN count(*) AS columnName", 2),
             ("MATCH (n) WITH n LIMIT 1 RETURN count(*) AS columnName", size.min(1)),
             ("MATCH (n) RETURN count(DISTINCT 1) AS columnName", size.min(1)),

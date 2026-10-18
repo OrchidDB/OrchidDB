@@ -644,6 +644,15 @@ impl PropertyGraph {
         } else if let Some(table) = self.edges.get(rel_type) {
             out = table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"]);
         }
+        // Explicit mappings distinguish ordinary properties named id/src/dst
+        // from the separate physical identity and endpoint columns.
+        if let Some(mapping) = self.write_mapping() {
+            for partition in mapping.edge_partitions(rel_type) {
+                for key in partition.properties.keys() {
+                    if !out.contains(key) { out.push(key.clone()); }
+                }
+            }
+        }
         // Incremental for the same reason as `node_property_keys_inner`:
         // filtering every overlay edge on each call made bulk edge writes
         // quadratic.

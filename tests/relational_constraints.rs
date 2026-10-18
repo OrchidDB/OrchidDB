@@ -593,6 +593,7 @@ fn rewritten_sql_matches_duckdb_for_benefiting_queries() {
             .collect();
         let rewritten = unparse(
             &LoweredPlan {
+            rule_context: Default::default(),
                 plan,
                 fields,
                 result_form: ResultForm::RowSet,

@@ -7,13 +7,69 @@ use datafusion::logical_expr::{
 };
 use std::any::Any;
 
+pub const CYPHER_TO_FLOAT: &str = "__orchiddb_cypher_to_float_v1";
+
+/// A registration witness, not an enable flag. Created only by a host adapter
+/// after checking the live catalog; query preparation must refresh it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FloatHelperCapability {
+    registration_identity: String,
+}
+impl FloatHelperCapability {
+    /// Attest a trusted adapter registration; never construct from query/request
+    /// data or a name-only catalog lookup.
+    ///
+    /// # Safety
+    /// The adapter must have checked the actual registered callback identity,
+    /// nullable VARCHAR -> DOUBLE signature, immutable Orchid v1 contract and
+    /// current session/catalog identity. Recheck before reusing in another query.
+    #[doc(hidden)]
+    pub unsafe fn from_verified_adapter(registration_identity: String) -> Self {
+        Self { registration_identity }
+    }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn verified(registration_identity: String) -> Self { Self { registration_identity } }
+    pub fn registration_identity(&self) -> &str { &self.registration_identity }
+    pub fn operation(&self) -> &str { "cypher.to_float" }
+    pub fn signature(&self) -> &str { "varchar->double" }
+    pub fn contract_version(&self) -> u16 { 1 }
+}
+
+pub(crate) fn cypher_to_float(expr: Expr) -> Expr {
+    ScalarUDF::from(LanguageFunction {
+        name: CYPHER_TO_FLOAT.into(),
+        result: DataType::Float64,
+        signature: Signature::exact(vec![DataType::Utf8], Volatility::Immutable),
+    }).call(vec![expr])
+}
+
+/// Inspect implementation identity, not the spelling of an arbitrary UDF.
+pub(crate) fn returns_finite_float(expr: &Expr) -> bool {
+    matches!(expr, Expr::ScalarFunction(call)
+        if call.func.inner().as_any().downcast_ref::<LanguageFunction>()
+            .is_some_and(|f| f.name == CYPHER_TO_FLOAT && f.result == DataType::Float64))
+}
+
+pub const LIST_COMPARE: &str = "__orchiddb_cypher_list_compare";
+pub(super) fn list_compare(left: Expr, right: Expr, op: &str) -> Expr {
+    udf(LIST_COMPARE, DataType::Boolean, 3).call(vec![lit(op), left, right])
+}
+
+pub const COLLECT_DISTINCT: &str = "__orchiddb_cypher_collect_distinct";
+pub(super) fn collect_distinct(list: Expr, ty: DataType) -> Expr { udf(COLLECT_DISTINCT, ty, 1).call(vec![list]) }
+
+pub const NODE_TEXT: &str = "__orchiddb_cypher_node_text";
+
+pub(super) fn node_text(args: Vec<Expr>) -> Expr { udf(NODE_TEXT, DataType::Utf8, 4).call(args) }
+
 pub const KEY: &str = "__orchiddb_lang_cypher_key";
 pub const SPARQL: &str = "__orchiddb_lang_sparql";
 
 pub(crate) fn supported(name: &str) -> bool {
     matches!(
         name,
-        KEY | SPARQL
+        KEY | SPARQL | CYPHER_TO_FLOAT | NODE_TEXT | COLLECT_DISTINCT | LIST_COMPARE
             | "__orchiddb_lang_text"
             | "__orchiddb_lang_texts"
             | "__orchiddb_lang_int"
@@ -230,6 +286,87 @@ pub(crate) fn evaluate(
     arrays: &[ArrayRef],
     rows: usize,
 ) -> datafusion::common::Result<ArrayRef> {
+    if name == LIST_COMPARE {
+        if arrays.len() != 3 {
+            return Err(DataFusionError::Execution("list comparison expects operation and two lists".into()));
+        }
+        let mut result = arrow::array::BooleanBuilder::new();
+        for row in 0..rows {
+            let ScalarValue::Utf8(Some(op)) = ScalarValue::try_from_array(&arrays[0], row)? else {
+                return Err(DataFusionError::Execution("list comparison expects a non-null operation".into()));
+            };
+            if !matches!(op.as_str(), "eq" | "neq" | "lt" | "lte" | "gt" | "gte") {
+                return Err(DataFusionError::Execution("invalid list comparison operation".into()));
+            }
+            let left = value(ScalarValue::try_from_array(&arrays[1], row)?)?;
+            let right = value(ScalarValue::try_from_array(&arrays[2], row)?)?;
+            match crate::ir::runtime::scalar::cypher_compare_value(&left, &right, &op) {
+                Value::Bool(value) => result.append_value(value),
+                Value::Null => result.append_null(),
+                _ => return Err(DataFusionError::Execution("invalid list comparison result".into())),
+            }
+        }
+        return Ok(Arc::new(result.finish()));
+    }
+    if name == CYPHER_TO_FLOAT {
+        if arrays.len() != 1 || arrays[0].data_type() != &DataType::Utf8 {
+            return Err(DataFusionError::Execution("Cypher float helper expects nullable Utf8".into()));
+        }
+        let input = arrays[0].as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+        let result = arrow::array::Float64Array::from_iter(input.iter().take(rows).map(|v|
+            v.and_then(|v| crate::ir::functions::cypher_float::parse_string(v).ok())));
+        return Ok(Arc::new(result));
+    }
+    if name == COLLECT_DISTINCT {
+        let Some(input) = arrays.first().and_then(|a| a.as_any().downcast_ref::<arrow::array::ListArray>()) else {
+            return Err(DataFusionError::Execution("distinct collection requires a typed list".into()));
+        };
+        let mut result = Vec::with_capacity(rows);
+        for row in 0..rows {
+            let mut seen = std::collections::HashSet::new();
+            let mut selected = Vec::new();
+            if !input.is_null(row) {
+                let items = input.value(row);
+                for i in 0..items.len() {
+                    let scalar = ScalarValue::try_from_array(&items, i)?;
+                    if scalar.is_null() { continue; }
+                    let key = crate::ir::runtime::ops::distinct::encode_cypher_equivalence(&value(scalar.clone())?);
+                    if seen.insert(key) { selected.push(scalar); }
+                }
+            }
+            result.push(ScalarValue::List(ScalarValue::new_list_nullable(&selected, &input.value_type())));
+        }
+        return if result.is_empty() { Ok(arrow::array::new_empty_array(input.data_type())) }
+            else { ScalarValue::iter_to_array(result) };
+    }
+    if name == NODE_TEXT {
+        if arrays.len() != 4 { return Err(DataFusionError::Execution("node text requires four operands".into())); }
+        let text = arrays[..3].iter().map(|a| a.as_any().downcast_ref::<arrow::array::StringArray>()
+            .ok_or_else(|| DataFusionError::Execution("node identity display requires strings".into())))
+            .collect::<datafusion::common::Result<Vec<_>>>()?;
+        let properties = arrays[3].as_any().downcast_ref::<StructArray>();
+        if properties.is_none() && arrays[3].data_type() != &DataType::Null {
+            return Err(DataFusionError::Execution("node properties require a struct".into()));
+        }
+        let mut result = arrow::array::StringBuilder::new();
+        for row in 0..rows {
+            if text.iter().any(|a| a.is_null(row)) { result.append_null(); continue; }
+            let mut rendered = format!("{{_ID: {}:{}, _LABEL: {}", text[0].value(row), text[1].value(row), text[2].value(row));
+            if let Some(properties) = properties {
+                for (field, column) in properties.fields().iter().zip(properties.columns()) {
+                    // SQL may erase CAST(NULL AS VARCHAR) inside a struct.
+                    // An untyped null is still an omitted property.
+                    if column.data_type() == &DataType::Null { continue; }
+                    let column = column.as_any().downcast_ref::<arrow::array::StringArray>()
+                        .ok_or_else(|| DataFusionError::Execution("node properties require rendered strings".into()))?;
+                    if !column.is_null(row) { rendered.push_str(&format!(", {}: {}", field.name(), column.value(row))); }
+                }
+            }
+            rendered.push('}');
+            result.append_value(rendered);
+        }
+        return Ok(Arc::new(result.finish()));
+    }
     if name == KEY {
         if arrays.len() != 1 || !key_type(arrays[0].data_type()) {
             return Err(DataFusionError::Execution(
@@ -386,5 +523,46 @@ mod key_null_tests {
             let keys = evaluate(KEY, &[array], 3).unwrap();
             assert_eq!(keys.null_count(), 3);
         }
+    }
+}
+
+#[cfg(test)]
+mod node_text_tests {
+    use super::*;
+    #[test]
+    fn display_preserves_null_nodes_property_order_and_empty_values() {
+        use arrow::array::StringArray;
+        let strings = |values: Vec<Option<&str>>| -> ArrayRef { Arc::new(StringArray::from(values)) };
+        let properties: ArrayRef = Arc::new(StructArray::from(vec![
+            (Arc::new(Field::new("z", DataType::Utf8, true)), strings(vec![Some(""), None, Some("ignored")])),
+            (Arc::new(Field::new("a", DataType::Utf8, true)), strings(vec![Some("True"), Some("text"), None])),
+        ]));
+        let output = evaluate(NODE_TEXT, &[
+            strings(vec![Some("0"); 3]), strings(vec![Some("7"), Some("8"), None]),
+            strings(vec![Some("P"); 3]), properties,
+        ], 3).unwrap();
+        let output = output.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(output.value(0), "{_ID: 0:7, _LABEL: P, z: , a: True}");
+        assert_eq!(output.value(1), "{_ID: 0:8, _LABEL: P, a: text}");
+        assert!(output.is_null(2));
+    }
+}
+
+#[cfg(test)]
+mod stable_collection_tests {
+    use super::*;
+    #[test]
+    fn distinct_collection_keeps_first_order_and_omits_nulls() {
+        let input = ScalarValue::List(ScalarValue::new_list_nullable(&[
+            ScalarValue::Int64(Some(3)), ScalarValue::Int64(None),
+            ScalarValue::Int64(Some(1)), ScalarValue::Int64(Some(3)),
+            ScalarValue::Int64(Some(2)), ScalarValue::Int64(Some(1)),
+        ], &DataType::Int64));
+        let array = input.to_array_of_size(1).unwrap();
+        let actual = evaluate(COLLECT_DISTINCT, &[array], 1).unwrap();
+        let expected = ScalarValue::List(ScalarValue::new_list_nullable(&[
+            ScalarValue::Int64(Some(3)), ScalarValue::Int64(Some(1)), ScalarValue::Int64(Some(2)),
+        ], &DataType::Int64));
+        assert_eq!(ScalarValue::try_from_array(&actual, 0).unwrap(), expected);
     }
 }

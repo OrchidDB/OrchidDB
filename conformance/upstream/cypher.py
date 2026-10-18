@@ -233,6 +233,11 @@ class Cypher:
     rows=[[value(row[table[0].index(name)]) for name in names] for row in table[1:]] if table and names else []
     registered=self.rust.send({'op':'register-procedure','name':signature[1].strip(),'inputs':inputs,'outputs':outputs,'rows':rows})
     if 'error' in registered:raise ValueError('Procedure registration failed: '+str(registered))
+   if self.engine=='orchiddb':
+    # Schema discovery receives only input queries and parameters, never assertions.
+    queries=setup+[s['doc'] for s in steps if s['text'] in ('executing query:','executing control query:')]
+    configured=self.rust.send({'op':'configure-schema','queries':queries,'params':params})
+    if 'error' in configured:return {'status':'adapter-error','stage':'fixture-schema','reason':configured['error']}
    for q in setup:
     result=self.query(q,params)
     if 'error' in result:return {'status':'fail','stage':'fixture-query','query':q,'actual':result,'reason':'Engine rejected an upstream GIVEN query'}

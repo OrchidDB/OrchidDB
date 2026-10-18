@@ -27,7 +27,13 @@ mod cypher_lists;
 mod collection_evaluation;
 mod table_procedures;
 mod scalar_semantics;
+pub(crate) mod conversion_rules;
+mod scalar_rule_program;
+#[cfg(all(test, feature = "duckdb"))]
+mod pipeline_tests;
+pub(crate) mod pipeline;
 mod list_comparison;
+mod empty_relations;
 mod path_demand;
 mod temporal_semantics;
 use expression::*;
@@ -152,6 +158,9 @@ pub struct RelBackend {
 
 #[derive(Debug, Clone)]
 pub struct RelBackendOptions {
+    /// Query-scoped internal rule policy and verified adapter capabilities.
+    #[doc(hidden)]
+    pub rule_context: crate::ir::rules::RuleContext,
     /// Preserve graph-language scalar values using the host native value functions.
     pub native_values: bool,
     /// Emit calls to opt-in DuckDB language functions (also executable by DataFusion).
@@ -172,6 +181,7 @@ pub struct RelBackendOptions {
 impl Default for RelBackendOptions {
     fn default() -> Self {
         Self {
+            rule_context: Default::default(),
             tolerate_internal_path_state: true,
             language_functions: false,
             native_values: false,
@@ -183,6 +193,8 @@ impl Default for RelBackendOptions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RelError {
+    #[error(transparent)]
+    RulePipeline(#[from] crate::ir::rules::RuleError),
     #[error("read plan validation: {0}")]
     ReadValidation(#[from] ReadValidationError),
     #[error("unsupported relational lowering: {0}")]
@@ -219,6 +231,8 @@ struct GraphPlanStats {
 
 #[derive(Debug, Clone)]
 pub struct LoweredPlan {
+    #[doc(hidden)]
+    pub rule_context: crate::ir::rules::RuleContext,
     pub plan: LogicalPlan,
     pub fields: Vec<String>,
     pub result_form: ResultForm,
@@ -252,11 +266,22 @@ struct LoweringContext<'a> {
     scan_logical_labels: bool,
     /// Gremlin step-label bind multiplicity (see `gremlin::label_bind_counts`).
     gremlin_label_binds: BTreeMap<String, usize>,
+    /// Scoped aggregate identities whose consumers cannot observe list order.
+    unordered_collects: BTreeSet<usize>,
+    unordered_distincts: BTreeSet<usize>,
 }
 
 impl RelBackend {
+    pub(crate) fn set_rule_context(&mut self, context: crate::ir::rules::RuleContext) { self.options.rule_context = context; }
+    pub(crate) fn options_rule_context(&mut self, helper: Option<language_functions::FloatHelperCapability>, enabled: bool) {
+        self.options.rule_context = self.options.rule_context.new_query();
+        self.options.rule_context.capabilities.language_functions_enabled = enabled;
+        self.options.rule_context.capabilities.float_helper = helper;
+    }
+
     pub fn with_language_functions(mut self, enabled: bool) -> Self {
         self.options.language_functions = enabled;
+        self.options.rule_context.capabilities.language_functions_enabled = enabled;
         self
     }
 
@@ -277,12 +302,20 @@ impl RelBackend {
     pub fn lower(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
         // Deep scalar collections also recurse through backend expression typing.
         // Grow only around synchronous lowering, never across an async boundary.
-        stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || self.lower_inner(plan, graph))
+        stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || {
+            let mut query = self.clone();
+            query.options.rule_context = self.options.rule_context.new_query();
+            query.lower_inner(plan, graph, false)
+        })
     }
 
-    fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
-        let specialized = table_procedures::specialize_plan(plan, graph);
-        let specialized = path_demand::specialize_plan(&specialized);
+    pub(crate) fn lower_normalized_in_query(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
+        stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || self.lower_inner(plan, graph, true))
+    }
+
+    fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph, normalized: bool) -> RelResult<LoweredPlan> {
+        let normalized = if normalized { plan.clone() } else { pipeline::normalize_graph(plan, &self.options.rule_context)? };
+        let specialized = pipeline::prepare_graph_implementations(normalized, graph, &self.options.rule_context)?;
         let plan = &specialized;
         validate_read_capabilities(plan, ReadCapabilities {read_procedures:self.options.native_values,..ReadCapabilities::LOCAL_DUCKDB})?;
         let graph_stats = graph_plan_stats(&plan.root);
@@ -309,6 +342,8 @@ impl RelBackend {
             correlate_plan: None,
             rdf_typed_terms_used: false,
             scan_logical_labels: requires_logical_node_labels(&plan.root),
+            unordered_collects: BTreeSet::new(),
+            unordered_distincts: BTreeSet::new(),
             gremlin_label_binds: if plan.policy.language == Language::Gremlin {
                 gremlin::label_bind_counts(&plan.root)
             } else {
@@ -324,6 +359,7 @@ impl RelBackend {
             .clone()
             .unwrap_or_else(|| output_fields(&lowered.plan));
         Ok(LoweredPlan {
+            rule_context: self.options.rule_context.clone(),
             plan: lowered.plan,
             fields,
             result_form: lowered.result_form.unwrap_or(ctx.policy.result_form),
@@ -346,13 +382,14 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
 }
 
 async fn execute_lowered_inner(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
+    pipeline::validate_host_contract(&lowered.plan)?;
     let output_schema = Arc::new(lowered.plan.schema().as_arrow().clone());
     let config = SessionConfig::new()
         .set_usize("datafusion.optimizer.max_passes", 1)
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
     let ctx = optimizer::session(config);
-    let (plan, _) = constraints::optimize(dependent::native(search::native(lowered.plan)?)?)?;
-    let plan = statistics::optimize(representation::select(plan)?.plan)?.0;
+    let (plan, _) = pipeline::relational(dependent::native(search::native(lowered.plan)?)?, &lowered.rule_context, false)?;
+    let plan = statistics::optimize(pipeline::placement(plan, &lowered.rule_context)?.plan)?.0;
     let df = ctx.execute_logical_plan(plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {
@@ -565,3 +602,5 @@ pub mod statistics;
 mod scalar_union;
 
 mod dynamic_slice;
+
+pub(crate) mod entity_values;

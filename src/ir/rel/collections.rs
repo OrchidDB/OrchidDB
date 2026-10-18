@@ -28,7 +28,12 @@ pub(super) fn native_list_property(plan: &LogicalPlan, expr: &IrExpr) -> Option<
         return None;
     };
     let shadow = list_shadow_col(binding, name);
-    has_exact_col(plan, &shadow).then(|| col_exact(shadow))
+    if has_exact_col(plan, &shadow) { return Some(col_exact(shadow)); }
+    // Mapped SQL schemas already carry native lists and need no display shadow.
+    let property = prop_col(binding, name);
+    plan.schema().field_with_unqualified_name(&property).ok()
+        .filter(|field| matches!(field.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)))
+        .map(|_| col_exact(property))
 }
 
 /// Append list shadow columns to freshly built scan batches. `is_edge`

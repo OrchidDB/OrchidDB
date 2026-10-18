@@ -136,7 +136,8 @@ fn request(input: Value) -> Result<Value, String> {
 fn compile(input: Value, inspect: bool) -> Result<Value, String> {
     let mut input = input;
     input["native_values"] = json!(true);
-    let request: orchiddb::compiler::CompileRequest = serde_json::from_value(input.clone()).map_err(|e| e.to_string())?;
+    let mut request: orchiddb::compiler::CompileRequest = serde_json::from_value(input.clone()).map_err(|e| e.to_string())?;
+    request.rule_context = catalog::rule_context()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all().build().map_err(|e| e.to_string())?;
     let diagnostic = inspect.then(|| orchiddb::compiler::cypher_diagnostic(&request)).flatten();
@@ -240,4 +241,50 @@ pub unsafe extern "C" fn orchid_update(input: *const c_char, state: *mut std::ff
         Err(_) => json!({"ok":false,"error":"Orchid update panicked"}),
     };
     CString::new(result.to_string()).expect("JSON has no raw NUL").into_raw()
+}
+
+/// Typed batch ABI: no JSON, graph transport, or compilation per value. Null
+/// input pointers mean SQL NULL; all non-null strings are length-delimited UTF-8.
+/// Returns nonzero only for an invalid ABI payload or a caught panic.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orchid_cypher_to_float_v1(
+    strings: *const *const u8, lengths: *const usize, rows: usize,
+    values: *mut f64, valid: *mut u8,
+) -> i32 {
+    if rows == 0 { return 0; }
+    if strings.is_null() || lengths.is_null() || values.is_null() || valid.is_null() { return 1; }
+    match catch_unwind(AssertUnwindSafe(|| {
+        let strings = unsafe { std::slice::from_raw_parts(strings, rows) };
+        let lengths = unsafe { std::slice::from_raw_parts(lengths, rows) };
+        let values = unsafe { std::slice::from_raw_parts_mut(values, rows) };
+        let valid = unsafe { std::slice::from_raw_parts_mut(valid, rows) };
+        for row in 0..rows {
+            valid[row] = 0;
+            values[row] = 0.0;
+            if !strings[row].is_null() {
+                let bytes = unsafe { std::slice::from_raw_parts(strings[row], lengths[row]) };
+                let input = std::str::from_utf8(bytes).map_err(|_| ())?;
+                if let Ok(value) = orchiddb::ir::functions::cypher_float::parse_string(input) {
+                    values[row] = value;
+                    valid[row] = 1;
+                }
+            }
+        }
+        Ok::<(), ()>(())
+    })) { Ok(Ok(())) => 0, _ => 1 }
+}
+
+#[cfg(test)]
+mod float_abi_tests {
+    #[test]
+    fn nullable_batch_uses_shared_contract() {
+        let inputs = [Some("\u{a0}__1__2__\u{3000}"), Some("NaN"), None, Some("1e-999"), Some("1e999")];
+        let pointers = inputs.map(|s| s.map_or(std::ptr::null(), str::as_ptr));
+        let lengths = inputs.map(|s| s.map_or(0, str::len));
+        let mut values = [0.0; 5]; let mut valid = [0; 5];
+        assert_eq!(unsafe { super::orchid_cypher_to_float_v1(pointers.as_ptr(), lengths.as_ptr(), 5, values.as_mut_ptr(), valid.as_mut_ptr()) }, 0);
+        assert_eq!(valid, [1, 0, 0, 1, 0]);
+        assert_eq!(values[0], 12.0);
+        assert_eq!(values[3], 0.0);
+    }
 }

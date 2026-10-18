@@ -465,7 +465,29 @@ pub(crate) fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde
         gremlin_typed_value(&user_id, graph)
     };
     match value {
-        Value::Scalar(v) => tagged("scalar", json!({"scalar_key": crate::ir::identity::encode_scalar(v)})),
+        Value::Scalar(v) => {
+            use arrow::array::Array;
+            use datafusion::common::ScalarValue;
+            let primitive = match v {
+                ScalarValue::Int64(Some(value)) => Some(Value::Long(*value)),
+                _ => crate::ir::value::scalar_semantic_value(v),
+            };
+            if let Some(value) = primitive { return gremlin_typed_value(&value, graph); }
+            let items = match v {
+                ScalarValue::List(array) => Some(array.value(0)),
+                ScalarValue::LargeList(array) => Some(array.value(0)),
+                ScalarValue::FixedSizeList(array) => Some(array.value(0)),
+                _ => None,
+            };
+            if let Some(items) = items {
+                if v.is_null() { return tagged("null", json!(null)); }
+                return tagged("list", json!((0..items.len()).map(|row| {
+                    let scalar = ScalarValue::try_from_array(items.as_ref(), row).expect("typed source list item");
+                    gremlin_typed_value(&Value::Scalar(scalar), graph)
+                }).collect::<Vec<_>>()));
+            }
+            tagged("scalar", json!({"scalar_key": crate::ir::identity::encode_scalar(v)}))
+        },
         Value::Null => tagged("null", json!(null)),
         Value::Bool(v) => tagged("boolean", json!(v)),
         Value::Byte(v) => tagged("byte", json!(v)),
@@ -1028,6 +1050,28 @@ mod tests {
 mod typed_transport_tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn mapped_scalar_transport_preserves_primitive_widths_and_list_items() {
+        use datafusion::common::ScalarValue;
+        let graph = PropertyGraph::new();
+        for (scalar, kind) in [
+            (ScalarValue::Int32(Some(7)), "int"),
+            (ScalarValue::Int64(Some(7)), "long"),
+            (ScalarValue::Float32(Some(0.5)), "float"),
+            (ScalarValue::Utf8(Some("seven".into())), "string"),
+        ] {
+            assert_eq!(gremlin_typed_value(&Value::Scalar(scalar), &graph)["type"], kind);
+        }
+        let list = ScalarValue::List(ScalarValue::new_list_nullable(
+            &[ScalarValue::Int64(Some(7)), ScalarValue::Int64(None)],
+            &arrow::datatypes::DataType::Int64,
+        ));
+        let encoded = gremlin_typed_value(&Value::Scalar(list), &graph);
+        assert_eq!(encoded["type"], "list");
+        assert_eq!(encoded["value"][0], serde_json::json!({"type":"long", "value":7}));
+        assert_eq!(encoded["value"][1]["type"], "null");
+    }
 
     #[test]
     fn typed_transport_preserves_graph_identity_and_literal_lookalikes() {

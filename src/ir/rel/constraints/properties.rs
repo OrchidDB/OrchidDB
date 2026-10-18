@@ -111,6 +111,9 @@ fn injective_cast(from: &arrow::datatypes::DataType, to: &arrow::datatypes::Data
 pub(crate) fn harmless(expr: &Expr, schema: &DFSchema) -> bool {
     match expr {
         Expr::Column(_) | Expr::Literal(..) => true,
+        Expr::Cast(c) => c.expr.get_type(schema).ok()
+            .is_some_and(|from| injective_cast(&from, &c.data_type))
+            && harmless(&c.expr, schema),
         Expr::Alias(a) => harmless(&a.expr, schema),
         Expr::IsNull(e) | Expr::IsNotNull(e) | Expr::Not(e) => harmless(e, schema),
         Expr::BinaryExpr(b)
@@ -434,6 +437,26 @@ fn analyze_node(plan: &LogicalPlan) -> PlanProperties {
             p = analyze(&n.input);
             p.complete_sources.clear();
             p.removable = false;
+            p
+        }
+        LogicalPlan::Window(n) => {
+            let input_width = n.input.schema().fields().len();
+            let map = (0..input_width).map(Some).chain(n.window_expr.iter().map(|_|None)).collect::<Vec<_>>();
+            p = remap(analyze(&n.input), &map);
+            for (i, expr) in n.window_expr.iter().enumerate() {
+                let expr = match expr { Expr::Alias(a) => a.expr.as_ref(), expr => expr };
+                if let Expr::WindowFunction(call) = expr
+                    && let datafusion::logical_expr::WindowFunctionDefinition::WindowUDF(fun) = &call.fun
+                    && fun.inner().as_any().is::<datafusion::functions_window::row_number::RowNumber>() {
+                    let Some(mut key) = call.params.partition_by.iter().map(|e| input_column(e,n.input.schema())).collect::<Option<Vec<_>>>() else {continue;};
+                    key.push(input_width+i);
+                    p.non_null.insert(input_width+i);
+                    p.unique_keys.push(key.clone());
+                    p.equality_keys.push(key.clone());
+                    p.dependencies.push((key,(0..width).collect()));
+                }
+            }
+            p.removable=false;
             p
         }
         LogicalPlan::Distinct(datafusion::logical_expr::Distinct::All(n)) => {

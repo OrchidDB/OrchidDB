@@ -49,6 +49,41 @@ fn rename_values(outer: &Projection, inner: &Projection) -> datafusion::common::
     Ok(Some(values))
 }
 
+// Compose scalar projects when each computed child is consumed once and is
+// proven total. This permits (x + 1) followed by a comparison/CASE without
+// duplicating work, but does not inline shared or effectful computations.
+fn total_values(outer: &Projection, inner: &Projection) -> datafusion::common::Result<Option<Vec<Expr>>> {
+    let mut uses=vec![0usize;inner.expr.len()];
+    let mut scoped=false;
+    for e in &outer.expr {
+        e.apply(|e| {
+            match e {
+                Expr::Column(c)=>uses[inner.schema.index_of_column(c)?]+=1,
+                Expr::ScalarSubquery(_) | Expr::Exists(_) | Expr::InSubquery(_) | Expr::SetComparison(_)
+                    | Expr::WindowFunction(_) | Expr::AggregateFunction(_) | Expr::Unnest(_)=>scoped=true,
+                _=>{},
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+    }
+    if scoped {return Ok(None);}
+    let mut values=Vec::new();
+    for (i,e) in inner.expr.iter().enumerate() {
+        if let Some(e)=simple_value(e) {values.push(e);continue;}
+        let e=if let Expr::Alias(a)=e {a.expr.as_ref()} else {e};
+        if uses[i]!=1 || e.is_volatile() || !crate::ir::rel::list_comparison::arithmetic_is_total(&inner.input,e) {return Ok(None);}
+        let mut unsafe_scope=false;
+        e.apply(|e| {
+            unsafe_scope |= matches!(e,Expr::ScalarSubquery(_) | Expr::Exists(_) | Expr::InSubquery(_)
+                | Expr::SetComparison(_) | Expr::WindowFunction(_) | Expr::AggregateFunction(_) | Expr::Unnest(_));
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        if unsafe_scope {return Ok(None);}
+        values.push(e.clone());
+    }
+    Ok(Some(values))
+}
+
 fn has_subquery(expr: &Expr) -> datafusion::common::Result<bool> {
     let mut found = false;
     expr.apply(|expr| {
@@ -65,15 +100,19 @@ fn has_subquery(expr: &Expr) -> datafusion::common::Result<bool> {
 /// discardable Cartesian input. Do not infer this from cardinality estimates,
 /// LIMIT, aggregate output, user table names, or arbitrary scalar expressions.
 fn singleton_literals(plan: &LogicalPlan) -> Option<Vec<Expr>> {
-    let LogicalPlan::Projection(projection) = plan else { return None; };
-    if !matches!(projection.input.as_ref(), LogicalPlan::EmptyRelation(empty)
-        if empty.produce_one_row && empty.schema.fields().is_empty()) {
-        return None;
+    match plan {
+        LogicalPlan::EmptyRelation(e) if e.produce_one_row && e.schema.fields().is_empty() => Some(vec![]),
+        LogicalPlan::SubqueryAlias(alias) => singleton_literals(&alias.input),
+        LogicalPlan::Projection(projection) => {
+            let input = singleton_literals(&projection.input)?;
+            projection.expr.iter().map(|expr| match simple_value(expr)? {
+                value @ Expr::Literal(..) => Some(value),
+                Expr::Column(column) => input.get(projection.input.schema().index_of_column(&column).ok()?).cloned(),
+                _ => None,
+            }).collect()
+        }
+        _ => None,
     }
-    projection.expr.iter().map(|expr| {
-        let value = simple_value(expr)?;
-        matches!(value, Expr::Literal(..)).then_some(value)
-    }).collect()
 }
 
 fn remove_singleton_join(join: &datafusion::logical_expr::Join) -> datafusion::common::Result<Option<LogicalPlan>> {
@@ -182,7 +221,7 @@ pub(super) fn simplify(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
             }
             let values = match inner.expr.iter().map(simple_value).collect::<Option<Vec<_>>>() {
                 Some(values) => Some(values),
-                None => rename_values(&outer, inner)?,
+                None => match rename_values(&outer, inner)? { Some(values)=>Some(values), None=>total_values(&outer,inner)? },
             };
             let Some(values) = values else {
                 break;

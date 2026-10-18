@@ -1,6 +1,7 @@
 //! Expansion.
 
 use super::*;
+use datafusion::common::tree_node::TreeNode;
 
 impl<'a> LoweringContext<'a> {
     /// A mapped edge fixes endpoint labels. Apply that metadata before building
@@ -195,12 +196,44 @@ impl<'a> LoweringContext<'a> {
 
     pub(super) fn track_relationship(&self, input: LoweredNode, history: &str, rel: &str) -> RelResult<LoweredNode> {
         use datafusion::functions_nested::expr_fn::{array_has, array_append};
-        let previous = if has_exact_col(&input.plan, history) { col_exact(history) } else { Self::empty_relationship_history() };
+        let has_previous = has_exact_col(&input.plan, history);
         let key = Self::relationship_key(&input.plan, rel);
-        let filtered = LogicalPlanBuilder::from(input.plan.clone())
-            .filter(Expr::Not(Box::new(array_has(previous.clone(), key.clone()))))?.build()?;
+        // Fixed hops retain typed edge identities under fresh names. The
+        // string trail is still available to a later variable-length hop, but
+        // fixed-hop uniqueness does not need to construct/search that trail.
+        let prefix = format!("{history}__e");
+        let mut previous = Vec::new();
+        let mut index = 0;
+        while has_exact_col(&input.plan, &format!("{prefix}{index}_id")) {
+            previous.push((format!("{prefix}{index}_id"), format!("{prefix}{index}_label")));
+            index += 1;
+        }
+        let id = col_exact(id_col(rel));
+        let label = col_exact(label_col(rel));
+        let mut recursive = false;
+        input.plan.apply(|node| {
+            recursive |= matches!(node, LogicalPlan::RecursiveQuery(_));
+            Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+        })?;
+        let typed = !self.options.native_values && !recursive && (!has_previous || !previous.is_empty())
+            && previous.iter().all(|(name, _)| col_exact(name).get_type(input.plan.schema()).ok()
+                == id.get_type(input.plan.schema()).ok());
+        let filtered = if has_previous {
+            let predicate = if typed {
+                previous.iter().map(|(old_id, old_label)|
+                    id.clone().not_eq(col_exact(old_id)).or(label.clone().not_eq(col_exact(old_label))))
+                    .reduce(|a, b| a.and(b)).expect("previous fixed identity")
+            } else { Expr::Not(Box::new(array_has(col_exact(history), key.clone()))) };
+            LogicalPlanBuilder::from(input.plan.clone()).filter(predicate)?.build()?
+        } else { input.plan.clone() };
         let mut projection = existing_columns(&filtered, &BTreeSet::from([history.to_owned()]));
-        projection.push(array_append(previous, key).alias(history));
+        if typed {
+            projection.push(id.alias(format!("{prefix}{index}_id")));
+            projection.push(label.alias(format!("{prefix}{index}_label")));
+        }
+        let trail = if has_previous { array_append(col_exact(history), key) }
+            else { datafusion::functions_nested::expr_fn::make_array(vec![key]) };
+        projection.push(trail.alias(history));
         let plan = LogicalPlanBuilder::from(filtered).project(projection)?.build()?;
         Ok(input.with_plan(plan))
     }

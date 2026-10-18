@@ -24,6 +24,7 @@ pub(super) fn run(
         .lock()
         .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))?
         .take();
+    let rule_context = live.context.rule_context.clone();
     let graph = live.graph.clone();
     let prepared = if let Some(prepared) = cached {
         *prepared
@@ -59,6 +60,7 @@ pub(super) fn run(
                 })],
                 &resources,
                 cost.clone(),
+                &rule_context,
             ))
         } else {
             let session = datafusion::prelude::SessionContext::new_with_config(

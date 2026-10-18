@@ -6,17 +6,28 @@
 //! to `target/debug/examples/cypher_corpus_probe`. Set ORCHIDDB_EXPLAIN_DAG to
 //! print logical/physical plans to stderr without altering the JSON output.
 //! Pass `--sql` to compile queries without executing them (setup still runs).
+//! `--conformance-sql` uses the conformance runner's real relational fixture
+//! and execution preparation path (requires `duckdb`). Supply `scenario_queries`
+//! to infer the same schema from all scenario statements as the runner does.
+//! It exports prepared SQL regions and residual operator counts without executing
+//! the target query; only fixture setup is executed.
 //! `--mapped-sql` compiles against declared physical SQL tables and exports
 //! `fixture_sql` (CREATE/INSERT) separately. A diagnostic request may include
 //! `schema: {nodes: [...], edges: [...]}`; otherwise fixture types are inferred.
 //! `--describe-fixture` returns that inferred declaration without compilation.
 //! Unsupported fixture representations fail explicitly, without snapshot fallback.
-//! `--no-constant-folding` (with --sql/--mapped-sql) disables optional compiler
+//! `--no-constant-folding` (with any SQL export mode) disables optional compiler
 //! constant evaluation for structural SQL review. Fixture setup runs normally.
 //! Literal encoding, type proofs, structural rewrites, and DuckDB's own bind/
 //! execution optimization are retained; this is not a no-optimization mode.
+//! `--rule-metrics` adds lowering/preparation time, visits, revision and SQL size.
+//! `--rule-trace` additionally enables the bounded shared rule trace (256 entries).
+//! Both are diagnostic-only and leave ordinary export records unchanged.
 mod cypher_fixture_schema;
 mod cypher_noop;
+#[cfg(feature = "duckdb")]
+#[path = "../../conformance/runner/src/relational_fixture.rs"]
+mod relational_fixture;
 use futures::FutureExt;
 use orchiddb::ir::catalog::PropertyGraph;
 use orchiddb::ir::value::Value;
@@ -46,6 +57,8 @@ enum Request {
         procedures: Vec<Procedure>,
         #[serde(default)]
         schema: Option<cypher_fixture_schema::Declaration>,
+        #[serde(default)]
+        scenario_queries: Vec<String>,
     },
 }
 
@@ -125,22 +138,26 @@ fn validate_mapped_sql(output: &mut serde_json::Value) {
 
 #[tokio::main]
 async fn main() {
+    let rule_trace = std::env::args().any(|arg| arg == "--rule-trace");
+    let rule_metrics = rule_trace || std::env::args().any(|arg| arg == "--rule-metrics");
+    let conformance_sql = std::env::args().any(|arg| arg == "--conformance-sql");
     let mapped_sql = std::env::args().any(|arg| arg == "--mapped-sql");
     let describe_fixture = std::env::args().any(|arg| arg == "--describe-fixture");
-    let sql_only = mapped_sql || std::env::args().any(|arg| arg == "--sql");
+    let sql_only = conformance_sql || mapped_sql || std::env::args().any(|arg| arg == "--sql");
     let no_constant_folding = std::env::args().any(|arg| arg == "--no-constant-folding");
     assert!(!no_constant_folding || sql_only, "--no-constant-folding requires --sql or --mapped-sql");
     for line in io::stdin().lock().lines() {
         let request: Request =
             serde_json::from_str(&line.expect("read query")).expect("JSON query");
-        let (query, setup, parameters, procedures, schema) = match request {
-            Request::Query(query) => (query, Vec::new(), BTreeMap::new(), Vec::new(), None),
+        let (query, setup, parameters, procedures, schema, scenario_queries) = match request {
+            Request::Query(query) => (query, Vec::new(), BTreeMap::new(), Vec::new(), None, Vec::new()),
             Request::Parameterized {
                 query,
                 setup,
                 parameters,
                 procedures,
                 schema,
+                scenario_queries,
             } => (
                 query,
                 setup,
@@ -150,6 +167,7 @@ async fn main() {
                     .collect(),
                 procedures,
                 schema,
+                scenario_queries,
             ),
         };
         let result = AssertUnwindSafe(async move {
@@ -164,6 +182,34 @@ async fn main() {
                 table.validate()?;
                 graph.register_table_procedure(procedure.name.clone(), table.clone())?;
                 catalog.insert(procedure.name, table);
+            }
+            #[cfg(feature = "duckdb")]
+            if conformance_sql {
+                let mut fixture = relational_fixture::RelationalFixture::new()?;
+                for (name, procedure) in &catalog {
+                    fixture.engine.register_table_procedure(name.clone(), procedure.clone())?;
+                }
+                let target = if no_constant_folding {
+                    orchiddb::ir::diagnostics::without_constant_folding(async { plan_query(&query, &parameters, &catalog) }).await?
+                } else { plan_query(&query, &parameters, &catalog)? };
+                let setup_plans = setup.iter().map(|statement| plan_query(statement, &parameters, &catalog))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut all_plans = setup_plans.clone(); all_plans.push(target.clone());
+                if !scenario_queries.is_empty() {
+                    all_plans = scenario_queries.iter().filter_map(|q| plan_query(q, &parameters, &catalog).ok()).collect();
+                }
+                fixture.configure_cypher(&all_plans)?;
+                for plan in setup_plans {
+                    fixture.prepare(&plan)?;
+                    fixture.engine.execute_plan(&plan).await?;
+                }
+                if cypher_noop::is_noop(&target, &catalog) {
+                    return Ok(cypher_noop::output());
+                }
+                let work = fixture.diagnostic_sql(&target);
+                return if no_constant_folding {
+                    orchiddb::ir::diagnostics::without_constant_folding(work).await
+                } else { work.await };
             }
             for statement in setup {
                 let plan = plan_query(&statement, &parameters, &catalog).map_err(|e| format!("setup {e}"))?;
@@ -198,7 +244,10 @@ async fn main() {
                     return Ok(output);
                 }
                 use orchiddb::ir::rel::{RelBackend, RelBackendOptions, sql::{self,SqlDialect}};
-                let backend = RelBackend::with_options(RelBackendOptions {mapping:Some(mapping.clone()),language_functions:true,..Default::default()});
+                let mut options = RelBackendOptions {mapping:Some(mapping.clone()),language_functions:true,..Default::default()};
+                options.rule_context.trace_limit = if rule_trace {256} else {0};
+                let backend = RelBackend::with_options(options);
+                let started = std::time::Instant::now();
                 match backend.lower(&plan, &graph) {
                     Ok(lowered) => match sql::prepare_with_external(&lowered,SqlDialect::DuckDb,&mapping.physical_table_names()).await {
                         Ok(prepared) => {
@@ -209,6 +258,16 @@ async fn main() {
                             output["sql"]=serde_json::json!(prepared.query);
                             output["execution_kind"]=serde_json::json!("sql");
                             output["requires_sql_execution"]=serde_json::json!(true);
+                            if rule_metrics {
+                                output["rule_metrics"] = serde_json::json!({
+                                    "lower_prepare_micros": started.elapsed().as_micros(),
+                                    "visits":lowered.rule_context.visits(),
+                                    "plan_revision":lowered.rule_context.revision(),
+                                    "sql_bytes":output["sql"].as_str().unwrap().len(),
+                                    "trace_enabled":rule_trace,
+                                    "trace":lowered.rule_context.trace(),
+                                });
+                            }
                         },
                         Err(error) => output["lowering_error"]=serde_json::json!(error.to_string()),
                     },
@@ -221,17 +280,33 @@ async fn main() {
             let plan = plan_query(&query, &parameters, &catalog)?;
             if sql_only {
                 if cypher_noop::is_noop(&plan, &catalog) { return Ok(cypher_noop::output()); }
-                use orchiddb::ir::rel::{RelBackend, sql::{self, SqlDialect}};
-                let backend = RelBackend::new().with_language_functions(true);
+                use orchiddb::ir::rel::{RelBackend, RelBackendOptions, sql::{self, SqlDialect}};
+                let mut options = RelBackendOptions {language_functions:true,..Default::default()};
+                options.rule_context.trace_limit = if rule_trace {256} else {0};
+                let backend = RelBackend::with_options(options);
+                let started = std::time::Instant::now();
+                let mut metrics = None;
                 let compiled = match backend.lower(&plan, &graph) {
-                    Ok(lowered) => sql::prepare(&lowered, SqlDialect::DuckDb).await
-                        .map(|prepared| prepared.query).map_err(|e| e.to_string()),
+                    Ok(lowered) => {
+                        let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await;
+                        if rule_metrics {
+                            metrics = Some(serde_json::json!({
+                                "lower_prepare_micros":started.elapsed().as_micros(),
+                                "visits":lowered.rule_context.visits(),
+                                "plan_revision":lowered.rule_context.revision(),
+                                "sql_bytes":prepared.as_ref().ok().map(|p|p.query.len()),
+                                "trace_enabled":rule_trace,"trace":lowered.rule_context.trace(),
+                            }));
+                        }
+                        prepared.map(|prepared|prepared.query).map_err(|e|e.to_string())
+                    },
                     Err(error) => Err(error.to_string()),
                 };
                 let mut output = match compiled {
                     Ok(sql) => serde_json::json!({"sql": sql, "execution_kind": "sql", "requires_sql_execution": true}),
                     Err(error) => serde_json::json!({"lowering_error": error, "ir": orchiddb::ir::plan::explain(&plan)}),
                 };
+                if let Some(metrics) = metrics { output["rule_metrics"] = metrics; }
                 // Inspect the actual hybrid compiler too: failing whole-query
                 // lowering does not mean its read subtrees cannot run in SQL.
                 use orchiddb::ir::rel::runtime::{compile_for_host, CompileOptions, CompiledKernel};
@@ -247,6 +322,7 @@ async fn main() {
                                 if let Some(fields) = kernel.relational_fields() {
                                     for input in kernel.inputs() {
                                         let lowered = orchiddb::ir::rel::LoweredPlan {
+            rule_context: Default::default(),
                                             plan: input.clone(), fields: fields.to_vec(),
                                             result_form: plan.policy.result_form, islands: Default::default(),
                                         };

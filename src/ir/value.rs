@@ -1036,6 +1036,9 @@ pub(crate) fn scalar_semantic_value(value: &datafusion::common::ScalarValue) -> 
     use datafusion::common::ScalarValue as S;
     if crate::ir::functions::scalar_union::is_type(&value.data_type()) { return crate::ir::functions::scalar_union::decode(value); }
     if value.is_null(){return Some(Value::Null);}
+    if crate::ir::temporal::transport::is_type(&value.data_type()) {
+        return crate::ir::temporal::transport::decode(value).ok().map(Value::Temporal);
+    }
     if crate::ir::functions::domain::descriptor(&value.data_type()) == Some(("cypher_integer", &arrow::datatypes::DataType::Decimal128(38, 0))) {
         let S::Decimal128(Some(integer), 38, 0) = crate::ir::functions::domain::storage(value).ok()? else { return None; };
         return Some(i64::try_from(integer).map(Value::Int).unwrap_or_else(|_| Value::BigInt(integer.into())));
@@ -1053,6 +1056,23 @@ pub(crate) fn scalar_semantic_value(value: &datafusion::common::ScalarValue) -> 
         S::Decimal128(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(BigInt::from(*v),*scale as i64)),
         S::Decimal256(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(v.to_string().parse().ok()?,*scale as i64)),
         S::Dictionary(_,v)=>return scalar_semantic_value(v),
+        S::Date32(Some(days)) => {
+            let date = crate::ir::temporal::CalendarDate::from_epoch_days(i64::from(*days)).ok()?;
+            Value::Temporal(match date.chrono() {
+                Some(date) => crate::ir::temporal::TemporalValue::Date(date),
+                None => crate::ir::temporal::TemporalValue::WideDate(date),
+            })
+        }
+        S::List(array) => return scalar_list_semantic_value(array.value(0)),
+        S::LargeList(array) => return scalar_list_semantic_value(array.value(0)),
+        S::FixedSizeList(array) => return scalar_list_semantic_value(array.value(0)),
         _=>return None,
     })
+}
+
+fn scalar_list_semantic_value(array: arrow::array::ArrayRef) -> Option<Value> {
+    (0..array.len()).map(|row| {
+        let value = datafusion::common::ScalarValue::try_from_array(array.as_ref(), row).ok()?;
+        scalar_semantic_value(&value)
+    }).collect::<Option<Vec<_>>>().map(Value::List)
 }

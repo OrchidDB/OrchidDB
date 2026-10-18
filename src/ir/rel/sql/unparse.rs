@@ -5,23 +5,42 @@ use super::*;
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
-    unparse_plan(lowered.plan.clone(), dialect)
+    unparse_plan_with_context(lowered.plan.clone(), dialect, &lowered.rule_context)
 }
 
 pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
-    stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect))
+    unparse_plan_with_context(plan, dialect, &Default::default())
 }
-fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
-    if let Some(sql) = super::compact_unwind::emit(&plan, dialect)? { return Ok(sql); }
-    let plan = super::cleanup::simplify(plan)?;
+pub(crate) fn unparse_plan_with_context(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
+    stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect, context))
+}
+fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
+    super::super::pipeline::validate_sql_contract(&plan, dialect, context)?;
+    // Compact emission is an implementation alternative, after the same required
+    // semantic and capability validation as the ordinary emitter.
+    if let Some(sql) = super::compact_unwind::emit(&plan, dialect)? {
+        context.record_selection("adapter.compact_unwind", "selected-language-contract", "eligible typed VALUES/UNNEST shape");
+        return Ok(sql);
+    }
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
     let plan = super::lowering::transform_relations(plan, dialect)?;
-    let plan = crate::ir::rel::representation::select(plan)?.plan;
+    crate::ir::rules::RuleSession::new(context.clone()).invalidate();
+    let plan = crate::ir::rel::pipeline::placement(plan, context).map_err(|e| match e {
+        crate::ir::rel::RelError::RulePipeline(error) => SqlError::RulePipeline(error),
+        error => SqlError::Unsupported(error.to_string()),
+    })?.plan;
     validate_portable_calls(&plan, dialect)?;
     let plan = specialize_portable_calls(plan, dialect)?;
-    let plan = super::literal_case::rewrite(plan)?;
-    let plan = super::cleanup::simplify(plan)?;
-    let plan = super::aggregate_scan::rewrite(plan)?;
-    let plan = super::count_filter::rewrite(plan, dialect)?;
+    crate::ir::rules::RuleSession::new(context.clone()).invalidate();
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.predicate_scopes", false, super::predicate_scope::rewrite)?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.optional_presence", false, super::optional_filter::rewrite)?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.literal_case", false, |p| Ok(super::literal_case::rewrite(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.aggregate_scan", false, |p| Ok(super::aggregate_scan::rewrite(p)?))?;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.conditional_count", false, |p| Ok(super::count_filter::rewrite(p, dialect)?))?;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
     // residual is authoritative. Do not emit duplicate scan hints under aliases
@@ -35,12 +54,14 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
         }
         Ok(Transformed::no(LogicalPlan::TableScan(scan)))
     })?.data;
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.shared_partition_scans", false, super::shared_scans::rewrite)?;
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
+    let plan = normalize_projection_names(plan)?;
     let plan = preserve_limit_output(plan)?;
     let plan = if !dialect.requires_scope_repair() && !has_rdf_source(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
@@ -62,6 +83,31 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
     Ok(apply_identifier_repairs(sql, &repairs))
+}
+
+/// SQL names must follow the declared projection schema even when lowering
+/// replaces a column by a representation cast. Collapse repeated explicit
+/// casts, but retain the inner SQL cast: backend function types (e.g. UUID)
+/// can differ from their logical string representation.
+fn normalize_projection_names(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Projection(mut projection) = node else { return Ok(Transformed::no(node)); };
+        projection.expr = projection.expr.into_iter().zip(projection.schema.iter())
+            .map(|(expr, (qualifier, field))| {
+                let expr = expr.transform_up(|expr| {
+                    if let Expr::Cast(cast) = &expr {
+                        if let Expr::Cast(inner) = cast.expr.as_ref()
+                            && inner.data_type == cast.data_type {
+                            return Ok(Transformed::yes(*cast.expr.clone()));
+                        }
+                    }
+                    Ok(Transformed::no(expr))
+                })?.data;
+                let expr = match expr { Expr::Alias(alias) => *alias.expr, other => other };
+                Ok(expr.alias_qualified(qualifier.cloned(), field.name()))
+            }).collect::<datafusion::common::Result<Vec<_>>>()?;
+        Ok(Transformed::yes(LogicalPlan::Projection(projection)))
+    })?.data)
 }
 
 /// Arrow string extrema use byte ordering, independent of database locale.
@@ -775,6 +821,20 @@ mod ordering_repair_tests {
     use super::*;
     use datafusion::logical_expr::{ExprFunctionExt, LogicalPlanBuilder};
     use datafusion::prelude::col;
+
+    #[test]
+    fn representation_casts_keep_declared_projection_names() {
+        use datafusion::logical_expr::{Projection, expr::Cast};
+        let input = LogicalPlanBuilder::empty(true).project(vec![lit("IRI").alias("kind")]).unwrap().build().unwrap();
+        let schema = input.schema().clone();
+        let expression = Expr::Cast(Cast::new(Box::new(col("kind")), DataType::Utf8));
+        let plan = LogicalPlan::Projection(Projection::try_new_with_schema(vec![expression], Arc::new(input), schema).unwrap());
+        let fixed = normalize_projection_names(plan).unwrap();
+        let LogicalPlan::Projection(projection) = fixed else { panic!() };
+        assert_eq!(projection.expr[0].to_string(), "CAST(kind AS Utf8) AS kind");
+        assert_eq!(projection.schema.field(0).name(), "kind");
+    }
+
     use datafusion::functions_aggregate::expr_fn::array_agg;
     use datafusion::sql::sqlparser::{dialect::GenericDialect, parser::Parser};
 

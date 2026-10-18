@@ -12,7 +12,10 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let input = self
             .lower_node(input)
-            .map_err(|err| RelError::Unsupported(format!("GraphUnwind input: {err}")))?;
+            .map_err(|err| match err {
+                RelError::RulePipeline(_) => err,
+                err => RelError::Unsupported(format!("GraphUnwind input: {err}")),
+            })?;
         if self.options.native_values && self.language == Language::Cypher {
             if let IrExpr::Call { name, args } = input_expr
                 && (name.eq_ignore_ascii_case("range") || name == "cypher_range")
@@ -32,10 +35,24 @@ impl<'a> LoweringContext<'a> {
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
             return self.lower_unwind_dynamic(input, input_expr, bind, outer);
         };
-        if let Some(plan) = rules::fold_singleton_unwind(&input.plan, bind, &values).or_else(|error| {
-            if self.options.native_values { Ok(None) } else { Err(error) }
-        })? {
-            return Ok(input.with_plan(plan));
+        let rule = super::pipeline::descriptor(
+            "rel.collection.singleton_unwind",
+            crate::ir::rules::Stage::RelationalOptimize,
+            crate::ir::rules::RuleKind::EquivalentRewrite,
+            false,
+        );
+        let mut session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+        if session.visit(rule).map_err(RelError::RulePipeline)? {
+            let folded = rules::fold_singleton_unwind(&input.plan, bind, &values)
+                .or_else(|error| match error {
+                    RelError::RulePipeline(_) => Err(error),
+                    _ if self.options.native_values => Ok(None),
+                    error => Err(error),
+                })?;
+            if let Some(plan) = folded {
+                session.changed(rule, || "one scalar value; fresh binding; parent multiplicity and evaluation retained".into());
+                return Ok(input.with_plan(plan));
+            }
         }
         let value_rows = values
             .into_iter()
@@ -43,7 +60,10 @@ impl<'a> LoweringContext<'a> {
             .collect::<Vec<_>>();
         let values_plan = self
             .lower_values(&[bind.to_string()], &value_rows)
-            .map_err(|err| RelError::Unsupported(format!("GraphUnwind values: {err}")))?;
+            .map_err(|err| match err {
+                RelError::RulePipeline(_) => err,
+                err => RelError::Unsupported(format!("GraphUnwind values: {err}")),
+            })?;
         let plan = LogicalPlanBuilder::from(input.plan.clone())
             .cross_join(values_plan.plan.clone())
             .map_err(|err| RelError::Unsupported(format!("GraphUnwind cross join: {err}")))?
@@ -382,6 +402,11 @@ impl<'a> LoweringContext<'a> {
         input: &Node,
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
+        if !self.options.native_values
+            && matches!(predicate,IrExpr::Binding(name) if name==item_binding)
+            && let IrExpr::Binding(name)=input_expr
+            && let Some(plan)=super::quantifier_scalar::fuse_boolean_collect(&input.plan,&Column::new_unqualified(name),kind,output)?
+        { return Ok(input.with_plan(plan)); }
         let original_columns = output_fields(&input.plan);
         let constant_result = if crate::ir::diagnostics::constant_folding_enabled() { match input_expr {
             IrExpr::Lit(Lit::Null) => Some(lit(ScalarValue::Boolean(None))),
@@ -476,7 +501,7 @@ impl<'a> LoweringContext<'a> {
             return Ok(input.with_plan(LogicalPlanBuilder::from(listed).project(columns)?.build()?));
         }
 
-        if let Some(value) = self.lower_scalar_quantifier(&input.plan, kind, item_binding, list.clone(), predicate)? {
+        if let Some(value) = self.run_quantifier_rule(&input.plan, kind, item_binding, list.clone(), predicate)? {
             let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
             columns.push(value.alias(output));
             let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
@@ -488,12 +513,16 @@ impl<'a> LoweringContext<'a> {
         let restore_from_base = !self.options.native_values
             && super::list_comparison::immutable_source_plan(&input.plan)
             && super::list_comparison::repeatable(&input.plan, &list);
-        let row_number = df_window::row_number()
-            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
-            .build()?.alias(row_id.clone());
-        let numbered = LogicalPlanBuilder::from(input.plan.clone())
-            .window(vec![row_number])?
-            .build()?;
+        let numbered = if apply::at_most_one(&input.plan) {
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(lit(1_u64).alias(&row_id));
+            LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?
+        } else {
+            let row_number = df_window::row_number()
+                .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+                .build()?.alias(row_id.clone());
+            LogicalPlanBuilder::from(input.plan.clone()).window(vec![row_number])?.build()?
+        };
         let mut list_projection = existing_columns(&numbered, &BTreeSet::new());
         list_projection.push(list.alias(&list_col));
         let listed = LogicalPlanBuilder::from(numbered).project(list_projection)?.build()?;
@@ -728,5 +757,55 @@ impl<'a> LoweringContext<'a> {
             .build()?;
         let plan = collections::unnest_scope(plan, format!("__w_sql_cte_unwind_{barrier_id}"))?;
         Ok(input.with_plan(plan))
+    }
+}
+
+
+#[cfg(test)]
+mod rule_contract_tests {
+    use super::*;
+
+    #[test]
+    fn singleton_unwind_obeys_optional_rule_policy() {
+        let graph = crate::language::cypher::preparation::prepare(
+            "UNWIND [1] AS x RETURN x", &BTreeMap::new(), None,
+        ).unwrap();
+        for optimize in [false, true] {
+            let mut options = RelBackendOptions::default();
+            options.rule_context.optimize = optimize;
+            options.rule_context.trace_limit = 128;
+            let lowered = RelBackend::with_options(options).lower(&graph, &PropertyGraph::new()).unwrap();
+            let selected = lowered.rule_context.trace().iter().any(|trace|
+                trace.rule_id == "rel.collection.singleton_unwind" && trace.outcome == "changed");
+            assert_eq!(selected, optimize);
+        }
+    }
+
+    #[tokio::test]
+    async fn nested_unwind_preserves_required_rule_failure() {
+        crate::ir::diagnostics::without_constant_folding(async {
+            // The required scalar rule runs below two UNWIND operators. Its
+            // exhausted budget must remain fatal to SQL-island selection.
+            let graph = crate::language::cypher::preparation::prepare(
+                "WITH toFloat($raw) + toFloat($raw) AS n UNWIND [1] AS x UNWIND [2] AS y RETURN n, x, y",
+                &BTreeMap::from([("raw".into(), Value::String("12".into()))]),
+                None,
+            ).unwrap();
+            let mut options = RelBackendOptions::default();
+            options.rule_context.optimize = false;
+            // Allow catalog binding and required path normalization. The
+            // independent SemanticResolve budget then fails on the third
+            // temporal candidate inside WITH, below both UNWIND operators.
+            options.rule_context.budget.stage_visits = 6;
+            let result = RelBackend::with_options(options).lower(&graph, &PropertyGraph::new());
+            match result {
+                Err(RelError::RulePipeline(error)) => {
+                    assert!(error.to_string().contains("exhausted its rewrite budget"));
+                    assert!(error.to_string().contains("scalar.temporal"));
+                }
+                Err(other) => panic!("required failure became a fallback miss: {other}"),
+                Ok(_) => panic!("exhausted required stage unexpectedly succeeded"),
+            }
+        }).await;
     }
 }

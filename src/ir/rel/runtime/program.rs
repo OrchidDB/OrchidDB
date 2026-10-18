@@ -22,10 +22,12 @@ pub struct CompiledStage {
 pub struct CompiledProgram {
     pub root: usize,
     pub stages: Vec<CompiledStage>,
+    rule_context: crate::ir::rules::RuleContext,
 }
 impl CompiledProgram {
-    pub fn new(plan: &LogicalPlan) -> std::result::Result<Self, QueryExecutionError> {
+    pub fn new(plan: &LogicalPlan, context: &crate::ir::rules::RuleContext) -> std::result::Result<Self, QueryExecutionError> {
         let mut program = Self {
+            rule_context: context.clone(),
             root: 0,
             stages: Vec::new(),
         };
@@ -86,6 +88,7 @@ impl CompiledProgram {
             .collect();
         let schema = transport::host_schema_for(rewritten.schema().as_arrow());
         let lowered = LoweredPlan {
+            rule_context: self.rule_context.clone(),
             plan: rewritten,
             fields,
             result_form: crate::ir::policy::ResultForm::RowSet,

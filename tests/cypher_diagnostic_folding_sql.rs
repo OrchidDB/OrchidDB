@@ -25,7 +25,13 @@ async fn diagnostic_mode_preserves_scalar_and_quantifier_computation() {
         }
         let query = "RETURN single(x IN [['abc'],['abc','def']] WHERE single(y IN x WHERE y = 'def')) AS result";
         let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
-        assert!(format!("{plan:?}").contains("GraphApply"));
+        let lowered = RelBackend::new().lower(&plan, &PropertyGraph::new()).unwrap();
+        let sql = unparse(&lowered, SqlDialect::DuckDb).unwrap();
+        assert!(sql.to_lowercase().contains("unnest"), "{sql}");
+        assert_ne!(sql, "SELECT true AS \"result\"");
+        let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered).await.unwrap();
+        assert_eq!(result.batch.num_rows(), 1);
+        assert_eq!(arrow::util::display::array_value_to_string(result.batch.column(0), 0).unwrap(), "true");
     }).await;
     let plan = CypherPlanner::new().plan(&parse_query("RETURN 1 + 2 AS result").unwrap()).unwrap();
     let lowered = RelBackend::new().lower(&plan,&PropertyGraph::new()).unwrap();
