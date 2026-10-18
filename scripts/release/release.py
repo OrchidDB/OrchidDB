@@ -28,7 +28,7 @@ TARGETS = {
     'linux_arm64': ('aarch64-unknown-linux-gnu', 'linux-aarch64', 'linux-arm64', 'manylinux_2_28_aarch64'),
     'linux_amd64': ('x86_64-unknown-linux-gnu', 'linux-x86_64', 'linux-x64', 'manylinux_2_28_x86_64'),
 }
-COMPONENTS = ('extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go')
+COMPONENTS = ('extension', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go')
 
 
 def digest(path):
@@ -93,7 +93,7 @@ class Release:
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT):
             raise RuntimeError('Commit the source changes before a release; the release must identify one clean commit')
         versions = {}
-        for name in ('Cargo.toml', 'cli/Cargo.toml', 'clients/rust/Cargo.toml', 'clients/native/Cargo.toml', 'clients/java/native/Cargo.toml', 'clients/python/pyproject.toml'):
+        for name in ('Cargo.toml', 'clients/rust/Cargo.toml', 'clients/native/Cargo.toml', 'clients/java/native/Cargo.toml', 'clients/python/pyproject.toml'):
             config = tomllib.loads((ROOT / name).read_text())
             versions[name] = (config.get('package') or config['project'])['version']
         versions['clients/js/package.json'] = read(ROOT / 'clients/js/package.json')['version']
@@ -265,7 +265,7 @@ class Release:
                        CPPFLAGS='', WARN_CFLAGS='-Wall', LDFLAGS='-Wl,--undefined-version',
                        krb5_cv_attr_constructor_destructor='yes', ac_cv_func_regcomp='yes',
                        ac_cv_printf_positional='yes', ac_cv_gssapi_supports_spnego='yes')
-        for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native', 'orchiddb-cli'):
+        for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native'):
             command += ['-p', package]
         run(command, env=env)
         extension_build = matrix.location(self.version, self.commit) / target
@@ -282,7 +282,7 @@ class Release:
         out = self.base / 'binaries' / target
         out.mkdir(parents=True, exist_ok=True)
         suffix = 'dylib' if target == 'osx_arm64' else 'so'
-        for name in ('orchiddb', 'liborchiddb_compiler.' + suffix, 'liborchiddb_java.' + suffix):
+        for name in ('liborchiddb_compiler.' + suffix, 'liborchiddb_java.' + suffix):
             shutil.copy2(binaries / name, out / name)
         run([sys.executable, 'clients/java/scripts/package-native.py', '--platform', classifier, '--library', out / ('liborchiddb_java.' + suffix), '--version', self.version,
              '--output', ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar')], env=env)
@@ -322,7 +322,6 @@ class Release:
                         'See README.md for the Go connection API and examples/ for a runnable application.\n'
                     ).encode(),
                 })
-                add('cli', f'orchiddb-cli-{self.version}-{target}.tar.gz', {**common, 'README.txt': b'Install the DuckDB 1.5.2 shared library separately and make it available to the system dynamic loader (see README.md). Extract this archive and run bin/orchiddb query --file examples/people.cypher --schema examples/people.json --init examples/setup.sql --no-iceberg --format table.\n', 'bin/orchiddb': binaries / 'orchiddb', 'README.md': ROOT / 'cli/README.md', **{'examples/' + k: v for k, v in source_files(Path('cli/examples')).items()}})
                 add('native', f'orchiddb-native-{self.version}-{target}.tar.gz', {**common, 'lib/' + library.name: library, 'include/orchiddb.h': ROOT / 'clients/native/include/orchiddb.h'})
                 cpp = stage / ('cpp-' + target)
                 run(['cmake', '-S', 'clients/cpp', '-B', cpp / 'build', '-DCMAKE_INSTALL_PREFIX=' + str(cpp / 'install'), '-DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=TRUE', '-DORCHIDDB_NATIVE_LIBRARY=' + str(library)], env=self.env)

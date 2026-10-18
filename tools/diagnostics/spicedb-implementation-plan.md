@@ -56,7 +56,7 @@ Completed all seven implementation steps.
   Log: /tmp/orchid-auth-compiler-tests.log.
 - Optional build: cargo check --no-default-features passed.
   Log: /tmp/orchid-auth-optional.log.
-- README updated; examples/06_authorization.sql executed against real SpiceDB.
+- README updated; authorization checked against real SpiceDB.
 - No worktrees or subagents. Existing dependent-execution edits preserved.
 
 ## Deliberate boundaries

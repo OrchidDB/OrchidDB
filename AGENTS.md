@@ -17,9 +17,11 @@
 - Artifacts are specific to DuckDB version and platform. Validate each target
   before publishing it. Do not build or package Windows artifacts.
 - Never move published tags or replace a published artifact with different bytes.
-- Keep product documentation in the root README. `examples/` is for runnable,
-  customer-facing usage examples. Compiler probes and internal diagnostics belong
-  in `tools/diagnostics/`; do not present them as customer examples.
-- All language clients and native bindings live in `clients/`; the CLI lives in
-  `cli/`. Keep their core dependencies local to this repository. The landing page
-  and brand repositories remain separate.
+- Keep product documentation and terminal usage examples in the root README.
+  Use the DuckDB shell with the Orchid extension for terminal usage. Keep tests
+  independent of usage examples. Compiler probes and internal
+  diagnostics belong in `tools/diagnostics/`, with generated reports under
+  `target/`; do not present them as customer examples.
+- All language clients and native bindings live in `clients/`. Keep their core
+  dependencies local to this repository. The landing page and brand repositories
+  remain separate; language reference PDFs live in the parent workspace's `specs/`.

@@ -135,7 +135,19 @@ pub(crate) fn key_type(t: &DataType) -> bool {
         _ => false,
     }
 }
+/// Homogeneous signed integers and booleans have exactly the same grouping
+/// equivalence in SQL and Cypher, including nullable columns. Do not extend
+/// this to floating point, encoded strings, or heterogeneous native values:
+/// those require the language's canonical equality representation.
+pub(super) fn native_grouping_type(ty: &DataType) -> bool {
+    matches!(ty, DataType::Boolean | DataType::Int8 | DataType::Int16
+        | DataType::Int32 | DataType::Int64)
+}
+
 pub(super) fn key(expr: Expr, plan: &LogicalPlan) -> RelResult<Expr> {
+    if native_grouping_type(&expr.get_type(plan.schema())?) {
+        return Ok(expr);
+    }
     if !key_type(&expr.get_type(plan.schema())?) {
         return Err(RelError::Unsupported(
             "Cypher key type requires native values".into(),
@@ -513,6 +525,29 @@ pub(crate) fn terminal_gremlin(root: &Node) -> bool {
 #[cfg(test)]
 mod key_null_tests {
     use super::*;
+
+    #[test]
+    fn native_signed_integer_groups_preserve_language_equivalence() {
+        // Adjacent integers above f64's exact range must remain separate.
+        let values = vec![None, Some(i64::MIN), Some(-1), Some(0), Some(1),
+            Some(9_007_199_254_740_992), Some(9_007_199_254_740_993),
+            Some(i64::MAX), Some(1), None];
+        let input = Arc::new(arrow::array::Int64Array::from(values.clone())) as ArrayRef;
+        let encoded = evaluate(KEY, &[input], values.len()).unwrap();
+        let encoded = encoded.as_any().downcast_ref::<arrow::array::BinaryArray>().unwrap();
+        for (i, left) in values.iter().enumerate() {
+            assert_eq!(encoded.is_null(i), left.is_none());
+            for (j, right) in values.iter().enumerate() {
+                let equal = if encoded.is_null(i) || encoded.is_null(j) {
+                    encoded.is_null(i) && encoded.is_null(j)
+                } else { encoded.value(i) == encoded.value(j) };
+                assert_eq!(equal, left == right);
+            }
+        }
+        for ty in [DataType::Float64, DataType::Utf8, DataType::Binary] {
+            assert!(!native_grouping_type(&ty));
+        }
+    }
 
     #[test]
     fn untyped_and_typed_nulls_produce_null_keys() {

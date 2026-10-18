@@ -10,13 +10,17 @@ python clients/python/examples/people.py
 ```
 
 ```python
-import json
 import duckdb
 from orchiddb import Connection, DuckDBEngine
 
-schema = json.load(open("cli/examples/people.json"))
+schema = {
+    "tables": [{"name": "people", "columns": [
+        {"name": "id", "data_type": "int64"}, {"name": "name", "data_type": "string"}]}],
+    "nodes": [{"label": "Person", "table": "people", "id": "id", "properties": {"name": "name"}}],
+}
 with duckdb.connect() as database:
-    database.execute(open("cli/examples/setup.sql").read())
+    database.execute("CREATE TABLE people(id BIGINT, name VARCHAR)")
+    database.execute("INSERT INTO people VALUES (1, 'Ada'), (2, 'Grace')")
     with Connection(DuckDBEngine(database), schema) as graph:
         with graph.query("MATCH (p:Person) WHERE p.name=$name RETURN p.name AS name",
                          parameters={"name": "Ada"}) as reader:

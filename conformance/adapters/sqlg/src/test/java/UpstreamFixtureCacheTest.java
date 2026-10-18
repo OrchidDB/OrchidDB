@@ -8,6 +8,15 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class UpstreamFixtureCacheTest {
+ @Test public void relationshipCardinalityConsidersAllInputTraversals() throws Exception {
+  var scenario=UpstreamGremlin.json.readTree("{\"steps\":[{\"text\":\"the traversal of\",\"doc\":\"g.V().out('knows')\"},{\"text\":\"the result should be unordered\",\"doc\":\"addE('not input')\"}]}");
+  assertFalse(UpstreamGremlin.canCreateRelationships(scenario,false));
+  assertTrue(UpstreamGremlin.canCreateRelationships(scenario,true));
+  ((com.fasterxml.jackson.databind.node.ObjectNode)scenario.get("steps").get(0)).put("doc","g.V().as('a').V().addE('knows').from('a')");
+  assertTrue(UpstreamGremlin.canCreateRelationships(scenario,false));
+  ((com.fasterxml.jackson.databind.node.ObjectNode)scenario.get("steps").get(0)).put("doc","g.io('graph.json').read()");
+  assertTrue(UpstreamGremlin.canCreateRelationships(scenario,false));
+ }
  @Test public void repeatedFixtureSendsOnlyResetAndNullPolicyHasSeparateIdentity() throws Exception {
   var session=new UpstreamGremlin.FixtureSession();
   List<JsonNode> requests=new ArrayList<>();

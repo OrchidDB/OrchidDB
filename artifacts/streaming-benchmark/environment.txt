@@ -1,6 +1,0 @@
-/orchid-stream-bench-kafka-1 sha256:0bc1bb2478f45b6cea78864df86acdc11e8df2c5172477819a4d12942cbe5d40 cpus=4000000000 memory=3221225472
-/orchid-stream-bench-spicedb-1 sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764 cpus=2000000000 memory=1073741824
-Darwin host 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:06 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T6030 arm64
-CPU: Apple M3 Pro; RAM: 18 GiB
-rustc 1.92.0 (ded5c06cf 2025-12-08) (Homebrew)
-28.0.4

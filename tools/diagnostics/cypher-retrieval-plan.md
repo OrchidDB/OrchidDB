@@ -22,7 +22,7 @@ mapped scans and session authorization. No retrieval declarations or procedures.
 - Reused scoring kernels, SQL templates, parameter binding, mapped endpoint scans,
   and computed-edge corpus aggregation. Added only corpus provenance resolution
   and preservation of typed mapped properties through node grouping.
-- Added `examples/07_parameterized_rag.sql` and README parameterized usage.
+- Documented parameterized Cypher retrieval in the root README.
 - Local DuckDB v1.5.6 build succeeds. All 95 extension integration tests pass,
   including real SpiceDB v1.56.2 and Iceberg/Lance fixtures. All five extension
   compiler unit tests pass. Existing conformance records were not rerun.

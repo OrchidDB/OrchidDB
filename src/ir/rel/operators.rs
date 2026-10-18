@@ -328,7 +328,8 @@ impl LoweringContext<'_> {
                         continue;
                     }
                     let original = self.lower_expr(&input.plan, &item.expr)?;
-                    if cypher_keys {
+                    if cypher_keys && !(self.language == Language::Cypher
+                        && language_functions::native_grouping_type(&original.get_type(input.plan.schema())?)) {
                         let alias = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_group_{}_{}", self.scan_counter, i));
                         hidden_keys.insert(alias.clone());
                         group_exprs.push(if self.options.native_values {

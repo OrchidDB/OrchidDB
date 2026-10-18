@@ -33,6 +33,20 @@ import io.cucumber.datatable.DataTable;
 public class UpstreamGremlin {
  static ObjectMapper json=new ObjectMapper();
  static String backend;
+ static boolean allowRelationshipExpansion=true;
+ /** Inspect input traversals only. Unknown Java assertions can create edges. */
+ static boolean canCreateRelationships(JsonNode request,boolean javaAssertion) {
+  if(javaAssertion)return true;
+  for(var step:request.path("steps")) {
+   String text=step.path("text").asText();
+   // Closure parameters can execute arbitrary graph mutations.
+   if(text.startsWith("using the parameter ")&&text.contains("defined as \"c["))return true;
+   if(!(text.contains("traversal")||text.contains("graph")))continue;
+   String traversal=step.path("doc").asText();
+   if(Pattern.compile("\\b(addE|io|read|call)\\s*\\(").matcher(traversal).find())return true;
+  }
+  return false;
+ }
  static boolean jvmProfile(){return "orchiddb-jvm".equals(backend)||"orchiddb-computer".equals(backend);}
  static boolean typedJvmProfile(){return jvmProfile()||"arcadedb".equals(backend);}
  static class Bridge {
@@ -49,6 +63,13 @@ public class UpstreamGremlin {
    return sendJson(json.writeValueAsString(request));
   }
   synchronized JsonNode sendJson(String request) throws Exception {
+   if(backend.equals("orchiddb")) {
+    JsonNode payload=json.readTree(request);
+    if(payload.path("op").asText().equals("fixture")||payload.path("op").asText().equals("fixture-reset")) {
+     ((com.fasterxml.jackson.databind.node.ObjectNode)payload).put("allow_relationship_expansion",allowRelationshipExpansion);
+     request=json.writeValueAsString(payload);
+    }
+   }
    input.write(request+"\n");input.flush();String line=output.readLine();
    if(line==null)throw new IOException("Fixture bridge exited");
    JsonNode response=json.readTree(line);
@@ -546,6 +567,7 @@ public class UpstreamGremlin {
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
    JsonNode javaAssertion=(backend.equals("orchiddb")||backend.equals("janusgraph")||backend.equals("arcadedb"))?NativeJUnitAssertions.mapping(request.get("id").asText()):null;
+   allowRelationshipExpansion=canCreateRelationships(request,javaAssertion!=null);
    try{if(javaAssertion!=null){failedStep="original upstream Java assertion";context.currentStep=failedStep;NativeJUnitAssertions.run(javaAssertion,context);}else{for(var tag:request.get("tags"))if(tag.asText().equals("@AllowNullPropertyValues"))context.allowNullPropertyValues=true;
    for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("orchiddb-computer")&&!backend.equals("orchiddb")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("orchiddb")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||(backend.equals("reference")||backend.equals("arcadedb"))&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
    for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}}

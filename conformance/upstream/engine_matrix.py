@@ -23,8 +23,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", choices=("duckdb", "postgres", "starrocks"), action="append")
     parser.add_argument("--suite", choices=SUITES, action="append")
+    parser.add_argument("--jobs", type=int, default=4, help="Cypher/RDF workers per backend (Gremlin always uses one)")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "target/conformance/sql-engines")
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     # Only the already-recorded SPARQL omissions are permitted. Bind the allowance
     # to each pinned case hash so newly changed or skipped cases cannot pass.
@@ -47,6 +50,7 @@ def main():
             output = (args.output_dir / f"{engine}-{suite}.json").resolve()
             subprocess.run([sys.executable, str(Path(__file__).with_name("run.py")),
                             "--engine", "orchiddb", "--suite", suite,
+                            "--jobs", str(1 if suite == "tinkerpop" else args.jobs),
                             "--output", str(output)], cwd=ROOT, env=env, check=True)
             report = json.loads(output.read_text())
             counts = Counter(row["status"] for row in report["results"])

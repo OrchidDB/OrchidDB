@@ -18,7 +18,7 @@ if subprocess.check_output(['git', 'status', '--porcelain']):
 old = tomllib.loads(Path('Cargo.toml').read_text())['package']['version']
 names = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
 manifests = [name for name in names if name == 'Cargo.toml' or
-    (name.startswith(('cli/', 'clients/')) and Path(name).name in
+    (name.startswith('clients/') and Path(name).name in
      ('Cargo.toml', 'package.json', 'package-lock.json', 'pyproject.toml', 'pom.xml', 'mix.exs', 'CMakeLists.txt'))]
 for name in manifests:
     path = Path(name)
@@ -38,31 +38,29 @@ if subprocess.check_output(['git', 'diff', '--name-only']):
 endef
 export RELEASE_VERSION_SCRIPT
 
-.PHONY: help build cli native clients-check clients-test go-check go-test extension extension-test
+.PHONY: help build native clients-check clients-test go-check go-test extension extension-test
 help:
 	@echo 'make release        Build locally and publish all GitHub release assets'
 	@echo 'make build          Build the core library'
-	@echo 'make cli            Build the standalone CLI'
 	@echo 'make native         Build and stage the shared client library'
 	@echo 'make catalog-smoke  Smoke catalog auth and all clients on DuckDB'
-	@echo 'make clients-check  Check Rust client, JNI, native binding and CLI'
-	@echo 'make clients-test   Test Rust client, native binding and CLI locally'
+	@echo 'make clients-check  Check Rust client, JNI, and native binding'
+	@echo 'make clients-test   Test Rust client and native binding locally'
 	@echo 'make go-check       Build and vet the Go client'
 	@echo 'make go-test        Test the Go client with the race detector'
 	@echo 'make starrocks-test Start local StarRocks and check query execution'
 	@echo 'make starrocks-conformance Run all language catalogs on local StarRocks'
+	@echo 'make conformance-report Build the HTML comparison report from recorded results'
 	@echo 'make extension      Build the optional DuckDB extension'
 	@echo 'See clients/README.md for language-specific build and test commands.'
 build:
 	cargo build --locked -p orchiddb
-cli:
-	cargo build --locked -p orchiddb-cli
 native:
 	python3 scripts/clients.py native
 clients-check:
-	cargo check --locked -p orchiddb-client -p orchiddb-compiler-native -p orchiddb-java-native -p orchiddb-cli
+	cargo check --locked -p orchiddb-client -p orchiddb-compiler-native -p orchiddb-java-native
 clients-test:
-	cargo test --locked -p orchiddb-client --features bundled-test-driver -p orchiddb-compiler-native -p orchiddb-cli
+	cargo test --locked -p orchiddb-client --features bundled-test-driver -p orchiddb-compiler-native
 go-check:
 	cd clients/go && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go vet ./...
 go-test:
@@ -105,12 +103,18 @@ release-publish:
 
 .PHONY: starrocks-test
 starrocks-test:
-	$(PYTHON) scripts/starrocks_test.py
+	$(PYTHON) tools/diagnostics/starrocks_test.py
 
 .PHONY: starrocks-conformance
 starrocks-conformance:
-	$(PYTHON) scripts/starrocks_test.py --conformance
+	$(PYTHON) tools/diagnostics/starrocks_test.py --conformance
 
 .PHONY: catalog-smoke
 catalog-smoke:
-	$(TEST_PYTHON) scripts/catalog_smoke.py $(CATALOG_SMOKE_ARGS)
+	$(TEST_PYTHON) tools/diagnostics/catalog_smoke.py $(CATALOG_SMOKE_ARGS)
+
+REPORT_RESULTS ?= conformance/upstream-results
+REPORT_OUTPUT ?= target/conformance/report
+.PHONY: conformance-report
+conformance-report:
+	$(PYTHON) conformance/report/build.py --results "$(REPORT_RESULTS)" --output "$(REPORT_OUTPUT)"

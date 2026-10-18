@@ -12,7 +12,7 @@ documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = ["clients/rust", "clients/native", "clients/java/native", "cli", "extension/compiler"]
+members = ["clients/rust", "clients/native", "clients/java/native", "extension/compiler"]
 default-members = ["."]
 exclude = ["clients/rust/examples"]
 resolver = "2"
@@ -140,11 +140,11 @@ path = "tools/diagnostics/statistics_plans.rs"
 strip = "symbols"
 
 [[example]]
-name = "kafka_stream"
-path = "examples/kafka_stream.rs"
-required-features = ["kafka"]
-
-[[example]]
 name = "kafka_bench"
 path = "tools/diagnostics/kafka_bench.rs"
 required-features = ["kafka"]
+
+[[example]]
+name = "manufacturing_audit"
+path = "tools/diagnostics/manufacturing_audit.rs"
+required-features = ["duckdb"]

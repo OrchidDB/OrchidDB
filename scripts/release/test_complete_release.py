@@ -15,13 +15,13 @@ class CompleteReleaseTests(unittest.TestCase):
             root = Path(tmp); program = root / 'program'
             program.write_bytes(b'executable'); program.chmod(0o755)
             output = root / 'package.tar.gz'
-            entries = {'bin/orchiddb': program, 'README': b'usage'}
+            entries = {'bin/program': program, 'README': b'usage'}
             release.archive(output, entries)
             before = output.read_bytes()
             release.archive(output, entries)
             self.assertEqual(before, output.read_bytes())
             with tarfile.open(output) as archive:
-                self.assertEqual(archive.getmember('bin/orchiddb').mode, 0o755)
+                self.assertEqual(archive.getmember('bin/program').mode, 0o755)
                 self.assertEqual(archive.extractfile('README').read(), b'usage')
             with self.assertRaises(ValueError):
                 release.archive(output, {'../escape': b'x'})
@@ -101,7 +101,7 @@ class CompleteReleaseTests(unittest.TestCase):
 
     def test_platforms_and_every_client_are_included(self):
         self.assertEqual(set(release.TARGETS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
-        self.assertEqual(set(release.COMPONENTS), {'extension', 'cli', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'})
+        self.assertEqual(set(release.COMPONENTS), {'extension', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'})
 
     def test_packages_require_build_receipts(self):
         instance = object.__new__(release.Release)

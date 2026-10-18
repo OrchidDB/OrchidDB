@@ -36,7 +36,7 @@ def main():
             updates.append({'operation':'OPERATION_TOUCH','relationship': {'resource': {'objectType':'document','objectId':key}, 'relation':relation, 'subject':{'object':{'objectType':'user','objectId':'alice'}}}})
     spice('/v1/relationships/write', {'updates': updates})
     prefix = 'orchid-clients-' + str(time.time_ns())
-    for client in ['python','js','go','java','cpp','elixir','rust','cli']:
+    for client in ['python','js','go','java','cpp','elixir','rust']:
         subprocess.run(['docker','exec','-e','KAFKA_HEAP_OPTS=-Xms64m -Xmx128m','orchid-clients-stream-kafka-1','/opt/kafka/bin/kafka-topics.sh','--bootstrap-server','localhost:19092','--create','--topic',prefix+'-'+client,'--partitions','1','--replication-factor','1'], check=True, stdout=subprocess.DEVNULL)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     fixture = {'kafka': {'bootstrap.servers':'127.0.0.1:19092'}, 'topic_prefix': prefix, 'source':'clients-test-v1',

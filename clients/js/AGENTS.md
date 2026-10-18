@@ -1,4 +1,4 @@
-# Client and CLI development
+# Client development
 
 - Follow the repository root AGENTS.md.
 - Build against the shared core in this checkout; do not fetch sibling repositories.

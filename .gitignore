@@ -4,12 +4,6 @@ __pycache__/
 *.pyc
 *.pdf
 
-# Retired documentation build cache
-/website/docs/dist/
-
-# Retired client example build cache
-/examples/duckdb-client/target/
-
 # Isolated ArcadeDB provider runtime
 /conformance/adapters/arcadedb/target/
 /conformance/adapters/sqlg/target-arcadedb/
@@ -18,4 +12,8 @@ __pycache__/
 /clients/**/CORE_REVISION
 /clients/**/NATIVE_REVISION
 /clients/**/target/
-/cli/target/
+
+# Generated SQLG build and diagnostic evidence
+/conformance/adapters/sqlg/target-relational-fk/
+/tools/diagnostics/sqlg-duckpgq-audit/manifest.json
+/tools/diagnostics/sqlg-duckpgq-audit/results.json

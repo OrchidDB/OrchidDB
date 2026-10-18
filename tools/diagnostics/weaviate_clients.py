@@ -3,7 +3,6 @@ import copy, json, os, pathlib, subprocess, sys, tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 
 def run_clients(config, setup_sql, endpoint, token, calls):
-    import pyarrow as pa
     request=copy.deepcopy(config)
     request=json.loads(json.dumps(request).replace('"vectors"','"text"'))
     request.update(version=1,dialect='duckdb',language='cypher',query='MATCH (q:Question)-[r:RELEVANT_TO {score:0,limit:1}]->(d:Document) RETURN q.id AS question,d.id AS document ORDER BY question')
@@ -41,14 +40,6 @@ def run_clients(config, setup_sql, endpoint, token, calls):
             assert sum(q.count('nearVector:') for q in queries)==expected_calls//3*5,client
             checks[client]=dict(graphql_posts=len(queries),lookups=expected_calls//3*5,max_lookups_per_post=2)
             print(f'PASS {client}: batched Weaviate RAG edge, {len(queries)} HTTP POSTs',flush=True)
-        schema={k:v for k,v in request.items() if k not in ('version','dialect','language','query')}
-        (folder/'schema.json').write_text(json.dumps(schema));(folder/'init.sql').write_text(';\n'.join(fixture['cases'][0]['setup_sql']))
-        (folder/'engines.json').write_text(json.dumps(dict(text=options)))
-        start=len(calls)
-        result=subprocess.run([str(ROOT/'target/debug/orchiddb'),'query',request['query'],'--schema',str(folder/'schema.json'),'--init',str(folder/'init.sql'),'--engines',str(folder/'engines.json'),'--no-iceberg'],env=env,capture_output=True,check=True)
-        table=pa.ipc.open_stream(result.stdout).read_all()
-        assert [[r['question'],r['document']] for r in table.to_pylist()]==expected
-        assert len(calls)-start==3
-        checks['cli']=dict(graphql_posts=3,lookups=5,max_lookups_per_post=2)
-        print('PASS CLI: batched Weaviate RAG edge, 3 HTTP POSTs',flush=True)
-    (ROOT/'artifacts/e2e/weaviate-all-clients.json').write_text(json.dumps(checks,indent=2)+'\n')
+    report = ROOT / 'target/artifacts/e2e/weaviate-all-clients.json'
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps(checks, indent=2) + '\n')

@@ -7,7 +7,7 @@ def rows(result):
     return pa.ipc.open_stream(base64.b64decode(result['ipc'])).read_all().to_pylist()
 
 report = {}
-for client in sys.argv[1:] or ['python','js','go','java','cpp','elixir','rust','cli']:
+for client in sys.argv[1:] or ['python','js','go','java','cpp','elixir','rust']:
     data = json.loads(pathlib.Path(f'/tmp/orchid-stream-{client}-result.json').read_text())
     expected = [{'name':'a-2'},{'name':'b-1'}]
     assert rows(data['query']) == expected, (client, 'query', rows(data['query']))

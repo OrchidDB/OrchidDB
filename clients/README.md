@@ -1,4 +1,4 @@
-# Clients and CLI
+# Clients
 
 Clients register graph schema on a connection, then execute query text with
 separate parameters. There is no public SQL-compilation API. SQL lowering,
@@ -11,12 +11,12 @@ It contains source tables, graph mappings, function declarations, and optional
 RDF, permission, remote-engine, and statistics metadata. Query text, language,
 parameters, principal, and target dialect are not schema fields; passing them
 in schema configuration is rejected. The target dialect comes from the engine.
-The CLI reads JSON schema files. See [people.json](../cli/examples/people.json)
-and the separate [people.cypher](../cli/examples/people.cypher).
+For terminal usage, load the [DuckDB extension](../README.md#terminal-quickstart)
+in the DuckDB shell.
 
 ## GitHub release assets
 
-`make release` builds every client, the CLI, and the extension into one upload
+`make release` builds every client and the extension into one upload
 directory with checksums. No registry publishing is needed. See the
 [complete release command](../README.md#build-the-complete-github-release).
 
@@ -24,7 +24,6 @@ directory with checksums. No registry publishing is needed. See the
 
 ```sh
 make clients-check
-make cli
 make native
 ```
 
@@ -49,7 +48,6 @@ rebuild the native runtime and clients together. Published artifacts are unchang
 | C++ | `Connection(engine, schema).query(text, parameters)` |
 | Go | `orchiddb.New(session, schemaJSON, config)` then `graph.Query(ctx, text, options)` |
 | Elixir | `OrchidDB.connect(engine, schema)` then `OrchidDB.query(connection, text)` |
-| CLI | `orchiddb query 'MATCH ...' --schema schema.json` |
 
 JSON serialization in the SDK's private native transport is not a customer query
 API. Backend adapter interfaces receive internal SQL work in order to execute it;
@@ -73,6 +71,6 @@ make go-check go-test
 
 PostgreSQL tests use `ORCHIDDB_TEST_PG_URL` for Python/Rust,
 `ORCHIDDB_TEST_PG_URI` for Node, and `ORCHIDDB_TEST_PG_JDBC` for Java. Optional remote-service fixtures use
-[scripts/clients_remote_fixture.py](../scripts/clients_remote_fixture.py).
+[tools/diagnostics/clients_remote_fixture.py](../tools/diagnostics/clients_remote_fixture.py).
 Builds and tests run locally, never through GitHub Actions. The full shared-core
 language conformance matrix is documented in the root README.

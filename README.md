@@ -7,7 +7,7 @@ Graph IR, then relational plans and graph kernels. Applications register graph s
 separate parameters, or load Orchid as a DuckDB extension. The extension hosts the same compiler and kernels inside
 DuckDB, with access to the caller's catalog, transactions, and storage.
 
-## Clients and CLI
+## Clients
 
 All client source now lives in this repository and builds against the same core:
 
@@ -21,18 +21,17 @@ All client source now lives in this repository and builds against the same core:
 | Elixir | [clients/elixir](clients/elixir) |
 | Go | [clients/go](clients/go) |
 | Shared C ABI | [clients/native](clients/native) |
-| Standalone CLI | [cli](cli) |
 
-See [client development](clients/README.md) for local builds and tests. `make cli`
-builds the standalone CLI; `make native` builds and stages one shared library for
-the foreign-language clients. The DuckDB extension remains a separate integration.
+See [client development](clients/README.md) for local builds and tests.
+`make native` builds and stages one shared library for the foreign-language
+clients. For terminal usage, use the [DuckDB extension](#terminal-quickstart).
 
 ## Connection-based execution
 
 Register source schemas and graph mappings once on a connection, then submit
 query text and parameters separately. Schema can be loaded from JSON or YAML
 into an SDK configuration object. Query text, language, parameters, and principal
-are never part of that schema. The CLI accepts JSON schema files.
+are never part of that schema.
 
 ```python
 from orchiddb import Connection, DuckDBEngine
@@ -44,13 +43,7 @@ with Connection(DuckDBEngine(database), schema) as graph:
         print(result.read_all().to_pylist())
 ```
 
-```sh
-make cli
-./target/debug/orchiddb query 'MATCH (p:Person) RETURN p.name AS name ORDER BY name' \
-  --schema cli/examples/people.json --init cli/examples/setup.sql --no-iceberg --format table
-```
-
-No public compile-only API or CLI route remains. SQL lowering, portable function
+SQL lowering, portable function
 mappings, and engine routing stay internal to execution. Schema validation rejects
 combined query/schema documents. Existing application connections, transactions,
 and driver configuration remain caller-owned. Results are rows or Arrow batches.
@@ -357,20 +350,6 @@ catalog = OrchidDB.Catalog.new("https://catalog.example.com",
   auth: OrchidDB.CatalogAuth.client_credentials("reporting-service",
     OrchidDB.Credential.env("CATALOG_CLIENT_SECRET")))
 ```
-
-CLI:
-
-```sh
-orchiddb query 'MATCH (p:Person) RETURN p.id' \
-  --catalog https://catalog.example.com --scope team --graph knowledge \
-  --client-id reporting-service --client-secret-env CATALOG_CLIENT_SECRET \
-  --database people.duckdb --no-iceberg --format table
-```
-
-Use `--issuer` or `--token-endpoint` for external OAuth, `--oauth-scope` to select
-roles, `--token-file` for an existing token, or `--auth token_exchange` with
-`--subject-token-env`/`--subject-token-file`. Client secrets can also use
-`--client-secret-file`. Secret values do not need to appear in command arguments.
 
 DuckDB extension:
 
@@ -679,27 +658,6 @@ partition coverage and performs version/tombstone reconciliation; callers must
 not concatenate Iceberg rows with Kafka results. Rust additionally provides
 `DuckDbSnapshot` for loading a published Iceberg snapshot directly.
 
-The CLI's `stream` command accepts separate `--schema`, `--config` (Kafka options,
-`topic`, `source`), and `--subject` JSON files. Supply `--authorizer EXECUTABLE`:
-the CLI writes `{subject, checks}` to its stdin and expects a JSON boolean array
-on stdout. It executes the program directly without a shell, bounds output, and
-times out after 30 seconds. Choose `--insert CHANGE.json`, `--insert-batch
-CHANGES.json`, `--query CYPHER` (optionally `--snapshot SNAPSHOT.json`), or
-`--subscribe CYPHER --offsets OFFSETS.json --batches N`. Results are JSON lines
-containing Arrow IPC. This is a trusted host callback, not an HTTP login endpoint.
-
-Live Kafka/SpiceDB checks cover all eight clients, including denied insertion,
-hybrid reconciliation, filtered streaming results, and checkpoints; see
-[`artifacts/e2e/streaming-clients.json`](artifacts/e2e/streaming-clients.json).
-A local release Python benchmark (50,000 records, six partitions, Arrow decoding,
-local permission callback) measured median steady output of **9.4k records/s**
-with single-record reads and **68.5k records/s** with explicit 256-record reads.
-Shared Arrow buffers improved the latter from 35.8k records/s and reduced encoded
-IPC bytes by about 91%. Single-record foreign-client throughput remains below the
-native Rust path. These numbers exclude network authorization latency and are not
-Kafka broker capacity; methodology and all trials are in
-[`foreign-clients.json`](artifacts/streaming-benchmark/foreign-clients.json).
-
 Register `StreamSchema` on `StreamConnection::new` once. Each table specifies its
 node label (or edge endpoints), JSON Schema for properties, and authorization resource
 type/read/write permissions. Supply query text and parameters separately using
@@ -797,13 +755,9 @@ delivered. A client cache can delay observation until expiry. Applications with 
 retained view must clear/reload it when access changes. Permission checks and
 Kafka writes are separate systems, not a distributed transaction.
 
-The runnable [`examples/kafka_stream.rs`](examples/kafka_stream.rs) supplies a
-small client-owned policy for one configured user and entity. Replace that policy
-with your application's trusted authorizer, create the Kafka topic, and set the
-environment variables listed in the example:
+Run the streaming tests with the optional Kafka feature:
 
 ```sh
-cargo run --features kafka --example kafka_stream
 cargo test --features kafka --test streaming
 ```
 
@@ -830,13 +784,11 @@ Maven, and Java 17 or newer. The runner builds the Rust test, owns the isolated
 `orchid-flink-e2e` Compose project on local ports 19092/18083, and removes its
 containers/volume afterward. `--test-binary PATH` reuses a freshly built test;
 `--keep` retains services for inspection. Results go to
-`artifacts/e2e/flink.json`, with phase logs under `target/flink-e2e/`.
+`target/artifacts/e2e/flink.json`, with phase logs under `target/flink-e2e/`.
 The fixture uses Flink 2.0.1 and its compatible Kafka connector. PyIceberg publishes
 the checkpoint manifest after the stream is quiescent at a successful savepoint;
 this tests the snapshot contract, not a continuously running Flink Iceberg sink.
 It uses one broker and one worker, so it does not establish cluster HA behavior.
-The broader local workflow results, fixture corrections, and unresolved failures
-are recorded in [`artifacts/e2e/summary.json`](artifacts/e2e/summary.json).
 
 Use `insert(subject, change)` and `subscription.next()` for ordinary single-record
 traffic. Reuse the connection and allow independent insert calls to overlap;
@@ -868,7 +820,7 @@ partitions, identical JSON envelopes, idempotent producers with `acks=all`, and
 ```sh
 docker compose -p orchid-stream-bench -f tools/diagnostics/streaming.compose.yml up -d
 cargo build --release --features kafka --example kafka_bench
-python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/run.jsonl 50000 native-read native-project orchid-read orchid-batch-read native-write orchid-write orchid-batch-write
+python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench target/artifacts/streaming-benchmark/run.jsonl 50000 native-read native-project orchid-read orchid-batch-read native-write orchid-write orchid-batch-write
 cargo test --features kafka --test streaming live_kafka_client_authorization_and_revocation -- --ignored
 ```
 
@@ -879,7 +831,7 @@ linger artificially constrains throughput: it is not a Kafka capacity benchmark.
 Use several million writes and repeated runs when comparing producer capacity:
 
 ```sh
-BENCH_INFLIGHT=4096 BENCH_BATCH=4096 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/producer.jsonl 4000000 native-write orchid-write orchid-batch-write
+BENCH_INFLIGHT=4096 BENCH_BATCH=4096 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench target/artifacts/streaming-benchmark/producer.jsonl 4000000 native-write orchid-write orchid-batch-write
 ```
 
 The probe checks query result counts and checksums. Writer measurements exclude 256 warmup deliveries; readers
@@ -893,58 +845,6 @@ broker with replication factor one; these results do not
 represent replicated production durability, TLS, or Flink materialization cost.
 Remove this isolated
 stack with the same Compose command followed by `down` when finished.
-
-Local measurements on an Apple M3 Pro (18 GiB), Kafka 4.1.1 with four Docker
-CPUs are recorded in
-[`artifacts/streaming-benchmark`](artifacts/streaming-benchmark). These are local
-capacity probes, not production guarantees. Envelopes are approximately 350–360
-bytes. Single-record APIs are the primary path; batching remains optional.
-
-| Measurement | Native Kafka | OrchidDB |
-| --- | ---: | ---: |
-| Single-record insertion, 4096 in flight, 5 ms linger | 314,831 records/s | 295,738 records/s |
-| Single-record insertion, 256 in flight, zero linger | 176,978 records/s | 176,690 records/s |
-| Serial insertion, zero linger | 2,725 records/s | 2,600 records/s |
-| Backlog drain with JSON projection / Cypher frames | 770,884 records/s | 100,830 records/s |
-| Live produce-to-frame latency, median / p99 | 0.376 / 1.368 ms | 0.424 / 1.222 ms |
-
-This table isolates transport/query cost with a no-op authorizer. The first row
-is the median of three four-million-write runs; native ranged from 292k–433k/s
-and Orchid from 268k–363k/s. Read throughput is the median of three one-million-
-record runs using individual `next()` calls. Live latency measures 3000 serial
-produce/read operations with 300 warmup events excluded from percentiles; it
-includes Kafka acknowledgement and consumer delivery but not Flink computation.
-The single-frame execution path compiles once; its backlog call latency was
-8 microseconds median and 12 microseconds p99. In matched 3000-record probes,
-prepared kernels improved warm single-frame throughput from 1,359 to 93,235/s.
-
-After removing the direct streaming SpiceDB adapter, the final build was checked
-again: one million individual frames at 103,924/s, and live produce-to-frame
-latency of 0.393 ms median / 1.337 ms p99 (native: 0.349 / 1.397 ms). See
-`final-client-authorizer.jsonl` and `final-client-live.jsonl` in the artifact folder.
-These checks also use the no-op client authorizer to isolate engine overhead.
-
-Authorization service latency is owned by the client integration and is not
-included in the table. Historical probes of the removed SpiceDB streaming adapter
-are preserved in the artifacts: a fresh RPC per event limited one subscription
-to about 510/s; an experimental client cache with a fixed 5-second expiry achieved
-73,197/s for one million updates over 1000 entities, including 2962 actual
-permission checks and 997,038 cache hits. Those remote-auth/cache probes describe
-the earlier diagnostic setup, not a cache or SpiceDB dependency shipped by Orchid.
-The current benchmark rejects those retired modes instead of silently bypassing
-their authorization.
-
-Reproduce the live latency probe (distinct from the backlog throughput probe):
-
-```sh
-BENCH_LINGER_MS=0 python3 tools/diagnostics/run_stream_bench.py target/release/examples/kafka_bench artifacts/streaming-benchmark/live.jsonl 3000 native-live orchid-live
-```
-
-The initial `before.jsonl` and `after-256.jsonl` are exploratory runs; their small
-producer window/startup effects do not measure Kafka capacity. Use
-`producer-final.jsonl`, `single-write-zero-linger.jsonl`, `read-final.jsonl`, and
-`live-output.jsonl` for the comparisons above. Binary hashes, settings, raw
-latency percentiles, and checksums are retained with the measurements.
 
 ## Optional DuckDB extension
 
@@ -973,30 +873,23 @@ enables DuckDB's parser extension fallback for native `CYPHER` and `GREMLIN` syn
 The release pipeline builds and validates macOS ARM64, Linux ARM64, and Linux
 x86-64. Signed extension distribution is not configured yet.
 
-## End-to-end examples
+## Terminal quickstart
 
-In the DuckDB shell opened above, run these against a fresh database:
+In the DuckDB shell opened above, run this against a fresh database:
 
-```text
-.read examples/01_social.sql
-.read examples/02_managed.sql
-.read examples/03_sparql.sql
-.read examples/05_rag.sql
+```sql
+CREATE TABLE people(id BIGINT PRIMARY KEY, name VARCHAR);
+INSERT INTO people VALUES (1, 'Ada'), (2, 'Grace');
+
+CREATE PROPERTY GRAPH people_graph
+VERTEX TABLES (people KEY (id) LABEL Person PROPERTIES (name));
+
+CYPHER people_graph
+MATCH (p:Person) RETURN p.name AS name ORDER BY name;
 ```
 
-| Example | What it demonstrates |
-| --- | --- |
-| [01_social.sql](examples/01_social.sql) | Tables, one-statement graph mapping, Cypher, Gremlin, SQL composition, rollback, EXPLAIN |
-| [02_managed.sql](examples/02_managed.sql) | Managed graph creation, mutations, transactions, typed results |
-| [03_sparql.sql](examples/03_sparql.sql) | Existing RDF mappings and SPARQL through DuckDB |
-| [04_iceberg_lance.sql](examples/04_iceberg_lance.sql) | Graph queries across existing Iceberg and Lance sources; replace the example paths first |
-| [05_rag.sql](examples/05_rag.sql) | Computed RAG edge: tenant filtering, BM25 candidates, MaxSim reranking, and traversal to authors |
-| [06_authorization.sql](examples/06_authorization.sql) | Optional SpiceDB channel permissions, implicit session identity, chunks, and computed edges |
-| [07_rag_setup.sql](examples/07_rag_setup.sql) + [07_parameterized_rag.sql](examples/07_parameterized_rag.sql) | Ordinary Cypher hybrid search, MaxSim reranking, and traversal to source documents |
-
-The local examples create their own data; SPARQL uses the `people` table from
-the first example. The RAG example is self-contained. The storage example expects
-existing external datasets.
+The query returns `Ada` and `Grace`. The sections below cover relationships,
+transactions, SPARQL, authorization, and retrieval using the same shell.
 
 ## Define a graph over tables
 
@@ -1148,10 +1041,8 @@ channel:private#viewer@user:bob
 
 Your existing application/ingestion process maintains those relationships in
 SpiceDB. Orchid reads permissions; it does not synchronize source ACLs or change
-SpiceDB's schema. [06_authorization.sql](examples/06_authorization.sql) exercises
-this model, including chunks and computed edges. Its local configuration expects
-SpiceDB's HTTP gateway at `127.0.0.1:8448` with token `orchid-local-test` and the
-schema/relationships above.
+SpiceDB's schema. The local configuration above expects SpiceDB's HTTP gateway
+at `127.0.0.1:8448` with token `orchid-local-test` and the schema/relationships above.
 
 For parameter binding, the trusted host can use:
 
@@ -1388,9 +1279,29 @@ continues to use the index selected by its DuckDB search function.
 
 Search inputs are query parameters. Use `MATCH`, scoring expressions, and successive
 `WITH ... ORDER BY ... LIMIT` stages to select candidates, rerank them, and traverse
-their relationships. Run [the setup](examples/07_rag_setup.sql), then execute
-[the query file](examples/07_parameterized_rag.sql) with named parameters through
-DuckDB. It returns `Detailed guide | duckdb | 2.0`.
+their relationships. Create the graph below in DuckDB, then run the parameterized
+query that follows. It returns `Detailed guide | duckdb | 2.0`.
+
+```sql
+CREATE TABLE chunks(id BIGINT PRIMARY KEY, text VARCHAR, embedding FLOAT[2], token_vectors FLOAT[2][]);
+CREATE TABLE content(id BIGINT PRIMARY KEY, title VARCHAR);
+CREATE TABLE has_chunk(id BIGINT PRIMARY KEY, content_id BIGINT, chunk_id BIGINT);
+INSERT INTO chunks VALUES
+    (1, 'duckdb duckdb', [1,0], [[0.5,0.5]]),
+    (2, 'duckdb', [0.8,0.2], [[1,0],[0,1]]),
+    (3, 'gardening flowers', [0,1], [[5,5]]);
+INSERT INTO content VALUES (10, 'Quick overview'), (20, 'Detailed guide'), (30, 'Gardening');
+INSERT INTO has_chunk VALUES (1,10,1), (2,20,2), (3,30,3);
+CREATE PROPERTY GRAPH knowledge
+VERTEX TABLES (
+    chunks KEY(id) LABEL Chunk PROPERTIES(id, text, embedding, token_vectors),
+    content KEY(id) LABEL Content PROPERTIES(id, title)
+)
+EDGE TABLES (
+    has_chunk KEY(id) SOURCE KEY(content_id) REFERENCES content(id)
+    DESTINATION KEY(chunk_id) REFERENCES chunks(id) LABEL HAS_CHUNK
+);
+```
 
 Against that graph, an application binds text, an embedding, and a matrix of token
 vectors through its ordinary DuckDB connection:
@@ -1451,8 +1362,8 @@ A computed edge defines a relationship from expressions and ranking rules instea
 of an edge table. Its endpoints are existing vertex labels. The shared compiler
 constructs the joins, eligibility filters, scoring, and per-source ranking.
 
-[The complete RAG example](examples/05_rag.sql) creates questions, documents,
-authors, and stored `WRITTEN_BY` relationships, then declares this graph:
+For tables containing questions, documents, authors, and stored `WRITTEN_BY`
+relationships, declare a computed relationship as follows:
 
 ```sql
 CREATE PROPERTY GRAPH rag
@@ -1683,6 +1594,77 @@ backend, SQL regions executed by the selected backend, and no unexpected failure
 or omissions. Only the existing SPARQL omissions with unchanged case hashes are
 allowed. Reports are written under `target/conformance/sql-engines/`.
 
+The matrix uses four isolated workers for Cypher and RDF. Use `--jobs 1` for a
+serial run or `--jobs N` to set the worker count. Gremlin always uses one
+uninterrupted engine instance. Individual native suite runs accept the same
+option:
+
+```sh
+extension/vendor/test-env/bin/python conformance/upstream/run.py \
+  --engine orchiddb --suite opencypher --jobs 4 \
+  --output target/conformance/orchiddb-opencypher.json
+```
+
+Workers retain their journals under the output's `.workers` directory. The merged
+report preserves catalog order, outcomes, plans, and SQL; merging rejects missing
+or duplicate cases, changed catalogs, and different executable hashes. To resume
+a journal, use `--jobs 1`. `--case-file path.json` accepts a JSON array of case IDs
+for focused runs.
+
+### Conformance report page
+
+The generator for `docs.orchiddb.com/conformance-report.html` lives in
+`conformance/report`. Build the page and its evidence downloads locally:
+
+```sh
+make conformance-report
+# Use fresh recorded <engine>-<suite>.json reports instead:
+make conformance-report REPORT_RESULTS=target/conformance
+python3 -m http.server 8766 --directory target/conformance/report
+```
+
+Open `http://localhost:8766/conformance-report.html`. Each OrchidDB scenario has
+a SQL-lowering indicator and a filter independent of its pass/fail outcome:
+**✓ Fully lowered to SQL**, **◐ SQL + OrchidDB runtime**, **○ OrchidDB runtime**,
+or **? Plan not captured**. Select a result to expand readable details inline with
+result tables, logical and physical OrchidDB plans, and generated SQL. SQL uses
+visual line breaks without changing the captured statement. Measurements have
+plain labels; raw JSON is available only as a separate download. Fixture and
+assertion-helper queries are grouped separately and do not affect the scenario's
+lowering indicator. The results directory must contain product-named files such
+as `orchiddb-opencypher.json`, as produced by `conformance/upstream/run.py`.
+
+Rebuild the conformance runner before collecting new evidence. It records plans
+from the actual execution, without recompiling or rerunning queries for display.
+New standalone Cypher and Gremlin runs use ordinary mapped vertex and edge
+tables. The adapter declares columns from input fixtures and query plans; writes
+use the shared mapped executor and database defaults generate omitted keys.
+The report lists the physical tables and executed INSERT, UPDATE, and DELETE
+statements, including the row counts of their typed inputs. Each recorded plan
+also includes the actual SQL table definitions under **SQL schema**. Tables are
+named for their labels and relationship types (`person`, `software`, `knows`,
+`created`); properties keep their names as typed columns (`name`, `age`, `lang`,
+`weight`). Each scenario declares its own schema. Relationship partitions with
+different endpoint types include those types in their table names. A proven
+one-to-many relationship is a foreign-key column on the many-side node table;
+its relationship ID and properties are columns on that same row. Many-to-many
+relationships use junction tables. Cardinality discovery checks all scenario
+input queries before execution; later relationship creation must not violate
+a constraint inferred only from the initial fixture. It never reads expected
+results. Cypher uses fresh child bindings to prove the degree limit; Gremlin
+fixtures use endpoint degrees when no input traversal can add relationships.
+Unknown cardinality retains a junction table. DuckDB limitations, including
+cyclic table declarations and deleting referenced rows in one transaction,
+remain visible failures rather than a switch to unmanaged graph storage.
+Fixtures requiring
+multi-properties, meta-properties, or stored-null properties are reported as
+adapter limitations. Historical snapshot-based results remain historical evidence.
+Fully lowered means one SQL region, no residual operators, and no native source
+fetches or runtime write operations. Historical reports, syntax checks, and requests without execution
+statistics remain explicitly unclassified. `compact_report.py` preserves the
+plan and SQL evidence while omitting result rows. Report generation does not run
+conformance tests or publish the website.
+
 ## Build the complete GitHub release
 
 From a clean, committed checkout on **macOS ARM64**, run:
@@ -1698,12 +1680,12 @@ From a clean, committed checkout on **macOS ARM64**, run:
 The script builds Linux AMD64, Linux ARM64, and Apple Silicon macOS artifacts
 locally. Rerun the same command to resume after a failure. It includes all eight
 language clients (Python, JavaScript/TypeScript, Java, Rust, C++, Go, Elixir, and
-the native C binding), the CLI, and the DuckDB extension. It does not run the
+the native C binding) and the DuckDB extension. It does not run the
 full test suite; run `make release-tools-test` to check the release tooling.
 
 The version defaults to the root Cargo.toml. For a new version, run
 `./scripts/release-all.sh --version 0.4.1` (choose an unpublished version).
-From a clean checkout, Make updates the core, CLI,
+From a clean checkout, Make updates the core
 and client manifests and lockfiles, commits the version change, prepares the
 Python release environment, and runs the release pipeline. Existing uncommitted
 work is never included in an automatic release commit. With `--publish`, the
@@ -1718,12 +1700,9 @@ target/releases/orchiddb-v<version>/<commit>/upload/
 The pipeline builds and packages optimized artifacts for **macOS ARM64, Linux
 ARM64, and Linux x86-64** using Cargo and Zig locally. There is one Cargo build
 per platform (three total), running concurrently by default (`RELEASE_JOBS=3`),
-building the extension, CLI, native library, and JNI
-library together in the shared workspace. Release runs no tests,
-conformance suites, smoke checks, or database containers. The CLI dynamically
-links DuckDB: release builds download its prebuilt library for linking, and users
-install the shared library separately as described in [CLI setup](cli/README.md#duckdb-installation).
-The DuckDB engine is not compiled from source or included in the CLI archive.
+building the extension, native library, and JNI library together in the shared
+workspace. Release runs no tests, conformance suites, smoke checks, or database
+containers.
 Rust release binaries are stripped of symbols. Java packaging uses runtime
 dependencies only and skips test compilation; the JavaScript release install
 excludes the test workspace and its database drivers.
@@ -1735,7 +1714,6 @@ Linux packages also bundle Cyrus SASL and Kerberos for cross-platform portabilit
 | Component | GitHub assets |
 | --- | --- |
 | DuckDB extension | Three platform archives, pinned to DuckDB 1.5.6 |
-| CLI | Three archives with the standalone executable and examples |
 | Native runtime | Three shared-library/header archives plus JVM kernel/dependency ZIP |
 | Python | Three wheels containing the matching native runtime |
 | JavaScript/TypeScript | One local-install tarball with all three native runtimes |

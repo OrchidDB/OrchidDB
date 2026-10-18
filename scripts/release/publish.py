@@ -54,7 +54,7 @@ def publish(assets, version):
         if any(ref['ref'] == 'refs/tags/' + tag for ref in refs):
             raise RuntimeError('Tag already exists without a release; refusing to change it')
         notes = assets.parent / 'release-notes.md'
-        notes.write_text('OrchidDB ' + version + '\n\nCLI, DuckDB extension, and all language clients for macOS ARM64, Linux ARM64, and Linux x86-64.\n\nThe CLI requires the DuckDB 1.5.2 shared library installed separately. The extension targets DuckDB 1.5.6.\n\nSource: ' + manifest['commit'] + '\n\nSee release-manifest.json and SHA256SUMS for asset details and checksums.\n')
+        notes.write_text('OrchidDB ' + version + '\n\nDuckDB extension and all language clients for macOS ARM64, Linux ARM64, and Linux x86-64.\n\nThe extension targets DuckDB 1.5.6.\n\nSource: ' + manifest['commit'] + '\n\nSee release-manifest.json and SHA256SUMS for asset details and checksums.\n')
         payload = {'tag_name': tag, 'target_commitish': manifest['commit'], 'name': 'OrchidDB ' + version, 'body': notes.read_text(), 'draft': True}
         existing = json.loads(subprocess.check_output(
             ['gh', 'api', '--method', 'POST', 'repos/' + REPO + '/releases', '--input', '-'],

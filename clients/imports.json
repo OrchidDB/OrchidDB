@@ -26,9 +26,5 @@
   "clients/native": {
     "repository": "git@github.com:OrchidDB/OrchidDB-native.git",
     "commit": "9c1a7ed9a8baf79e3df65ed81818110a647758b0"
-  },
-  "cli": {
-    "repository": "git@github.com:OrchidDB/OrchidDB-cli.git",
-    "commit": "f6f7aaaf49b30e82238e1361f40569376048899a"
   }
 }

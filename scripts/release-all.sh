@@ -7,7 +7,7 @@ usage() {
 Usage: scripts/release-all.sh [--version VERSION] [--publish | --check]
 
 Run on an Apple Silicon Mac. Builds Linux AMD64, Linux ARM64, and macOS ARM64
-clients, CLI, and DuckDB extension. Defaults to the version in Cargo.toml.
+clients and DuckDB extension. Defaults to the version in Cargo.toml.
 --publish  Also push main and publish all assets to GitHub (requires gh auth).
 --check    Prepare the Python packaging environment and check prerequisites only.
 --version  Prepare and commit a version bump from an otherwise clean checkout.

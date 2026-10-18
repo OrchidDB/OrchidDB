@@ -60,7 +60,7 @@ def main():
         raise RuntimeError('Build the fixture first: mvn -f tools/diagnostics/flink-e2e/pom.xml package')
     work = ROOT / 'target' / 'flink-e2e' / str(time.time_ns())
     work.mkdir(parents=True)
-    evidence = ROOT / 'artifacts' / 'e2e' / 'flink.json'
+    evidence = ROOT / 'target' / 'artifacts' / 'e2e' / 'flink.json'
     evidence.parent.mkdir(parents=True, exist_ok=True)
     topic = 'orchid-flink-' + str(time.time_ns())
     env = os.environ | dict(ORCHID_FLINK_TOPIC=topic, ORCHID_FLINK_SNAPSHOT=str(work/'snapshot.json'))

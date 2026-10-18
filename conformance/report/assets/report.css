@@ -1,0 +1,86 @@
+/* Only the evidence report uses these styles. The book uses stock mdBook. */
+:root { --ink: #303840; --muted: #596a7e; --paper: #fff; --line: #dce2e7; --green: #435c70; --accent: #356b91; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.6 system-ui, sans-serif; }
+a { color: var(--accent); text-underline-offset: 3px; }
+button, input, select { font: inherit; }
+:focus-visible { outline: 3px solid #4382b1; outline-offset: 3px; }
+.report-header { display: flex; flex-wrap: wrap; gap: 24px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+.comparison-page main { max-width: 1400px; margin: auto; padding: 32px 24px; }
+.comparison-page h1 { font-size: 32px; letter-spacing: normal; }
+.language-tabs { top: 0; }
+pre { overflow: auto; }
+.skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media(max-width:760px) { .comparison-page main { padding: 24px 16px; } .language-tabs { top: 0; } }
+
+.query-cost { display: block; font-size: .85em; margin-top: .3rem; }
+.query-cost-table { width: 100%; border-collapse: collapse; }
+.query-cost-table th, .query-cost-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #8885; }
+.query-cost-table td:first-child { min-width: 16rem; }
+
+.sql-lowering { display: inline-flex; align-items: center; gap: .4em; padding: .2em .55em; margin-top: .4rem; border: 1px solid currentColor; border-radius: .35rem; font-size: .8rem; font-weight: 600; line-height: 1.4; }
+.sql-lowering > span { font-size: 1rem; }
+.sql-lowering.full_sql { color: #17623b; background: #edf8f0; }
+.sql-lowering.mixed { color: #795000; background: #fff5d9; }
+.sql-lowering.runtime { color: #69439a; background: #f5effc; }
+.sql-lowering.unknown { color: #526071; background: #f1f4f7; }
+.lowering-legend { display: flex; flex-wrap: wrap; gap: .6rem; }
+.query-plan { margin: .8rem 0; border: 1px solid var(--line); border-radius: .35rem; padding: .75rem; min-width: 0; }
+.query-plan > summary { cursor: pointer; font-weight: 600; }
+.query-plan pre { max-width: 100%; max-height: 32rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; padding: .75rem; background: #f4f6f8; border: 1px solid var(--line); }
+.query-plan h4 { margin: 1rem 0 .4rem; }
+
+.result-button, .scenario-button { border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; padding: 0; width: 100%; }
+.scenario-button { display: block; color: var(--accent); margin-top: 12px; font-size: 12px; }
+.result-button:hover .result-action, .scenario-button:hover { text-decoration: underline; }
+.result-action { display: block; font-size: 12px; color: var(--accent); margin-top: 10px; }
+.case-detail-row > td { padding: 0; }
+.feature-evidence-row .comparison-scroll { max-height: none; }
+.feature-matrix-scroll { container-type: inline-size; }
+.case-details { width: 100%; padding: 0; color: var(--ink); background: white; border-top: 2px solid var(--accent); scroll-margin-top: 110px; }
+.feature-matrix-scroll .case-details { max-width: calc(100cqw - 36px); }
+.case-details-header { display: flex; align-items: start; gap: 24px; padding: 22px 28px; border-bottom: 1px solid var(--line); background: white; }
+.case-details-header h3 { font-size: 20px; line-height: 1.4; margin: 0; flex: 1; overflow-wrap: anywhere; }
+.case-details-header button { flex: none; border: 1px solid var(--line); background: #f4f6f8; border-radius: 6px; padding: 7px 13px; cursor: pointer; }
+.case-details .evidence-content { padding: 0 28px 28px; font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
+.case-details .evidence-section { margin: 24px 0; min-width: 0; }
+.case-details h3 { margin: 0 0 12px; font-size: 16px; font-weight: 650; }
+.case-details .query-plan { padding: 22px; margin: 24px 0; border-radius: 8px; }
+.case-details .query-plan > h3 { display: inline-block; margin: 0 16px 0 0; }
+.case-details pre { margin: 10px 0 0; padding: 16px; font: 13px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; color: #23344b; background: #f5f7fa; border: 1px solid #e0e6ed; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: none; }
+.case-details pre code { font: inherit; }
+.case-details .sql-line::before { content: ''; display: block; }
+.case-details .sql-line:first-child::before { display: none; }
+.sql-keyword { color: #305b96; font-weight: 650; }
+.case-outcome { font-size: 14px; font-weight: 650; margin: 20px 0; }
+.case-outcome.pass { color: #17623b; }
+.case-outcome.fail, .case-outcome.timeout { color: #983b30; }
+.evidence-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px 24px; margin: 16px 0; }
+.evidence-facts dt { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.evidence-facts dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.evidence-facts .evidence-facts { display: block; margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--line); }
+.evidence-facts .evidence-facts > div { margin: 8px 0; }
+.result-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.result-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+.result-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.result-table th { background: #eef2f6; font-weight: 600; }
+.result-table th, .result-table td { border-bottom: 1px solid var(--line); padding: 12px; text-align: left; vertical-align: top; }
+.result-table tr:last-child td { border-bottom: 0; }
+.result-table .evidence-facts { margin: 0; display: block; }
+.result-table .evidence-facts > div { margin: 6px 0; }
+.value-list { padding-left: 20px; margin: 4px 0; }
+.value-type { display: inline-block; color: var(--muted); font-size: 11px; margin-right: 6px; }
+.null-value { color: var(--muted); font-style: italic; }
+.helper-queries { border-top: 1px solid var(--line); padding-top: 20px; }
+.helper-queries summary, .case-details details summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.helper-queries > p { color: var(--muted); font-size: 13px; }
+.execution-note { color: var(--muted); font-size: 14px; }
+@media(max-width:760px) {
+  .case-details-header { padding: 16px; gap: 12px; }
+  .case-details-header h3 { font-size: 17px; }
+  .case-details-header button { padding: 5px 9px; font-size: 13px; }
+  .case-details .evidence-content { padding: 0 16px 20px; }
+  .case-details .query-plan { padding: 14px; }
+  .case-details pre { padding: 12px; font-size: 12px; }
+  .result-comparison { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}

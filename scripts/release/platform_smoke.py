@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Run real native, CLI, and extension queries on each release target."""
+"""Run real native ABI checks and extension queries on each release target."""
 import argparse
 import ctypes
 import json
 from pathlib import Path
-import subprocess
-import tempfile
 
 
 def verify(binaries, extension, version, commit):
@@ -27,18 +25,12 @@ def verify(binaries, extension, version, commit):
     finally:
         native.orchiddb_string_free(pointer)
     assert not hasattr(native, 'orchiddb_compile_json')
-    assert subprocess.check_output([str(binaries / "orchiddb"), "--version"], text=True).strip() == "orchiddb " + version
-    with tempfile.TemporaryDirectory() as temporary:
-        schema = Path(temporary) / 'schema.json'
-        schema.write_text('{"tables":[]}')
-        output = subprocess.check_output([str(binaries / 'orchiddb'), 'query', 'RETURN 42 AS answer', '--schema', str(schema), '--format', 'table', '--no-iceberg'], text=True)
-        assert '42' in output and 'answer' in output, output
     import duckdb
     with duckdb.connect(config={'allow_unsigned_extensions': 'true'}) as database:
         database.execute("LOAD '" + str(extension).replace("'", "''") + "'")
         database.execute('CALL orchid_register_schema(?, ?)', ['release', '{"tables":[]}'])
         assert database.execute("SELECT * FROM orchid_query('release', 'RETURN 42 AS answer')").fetchall() == [(42,)]
-    print('Validated native ABI, CLI execution, and extension execution:', binaries.name)
+    print('Validated native ABI and extension execution:', binaries.name)
 
 
 if __name__ == '__main__':

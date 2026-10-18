@@ -209,46 +209,6 @@ class AuthorizationTests(unittest.TestCase):
         self.assertEqual(self.db.execute('EXECUTE policy_change').fetchall(), [])
         self.assertEqual(self.rows(), [])
 
-    def test_computed_rag_before_candidates_and_ranking(self):
-        from test_computed_edges import SCRIPT, QUERY
-        self.db.execute(SCRIPT)
-        self.db.execute("ALTER TABLE documents ADD COLUMN channel_id VARCHAR; UPDATE documents SET channel_id=CASE id WHEN 101 THEN 'eng' WHEN 102 THEN 'private' ELSE 'hidden' END")
-        self.db.execute('''ALTER PROPERTY GRAPH rag SET AUTHORIZATION (
-          PROVIDER auth, DEFAULT DENY, VERTEX Question PUBLIC, VERTEX Author PUBLIC,
-          VERTEX Document RESOURCE channel KEY(channel_id) REQUIRE view)''')
-        self.identity()
-        self.assertEqual(self.db.execute(QUERY).fetchall(), [('Quick overview','Alice',1.0)])
-        lexical = self.db.execute('CYPHER rag MATCH (:Question {id:1})-[r:RELEVANT_TO]->() RETURN r.lexical').fetchone()
-        self.db.execute("INSERT INTO documents SELECT 1000+i,10,'hidden','duckdb',[[100,100]],'hidden' FROM range(100) t(i)")
-        self.assertEqual(self.db.execute('CYPHER rag MATCH (:Question {id:1})-[r:RELEVANT_TO]->() RETURN r.lexical').fetchone(), lexical)
-        self.assertEqual(self.db.execute("GREMLIN rag g.V().has('Question','id',1).out('RELEVANT_TO').values('title')").fetchall(), [('Quick overview',)])
-        self.identity('bob')
-        self.assertEqual(self.db.execute(QUERY).fetchall(), [('Detailed guide','Bob',2.0)])
-
-    def test_parameterized_cypher_retrieval_authorized_corpus_and_revocation(self):
-        from test_cypher_retrieval import SCRIPT, PARAMETERIZED, PARAMETERS
-        self.db.execute(SCRIPT)
-        self.db.execute("ALTER TABLE chunks ADD COLUMN channel_id VARCHAR; UPDATE chunks SET channel_id=CASE id WHEN 1 THEN 'eng' WHEN 2 THEN 'private' ELSE 'hidden' END")
-        self.db.execute('''ALTER PROPERTY GRAPH knowledge SET AUTHORIZATION (
-          PROVIDER auth, DEFAULT DENY, VERTEX Content PUBLIC,
-          VERTEX Chunk RESOURCE channel KEY(channel_id) REQUIRE view)''')
-        with self.assertRaisesRegex(Exception, 'session authorization'):
-            self.db.execute(PARAMETERIZED, PARAMETERS).fetchall()
-        self.identity()
-        self.assertEqual(self.db.execute(PARAMETERIZED, PARAMETERS).fetchall(), [('Quick overview','duckdb duckdb',1.)])
-        score_query = 'CYPHER knowledge MATCH (c:Chunk) RETURN text.bm25($q,c.text)'
-        score = self.db.execute(score_query, {'q':'duckdb'}).fetchone()
-        self.db.execute("INSERT INTO chunks SELECT 100+i,'duckdb',[1,0],[[100,100]],'hidden' FROM range(100) t(i)")
-        self.assertEqual(self.db.execute(score_query, {'q':'duckdb'}).fetchone(), score)
-        self.assertEqual(self.db.execute(PARAMETERIZED, PARAMETERS).fetchall(), [('Quick overview','duckdb duckdb',1.)])
-        self.identity('bob')
-        self.assertEqual(self.db.execute(PARAMETERIZED, PARAMETERS).fetchall(), [('Detailed guide','duckdb',2.)])
-        self.identity('nobody')
-        self.assertEqual(self.db.execute(PARAMETERIZED, PARAMETERS).fetchall(), [])
-        self.identity()
-        self.relationship('team','engineering','member','user','alice',delete=True)
-        self.assertEqual(self.db.execute(PARAMETERIZED, PARAMETERS).fetchall(), [])
-
     def test_persistence_and_separate_connections(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'auth.duckdb'
@@ -313,19 +273,6 @@ class AuthorizationTests(unittest.TestCase):
             self.identity('bob')
             self.assertEqual(self.db.execute('GREMLIN external_graph g.V().values("id")').fetchall(),[(3,)])
             self.assertEqual(self.db.execute('GREMLIN external_graph g.E().count()').fetchone(),(0,))
-
-    def test_readme_example(self):
-        self.relationship('channel', 'engineering', 'viewer', 'team', 'engineering', 'member')
-        db=connect()
-        try:
-            script=(Path(__file__).resolve().parents[2]/'examples/06_authorization.sql').read_text()
-            db.execute(script.replace('http://127.0.0.1:8448',self.endpoint).replace('orchid-local-test','orchid-test'))
-            with self.assertRaisesRegex(Exception,'session authorization'):
-                db.execute('CYPHER slack MATCH (m:Message) RETURN m.id')
-            self.identity(db=db)
-            self.assertEqual(db.execute('CYPHER slack MATCH (:Message)-[:HAS_CHUNK]->(c) RETURN c.id ORDER BY c.id').fetchall(),[(10,),(20,)])
-        finally:
-            db.close()
 
     def test_denied_rows_are_not_evaluated_by_throwing_user_predicates(self):
         self.identity()

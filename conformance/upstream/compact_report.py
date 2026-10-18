@@ -1,4 +1,4 @@
-"""Create small publishable results; keep full execution payloads under target/."""
+"""Publish results and plan/SQL evidence without result rows or transport payloads."""
 import argparse
 import json
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 
 def compact(report):
     result = {k: v for k, v in report.items() if k not in ('results', 'environment')}
-    result['evidence_format'] = 'compact-v1'
+    result['evidence_format'] = 'compact-v2'
     if 'query_cost_summary' in result:
         summary = dict(result['query_cost_summary'])
         comparisons = summary.get('baseline_comparisons', [])
@@ -39,6 +39,10 @@ def compact(report):
             entry['java_assertion'] = row['java_assertion']
         if 'query_cost' in row:
             entry['query_cost'] = {k: v for k, v in row['query_cost'].items() if k != 'queries'}
+            queries = [{k: q[k] for k in ('query', 'phase', 'step', 'operation', 'cost') if k in q}
+                       for q in row['query_cost'].get('queries', []) if isinstance(q, dict)]
+            if queries:
+                entry['query_cost']['queries'] = queries
         result[key].append(entry)
     return result
 
