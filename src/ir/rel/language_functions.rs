@@ -237,9 +237,13 @@ pub(crate) fn evaluate(
             ));
         }
         let mut keys = BinaryBuilder::new();
+        // NullArray has no physical validity bitmap: Array::is_null alone
+        // therefore misses untyped SQL NULL. Use logical nulls so typed and
+        // untyped nulls retain the same COUNT(DISTINCT)/grouping semantics.
+        let nulls = arrays[0].logical_nulls();
         for row in 0..rows {
             // SQL NULL groups together and COUNT(DISTINCT) excludes it.
-            if arrays[0].is_null(row) {
+            if nulls.as_ref().is_some_and(|nulls| nulls.is_null(row)) {
                 keys.append_null();
             } else {
                 keys.append_value(
@@ -367,4 +371,20 @@ pub(crate) fn terminal_gremlin(root: &Node) -> bool {
         pending.extend(crate::ir::analysis::children(node));
     }
     uses_function
+}
+
+#[cfg(test)]
+mod key_null_tests {
+    use super::*;
+
+    #[test]
+    fn untyped_and_typed_nulls_produce_null_keys() {
+        for array in [
+            Arc::new(arrow::array::NullArray::new(3)) as ArrayRef,
+            Arc::new(arrow::array::Int64Array::from(vec![None, None, None])) as ArrayRef,
+        ] {
+            let keys = evaluate(KEY, &[array], 3).unwrap();
+            assert_eq!(keys.null_count(), 3);
+        }
+    }
 }

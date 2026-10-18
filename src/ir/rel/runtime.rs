@@ -422,6 +422,20 @@ impl Compiler<'_> {
                 eprintln!("SQL IR lowering boundary: {error}");
             }
             if let Ok(lowered) = lowered {
+                // This mixed runtime may execute a region with DataFusion,
+                // whose physical LIMIT accepts literal bounds only. Retain
+                // dynamic bounds in the once-per-invocation GraphSlice kernel;
+                // whole-query SQL export can still emit native OFFSET/LIMIT.
+                let mut dynamic_limit = false;
+                lowered.plan.apply(|plan| {
+                    if let LogicalPlan::Limit(limit) = plan {
+                        use datafusion::logical_expr::{SkipType, FetchType};
+                        dynamic_limit |= !matches!(limit.get_skip_type()?, SkipType::Literal(_))
+                            || !matches!(limit.get_fetch_type()?, FetchType::Literal(_));
+                    }
+                    Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+                })?;
+                if dynamic_limit { return Ok(None); }
                 let mut adapter =
                     match kernel("DecodeTraversers", vec![lowered.plan], |mut inputs, _| {
                         Ok(inputs.remove(0))

@@ -592,7 +592,7 @@ pub(crate) async fn prepare_with_extensions(
     // SimplifyExpressions respects function volatility and leaves row-dependent
     // calls (and engine-only calls) in place. Reuse the query's execution context
     // so stable functions see the same clock as the rest of the query.
-    let optimized = if !resources.optimize {
+    let optimized = if !resources.optimize && crate::ir::diagnostics::constant_folding_enabled() {
         datafusion::optimizer::Optimizer::with_rules(vec![
             Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
         ]).optimize(optimized, &query_state, |_, _| {})?

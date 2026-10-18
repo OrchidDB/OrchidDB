@@ -33,6 +33,9 @@ struct PlainCte {
 
 pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
     let repair_scopes = dialect.requires_scope_repair() || super::unparse::has_rdf_source(&plan);
+    let plan = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
+        restore_quantifier_payload(plan)?
+    } else { plan };
     let (main, plain_ctes, recursive_ctes) = extract_ctes(plan, repair_scopes)?;
     let unparser_dialect = dialect.unparser_dialect();
     let unparser = Unparser::new(unparser_dialect.as_ref()).with_extension_unparsers(vec![Arc::new(super::lowering::RelationUnparser::new(dialect))]);
@@ -80,7 +83,8 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         // their joins/windows into every correlated consumer.
         let materialized = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres)
             && (cte.name.starts_with("__w_sql_cte_weighted_repeat_")
-            || cte.name.starts_with("__w_sql_cte_apply_row_")) {
+            || cte.name.starts_with("__w_sql_cte_apply_row_")
+            || cte.name.starts_with("__w_sql_cte_quantifier_base_")) {
             " MATERIALIZED"
         } else { "" };
         pending.push((
@@ -110,6 +114,74 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         "WITH"
     };
     dialect.finalize_sql(format!("{keyword} {}\n{main_sql}", definitions.join(",\n")))
+}
+
+/// Restore invariant quantifier payload only at SQL emission. The relational
+/// executor keeps the original single-stream aggregate; SQL consumers share
+/// one explicitly materialized occurrence relation, including its row numbers.
+fn restore_quantifier_payload(plan: LogicalPlan) -> datafusion::common::Result<LogicalPlan> {
+    use datafusion::common::Column;
+    use datafusion::logical_expr::{Expr, JoinType, LogicalPlanBuilder};
+    let col = |name: &str| Expr::Column(Column::new_unqualified(name));
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Aggregate(aggregate) = &node else { return Ok(Transformed::no(node)); };
+        let [Expr::Column(identity)] = aggregate.group_expr.as_slice() else { return Ok(Transformed::no(node)); };
+        let Some(suffix) = identity.name.strip_prefix("__w_quantifier_row_") else { return Ok(Transformed::no(node)); };
+        let base_name = format!("__w_sql_cte_quantifier_base_{suffix}");
+        let mut base = None;
+        aggregate.input.apply(|child| {
+            if let LogicalPlan::SubqueryAlias(alias) = child {
+                if alias.alias.table() == base_name {
+                    base = Some(child.clone());
+                    return Ok(TreeNodeRecursion::Stop);
+                }
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        let Some(base) = base else { return Ok(Transformed::no(node)); };
+        let mut carried = Vec::new();
+        let mut counts = Vec::new();
+        for expr in &aggregate.aggr_expr {
+            let Expr::Alias(alias) = expr else { return Ok(Transformed::no(node)); };
+            let Expr::AggregateFunction(call) = alias.expr.as_ref() else { return Ok(Transformed::no(node)); };
+            if call.func.name() == "first_value" {
+                if !call.func.inner().as_any().is::<datafusion::functions_aggregate::first_last::FirstValue>()
+                    || call.params.filter.is_some() || !call.params.order_by.is_empty()
+                    || call.params.distinct || call.params.null_treatment.is_some() {
+                    return Ok(Transformed::no(node));
+                }
+                let [Expr::Column(column)] = call.params.args.as_slice() else { return Ok(Transformed::no(node)); };
+                if !base.schema().has_column_with_unqualified_name(&column.name) {
+                    return Ok(Transformed::no(node));
+                }
+                carried.push((column.name.clone(),alias.name.clone()));
+            } else {
+                counts.push(expr.clone());
+            }
+        }
+        if carried.is_empty() || counts.is_empty() { return Ok(Transformed::no(node)); }
+        let count_key = format!("__w_quantifier_count_row_{suffix}");
+        let mut count_columns = vec![col(&identity.name).alias(&count_key)];
+        for expr in &counts {
+            let Expr::Alias(alias) = expr else { unreachable!() };
+            count_columns.push(col(&alias.name));
+        }
+        let counts = LogicalPlanBuilder::from(aggregate.input.as_ref().clone())
+            .aggregate(vec![col(&identity.name)],counts)?.project(count_columns)?
+            .alias(format!("__w_sql_cte_quantifier_counts_{suffix}"))?.build()?;
+        let joined = LogicalPlanBuilder::from(base)
+            .join_on(counts,JoinType::Inner,vec![col(&identity.name).eq(col(&count_key))])?.build()?;
+        let mut output = vec![col(&identity.name)];
+        for expr in &aggregate.aggr_expr {
+            let Expr::Alias(alias) = expr else { unreachable!() };
+            if let Some((source,_)) = carried.iter().find(|(_,target)| target == &alias.name) {
+                output.push(col(source).alias(&alias.name));
+            } else {
+                output.push(col(&alias.name));
+            }
+        }
+        Ok(Transformed::yes(LogicalPlanBuilder::from(joined).project(output)?.build()?))
+    })?.data)
 }
 
 fn referenced_ctes(plan: &LogicalPlan, names: &BTreeSet<String>) -> BTreeSet<String> {
@@ -158,7 +230,41 @@ fn unparse_one(
     }
     prepare_ranges(plan, &mut statement, dialect)?;
     super::functions::prepare_scoped_ast(&mut statement, dialect, repair_scopes)?;
-    restore_aggregate_ordering(plan, unparser, dialect, statement.to_string())
+    if dialect == SqlDialect::DuckDb {
+        strip_identity_aliases(&mut statement);
+    }
+    restore_aggregate_ordering(plan, unparser, dialect, statement)
+}
+
+/// Remove only exact, unqualified projection aliases. SQL scope, expression
+/// evaluation, spelling and output column names remain unchanged.
+fn strip_identity_aliases(statement: &mut datafusion::sql::sqlparser::ast::Statement) {
+    use datafusion::sql::sqlparser::ast;
+    use std::ops::ControlFlow;
+    fn body(node: &mut ast::SetExpr) {
+        match node {
+            ast::SetExpr::Select(select) => {
+                for item in &mut select.projection {
+                    if let ast::SelectItem::ExprWithAlias { expr: ast::Expr::Identifier(id), alias } = item
+                        && id == alias
+                    {
+                        *item = ast::SelectItem::UnnamedExpr(ast::Expr::Identifier(id.clone()));
+                    }
+                }
+            }
+            ast::SetExpr::SetOperation { left, right, .. } => { body(left); body(right); }
+            _ => {}
+        }
+    }
+    struct Strip;
+    impl ast::VisitorMut for Strip {
+        type Break = ();
+        fn post_visit_query(&mut self, query: &mut ast::Query) -> ControlFlow<()> {
+            body(&mut query.body);
+            ControlFlow::Continue(())
+        }
+    }
+    let _ = ast::VisitMut::visit(statement, &mut Strip);
 }
 
 fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec<RecursiveCte>)> {
@@ -260,6 +366,11 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
             let reused = plain_versions.get(&original).into_iter().flatten()
                 .find(|&&index| plain_ctes[index].term == *alias.input)
                 .map(|&index| plain_ctes[index].name.clone());
+            if original.starts_with("__w_sql_cte_quantifier_base_")
+                && reused.is_none() && plain_versions.contains_key(&original) {
+                return Err(datafusion::common::DataFusionError::Plan(format!(
+                    "conflicting shared quantifier occurrence definitions for {original}")));
+            }
             let name = if let Some(name) = reused { name } else {
                 let mut name = original.clone();
                 let mut version = 0;
@@ -390,5 +501,27 @@ mod cte_tests {
         let plan = LogicalPlanBuilder::from(input.clone()).union(input).unwrap().build().unwrap();
         let (_, definitions, _) = extract_ctes(plan, false).unwrap();
         assert_eq!(definitions.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod identity_alias_tests {
+    use super::*;
+    use datafusion::sql::sqlparser::{dialect::DuckDbDialect, parser::Parser};
+    #[test]
+    fn exact_identity_aliases_are_removed_in_nested_and_union_queries() {
+        let mut statement = Parser::parse_sql(&DuckDbDialect {},
+            "WITH q AS (SELECT \"X\" AS \"X\" FROM t) SELECT \"X\" AS \"X\" FROM q UNION ALL SELECT \"X\" AS \"X\" FROM q").unwrap().remove(0);
+        strip_identity_aliases(&mut statement);
+        assert_eq!(statement.to_string(),
+            "WITH q AS (SELECT \"X\" FROM t) SELECT \"X\" FROM q UNION ALL SELECT \"X\" FROM q");
+    }
+    #[test]
+    fn distinct_spelling_qualification_and_computation_keep_aliases() {
+        let input = "SELECT X AS \"X\", \"x\" AS \"X\", t.x AS x, (x + 1) AS x FROM t";
+        let mut statement = Parser::parse_sql(&DuckDbDialect {}, input).unwrap().remove(0);
+        let original = statement.clone();
+        strip_identity_aliases(&mut statement);
+        assert_eq!(statement, original);
     }
 }

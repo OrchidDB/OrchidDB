@@ -76,27 +76,17 @@ fn mapped_identity_text(
             graph.node_label_order()
         };
         for (index, name) in names.iter().enumerate() {
-            let (mapped_source, key) = if edge {
-                let m = mapping.edge(name).unwrap();
-                (&m.source, m.id_column.as_ref().unwrap_or(&m.src_column))
+            let sources = if edge {
+                mapping.edge_partitions(name).into_iter().map(|m| (
+                    &m.source, m.id_column.as_ref().unwrap_or(&m.src_column),
+                    m.foreign_key_columns().map(|(_,_,_,fk)| format!(" WHERE {}",fk.present_sql())).unwrap_or_default(),
+                )).collect::<Vec<_>>()
             } else {
                 let m = mapping.node(name).unwrap();
-                (&m.source, &m.id_column)
+                vec![(&m.source, &m.id_column, String::new())]
             };
-            let table_id = if edge {
-                graph.node_label_order().len() + 2 * index
-            } else {
-                index
-            };
-            let filter = if edge {
-                mapping
-                    .edge(name)
-                    .and_then(|m| m.foreign_key_columns())
-                    .map(|(_, _, _, fk)| format!(" WHERE {}", fk.present_sql()))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let table_id = if edge { graph.node_label_order().len() + 2 * index } else { index };
+            for (mapped_source, key, filter) in sources {
             // Use the same typed, length-delimited tuple token as relational
             // ID() rendering, with DuckDB providing each component's text form.
             let schema = query(
@@ -170,6 +160,7 @@ fn mapped_identity_text(
                 );
             }
         }
+    }
     }
     Ok(result)
 }

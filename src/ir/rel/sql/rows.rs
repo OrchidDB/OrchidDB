@@ -31,6 +31,18 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
         let scalars = rows.iter().map(|row| match &row[index] {
             SqlValue::Null => ScalarValue::try_from(field.data_type()).map_err(SqlError::from),
             SqlValue::Domain(value) if value.data_type() == *field.data_type() => Ok(value.clone()),
+            SqlValue::ExactNumber(text) if crate::ir::functions::domain::descriptor(field.data_type()).is_some_and(|(name,_)|name=="cypher_integer") => {
+                let integer=text.parse::<i128>().map_err(|e|SqlError::Conversion(e.to_string()))?;
+                crate::ir::functions::domain::scalar("cypher_integer",ScalarValue::Decimal128(Some(integer),38,0)).map_err(SqlError::from)
+            }
+            SqlValue::Text(text) if crate::ir::temporal::transport::is_type(field.data_type()) => {
+                let temporal = if crate::ir::temporal::transport::is_date_type(field.data_type()) {
+                    crate::ir::temporal::parse("date", text)
+                } else {
+                    crate::ir::temporal::TemporalValue::decode(text)
+                }.map_err(SqlError::Conversion)?;
+                crate::ir::temporal::transport::scalar_for_type(&temporal, field.data_type()).map_err(SqlError::from)
+            }
             SqlValue::Text(text) if crate::ir::functions::domain::is_json(field.data_type()) => crate::ir::functions::domain::json_scalar(text).map_err(SqlError::from),
             other => Err(mismatch(other)),
         }).collect::<SqlResult<Vec<_>>>()?;

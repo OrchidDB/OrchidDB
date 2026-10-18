@@ -19,10 +19,11 @@ impl<'a> LoweringContext<'a> {
             } else if let Some(star_cols) = star_expansion_columns(plan, field) {
                 projections.extend(star_cols);
             } else if let Some(shape) = has_binding_shape(plan, field) {
-                if self.options.native_values {projections.push(self.native_element(plan,field)?.alias(field));continue;}
                 if self.language == Language::Cypher && self.options.mapping.is_none() {
-                    return Err(RelError::Unsupported("Cypher returned graph values require native identity".into()));
+                    projections.extend(self.graph_return_columns(plan, field)?);
+                    continue;
                 }
+                if self.options.native_values {projections.push(self.native_element(plan,field)?.alias(field));continue;}
                 if self.language == Language::Gremlin {
                     projections.push(gremlin_element_display_expr(plan, field)?.alias(field));
                     continue;
@@ -167,6 +168,9 @@ impl<'a> LoweringContext<'a> {
             if let Some(columns) = self.conditional_element_projection(plan, alias, expr)? {
                 return Ok(columns);
             }
+        }
+        if let Some(columns) = self.graph_coalesce_projection(plan, alias, expr)? {
+            return Ok(columns);
         }
         if let IrExpr::Binding(binding) = expr {
             if has_binding_shape(plan, binding).is_some() {
@@ -340,7 +344,19 @@ impl LoweringContext<'_> {
         items: &[ProjectionItem],
         input: &Node,
     ) -> RelResult<LoweredNode> {
+        if self.language == Language::Cypher && !self.options.native_values
+            && let Some((items, input)) = super::cypher_maps::scalarize_collected_map_projection(mode, items, input)
+        {
+            return self.lower_project(mode, &items, &input);
+        }
+        if self.language == Language::Cypher
+            && let Some((items, input)) = super::cypher_maps::scalarize_projection(mode, items, input)
+        {
+            return self.lower_project(mode, &items, &input);
+        }
         let input = self.lower_node(input)?;
+        let (input, prepared_items) = self.prepare_collection_projection(input, items)?;
+        let items = prepared_items.as_slice();
         let projected_aliases = items
             .iter()
             .map(|item| item.alias.as_str())
@@ -456,6 +472,21 @@ impl LoweringContext<'_> {
         plan: &LogicalPlan,
         key: &crate::ir::plan::SortKey,
     ) -> RelResult<Vec<datafusion::logical_expr::SortExpr>> {
+        if let Some(exprs) = super::scalar_union::order_keys(self, plan, &key.expr)? {
+            return Ok(exprs.into_iter().map(|expr| expr.sort(matches!(key.dir, SortDir::Asc), matches!(key.nulls, NullsOrder::First))).collect());
+        }
+        if let Some(exprs) = super::temporal_semantics::runtime_typed::order_keys(self, plan, &key.expr) {
+            return Ok(exprs.into_iter().map(|expr| expr.sort(matches!(key.dir, SortDir::Asc), matches!(key.nulls, NullsOrder::First))).collect());
+        }
+        if let Some(expr) = super::temporal_semantics::finite_order_key(self, plan, &key.expr) {
+            return Ok(vec![expr.sort(
+                matches!(key.dir, SortDir::Asc),
+                matches!(key.nulls, NullsOrder::First),
+            )]);
+        }
+        if super::temporal_semantics::needs_temporal_semantics(plan, &key.expr) {
+            return Err(RelError::Unsupported("Temporal ordering requires typed runtime evaluation".into()));
+        }
         let asc = matches!(key.dir, SortDir::Asc);
         let nulls_first = matches!(key.nulls, NullsOrder::First);
         if let IrExpr::Call { name, args } = &key.expr

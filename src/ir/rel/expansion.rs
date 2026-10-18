@@ -8,11 +8,15 @@ impl<'a> LoweringContext<'a> {
     /// sources just to discard their labels in a join.
     pub(super) fn mapped_endpoint_labels(&self, labels: &LabelExpr, types: &LabelExpr, dir: Direction) -> RelResult<LabelExpr> {
         let Some(mapping) = &self.options.mapping else { return Ok(labels.clone()); };
+        // Dynamic logical labels are not physical endpoint identity names.
+        if mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|node| node.labels_column.is_some())) {
+            return Ok(labels.clone());
+        }
         let types = mapping::resolve_names(types, || mapping.rel_types(), "relationship")?;
         let allowed = mapping::resolve_names(labels, || mapping.labels(), "label")?;
         let mut endpoints = BTreeSet::new();
         for kind in types {
-            if let Some(edge) = mapping.edge(&kind) {
+            for edge in mapping.edge_partitions(&kind) {
                 if dir != Direction::Out { endpoints.insert(edge.src_label.clone()); }
                 if dir != Direction::In { endpoints.insert(edge.dst_label.clone()); }
             }

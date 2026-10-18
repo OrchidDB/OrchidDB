@@ -517,7 +517,8 @@ fn infer_expr_type(expr: &IrExpr) -> DataType {
             | crate::ir::expr::BinaryOp::Mul
             | crate::ir::expr::BinaryOp::Div => DataType::Float64,
         },
-        IrExpr::Not(_)
+        IrExpr::Quantifier { .. }
+        | IrExpr::Not(_)
         | IrExpr::StringPredicate { .. }
         | IrExpr::IsNull(_)
         | IrExpr::IsNotNull(_)

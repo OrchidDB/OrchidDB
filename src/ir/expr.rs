@@ -81,6 +81,14 @@ pub enum IrExpr {
     /// of kind `Path`.
     SimplePath(BindingId),
     List(Vec<IrExpr>),
+    /// A row-local, lexically scoped list quantifier. The iterator shadows
+    /// outer bindings only inside the predicate, never in the list expression.
+    Quantifier {
+        kind: crate::ir::plan::QuantifierKind,
+        list: Box<IrExpr>,
+        item: BindingId,
+        predicate: Box<IrExpr>,
+    },
     /// Kuzu-style `list_reduce(list, (acc, item) -> expr)`.
     ListReduce {
         collection: Box<IrExpr>,

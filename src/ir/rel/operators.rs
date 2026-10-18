@@ -7,13 +7,16 @@ impl LoweringContext<'_> {
         self.memoized_lower_node(node)
     }
     pub(super) fn lower_node_inner(&mut self, node: &Node) -> RelResult<LoweredNode> {
+        if let Some(replacement) = table_procedures::specialize_call(node, self.graph) {
+            return self.lower_node(&replacement);
+        }
         use Node::*;
         if self.options.language_functions && self.language == Language::Cypher {
-            // These need a lossless heterogeneous union/aggregate representation
+            // These need a lossless heterogeneous aggregate representation
             // before the equality fence can be lifted.
-            if matches!(node, GraphUnion { all: false, .. }) || matches!(node,
-                GraphAggregate { aggs, .. } if aggs.iter().any(|a| a.distinct && a.kind != AggKind::CountDistinct)) {
-                return Err(RelError::Unsupported("Cypher distinct aggregate/union requires native values".into()));
+            if matches!(node,
+                GraphAggregate { aggs, .. } if aggs.iter().any(|a| a.distinct && !matches!(a.kind, AggKind::CountDistinct | AggKind::CollectNonNull))) {
+                return Err(RelError::Unsupported("Cypher distinct aggregate requires native values".into()));
             }
         }
         let lowered = match node {
@@ -38,7 +41,14 @@ impl LoweringContext<'_> {
                         "typed RDF result terms cannot be represented by ReturnedBatches; project them only after an explicit RDF-term result contract is available".into(),
                     ));
                 }
-                let exprs = self.return_projection(&input.plan, fields)?;
+                let mut exprs = self.return_projection(&input.plan, fields)?;
+                // A RETURN inside a subquery closes its visible scope, but
+                // the enclosing apply still needs each outer row's identity.
+                // Keep those private keys through DISTINCT/UNION and scalar
+                // aggregation; the top-level RETURN never exposes them.
+                if self.correlate_plan.is_some() {
+                    exprs.extend(apply_correlation_key_columns(&input.plan).iter().map(col_exact));
+                }
                 let plan = LogicalPlanBuilder::from(input.plan)
                     .project(exprs)?
                     .build()?;
@@ -213,11 +223,35 @@ impl LoweringContext<'_> {
                 }
                 // Count-only consumers cannot observe which representative
                 // dedup kept or its order. Preserve correlation partitions.
-                let input = if group.is_empty() && !aggs.is_empty()
+                let mut input = if group.is_empty() && !aggs.is_empty()
                     && aggs.iter().all(|agg| matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
                 {
                     self.lower_cardinality_input(input)?
                 } else { self.lower_node(input)? };
+                if aggs.iter().any(|agg| !matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk)
+                    && (agg.arg.as_ref().is_some_and(has_temporal_constructor) || input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type())))) {
+                    return Err(RelError::Unsupported("Temporal aggregate requires typed runtime evaluation".into()));
+                }
+                if !group.is_empty() && (group.iter().any(|item| has_temporal_constructor(&item.expr)) || input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type()))) {
+                    return Err(RelError::Unsupported("Temporal grouping requires typed runtime evaluation".into()));
+                }
+                // COLLECT observes incoming ORDER BY even when its sort keys
+                // are projected away. Record that ordering once, before the
+                // aggregate, and share it across all collected expressions.
+                let collect_ordinal = if self.language == Language::Cypher
+                    && !self.options.native_values
+                    && aggs.iter().any(|agg| agg.kind == AggKind::CollectNonNull)
+                {
+                    let ordinal = unique_internal_alias(&input.plan, &BTreeSet::new(), "__cypher_collect_ordinal");
+                    let numbered = with_distinct_ordinal(input.plan.clone(), &ordinal)?;
+                    let guard = unique_internal_alias(&numbered, &BTreeSet::new(), "__cypher_collect_guard");
+                    let mut columns = existing_columns_by_name(&numbered, &BTreeSet::new());
+                    columns.push(lit(1_i64).alias(guard));
+                    input.plan = LogicalPlanBuilder::from(numbered).project(columns)?
+                        .alias(format!("__w_sql_cte_collect_input_{}", self.scan_counter))?.build()?;
+                    self.scan_counter += 1;
+                    Some(ordinal)
+                } else { None };
                 if input
                     .plan
                     .schema()
@@ -243,35 +277,42 @@ impl LoweringContext<'_> {
                     .iter()
                     .map(|key| col_exact(key).alias(key))
                     .collect::<Vec<_>>();
-                group_exprs.extend(
-                    group
-                        .iter()
-                        .map(|item| {
-                            self.lower_expr(&input.plan, &item.expr)
-                                .map(|expr| expr.alias(item.alias.clone()))
-                        })
-                        .collect::<RelResult<Vec<_>>>()?,
-                );
                 let cypher_keys = (self.options.language_functions && self.language == Language::Cypher)
                     || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin));
                 let mut representatives = Vec::new();
                 let mut hidden_keys = BTreeSet::new();
-                if cypher_keys {
-                    let correlation_count = group_exprs.len() - group.len();
-                    for (i, item) in group.iter().enumerate() {
-                        let original = self.lower_expr(&input.plan, &item.expr)?;
+                for (i, item) in group.iter().enumerate() {
+                    if let Some(keys) = self.graph_group_keys(&input.plan, &item.expr)? {
+                        for (j, key) in keys.into_iter().enumerate() {
+                            let alias = unique_internal_alias(&input.plan, &hidden_keys,
+                                format!("__cypher_graph_group_{}_{}_{}", self.scan_counter, i, j));
+                            hidden_keys.insert(alias.clone());
+                            group_exprs.push(key.alias(alias));
+                        }
+                        let IrExpr::Binding(binding) = &item.expr else { unreachable!() };
+                        // The read-only snapshot fixes all payload columns for
+                        // an identity. Group by identity only and retain that
+                        // identical payload for subsequent traversal/projection.
+                        for column in binding_column_names(&input.plan, binding)? {
+                            let suffix = column.strip_prefix(binding).expect("binding prefix");
+                            representatives.push(datafusion::functions_aggregate::first_last::first_value(
+                                col_exact(&column), vec![],
+                            ).alias(format!("{}{suffix}", item.alias)));
+                        }
+                        continue;
+                    }
+                    let original = self.lower_expr(&input.plan, &item.expr)?;
+                    if cypher_keys {
                         let alias = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_group_{}_{}", self.scan_counter, i));
                         hidden_keys.insert(alias.clone());
-                        group_exprs[correlation_count + i] = if self.options.native_values {
+                        group_exprs.push(if self.options.native_values {
                             native_values::key_expr(original.clone(), self.language == Language::Cypher)
-                        } else { language_functions::key(original.clone(), &input.plan)? }.alias(alias);
+                        } else { language_functions::key(original.clone(), &input.plan)? }.alias(alias));
                         representatives.push(datafusion::functions_aggregate::first_last::first_value(original, vec![]).alias(&item.alias));
                         if self.language == Language::Cypher && self.options.mapping.is_some()
                             && let IrExpr::Binding(binding) = &item.expr
                             && has_binding_shape(&input.plan, binding).is_some()
                         {
-                            // Retain typed properties alongside the native
-                            // representative for subsequent scoring/traversal.
                             for column in binding_column_names(&input.plan, binding)? {
                                 let suffix = column.strip_prefix(binding).expect("binding prefix");
                                 representatives.push(datafusion::functions_aggregate::first_last::first_value(
@@ -279,15 +320,64 @@ impl LoweringContext<'_> {
                                 ).alias(format!("{}{suffix}", item.alias)));
                             }
                         }
+                    } else {
+                        group_exprs.push(original.alias(item.alias.clone()));
                     }
-                    self.scan_counter += 1;
+                }
+                self.scan_counter += 1;
+                // Mark the first occurrence for each distinct collection independently.
+                // Filtering the relation here would change sibling aggregates and
+                // lose groups whose collection contains only nulls.
+                let mut collect_ranks = std::collections::BTreeMap::new();
+                if let Some(ordinal) = &collect_ordinal {
+                    let mut windows = Vec::new();
+                    for agg in aggs.iter().filter(|agg| agg.kind == AggKind::CollectNonNull && agg.distinct) {
+                        // These expressions can be repeated safely in the partition
+                        // key and aggregate. More complex expressions need explicit
+                        // materialization before extending this path.
+                        let stable = |expr: &IrExpr| matches!(expr, IrExpr::Binding(_) | IrExpr::Property { .. } | IrExpr::Lit(_))
+                            || matches!(expr, IrExpr::Call { name, args } if name == "cypher_subscript"
+                                && matches!(args.as_slice(), [IrExpr::Binding(_), IrExpr::Lit(_)]));
+                        if !group.iter().all(|item| stable(&item.expr))
+                            || !agg.arg.as_ref().is_some_and(stable) {
+                            return Err(RelError::Unsupported(format!("Distinct collection expression requires materialization: group={group:?}, arg={:?}", agg.arg)));
+                        }
+                        let value = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                        let mut partition = apply_correlation_key_columns(&input.plan).iter().map(col_exact).collect::<Vec<_>>();
+                        for item in group {
+                            if let Some(keys) = self.graph_group_keys(&input.plan, &item.expr)? {
+                                partition.extend(keys);
+                            } else {
+                                partition.push(language_functions::key(self.lower_expr(&input.plan, &item.expr)?, &input.plan)?);
+                            }
+                        }
+                        partition.push(language_functions::key(value, &input.plan)?);
+                        let rank = unique_internal_alias(&input.plan, &hidden_keys, format!("__cypher_collect_rank_{}", collect_ranks.len()));
+                        hidden_keys.insert(rank.clone());
+                        windows.push(df_window::row_number()
+                            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+                            .partition_by(partition)
+                            .order_by(vec![col_exact(ordinal).sort(true, false)])
+                            .build()?.alias(&rank));
+                        collect_ranks.insert(agg.alias.clone(), rank);
+                    }
+                    if !windows.is_empty() {
+                        let ranked = LogicalPlanBuilder::from(input.plan.clone()).window(windows)?.build()?;
+                        let guard = unique_internal_alias(&ranked, &hidden_keys, "__cypher_collect_rank_guard");
+                        let mut columns = existing_columns_by_name(&ranked, &BTreeSet::new());
+                        columns.push(lit(1_i64).alias(guard));
+                        input.plan = LogicalPlanBuilder::from(ranked).project(columns)?
+                            .alias(format!("__w_sql_cte_collect_rank_{}", self.scan_counter))?.build()?;
+                        self.scan_counter += 1;
+                    }
                 }
                 let agg_calls = aggs;
                 let native_drop_empty=self.options.native_values && self.language==Language::Gremlin && group.is_empty()
                     && !aggs.is_empty() && aggs.iter().all(|a|matches!(a.kind,AggKind::Sum|AggKind::Min|AggKind::Max|AggKind::Avg));
                 let empty_guard=format!("__orchid_aggregate_count_{}",self.scan_counter);
                 let needs_row_count_barrier = native_drop_empty || aggs.iter().any(|agg| {
-                    (matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
+                    (matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none()
+                        && !has_simple_count_input(&input.plan))
                         || matches!((&agg.kind, &agg.arg), (AggKind::EngineFunction, Some(IrExpr::Call { args, .. })) if args.is_empty())
                 });
                 let mut aggs = aggs
@@ -356,7 +446,7 @@ impl LoweringContext<'_> {
                                 agg.distinct,
                             )?,
                             AggKind::Min | AggKind::MinOrNull => {
-                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                let arg = self.lower_extreme_arg(&input.plan, &agg.arg)?;
                                 if agg
                                     .arg
                                     .as_ref()
@@ -368,7 +458,7 @@ impl LoweringContext<'_> {
                                 }
                             }
                             AggKind::Max | AggKind::MaxOrNull => {
-                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                let arg = self.lower_extreme_arg(&input.plan, &agg.arg)?;
                                 if agg
                                     .arg
                                     .as_ref()
@@ -379,8 +469,11 @@ impl LoweringContext<'_> {
                                     df_max(arg)
                                 }
                             }
-                            AggKind::CollectNonNull => return Err(RelError::Unsupported(
-                                "Non-null collection uses the typed DataFusion aggregate kernel".into())),
+                            AggKind::CollectNonNull => {
+                                let ordinal = collect_ordinal.as_ref().ok_or_else(|| RelError::Unsupported(
+                                    "Distinct collection requires semantic representative selection".into()))?;
+                                self.lower_collect_non_null(&input.plan, agg, ordinal, collect_ranks.get(&agg.alias).map(String::as_str))?
+                            }
                             AggKind::CollectRows | AggKind::CollectTraversers => {
                                 let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
                                 // Kuzu's COLLECT ignores null inputs and
@@ -459,6 +552,9 @@ impl LoweringContext<'_> {
             }
             GraphDistinct { keys, input, .. } => {
                 let input = self.lower_node(input)?;
+                if input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type())) {
+                    return Err(RelError::Unsupported("Temporal distinct requires typed runtime evaluation".into()));
+                }
                 let barrier_id = self.scan_counter;
                 self.scan_counter += 1;
                 let mut identity_keys = Vec::new();
@@ -517,6 +613,42 @@ impl LoweringContext<'_> {
                     .sort(sorts)?
                     .build()?;
                 input.with_plan(plan)
+            }
+            GraphSliceExpr { offset, fetch, input } => {
+                if offset.iter().chain(fetch.iter()).any(|expr| !expr_is_constant(expr, &[])) {
+                    let input = self.lower_node(input)?;
+                    if !apply_correlation_key_columns(&input.plan).is_empty() {
+                        return Err(RelError::Unsupported("Correlated dynamic slice requires per-invocation bounds".into()));
+                    }
+                    let lower = |name: &str, expr: &IrExpr| -> RelResult<Expr> {
+                        if let Some(bound) = dynamic_slice::bound(expr) { return Ok(bound); }
+                        if expr_is_constant(expr, &[]) {
+                            let n=crate::ir::runtime::ops::slice::evaluate_slice_bound(name,expr,self.graph)
+                                .map_err(|_|RelError::Unsupported("Invalid slice bound requires runtime validation".into()))?;
+                            if let Ok(n)=i64::try_from(n) { return Ok(lit(n)); }
+                        }
+                        Err(RelError::Unsupported("Dynamic slice bound requires runtime validation".into()))
+                    };
+                    // SQL OFFSET/LIMIT evaluates these independent scalar expressions
+                    // once; placing random() in a per-row filter would be incorrect.
+                    let skip=offset.as_ref().map(|e|lower("SKIP",e)).transpose()?;
+                    let take=fetch.as_ref().map(|e|lower("LIMIT",e)).transpose()?;
+                    let plan=LogicalPlanBuilder::from(input.plan.clone()).limit_by_expr(skip,take)?.build()?;
+                    return Ok(input.with_plan(plan));
+                }
+                // A deterministic bound can use the ordinary LIMIT lowering.
+                // Keep volatile bounds and evaluation failures on the runtime
+                // path, where they retain once-only evaluation/error timing.
+                let bound = |name: &str, expr: &IrExpr| -> RelResult<u64> {
+                    if !expr_is_constant(expr, &[]) {
+                        return Err(RelError::Unsupported("Dynamic slice bound requires runtime evaluation".into()));
+                    }
+                    crate::ir::runtime::ops::slice::evaluate_slice_bound(name, expr, self.graph)
+                        .map_err(|_| RelError::Unsupported("Invalid slice bound requires runtime validation".into()))
+                };
+                let offset = offset.as_ref().map(|expr| bound("SKIP", expr)).transpose()?.unwrap_or(0);
+                let fetch = fetch.as_ref().map(|expr| bound("LIMIT", expr)).transpose()?;
+                self.lower_node(&GraphSlice { slice: Slice { offset, fetch, tail: None }, input: input.clone() })?
             }
             GraphSlice { slice, input } => {
                 let input = self.lower_node(input)?;

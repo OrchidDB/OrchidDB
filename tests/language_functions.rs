@@ -315,3 +315,26 @@ async fn graph_engine_uses_language_functions_by_default_with_explicit_opt_out()
             .all(|sql| !sql.contains("__orchiddb_lang_cypher_key"))
     );
 }
+
+#[test]
+fn distinct_key_excludes_untyped_and_typed_nulls() {
+    use orchiddb::ir::rel::sql::SqlValue;
+    let mut executor = DuckDbExecutor::new();
+    for expression in ["NULL", "CAST(NULL AS BIGINT)", "CAST(NULL AS VARCHAR)"] {
+        let sql = format!("SELECT count(DISTINCT __orchiddb_lang_cypher_key({expression})) FROM (VALUES (1), (2)) AS t(x)");
+        assert_eq!(executor.run(&[], &sql).unwrap(), vec![vec![SqlValue::Int(0)]], "{sql}");
+    }
+    // A non-null list containing null is still a value, unlike a null list.
+    assert_eq!(executor.run(&[], "SELECT count(DISTINCT __orchiddb_lang_cypher_key(v)) FROM (VALUES ([NULL]), ([NULL]), (NULL)) AS t(v)").unwrap(), vec![vec![SqlValue::Int(1)]]);
+}
+
+#[tokio::test]
+async fn distinct_count_ignores_missing_properties_and_nulls() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let query = "MATCH (a) RETURN count(DISTINCT a.name) AS n";
+    assert_eq!(rows(&engine.cypher(query).await.unwrap()), vec![vec!["0"]]);
+    engine.cypher("CREATE (), (), ({name: null})").await.unwrap();
+    assert_eq!(rows(&engine.cypher(query).await.unwrap()), vec![vec!["0"]]);
+    engine.cypher("CREATE ({name: 'a'}), ({name: 'a'}), ({name: 'b'})").await.unwrap();
+    assert_eq!(rows(&engine.cypher(query).await.unwrap()), vec![vec!["2"]]);
+}

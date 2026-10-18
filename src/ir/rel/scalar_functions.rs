@@ -247,6 +247,7 @@ impl LoweringContext<'_> {
                 let lowered = self.lower_list_operand(plan, value)?;
                 let data_type = lowered.get_type(plan.schema())?;
                 match data_type {
+                    DataType::Null => Ok(lit(ScalarValue::Int64(None))),
                     DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
                         Ok(Expr::Cast(Cast::new(
                             Box::new(datafusion::functions_nested::expr_fn::array_length(lowered)),
@@ -258,7 +259,7 @@ impl LoweringContext<'_> {
                         DataType::Int64,
                     ))),
                     DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
-                        Ok(df_unicode::length(cast_utf8(lowered)))
+                        Ok(df_unicode::length(lowered))
                     }
                     other => Err(RelError::Unsupported(format!(
                         "size over non-collection type {other}"

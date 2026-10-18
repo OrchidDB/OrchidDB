@@ -1,0 +1,242 @@
+{
+  "opencypher:tck/features/clauses/return/Return6.feature:116": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "name": "VARCHAR"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "FATHER",
+        "table": "father",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/return/Return6.feature:300": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "opencypher:tck/features/clauses/return/Return6.feature:314": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/return/Return6.feature:326": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/return-orderby/ReturnOrderBy6.feature:33": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "opencypher:tck/features/clauses/return-orderby/ReturnOrderBy6.feature:48": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/return-orderby/ReturnOrderBy6.feature:60": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/return-skip-limit/ReturnSkipLimit2.feature:105": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "name": "VARCHAR"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "opencypher:tck/features/clauses/with/With6.feature:116": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "opencypher:tck/features/clauses/with/With6.feature:131": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/with/With6.feature:144": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/with-orderBy/WithOrderBy4.feature:401": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "opencypher:tck/features/clauses/with-orderBy/WithOrderBy4.feature:417": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  },
+  "opencypher:tck/features/clauses/with-orderBy/WithOrderBy4.feature:430": {
+    "nodes": [
+      {
+        "label": "Person",
+        "table": "people",
+        "properties": {
+          "age": "BIGINT"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "rel_type": "KNOWS",
+        "table": "knows",
+        "src_label": "Person",
+        "dst_label": "Person",
+        "properties": {}
+      }
+    ]
+  }
+}

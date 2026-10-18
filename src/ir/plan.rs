@@ -412,7 +412,7 @@ pub struct ProcedureArg {
 }
 
 /// Quantifier kind — spec §11 collection nodes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum QuantifierKind {
     All,
     Any,

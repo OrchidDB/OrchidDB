@@ -65,8 +65,33 @@ impl<'a> LoweringContext<'a> {
             false,
             batches,
         )?;
+        let batches = self.with_node_labels(binding, batches)?;
         let batches = self.with_public_ids(binding, batches, false)?;
         self.scan_batches_keyed("nodes", batches, &[id_col(binding), label_col(binding)])
+    }
+
+    // Logical Cypher labels can differ for nodes sharing a physical table.
+    // Carry membership alongside identity, not as a user property or a
+    // concatenated string. SQL consumers can project the unused column away.
+    fn with_node_labels(&self, binding: &str, batches: Vec<RecordBatch>) -> RelResult<Vec<RecordBatch>> {
+        if self.language != Language::Cypher || !self.scan_logical_labels { return Ok(batches); }
+        batches.into_iter().map(|batch| {
+            let storage = batch.column_by_name(&label_col(binding)).unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+            let ids = batch.column_by_name(&id_col(binding)).unwrap().as_any().downcast_ref::<Int64Array>().unwrap();
+            let mut labels = arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+            for row in 0..batch.num_rows() {
+                for label in self.graph.node_labels(storage.value(row), ids.value(row).into()) {
+                    labels.values().append_value(label);
+                }
+                labels.append(true);
+            }
+            let labels = Arc::new(labels.finish()) as ArrayRef;
+            let mut fields = batch.schema().fields().to_vec();
+            fields.push(Arc::new(Field::new(node_labels_col(binding), labels.data_type().clone(), false)));
+            let mut columns = batch.columns().to_vec();
+            columns.push(labels);
+            Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)?)
+        }).collect()
     }
 
     pub(super) fn lower_rel_scan(
@@ -171,7 +196,8 @@ impl<'a> LoweringContext<'a> {
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) && !rows.is_empty()
-            && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()) {
+            && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()
+                && collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none()) {
             let mut plans = rows.iter().map(|row| {
                 let expressions = row.iter().zip(bindings).map(|(v,b)| native_values::literal(v).map(|e|e.alias(b)))
                     .collect::<RelResult<Vec<_>>>()?;
@@ -191,6 +217,7 @@ impl<'a> LoweringContext<'a> {
                     .filter_map(|row| row.get(index))
                     .collect::<Vec<_>>();
                 if homogeneous_scalar_type(values.iter().copied()).is_none()
+                    && collections::uniform_list_type(values.iter().copied()).is_none()
                     && !values.iter().all(|v|matches!(v,Value::Null)) {
                     return Err(RelError::Unsupported(
                         "Heterogeneous graph-language values require native runtime types".into(),
@@ -273,9 +300,13 @@ impl<'a> LoweringContext<'a> {
                 datafusion::common::Constraint::PrimaryKey(indices),
             ])
         };
-        let provider = Arc::new(
-            MemTable::try_new(schema, vec![batches])?.with_constraints(constraints)
-        );
+        let finite_domain = schema.fields().iter().any(|field|
+            crate::ir::temporal::transport::is_type(field.data_type())
+                || matches!(field.data_type(), DataType::Int32 | DataType::Int64 | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View));
+        let table = MemTable::try_new(schema, vec![batches.clone()])?.with_constraints(constraints);
+        let provider: Arc<dyn datafusion::catalog::TableProvider> = if finite_domain {
+            Arc::new(super::temporal_semantics::Snapshot::new(table, &batches))
+        } else { Arc::new(table) };
         let table_name = format!("__graph_rel_{}_{}", prefix, self.scan_counter);
         self.scan_counter += 1;
         let plan =
@@ -400,7 +431,7 @@ impl<'a> LoweringContext<'a> {
         if let Some(mapping)=&self.options.mapping {
             match shape {
                 BindingShape::Node => for label in mapping.labels() {push_keys(mapping.node(&label).unwrap().properties.keys().cloned().collect());},
-                BindingShape::Edge => for label in mapping.rel_types() {push_keys(mapping.edge(&label).unwrap().properties.keys().cloned().collect());},
+                BindingShape::Edge => for label in mapping.rel_types() {for edge in mapping.edge_partitions(&label) {push_keys(edge.properties.keys().cloned().collect());}},
             }
             return keys;
         }
@@ -438,6 +469,20 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         shape: BindingShape,
     ) -> RelResult<Expr> {
+        if shape == BindingShape::Node {
+            if let Some(mapping) = &self.options.mapping {
+                let dynamic = mapping.labels().into_iter().filter(|label| mapping.node(label).is_some_and(|node| node.labels_column.is_some())).collect::<BTreeSet<_>>();
+                if !dynamic.is_empty() {
+                    let possible = temporal_semantics::finite_values(plan, &label_col(binding));
+                    let needs_labels = possible.is_none_or(|values| values.iter().any(|value| {
+                        !matches!(value, ScalarValue::Utf8(Some(label)) if !dynamic.contains(label))
+                    }));
+                    if needs_labels {
+                        return Err(RelError::Unsupported("Mapped multi-label node display requires a logical-label-aware result representation".into()));
+                    }
+                }
+            }
+        }
         let node_index =
             |label_expr: Expr| label_index_case(label_expr, self.graph.node_label_order(), 0, 1);
         let property_segments = |parts: &mut Vec<Expr>| {
@@ -1109,7 +1154,7 @@ pub(super) fn materialize_property_array(
     let supported = matches!(
         data_type,
         DataType::Boolean | DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Utf8
-    );
+    ) || crate::ir::temporal::transport::is_type(data_type);
     let mut scalars: Vec<ScalarValue> = Vec::with_capacity(ids.len());
     for id in ids.iter().cloned() {
         let value = element_property_value(graph, is_edge, element, id.clone(), name);
@@ -1153,6 +1198,15 @@ pub(super) fn value_to_scalar(
 ) -> RelResult<ScalarValue> {
     if let Value::Scalar(scalar) = value {
         if scalar.data_type() == *data_type { return Ok(scalar.clone()); }
+    }
+    if crate::ir::temporal::transport::is_type(data_type) {
+        return match value {
+            Value::Temporal(value) => Ok(crate::ir::temporal::transport::scalar_for_type(value, data_type)?),
+            Value::Null => Ok(ScalarValue::try_from(data_type)?),
+            _ => Err(RelError::Unsupported(
+                "Temporal property transport requires temporal or null values".into(),
+            )),
+        };
     }
     if crate::ir::temporal::contains_temporal(value) {
         return Err(RelError::Unsupported("Typed temporal properties require a residual kernel".into()));
@@ -1319,6 +1373,37 @@ pub(super) fn infer_element_property_type(
     for id in ids {
         values.push(element_property_value(graph, is_edge, element, id, name));
     }
+    // The nominal temporal carrier preserves subtype, precision and zone. Its
+    // payload is transport only: temporal operators still require semantic
+    // lowering and must never compare the encoded VARCHAR representation.
+    if language == Language::Cypher {
+        if let Some(Value::Temporal(first)) = values.iter().find(|v| !matches!(v, Value::Null)) {
+            if values.iter().all(|v| matches!(v, Value::Null | Value::Temporal(_))) {
+                let mut ty = crate::ir::temporal::transport::scalar(first)?.data_type();
+                for value in &values {
+                    if let Value::Temporal(value) = value {
+                        let next = crate::ir::temporal::transport::scalar(value)?.data_type();
+                        ty = collections::merge_list_types(&ty, &next).ok_or_else(||
+                            RelError::Unsupported("incompatible temporal storage types".into()))?;
+                    }
+                }
+                return Ok(ty);
+            }
+        }
+    }
+    if language == Language::Cypher
+        && homogeneous_scalar_type(values.iter()).is_none()
+        && collections::uniform_list_type(values.iter()).is_none()
+        && values.iter().any(|value| !matches!(value, Value::Null))
+    {
+        // Rendering a mixed property as VARCHAR (or promoting a large integer
+        // to DOUBLE) loses its type before grouping, collection and equality.
+        // Uniform lists have a lossless list-shadow column; other shapes need
+        // the native value carrier.
+        return Err(RelError::Unsupported(
+            "Heterogeneous Cypher properties require native runtime types".into(),
+        ));
+    }
     // Struct-order/type markers are bookkeeping, not heterogeneous user
     // properties. They must not prevent otherwise typed Gremlin SQL scans.
     if language == Language::Gremlin
@@ -1458,6 +1543,9 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
         return Err(RelError::Unsupported("Typed temporal values require a residual kernel".into()));
     }
     if let Some(kind) = homogeneous_scalar_type(values.iter().copied()) {
+        return Ok(kind);
+    }
+    if let Some(kind) = collections::uniform_list_type(values.iter().copied()) {
         return Ok(kind);
     }
     if values.iter().any(|value| matches!(value, Value::List(_)))

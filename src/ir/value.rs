@@ -1034,7 +1034,12 @@ mod namespace_tests {
 /// Bridge lossless Arrow scalars into the existing language numeric semantics.
 pub(crate) fn scalar_semantic_value(value: &datafusion::common::ScalarValue) -> Option<Value> {
     use datafusion::common::ScalarValue as S;
+    if crate::ir::functions::scalar_union::is_type(&value.data_type()) { return crate::ir::functions::scalar_union::decode(value); }
     if value.is_null(){return Some(Value::Null);}
+    if crate::ir::functions::domain::descriptor(&value.data_type()) == Some(("cypher_integer", &arrow::datatypes::DataType::Decimal128(38, 0))) {
+        let S::Decimal128(Some(integer), 38, 0) = crate::ir::functions::domain::storage(value).ok()? else { return None; };
+        return Some(i64::try_from(integer).map(Value::Int).unwrap_or_else(|_| Value::BigInt(integer.into())));
+    }
     Some(match value {
         S::Boolean(Some(v))=>Value::Bool(*v),
         S::Int8(Some(v))=>Value::Byte(*v), S::Int16(Some(v))=>Value::Short(*v),

@@ -10,6 +10,10 @@ pub(crate) fn id_col(binding: &str) -> String {
     format!("{binding}{ID_SUFFIX}")
 }
 
+pub(super) fn node_labels_col(binding: &str) -> String {
+    format!("{binding}__cypher_labels")
+}
+
 pub(super) fn label_col(binding: &str) -> String {
     format!("{binding}{LABEL_SUFFIX}")
 }
@@ -89,6 +93,7 @@ pub(super) fn projection_aliases(items: &[ProjectionItem]) -> BTreeSet<String> {
         aliases.insert(item.alias.clone());
         aliases.insert(id_col(&item.alias));
         aliases.insert(label_col(&item.alias));
+        aliases.insert(node_labels_col(&item.alias));
         aliases.insert(src_id_col(&item.alias));
         aliases.insert(src_label_col(&item.alias));
         aliases.insert(dst_id_col(&item.alias));
@@ -171,6 +176,7 @@ pub(super) fn is_binding_column(name: &str, binding: &str) -> bool {
     name == binding
         || name == id_col(binding)
         || name == label_col(binding)
+        || name == node_labels_col(binding)
         || name == src_id_col(binding)
         || name == src_label_col(binding)
         || name == dst_id_col(binding)
@@ -204,6 +210,9 @@ pub(super) fn duplicate_binding_projection_only(
         col_exact(id_col(from)).alias(id_col(to)),
         col_exact(label_col(from)).alias(label_col(to)),
     ];
+    if has_exact_col(plan, &node_labels_col(from)) {
+        projections.push(col_exact(node_labels_col(from)).alias(node_labels_col(to)));
+    }
     if shape == BindingShape::Edge {
         projections.extend([
             col_exact(src_label_col(from)).alias(src_label_col(to)),
@@ -433,4 +442,45 @@ pub(super) fn plan_column_type(plan: &LogicalPlan, name: &str) -> Option<DataTyp
         .iter()
         .find(|field| field.name() == name)
         .map(|field| field.data_type().clone())
+}
+
+/// Query-wide demand keeps ordinary scans free of label-list materialization.
+/// Unclassified operators conservatively request metadata; their nested
+/// expressions must not accidentally lose label support.
+pub(super) fn requires_logical_node_labels(root: &Node) -> bool {
+    fn expression(expr: &IrExpr) -> bool {
+        match expr {
+            IrExpr::Call { name, args } => matches!(name.as_str(), "cypher_has_label" | "cypher_labels" | "labels") || args.iter().any(expression),
+            IrExpr::List(items) => items.iter().any(expression),
+            IrExpr::Binary { lhs, rhs, .. } => expression(lhs) || expression(rhs),
+            IrExpr::Not(e) | IrExpr::IsNull(e) | IrExpr::IsNotNull(e) => expression(e),
+            IrExpr::StringPredicate { target, pattern, .. } => expression(target) || expression(pattern),
+            IrExpr::Case { arms, otherwise } => arms.iter().any(|(a,b)| expression(a) || expression(b)) || otherwise.as_deref().is_some_and(expression),
+            IrExpr::ListTransform { list, map, .. } => expression(list) || expression(map),
+            IrExpr::ListFilter { list, predicate, .. } | IrExpr::Quantifier { list, predicate, .. } => expression(list) || expression(predicate),
+            IrExpr::ListReduce { collection, map, .. } => expression(collection) || expression(map),
+            _ => false,
+        }
+    }
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        let local = match node {
+            Node::GraphProject { items, .. } => items.iter().any(|item| expression(&item.expr)),
+            Node::GraphCurrentProject { expr, .. } => expression(expr),
+            Node::GraphFilter { condition, .. } | Node::GraphPathFilter { condition, .. } => expression(condition),
+            Node::GraphAggregate { group, aggs, .. } => group.iter().any(|item| expression(&item.expr)) || aggs.iter().any(|agg| agg.arg.as_ref().is_some_and(expression)),
+            Node::GraphSort { keys, .. } => keys.iter().any(|key| expression(&key.expr)),
+            Node::GraphUnwind { input_expr, .. } => expression(input_expr),
+            Node::GraphJoin { condition, .. } => condition.as_ref().is_some_and(expression),
+            Node::GraphSliceExpr { offset, fetch, .. } => offset.as_ref().is_some_and(expression) || fetch.as_ref().is_some_and(expression),
+            Node::GraphNodeScan { .. } | Node::GraphRelScan { .. } | Node::GraphExpand { .. }
+                | Node::GraphReturn { .. } | Node::GraphOneRow | Node::GraphEmpty | Node::GraphValues { .. }
+                | Node::GraphCorrelate { .. } | Node::GraphApply { .. } | Node::GraphUnion { .. }
+                | Node::GraphDistinct { .. } | Node::GraphSlice { .. } => false,
+            _ => true,
+        };
+        if local { return true; }
+        pending.extend(crate::ir::analysis::children(node));
+    }
+    false
 }

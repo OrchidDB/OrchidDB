@@ -251,10 +251,9 @@ impl OntologyMapping {
                     direction,
                     ..
                 } => {
-                    let edge = mapping
-                        .edge(rel_type)
-                        .ok_or_else(|| format!("Unknown relationship {rel_type}"))?
-                        .clone();
+                    let partitions = mapping.edge_partitions(rel_type).into_iter().cloned().collect::<Vec<_>>();
+                    if partitions.is_empty() { return Err(format!("Unknown relationship {rel_type}")); }
+                    for (partition, edge) in partitions.into_iter().enumerate() {
                     let (src, _) = node_sources
                         .get(&edge.src_label)
                         .ok_or("Missing source node mapping")?;
@@ -296,7 +295,7 @@ impl OntologyMapping {
                         source(&dst.source)?,
                         join(dst, &edge.dst_column, "d")
                     );
-                    let table = format!("__rdf_relationship_{index}");
+                    let table = format!("__rdf_relationship_{index}_{partition}");
                     mapping
                         .register_view(&table, &sql)
                         .map_err(|e| e.to_string())?;
@@ -312,6 +311,7 @@ impl OntologyMapping {
                         mapping.map_rdf(
                             RdfMapping::table(table, object, iri, subject).dataset(dataset),
                         );
+                    }
                     }
                 }
             }

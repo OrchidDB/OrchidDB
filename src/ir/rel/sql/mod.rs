@@ -107,6 +107,11 @@ mod postgres_exec;
 pub use postgres_exec::PostgresExecutor;
 
 mod recursive;
+mod compact_unwind;
+mod literal_case;
+mod aggregate_scan;
+mod cleanup;
+mod count_filter;
 
 #[cfg(feature = "duckdb")]
 pub use duckdb_exec::DuckDbExecutor;
@@ -226,8 +231,15 @@ impl SqlDialect {
 
     fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
         if let Self::Custom(adapter) = self { return adapter.sql_type(data_type); }
+        if crate::ir::functions::domain::descriptor(data_type) == Some(("cypher_integer", &DataType::Decimal128(38,0))) { return Ok("DECIMAL(38,0)".into()); }
         if crate::ir::functions::domain::is_json(data_type) {
             return Ok(if self == Self::Postgres { "JSONB" } else { "JSON" }.into());
+        }
+        // Restore nominal identity from the planned schema. Ordinary dates
+        // use DATE; other temporal kinds retain exact serialized transport.
+        if crate::ir::temporal::transport::is_date_type(data_type) { return Ok("DATE".into()); }
+        if crate::ir::temporal::transport::is_type(data_type) {
+            return Ok(if self == Self::Postgres { "TEXT" } else { "VARCHAR" }.into());
         }
         if structured::is_structured(data_type) {
             return if self == Self::Postgres { Ok("JSONB".into()) } else { crate::ir::functions::duckdb_type(data_type).map_err(SqlError::from) };
@@ -518,6 +530,11 @@ fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
         ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => {
             opt(v, |s| SqlValue::Text(s.clone()))
         }
+        ScalarValue::Date32(None) => SqlValue::Null,
+        ScalarValue::Date32(Some(_)) => {
+            let array = scalar.to_array()?;
+            SqlValue::Text(arrow::util::display::array_value_to_string(array.as_ref(), 0)?)
+        }
         ScalarValue::List(array) => nested_sql_values(array.as_ref(), array.value(0))?,
         ScalarValue::LargeList(array) => nested_sql_values(array.as_ref(), array.value(0))?,
         ScalarValue::FixedSizeList(array) => nested_sql_values(array.as_ref(), array.value(0))?,
@@ -611,7 +628,10 @@ pub async fn plan_tables_excluding(
         // their complete contents needs neither planning nor execution. Scan
         // filters and projections remain in the generated SQL.
         let provider = datafusion::datasource::source_as_provider(&source).ok();
-        let batches = if let Some(table) = provider.as_ref()
+        let batches = if let Some(snapshot) = provider.as_ref()
+            .and_then(|provider| provider.as_any().downcast_ref::<super::temporal_semantics::Snapshot>()) {
+            snapshot.batches().to_vec()
+        } else if let Some(table) = provider.as_ref()
             .and_then(|provider| provider.as_any().downcast_ref::<datafusion::datasource::MemTable>())
         {
             let mut batches = Vec::new();

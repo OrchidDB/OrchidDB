@@ -360,11 +360,16 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                     .transpose()?,
             }
         }
+        Expr::Quantifier { kind, variable, collection, predicate } => IrExpr::Quantifier {
+            kind: lower_quantifier_kind(*kind),
+            list: Box::new(lower_expr(lowerer, collection)?),
+            item: variable.clone(),
+            predicate: Box::new(lower_expr(lowerer, predicate)?),
+        },
         Expr::Exists(_)
         | Expr::PatternPredicate(_)
         | Expr::ListComprehension { .. }
-        | Expr::PatternComprehension { .. }
-        | Expr::Quantifier { .. } => {
+        | Expr::PatternComprehension { .. } => {
             return Err(CypherPlanError::Unsupported(
                 "scoped Cypher expression reached scalar lowering without materialization"
                     .to_string(),

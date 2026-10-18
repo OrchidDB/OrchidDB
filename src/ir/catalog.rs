@@ -255,6 +255,18 @@ impl GraphOverlay {
 }
 
 impl PropertyGraph {
+    /// Register an immutable table procedure in this graph's catalog snapshot.
+    /// Cloned graph snapshots retain their previous registrations.
+    pub fn register_table_procedure(
+        &mut self,
+        name: String,
+        procedure: crate::ir::procedures::TableProcedure,
+    ) -> Result<(), String> {
+        procedure.validate()?;
+        Arc::make_mut(&mut self.procedures).insert(name, procedure);
+        Ok(())
+    }
+
     pub(crate) fn pending_changes(&self) -> PendingChanges {
         self.pending.borrow().clone()
     }

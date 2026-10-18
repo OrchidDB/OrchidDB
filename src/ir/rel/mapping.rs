@@ -248,7 +248,10 @@ impl serde::Serialize for KeyColumns {
 /// Maps one node label onto the user's schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeMapping {
+    /// Physical identity namespace; independent of logical label membership.
     pub label: String,
+    /// Optional non-null list of logical Cypher labels for each row.
+    pub labels_column: Option<String>,
     pub source: MappedSource,
     /// Ordered columns holding the node id. Each component is a non-null scalar
     /// and keeps its source type; the complete key must be unique within a label.
@@ -281,10 +284,17 @@ impl NodeMapping {
     ) -> Self {
         Self {
             label: label.into(),
+            labels_column: None,
             source,
             id_column: id_column.into(),
             properties: BTreeMap::new(),
         }
+    }
+
+    /// Read logical labels from a list-of-strings column while keeping identity stable.
+    pub fn labels_column(mut self, column: impl Into<String>) -> Self {
+        self.labels_column = Some(column.into());
+        self
     }
 
     /// Map graph property `property` onto source column `column`.
@@ -437,6 +447,7 @@ pub struct GraphMapping {
     logical_functions: BTreeMap<String, Arc<ScalarUDF>>,
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
+    edge_partitions: BTreeMap<String, Vec<EdgeMapping>>,
     edge_instances: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     representation_sources: BTreeMap<String, super::representation::RepresentationSource>,
@@ -520,8 +531,13 @@ impl GraphMapping {
     pub fn validate_foreign_keys(&self) -> RelResult<()> {
         for node in self.nodes.values() {
             node.id_column.validate()?;
+            if let Some(column) = &node.labels_column {
+                if column.is_empty() || node.id_column.contains(column) || node.properties.values().any(|property| property == column) {
+                    return Err(RelError::Unsupported("logical label column must be separate from identity and property columns".into()));
+                }
+            }
         }
-        for edge in self.edges.values() {
+        for edge in self.edges.values().chain(self.edge_partitions.values().flatten()) {
             edge.src_column.validate()?;
             edge.dst_column.validate()?;
             if let Some(id) = &edge.id_column {
@@ -705,6 +721,10 @@ impl GraphMapping {
         rel_type: &str,
     ) -> RelResult<super::constraints::RelationshipMultiplicity> {
         use super::constraints::{RelationshipMultiplicity, analyze};
+        // Uniqueness within each partition does not prove uniqueness of their union.
+        if self.edge_partitions.contains_key(rel_type) {
+            return Ok(RelationshipMultiplicity::default());
+        }
         let edge = self
             .edge(rel_type)
             .ok_or_else(|| RelError::Unsupported(format!("unknown relationship {rel_type}")))?;
@@ -786,8 +806,76 @@ impl GraphMapping {
 
     /// Register (or replace) an edge-type mapping.
     pub fn map_edge(&mut self, mapping: EdgeMapping) -> &mut Self {
+        self.edge_partitions.remove(&mapping.rel_type);
         self.edges.insert(mapping.rel_type.clone(), mapping);
         self
+    }
+
+    /// Add a disjoint physical partition of a logical relationship type.
+    /// Relationship IDs must be unique across all partitions of the type, just
+    /// as IDs must be unique within a single mapped relationship table.
+    /// `map_edge` still replaces the complete mapping for a type.
+    pub fn map_edge_partition(&mut self, mapping: EdgeMapping) -> &mut Self {
+        if self.edges.contains_key(&mapping.rel_type) {
+            self.edge_partitions.entry(mapping.rel_type.clone()).or_default().push(mapping);
+        } else {
+            self.edges.insert(mapping.rel_type.clone(), mapping);
+        }
+        self
+    }
+
+    /// All physical partitions, retaining the logical type and explicit IDs.
+    pub fn edge_partitions(&self, rel_type: &str) -> Vec<&EdgeMapping> {
+        if let Some(instance) = self.edge_instances.get(rel_type) { return vec![instance]; }
+        self.edges.get(rel_type).into_iter()
+            .chain(self.edge_partitions.get(rel_type).into_iter().flatten()).collect()
+    }
+
+    pub(crate) fn single_partition_mappings(&self) -> Vec<Self> {
+        let mut primary = self.clone();
+        primary.edge_partitions.clear();
+        let mut result = vec![primary];
+        for edge in self.edge_partitions.values().flatten() {
+            let mut partition = self.clone();
+            partition.edges.clear();
+            partition.edge_partitions.clear();
+            partition.map_edge(edge.clone());
+            result.push(partition);
+        }
+        result
+    }
+
+    /// Partitioned writes currently require the same physical column contract
+    /// and a unique endpoint-pair route. Ambiguous layouts remain read-only.
+    pub(crate) fn validate_partitioned_writes(&self) -> Result<(), String> {
+        for name in self.edge_partitions.keys() {
+            let first = self.edge(name).unwrap();
+            let mut endpoints = BTreeSet::new();
+            for edge in self.edge_partitions(name) {
+                if edge.id_column != first.id_column || edge.src_column != first.src_column
+                    || edge.dst_column != first.dst_column || edge.properties != first.properties
+                    || edge.foreign_key.is_some() || !matches!(edge.source, MappedSource::Table(_))
+                    || !endpoints.insert((&edge.src_label, &edge.dst_label)) {
+                    return Err(format!("partitioned relationship `{name}` needs identical writable column mappings and unique endpoint pairs"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn edge_for_endpoints(&self, name: &str, src: &str, dst: &str) -> Result<&EdgeMapping, String> {
+        let matches = self.edge_partitions(name).into_iter().filter(|edge| edge.src_label == src && edge.dst_label == dst).collect::<Vec<_>>();
+        match matches.as_slice() {
+            [edge] => Ok(*edge),
+            _ => Err(format!("relationship `{name}` has no unique write route for `{src}` -> `{dst}`")),
+        }
+    }
+
+    pub(crate) fn require_single_edge_sources(&self, operation: &str) -> Result<(), String> {
+        if let Some(rel_type) = self.edge_partitions.keys().next() {
+            return Err(format!("{operation} does not yet support partitioned relationship type `{rel_type}`"));
+        }
+        Ok(())
     }
 
     /// Register a provider for a physical table name referenced by
@@ -902,7 +990,7 @@ impl GraphMapping {
             tables.push(json!({"name":name,"columns":columns}));
         }
         let nodes=self.nodes.values().filter_map(|m|if let MappedSource::Table(table)=&m.source{Some(json!({"label":m.label,"table":table,"id":m.id_column.columns(),"properties":m.properties}))}else{None}).collect::<Vec<_>>();
-        let edges=self.edges.values().filter_map(|m|if let MappedSource::Table(table)=&m.source{Some(json!({"label":m.rel_type,"table":table,"source":m.src_column.columns(),"target":m.dst_column.columns(),"source_label":m.src_label,"target_label":m.dst_label,"properties":m.properties}))}else{None}).collect::<Vec<_>>();
+        let edges=self.edges.values().chain(self.edge_partitions.values().flatten()).filter_map(|m|if let MappedSource::Table(table)=&m.source{Some(json!({"label":m.rel_type,"table":table,"source":m.src_column.columns(),"target":m.dst_column.columns(),"source_label":m.src_label,"target_label":m.dst_label,"properties":m.properties}))}else{None}).collect::<Vec<_>>();
         Ok(json!({"version":1,"dialect":"duckdb","language":"cypher","query":"RETURN 1", "tables":tables,"nodes":nodes,"edges":edges,"rdf":self.rdf.relational,"logical_sources":self.logical_sources.values().collect::<Vec<_>>(),"collection_sources":self.collection_sources.values().collect::<Vec<_>>(),"representation_sources":self.representation_sources.values().collect::<Vec<_>>()}))
     }
     /// Install optional generated estimates; no data access or constraint discovery.
@@ -1071,6 +1159,7 @@ impl GraphMapping {
     }
 
     pub(crate) fn bind_edge_arguments(&mut self, name: &str, arguments: &BTreeMap<String, serde_json::Value>) -> Result<String, String> {
+        if self.edge_partitions.contains_key(name) { return Err(format!("partitioned relationship {name} does not declare parameters")); }
         let mut edge = self.edge(name).ok_or_else(|| format!("unknown relationship {name}"))?.clone();
         let MappedSource::Cypher(rule) = &mut edge.source else {
             return Err(format!("relationship {name} does not declare parameters"));
@@ -1108,7 +1197,7 @@ impl GraphMapping {
                 self.nodes
                     .values()
                     .map(|m| &m.source)
-                    .chain(self.edges.values().map(|m| &m.source))
+                    .chain(self.edges.values().chain(self.edge_partitions.values().flatten()).map(|m| &m.source))
                     .filter_map(|source| match source {
                         MappedSource::Table(name) => Some(name.clone()),
                         MappedSource::Query(_) | MappedSource::Computed(_) | MappedSource::Cypher(_) => None,
@@ -1219,15 +1308,28 @@ pub(super) fn lower_mapped_node_scan(
     binding: &str,
     labels: &LabelExpr,
 ) -> RelResult<LoweredNode> {
-    let labels = resolve_names(labels, || mapping.labels(), "node label")?;
     let mut sources = Vec::new();
-    for label in &labels {
-        // Mirror the catalog path: unmapped labels scan as empty, they are
-        // not an error.
-        let Some(node) = mapping.node(label) else {
+    for node in mapping.nodes.values() {
+        if (node.labels_column.is_none() || ctx.language != crate::ir::policy::Language::Cypher)
+            && !static_labels_match(labels, &node.label) {
             continue;
-        };
-        let plan = mapping.source_plan(&node.source)?;
+        }
+        let mut plan = mapping.source_plan(&node.source)?;
+        if let Some(column) = &node.labels_column {
+            let ty = source_column_type(&plan, column, "logical node labels")?;
+            if !matches!(&ty, DataType::List(field) if field.data_type() == &DataType::Utf8) {
+                return Err(RelError::Unsupported("logical node labels require a list of strings".into()));
+            }
+            let value = col_exact(resolve_column(&plan, column)?);
+            let predicate = mapped_label_predicate(labels, &|name| {
+                datafusion::functions_nested::expr_fn::array_has(value.clone(), lit(name.to_owned()))
+            });
+            if ctx.language == crate::ir::policy::Language::Cypher && !matches!(labels, LabelExpr::Any) {
+                plan = LogicalPlanBuilder::from(plan).filter(predicate)?.build()?;
+            }
+        } else if !static_labels_match(labels, &node.label) {
+            continue;
+        }
         sources.push((node, plan));
     }
 
@@ -1251,10 +1353,40 @@ pub(super) fn lower_mapped_node_scan(
                 .alias(id_col(binding)),
             lit(node.label.as_str()).alias(label_col(binding)),
         ];
+        if ctx.language == crate::ir::policy::Language::Cypher && ctx.scan_logical_labels {
+            let labels = if let Some(column) = &node.labels_column {
+                col_exact(resolve_column(&plan, column)?)
+            } else {
+                let values = if node.label.is_empty() { vec![] } else {
+                    vec![ScalarValue::Utf8(Some(node.label.clone()))]
+                };
+                lit(ScalarValue::List(ScalarValue::new_list_nullable(&values, &DataType::Utf8)))
+            };
+            exprs.push(labels.alias(super::node_labels_col(binding)));
+        }
+
         exprs.extend(property_exprs(binding, &plan, &node.properties, &defs)?);
         branches.push(LogicalPlanBuilder::from(plan).project(exprs)?.build()?);
     }
     Ok(LoweredNode::new(union_all(branches)?))
+}
+
+fn static_labels_match(expr: &LabelExpr, label: &str) -> bool {
+    match expr {
+        LabelExpr::Any => true,
+        LabelExpr::AnyOf(names) => names.iter().any(|name| name == label),
+        LabelExpr::AllOf(names) => names.iter().all(|name| !label.is_empty() && name == label),
+        LabelExpr::Not(inner) => !static_labels_match(inner, label),
+    }
+}
+
+fn mapped_label_predicate(expr: &LabelExpr, has: &impl Fn(&str) -> Expr) -> Expr {
+    match expr {
+        LabelExpr::Any => lit(true),
+        LabelExpr::AnyOf(names) => names.iter().map(|name| has(name)).reduce(|a,b| a.or(b)).unwrap_or_else(|| lit(false)),
+        LabelExpr::AllOf(names) => names.iter().map(|name| has(name)).reduce(|a,b| a.and(b)).unwrap_or_else(|| lit(true)),
+        LabelExpr::Not(inner) => Expr::Not(Box::new(mapped_label_predicate(inner, has))),
+    }
 }
 
 /// Lower an edge scan through the mapping, producing the edge binding shape
@@ -1268,9 +1400,7 @@ pub(super) fn lower_mapped_rel_scan(
     let rel_types = resolve_names(types, || mapping.rel_types(), "relationship type")?;
     let mut sources = Vec::new();
     for rel_type in &rel_types {
-        let Some(edge) = mapping.edge(rel_type) else {
-            continue;
-        };
+        for edge in mapping.edge_partitions(rel_type) {
         mapping.validate_foreign_keys()?;
         let mut plan = mapping.source_plan(&edge.source)?;
         if let Some((_, _, _, fk)) = edge.foreign_key_columns() {
@@ -1282,6 +1412,7 @@ pub(super) fn lower_mapped_rel_scan(
             }
         }
         sources.push((edge, plan));
+        }
     }
 
     let mut defs = BTreeMap::<String, DataType>::new();
@@ -1347,6 +1478,12 @@ fn merge_def(
     data_type: DataType,
 ) -> RelResult<()> {
     match defs.get(property) {
+        Some(existing) if *existing != data_type
+            && crate::ir::functions::scalar_union::supports_type(existing)
+            && crate::ir::functions::scalar_union::supports_type(&data_type) => {
+                defs.insert(property.to_owned(), crate::ir::functions::scalar_union::data_type());
+                Ok(())
+            }
         Some(existing) if *existing != data_type => Err(RelError::Unsupported(format!(
             "mapped property `{property}` has mixed types `{existing:?}` and `{data_type:?}`"
         ))),
@@ -1369,7 +1506,12 @@ fn property_exprs(
     let mut out = Vec::with_capacity(defs.len());
     for (property, data_type) in defs {
         let expr = match properties.get(property) {
-            Some(column) => col_exact(resolve_column(plan, column)?),
+            Some(column) => {
+                let value = col_exact(resolve_column(plan, column)?);
+                if crate::ir::functions::scalar_union::is_type(data_type) {
+                    super::scalar_union::promote(plan, value)?
+                } else { value }
+            },
             None => lit(ScalarValue::try_from(data_type).map_err(|err| {
                 RelError::Unsupported(format!(
                     "no null literal for mapped property type {data_type:?}: {err}"
@@ -1783,6 +1925,9 @@ impl GraphMapping {
                     let source = section_source(entries, &format!("node.{name}"))?;
                     let id = require_columns(entries, "id", &format!("node.{name}"))?;
                     let mut node = NodeMapping::new(name.clone(), source, id);
+                    if let Some(column) = entries.get("labels_column") {
+                        node = node.labels_column(column.string()?);
+                    }
                     if let Some(props) = sections.get(&vec![
                         "node".to_string(),
                         name.clone(),
@@ -1867,6 +2012,7 @@ impl GraphMapping {
     /// JSON-only values such as null remain valid catalog metadata but produce
     /// an error here. Providers are not serialized.
     pub fn try_to_toml(&self) -> RelResult<String> {
+        self.require_single_edge_sources("TOML serialization").map_err(RelError::Unsupported)?;
         fn quote(value: &str) -> String {
             serde_json::to_string(value).expect("serializable mapping string")
         }
@@ -1889,6 +2035,9 @@ impl GraphMapping {
             out.push_str(&source_line(&node.source));
             out.push('\n');
             out.push_str(&format!("id = {}\n", node.id_column.toml()));
+            if let Some(column) = &node.labels_column {
+                out.push_str(&format!("labels_column = {}\n", quote(column)));
+            }
             if !node.properties.is_empty() {
                 out.push_str(&format!("\n[node.{label}.properties]\n"));
                 for (property, column) in &node.properties {

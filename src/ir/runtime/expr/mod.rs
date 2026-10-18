@@ -174,6 +174,8 @@ fn eval_inner(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value
                 .collect::<IrResult<Vec<_>>>()?;
             Ok(Value::List(evaluated))
         }
+        IrExpr::Quantifier { kind, list, item, predicate } =>
+            super::ops::quantifier::quantifier_value(*kind, item, list, predicate, row, graph),
         IrExpr::ListReduce {
             collection,
             accumulator,
@@ -516,6 +518,34 @@ mod tests {
             Value::List(vec![Value::List(vec![Value::Int(2)]),Value::Int(6)]),
         ]));
         assert_eq!(row.get("x"),Value::Int(99));
+    }
+
+    #[test]
+    fn nested_quantifiers_share_operator_semantics_and_lexical_scope() {
+        use crate::ir::plan::QuantifierKind;
+        let graph = empty_graph();
+        let row = Row::new().with("x", Value::List(vec![
+            Value::List(vec![Value::Bool(true)]),
+            Value::List(vec![]),
+            Value::Null,
+        ]));
+        let expr = IrExpr::Quantifier {
+            kind: QuantifierKind::Single,
+            list: Box::new(IrExpr::Binding("x".into())),
+            item: "x".into(),
+            predicate: Box::new(IrExpr::Quantifier {
+                kind: QuantifierKind::Any,
+                list: Box::new(IrExpr::Binding("x".into())),
+                item: "x".into(),
+                predicate: Box::new(IrExpr::Binding("x".into())),
+            }),
+        };
+        // Predicates are true, false, unknown: SINGLE remains unknown.
+        assert_eq!(eval(&expr, &row, &graph).unwrap(), Value::Null);
+        assert!(matches!(row.get("x"), Value::List(items) if items.len() == 3));
+        let serialized = serde_json::to_string(&expr).unwrap();
+        let decoded: IrExpr = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(decoded, expr);
     }
 
 }

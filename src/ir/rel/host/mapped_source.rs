@@ -65,6 +65,7 @@ type Address = (bool, String, ElementId);
 struct Record {
     properties: BTreeMap<String, Value>,
     endpoints: Option<Endpoints>,
+    labels: Option<Vec<String>>,
 }
 #[derive(Default, Debug)]
 struct Cache {
@@ -268,6 +269,10 @@ impl Source {
         };
         let mut projection = vec![format!("{} AS __key", key.sql(None))];
         projection.extend(property_projection(props));
+        let labels_column = if edge { None } else { self.mapping.node(name).and_then(|node| node.labels_column.as_ref()) };
+        if let Some(column) = labels_column {
+            projection.push(format!("{} AS __logical_labels", quote(column)));
+        }
         if let Some(m) = endpoints {
             projection.extend([
                 format!("{} AS __src", m.src_column.sql(None)),
@@ -303,6 +308,9 @@ impl Source {
                     .iter()
                     .map(|(p, c)| Expr::Column(datafusion::common::Column::from_name(c)).alias(p)),
             );
+            if let Some(column) = labels_column {
+                selected.push(Expr::Column(datafusion::common::Column::from_name(column)).alias("__logical_labels"));
+            }
             if let Some(edge) = endpoints {
                 selected.push(
                     id_expr(&source, &edge.src_column, name)
@@ -415,11 +423,24 @@ impl Source {
             } else {
                 None
             };
+            let labels = if labels_column.is_some() {
+                use arrow::array::Array;
+                let column = batch.column(props.len() + 1);
+                let list = column.as_any().downcast_ref::<arrow::array::ListArray>()
+                    .ok_or("logical node labels must be a string list")?;
+                if list.is_null(row) { return Err("logical node labels must be non-null".into()); }
+                let values = list.value(row);
+                let strings = values.as_any().downcast_ref::<arrow::array::StringArray>()
+                    .ok_or("logical node labels must contain strings")?;
+                if strings.null_count() != 0 { return Err("logical node labels must contain non-null strings".into()); }
+                Some(strings.iter().map(|value| value.unwrap().to_owned()).collect())
+            } else { None };
             cache.records.insert(
                 (edge, name.into(), id.clone()),
                 Some(Record {
                     properties,
                     endpoints,
+                    labels,
                 }),
             );
         }
@@ -462,6 +483,14 @@ impl Source {
     }
 }
 impl GraphSource for Source {
+    fn native_state(&self, edge: bool, name: &str, id: &ElementId) -> Option<crate::ir::catalog::source::NativeState> {
+        if edge || self.mapping.node(name)?.labels_column.is_none() { return None; }
+        let record = self.record(false, name, id)?;
+        Some(crate::ir::catalog::source::NativeState {
+            node: None, public_id: None, labels: record.labels, cypher_id: None,
+            null_keys: BTreeSet::new(), allow_null: false,
+        })
+    }
     fn property_handle(&self, name: &str, id: &ElementId, key: &str) -> i64 {
         // These are invocation-local property handles, not element keys. Share
         // lazy allocation across transaction views and keep it disjoint from
@@ -686,6 +715,82 @@ impl GraphSource for Source {
         self.cache.lock().unwrap().error.clone().map_or(Ok(()), Err)
     }
 }
+
+/// Partition delegates retain each source's bounded lookup/cache policy. Nodes
+/// are read only through the primary delegate; relationship rows are combined
+/// under their original logical type and globally unique relationship key.
+#[derive(Debug)]
+struct PartitionSources {
+    sources: Vec<Arc<dyn GraphSource>>,
+    handles: Mutex<HashMap<(String, ElementId, String), i64>>,
+    error: Mutex<Option<String>>,
+}
+impl PartitionSources {
+    fn owner(&self, edge: bool, name: &str, id: &ElementId) -> Option<&Arc<dyn GraphSource>> {
+        if !edge { return Some(&self.sources[0]); }
+        let mut found = None;
+        for source in &self.sources {
+            if source.exists(true, name, id) {
+                if found.is_some() {
+                    *self.error.lock().unwrap() = Some(format!("duplicate relationship identity across partitions of `{name}`"));
+                    return None;
+                }
+                found = Some(source);
+            }
+        }
+        found
+    }
+}
+impl GraphSource for PartitionSources {
+    #[cfg(feature = "duckdb")]
+    fn executor(&self) -> Option<Arc<Mutex<crate::ir::rel::sql::DuckDbExecutor>>> { self.sources[0].executor() }
+    fn invalidate(&self) { for source in &self.sources { source.invalidate(); } }
+    fn native_state(&self, edge: bool, name: &str, id: &ElementId) -> Option<crate::ir::catalog::source::NativeState> {
+        self.owner(edge,name,id)?.native_state(edge,name,id)
+    }
+    fn function(&self,name:&str,args:&[Value])->Option<Result<Value,String>> { self.sources[0].function(name,args) }
+    fn property_handle(&self,name:&str,id:&ElementId,key:&str)->i64 {
+        let mut handles=self.handles.lock().unwrap(); let next=-(handles.len() as i64)-1;
+        *handles.entry((name.into(),id.clone(),key.into())).or_insert(next)
+    }
+    fn property(&self,edge:bool,name:&str,id:&ElementId,key:&str)->Value {
+        self.owner(edge,name,id).map_or(Value::Null,|source|source.property(edge,name,id,key))
+    }
+    fn ids(&self,edge:bool,name:&str)->Vec<ElementId> {
+        if !edge { return self.sources[0].ids(false,name); }
+        let ids = self.sources.iter().flat_map(|source|source.ids(true,name)).collect::<Vec<_>>();
+        if ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
+            *self.error.lock().unwrap() = Some(format!("duplicate relationship identity across partitions of `{name}`"));
+        }
+        ids
+    }
+    fn endpoints(&self,name:&str,id:&ElementId)->Option<Endpoints> { self.owner(true,name,id)?.endpoints(name,id) }
+    fn exists(&self,edge:bool,name:&str,id:&ElementId)->bool {
+        if !edge { return self.sources[0].exists(false,name,id); }
+        self.sources.iter().any(|source|source.exists(true,name,id))
+    }
+    fn prefetch_neighbors(&self,incoming:bool,nodes:&[(String,ElementId)],types:&[String]) {
+        for source in &self.sources { source.prefetch_neighbors(incoming,nodes,types); }
+    }
+    fn neighbors(&self,incoming:bool,name:&str,id:&ElementId,types:&[String])->Vec<Neighbor> {
+        self.sources.iter().flat_map(|source|source.neighbors(incoming,name,id,types)).collect()
+    }
+    fn prefetch(&self,values:&mut dyn Iterator<Item=&Value>) {
+        let values=values.collect::<Vec<_>>();
+        for source in &self.sources { source.prefetch(&mut values.iter().copied()); }
+    }
+    fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision> {
+        self.sources.iter().flat_map(|source|source.access_decisions()).collect()
+    }
+    fn stats(&self)->(usize,Vec<String>) {
+        let mut total=(0,vec![]); for source in &self.sources {let (rows,queries)=source.stats();total.0+=rows;total.1.extend(queries);} total
+    }
+    fn check(&self)->Result<(),String> {
+        if let Some(error) = self.error.lock().unwrap().clone() { return Err(error); }
+        for source in &self.sources {source.check()?;} Ok(())
+    }
+}
+
 pub fn attach(
     host: Arc<dyn HostRelational + Send + Sync>,
     mapping: Arc<GraphMapping>,
@@ -719,7 +824,8 @@ pub fn attach(
             }
         }
         for name in mapping.rel_types() {
-            if let MappedSource::Table(t) = &mapping.edge(&name).unwrap().source {
+            for partition in mapping.edge_partitions(&name) {
+            if let MappedSource::Table(t) = &partition.source {
                 if mapping.logical_source(t).is_some()
                     || mapping.collection_source(t).is_some()
                     || mapping.representation_source(t).is_some()
@@ -736,6 +842,7 @@ pub fn attach(
                 );
             }
         }
+        }
         if let Some(snapshot) = mapping.statistics() {
             resolved
                 .set_statistics(snapshot.clone())
@@ -743,13 +850,15 @@ pub fn attach(
         }
         graph = mapped_storage::metadata(connection, Arc::new(resolved))?;
     }
-    graph.source = Some(Arc::new(Source {
-        host,
-        operators: crate::ir::functions::selected_operator_table().map_err(|e| e.to_string())?,
-        mapping: graph.mapping.clone().unwrap(),
-        cache: Default::default(),
-        key_types: graph.key_types.clone(),
-    }));
+    let operators = crate::ir::functions::selected_operator_table().map_err(|e| e.to_string())?;
+    let mappings = graph.mapping.as_ref().unwrap().single_partition_mappings();
+    let sources = mappings.into_iter().map(|mapping| Arc::new(Source {
+        host: host.clone(), operators: operators.clone(), mapping: Arc::new(mapping),
+        cache: Default::default(), key_types: graph.key_types.clone(),
+    }) as Arc<dyn GraphSource>).collect::<Vec<_>>();
+    graph.source = if sources.len() == 1 { Some(sources[0].clone()) } else {
+        Some(Arc::new(PartitionSources { sources, handles: Default::default(), error: Default::default() }))
+    };
     Ok(graph)
 }
 
@@ -757,6 +866,29 @@ pub fn attach(
 mod tests {
     use super::*;
     use crate::engine::mapped_source::attach;
+
+    #[test]
+    fn native_partition_reads_preserve_endpoints_properties_and_adjacency() {
+        use crate::ir::rel::mapping::{NodeMapping, EdgeMapping};
+        let db=duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE a(id BIGINT); CREATE TABLE b(id BIGINT); CREATE TABLE c(id BIGINT); INSERT INTO a VALUES(1); INSERT INTO b VALUES(1); INSERT INTO c VALUES(1); CREATE TABLE ab(id BIGINT,src BIGINT,dst BIGINT,p VARCHAR); CREATE TABLE ac(id BIGINT,src BIGINT,dst BIGINT,q VARCHAR); INSERT INTO ab VALUES(10,1,1,'ab'),(11,1,1,'parallel'); INSERT INTO ac VALUES(12,1,1,'ac')").unwrap();
+        let mut mapping=GraphMapping::new();
+        for (label,table) in [("A","a"),("B","b"),("C","c")] {mapping.map_node(NodeMapping::table(label,table,"id"));}
+        mapping.map_edge_partition(EdgeMapping::table("R","ab","src","dst","A","B").with_id("id").property("p","p"));
+        mapping.map_edge_partition(EdgeMapping::table("R","ac","src","dst","A","C").with_id("id").property("q","q"));
+        let host=Arc::new(Mutex::new(DuckDbExecutor::from_connection(db)));
+        let graph=attach(host,Arc::new(mapping)).unwrap();
+        let source=graph.source.as_ref().unwrap();
+        let mut ids=source.ids(true,"R"); ids.sort();
+        assert_eq!(ids,vec![ElementId::from(10i64),ElementId::from(11i64),ElementId::from(12i64)]);
+        assert_eq!(source.property(true,"R",&12i64.into(),"q"),Value::String("ac".into()));
+        assert_eq!(source.property(true,"R",&12i64.into(),"p"),Value::Null);
+        assert_eq!(source.endpoints("R",&12i64.into()),Some(("A".into(),1i64.into(),"C".into(),1i64.into())));
+        assert_eq!(source.neighbors(false,"A",&1i64.into(),&[]).len(),3);
+        assert_eq!(source.neighbors(true,"B",&1i64.into(),&[]).len(),2);
+        assert_eq!(source.neighbors(true,"C",&1i64.into(),&[]).len(),1);
+        source.check().unwrap();
+    }
 
     #[test]
     fn borrowed_prefetch_finds_nested_elements_and_reuses_cached_records() {

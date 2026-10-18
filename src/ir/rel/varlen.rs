@@ -157,9 +157,12 @@ impl LoweringContext<'_> {
             col_exact(label_col(source)).alias(WORK_CUR_LABEL),
             lit(0_i64).alias(WORK_DEPTH),
             history.map(col_exact).unwrap_or_else(|| lit(",")).alias(WORK_TRAIL),
-            seed_nodes.alias(WORK_NODES),
-            lit("").alias(WORK_RELS),
         ]);
+        // An unobserved path needs only the traversal cursor and trail. Do not
+        // allocate or carry display payload through the recursive worktable.
+        if rel_binding.is_some() {
+            seed_projection.extend([seed_nodes.alias(WORK_NODES), lit("").alias(WORK_RELS)]);
+        }
         let static_term = LogicalPlanBuilder::from(input.plan.clone())
             .project(seed_projection)?
             .build()?;
@@ -327,9 +330,10 @@ impl LoweringContext<'_> {
             (if history.is_some() {
                 datafusion::functions_nested::expr_fn::array_append(col_exact(WORK_TRAIL), edge_key)
             } else { string_concat(col_exact(WORK_TRAIL), edge_key) }).alias(WORK_TRAIL),
-            next_nodes.alias(WORK_NODES),
-            next_rels.alias(WORK_RELS),
         ]);
+        if rel_binding.is_some() {
+            recursive_projection.extend([next_nodes.alias(WORK_NODES), next_rels.alias(WORK_RELS)]);
+        }
         let recursive_term = LogicalPlanBuilder::from(recursive_joined)
             .project(recursive_projection)?
             .build()?;

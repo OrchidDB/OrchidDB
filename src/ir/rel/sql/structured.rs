@@ -227,7 +227,11 @@ pub(super) fn literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<Str
 pub(super) fn literal_expr(value: &ScalarValue, dialect: SqlDialect) -> SqlResult<Expr> {
     use crate::ir::functions::logical::{LogicalFunction, SqlFunctionMapping};
     use std::hash::{Hash, Hasher};
-    let sql = literal(dialect, value)?;
+    let sql = if matches!(value, ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) {
+        super::literals::sql_literal(dialect, value)?
+    } else {
+        literal(dialect, value)?
+    };
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     sql.hash(&mut hash);
     value.data_type().hash(&mut hash);

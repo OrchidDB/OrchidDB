@@ -19,70 +19,83 @@ pub(crate) fn quantifier_op(
 ) -> IrResult<Vec<Row>> {
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let input_value = eval(input_expr, &row, graph)?;
-        let result = match input_value {
-            Value::List(items) => {
-                let mut matches_count = 0usize;
-                let mut null_count = 0usize;
-                let total = items.len();
-                // Literal predicates cannot observe the bound item. Preserve
-                // input evaluation (including volatile list comprehensions),
-                // but avoid cloning its entire row for every list element.
-                let literal = match predicate {
-                    IrExpr::Lit(Lit::Bool(value)) => Some(Some(*value)),
-                    IrExpr::Lit(Lit::Null) => Some(None),
-                    _ => None,
-                };
-                if let Some(value) = literal {
-                    matches_count = if value == Some(true) { total } else { 0 };
-                    null_count = if value.is_none() { total } else { 0 };
-                } else {
-                    let mut item_row = row.clone();
-                    for item in items {
-                        item_row.bindings.insert(item_binding.to_string(), item);
-                        match eval(predicate, &item_row, graph)? {
-                            Value::Bool(true) => matches_count += 1,
-                            Value::Null => null_count += 1,
-                            _ => {}
-                        }
-                    }
-                }
-                let false_count = total.saturating_sub(matches_count + null_count);
-                match (kind, matches_count, null_count, false_count) {
-                    (QuantifierKind::All, _, _, false_count) if false_count > 0 => {
-                        Value::Bool(false)
-                    }
-                    (QuantifierKind::All, matches_count, 0, _) if matches_count == total => {
-                        Value::Bool(true)
-                    }
-                    (QuantifierKind::All, _, _, _) => Value::Null,
-
-                    (QuantifierKind::Any, matches_count, _, _) if matches_count > 0 => {
-                        Value::Bool(true)
-                    }
-                    (QuantifierKind::Any, 0, 0, _) => Value::Bool(false),
-                    (QuantifierKind::Any, _, _, _) => Value::Null,
-
-                    (QuantifierKind::None, matches_count, _, _) if matches_count > 0 => {
-                        Value::Bool(false)
-                    }
-                    (QuantifierKind::None, 0, 0, _) => Value::Bool(true),
-                    (QuantifierKind::None, _, _, _) => Value::Null,
-
-                    (QuantifierKind::Single, matches_count, _, _) if matches_count > 1 => {
-                        Value::Bool(false)
-                    }
-                    (QuantifierKind::Single, 1, 0, _) => Value::Bool(true),
-                    (QuantifierKind::Single, 0, 0, _) => Value::Bool(false),
-                    (QuantifierKind::Single, _, _, _) => Value::Null,
-                }
-            }
-            Value::Null => Value::Null,
-            _ => Value::Null,
-        };
+        let result = quantifier_value(kind, item_binding, input_expr, predicate, &row, graph)?;
         let mut new_row = row;
         new_row.bindings.insert(output.to_string(), result);
         out.push(new_row);
     }
     Ok(out)
+}
+
+/// Shared scalar and operator semantics, including lexical iterator shadowing.
+pub(crate) fn quantifier_value(
+    kind: QuantifierKind,
+    item_binding: &str,
+    input_expr: &IrExpr,
+    predicate: &IrExpr,
+    row: &Row,
+    graph: &PropertyGraph,
+) -> IrResult<Value> {
+    let input_value = eval(input_expr, row, graph)?;
+    let result = match input_value {
+        Value::List(items) => {
+            let mut matches_count = 0usize;
+            let mut null_count = 0usize;
+            let total = items.len();
+            // Literal predicates cannot observe the bound item. Preserve
+            // input evaluation (including volatile list comprehensions),
+            // but avoid cloning its entire row for every list element.
+            let literal = match predicate {
+                IrExpr::Lit(Lit::Bool(value)) => Some(Some(*value)),
+                IrExpr::Lit(Lit::Null) => Some(None),
+                _ => None,
+            };
+            if let Some(value) = literal {
+                matches_count = if value == Some(true) { total } else { 0 };
+                null_count = if value.is_none() { total } else { 0 };
+            } else {
+                let mut item_row = row.clone();
+                for item in items {
+                    item_row.bindings.insert(item_binding.to_string(), item);
+                    match eval(predicate, &item_row, graph)? {
+                        Value::Bool(true) => matches_count += 1,
+                        Value::Null => null_count += 1,
+                        _ => {}
+                    }
+                }
+            }
+            let false_count = total.saturating_sub(matches_count + null_count);
+            match (kind, matches_count, null_count, false_count) {
+                (QuantifierKind::All, _, _, false_count) if false_count > 0 => {
+                    Value::Bool(false)
+                }
+                (QuantifierKind::All, matches_count, 0, _) if matches_count == total => {
+                    Value::Bool(true)
+                }
+                (QuantifierKind::All, _, _, _) => Value::Null,
+
+                (QuantifierKind::Any, matches_count, _, _) if matches_count > 0 => {
+                    Value::Bool(true)
+                }
+                (QuantifierKind::Any, 0, 0, _) => Value::Bool(false),
+                (QuantifierKind::Any, _, _, _) => Value::Null,
+
+                (QuantifierKind::None, matches_count, _, _) if matches_count > 0 => {
+                    Value::Bool(false)
+                }
+                (QuantifierKind::None, 0, 0, _) => Value::Bool(true),
+                (QuantifierKind::None, _, _, _) => Value::Null,
+
+                (QuantifierKind::Single, matches_count, _, _) if matches_count > 1 => {
+                    Value::Bool(false)
+                }
+                (QuantifierKind::Single, 1, 0, _) => Value::Bool(true),
+                (QuantifierKind::Single, 0, 0, _) => Value::Bool(false),
+                (QuantifierKind::Single, _, _, _) => Value::Null,
+            }
+        }
+        Value::Null => Value::Null,
+        _ => Value::Null,
+    };
+    Ok(result)
 }

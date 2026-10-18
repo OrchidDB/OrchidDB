@@ -3,7 +3,11 @@ use arrow::datatypes::{DataType, TimeUnit};
 use datafusion::common::{DataFusionError, Result};
 
 pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
+    if super::domain::descriptor(data_type) == Some(("cypher_integer", &DataType::Decimal128(38,0))) { return Ok("DECIMAL(38,0)".into()); }
     if super::domain::is_json(data_type) { return Ok("JSON".into()); }
+    // Dates have native storage; other temporal kinds use encoded transport.
+    if crate::ir::temporal::transport::is_date_type(data_type) { return Ok("DATE".into()); }
+    if crate::ir::temporal::transport::is_type(data_type) { return Ok("VARCHAR".into()); }
     if let Some((name, _)) = super::domain::descriptor(data_type) { return Err(DataFusionError::NotImplemented(format!("DuckDB domain type `{name}` requires an engine type mapping"))); }
     Ok(match data_type {
         DataType::Null => "INTEGER".into(),
@@ -121,7 +125,10 @@ pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
 
 /// PostgreSQL has no unsigned integer or anonymous struct SQL argument types.
 pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
+    if super::domain::descriptor(data_type) == Some(("cypher_integer", &DataType::Decimal128(38,0))) { return Ok("NUMERIC(38,0)".into()); }
     if super::domain::is_json(data_type) { return Ok("JSONB".into()); }
+    if crate::ir::temporal::transport::is_date_type(data_type) { return Ok("DATE".into()); }
+    if crate::ir::temporal::transport::is_type(data_type) { return Ok("TEXT".into()); }
     if let Some((name, _)) = super::domain::descriptor(data_type) { return Err(DataFusionError::NotImplemented(format!("PostgreSQL domain type `{name}` requires an engine type mapping"))); }
     Ok(match data_type {
         DataType::Int8 | DataType::UInt8 => "SMALLINT".into(),

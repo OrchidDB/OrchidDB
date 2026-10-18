@@ -17,6 +17,7 @@ pub(super) fn value_literal_expr(value: &Value) -> RelResult<Expr> {
     match value {
         Value::Scalar(value) => Ok(lit(value.clone())),
         Value::Null => Ok(lit(ScalarValue::Null)),
+        Value::Temporal(value) => Ok(lit(crate::ir::temporal::transport::scalar(value)?)),
         Value::Bool(value) => Ok(lit(*value)),
         Value::Byte(value) => Ok(lit(ScalarValue::Int8(Some(*value)))),
         Value::UInt8(value) => Ok(lit(*value as i64)),
@@ -82,7 +83,7 @@ pub(super) fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
             list,
             item,
             predicate,
-        } => {
+        } | IrExpr::Quantifier { list, item, predicate, .. } => {
             expr_is_constant(list, bound) && {
                 let mut inner = bound.to_vec();
                 inner.push(item.as_str());
@@ -104,7 +105,7 @@ pub(super) fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
         }
         IrExpr::Call { name, args } => {
             constant_foldable_function(name)
-                && !(name.starts_with("cypher_temporal.") && (args.is_empty() || name.ends_with(".transaction") || name.ends_with(".statement") || name.ends_with(".realtime")))
+                && !crate::ir::temporal::clock_policy::may_read_clock(name, args.len())
                 && args.iter().all(|arg| expr_is_constant(arg, bound))
         }
         _ => false,
@@ -469,6 +470,16 @@ pub(super) fn gremlin_tagged_text_expr(expr: Expr, data_type: &DataType) -> Expr
 /// Render one property column as the text the runtime's
 /// `format_property_value` would produce.
 pub(super) fn render_property_text_expr(column: Expr, data_type: &DataType) -> Expr {
+    if crate::ir::functions::scalar_union::is_type(data_type) {
+        use crate::ir::functions::scalar_union as transport;
+        let tag = df_core::get_field(column.clone(), transport::TAG);
+        let branches = [(1_i8,transport::INTEGER,DataType::Int64),
+            (2,transport::STRING,DataType::Utf8),
+            (3,transport::BOOLEAN,DataType::Boolean)].into_iter().map(|(id,name,kind)| {
+                (Box::new(tag.clone().eq(lit(id))), Box::new(render_property_text_expr(df_core::get_field(column.clone(),name),&kind)))
+            }).collect();
+        return Expr::Case(Case::new(None,branches,Some(Box::new(lit(ScalarValue::Utf8(None))))));
+    }
     match data_type {
         DataType::Boolean => Expr::Case(Case::new(
             None,
@@ -897,5 +908,50 @@ mod folding_tests {
         assert!(constant_foldable_function("UPPER"));
         assert!(constant_foldable_function("tointeger"));
         assert!(!constant_foldable_function("random"));
+    }
+}
+
+/// Detect temporal constructors before a nonconstant SQL expression can apply
+/// ordinary struct/string operators to the nominal transport envelope.
+pub(super) fn has_temporal_constructor(expr: &IrExpr) -> bool {
+    match expr {
+        IrExpr::Call { name, args } => name.starts_with("cypher_temporal.") || args.iter().any(has_temporal_constructor),
+        IrExpr::Lit(Lit::Scalar(value)) => crate::ir::temporal::transport::contains_type(&value.data_type()),
+        IrExpr::List(items) => items.iter().any(has_temporal_constructor),
+        IrExpr::Binary { lhs, rhs, .. } => has_temporal_constructor(lhs) || has_temporal_constructor(rhs),
+        IrExpr::Not(e) | IrExpr::IsNull(e) | IrExpr::IsNotNull(e) => has_temporal_constructor(e),
+        IrExpr::StringPredicate { target, pattern, .. } => has_temporal_constructor(target) || has_temporal_constructor(pattern),
+        IrExpr::Case { arms, otherwise } => arms.iter().any(|(a,b)| has_temporal_constructor(a) || has_temporal_constructor(b)) || otherwise.as_deref().is_some_and(has_temporal_constructor),
+        IrExpr::ListTransform { list, map, .. } => has_temporal_constructor(list) || has_temporal_constructor(map),
+        IrExpr::ListFilter { list, predicate, .. } | IrExpr::Quantifier { list, predicate, .. } => has_temporal_constructor(list) || has_temporal_constructor(predicate),
+        IrExpr::ListReduce { collection, map, .. } => has_temporal_constructor(collection) || has_temporal_constructor(map),
+        _ => false,
+    }
+}
+
+/// Values proven constant at this relational boundary. Only transparent unary
+/// operators are traversed: joins/aggregates may null-extend or change rows.
+pub(super) fn temporal_constant_bindings(plan: &LogicalPlan) -> BTreeMap<String, Value> {
+    fn literal(expr: &Expr, input: &BTreeMap<String, Value>) -> Option<Value> {
+        match expr {
+            Expr::Alias(alias) => literal(&alias.expr, input),
+            Expr::Column(column) => input.get(&column.name).cloned(),
+            Expr::Literal(value, _) if crate::ir::temporal::transport::is_type(&value.data_type()) =>
+                crate::ir::temporal::transport::decode(value).ok().map(Value::Temporal),
+            Expr::Literal(value, _) => crate::ir::value::scalar_semantic_value(value),
+            _ => None,
+        }
+    }
+    match plan {
+        LogicalPlan::Projection(projection) => {
+            let input = temporal_constant_bindings(&projection.input);
+            projection.expr.iter().zip(projection.schema.fields()).filter_map(|(expr, field)|
+                literal(expr, &input).map(|value| (field.name().clone(), value))).collect()
+        }
+        LogicalPlan::SubqueryAlias(alias) => temporal_constant_bindings(&alias.input),
+        LogicalPlan::Filter(filter) => temporal_constant_bindings(&filter.input),
+        LogicalPlan::Sort(sort) => temporal_constant_bindings(&sort.input),
+        LogicalPlan::Limit(limit) => temporal_constant_bindings(&limit.input),
+        _ => BTreeMap::new(),
     }
 }

@@ -404,6 +404,18 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    // DataFusion represents COUNT(*) as COUNT(1). Recover the idiomatic SQL
+    // spelling without changing DISTINCT, nullable arguments, filters, or windows.
+    if dialect == SqlDialect::DuckDb && name == "count"
+        && let ast::FunctionArguments::List(arguments) = &mut function.args
+        && arguments.duplicate_treatment != Some(ast::DuplicateTreatment::Distinct)
+        && arguments.clauses.is_empty()
+        && let [ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(ast::Expr::Value(value)))] = arguments.args.as_slice()
+        && matches!(&value.value, ast::Value::Number(n, _) if n == "1")
+    {
+        arguments.args = vec![ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Wildcard)];
+        return Ok(());
+    }
     if dialect == SqlDialect::DuckDb && name.trim_matches('"') == "first_value" && function.over.is_none() {
         function.name = ast::ObjectName::from(vec![ast::Ident::new("first")]);
         return Ok(());

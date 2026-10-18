@@ -131,6 +131,19 @@ pub(super) fn rewrite_aggregate_projection_expr(
     preferred_alias: Option<&str>,
     bound: &mut BTreeSet<String>,
 ) -> CypherPlanResult<Expr> {
+    // Both aggregates exclude nulls and produce zero cardinality on an empty
+    // input. A size-only consumer needs neither list materialization nor its
+    // ordering; keep DISTINCT and the normal aggregate argument validation.
+    if let Expr::Function { name, distinct: false, args } = expr
+        && name.eq_ignore_ascii_case("size")
+        && let [Expr::Function { name, distinct, args }] = args.as_slice()
+        && name.eq_ignore_ascii_case("collect")
+        && args.len() == 1
+    {
+        return rewrite_aggregate_projection_expr(lowerer, &Expr::Function {
+            name: "count".into(), distinct: *distinct, args: args.clone(),
+        }, rewrite, preferred_alias, bound);
+    }
     match expr {
         Expr::CountStar => {
             let alias = preferred_alias

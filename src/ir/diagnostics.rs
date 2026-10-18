@@ -1,5 +1,9 @@
 //! Structured execution diagnoses retained across DataFusion and public APIs.
 use std::error::Error;
+mod folding;
+pub(crate) use folding::constant_folding_enabled;
+#[doc(hidden)]
+pub use folding::without_constant_folding;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RuntimeDiagnosis {

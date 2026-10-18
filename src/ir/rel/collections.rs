@@ -107,7 +107,7 @@ pub(super) fn with_list_shadows(
 }
 
 /// The one Arrow list type able to hold every non-null value exactly, if
-/// there is one. At least one element must fix the element type.
+/// there is one. Empty/all-null lists retain an unresolved Null element type.
 pub(super) fn uniform_list_type<'a>(values: impl Iterator<Item = &'a Value>) -> Option<DataType> {
     let mut element: Option<DataType> = None;
     let mut saw_list = false;
@@ -134,11 +134,15 @@ pub(super) fn uniform_list_type<'a>(values: impl Iterator<Item = &'a Value>) -> 
     if !saw_list {
         return None;
     }
-    element.map(|element| DataType::List(Arc::new(Field::new("item", element, true))))
+    Some(DataType::List(Arc::new(Field::new("item", element.unwrap_or(DataType::Null), true))))
 }
 
-fn merge_list_types(left: &DataType, right: &DataType) -> Option<DataType> {
+pub(super) fn merge_list_types(left: &DataType, right: &DataType) -> Option<DataType> {
     // Nested lists may disagree only through an all-null inner list.
+    if crate::ir::temporal::transport::is_type(left)
+        && crate::ir::temporal::transport::is_type(right) && left != right {
+        return Some(crate::ir::functions::domain::data_type("cypher_temporal", DataType::Utf8));
+    }
     match (left, right) {
         (DataType::List(left), DataType::List(right)) => {
             Some(DataType::List(Arc::new(Field::new(
@@ -153,8 +157,10 @@ fn merge_list_types(left: &DataType, right: &DataType) -> Option<DataType> {
     }
 }
 
-fn value_arrow_type(value: &Value) -> Option<DataType> {
+pub(super) fn value_arrow_type(value: &Value) -> Option<DataType> {
     Some(match value {
+        Value::Null => DataType::Null,
+        Value::Temporal(value) => crate::ir::temporal::transport::scalar(value).ok()?.data_type(),
         Value::Bool(_) => DataType::Boolean,
         Value::Int(_) | Value::Long(_) => DataType::Int64,
         Value::Float(_) => DataType::Float64,
@@ -173,7 +179,7 @@ fn value_arrow_type(value: &Value) -> Option<DataType> {
     })
 }
 
-fn list_array(values: &[Value], data_type: &DataType) -> RelResult<ArrayRef> {
+pub(super) fn list_array(values: &[Value], data_type: &DataType) -> RelResult<ArrayRef> {
     if values.is_empty() {
         return Ok(new_null_array(data_type, 0));
     }
@@ -184,7 +190,7 @@ fn list_array(values: &[Value], data_type: &DataType) -> RelResult<ArrayRef> {
     Ok(ScalarValue::iter_to_array(scalars)?)
 }
 
-fn value_scalar(value: &Value, data_type: &DataType) -> RelResult<ScalarValue> {
+pub(super) fn value_scalar(value: &Value, data_type: &DataType) -> RelResult<ScalarValue> {
     if matches!(value, Value::Null) {
         return Ok(ScalarValue::try_from(data_type)?);
     }
@@ -195,6 +201,9 @@ fn value_scalar(value: &Value, data_type: &DataType) -> RelResult<ScalarValue> {
         ))
     };
     Ok(match (data_type, value) {
+        (kind, Value::Temporal(value)) if crate::ir::temporal::transport::is_type(kind) => {
+            crate::ir::temporal::transport::scalar_for_type(value, kind)?
+        }
         (DataType::Boolean, Value::Bool(value)) => ScalarValue::Boolean(Some(*value)),
         (DataType::Int64, Value::Int(value) | Value::Long(value)) => {
             ScalarValue::Int64(Some(*value))

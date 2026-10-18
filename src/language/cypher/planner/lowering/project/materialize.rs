@@ -21,6 +21,33 @@ pub(super) fn materialize_expr(
     input: Node,
     expr: &Expr,
 ) -> CypherPlanResult<(Node, Expr)> {
+    // The value of a literal projection cannot throw or have effects. For
+    // this existence-only demand, avoid building and counting its list.
+    if let Expr::Binary { op: super::BinaryOp::Gt, lhs, rhs } = expr
+        && matches!(rhs.as_ref(), Expr::Literal(super::Literal::Integer(value)) if value == "0")
+        && let Expr::Function { name, distinct: false, args } = lhs.as_ref()
+        && name.eq_ignore_ascii_case("size")
+        && let [Expr::PatternComprehension { variable: None, pattern, predicate: None, map }] = args.as_slice()
+        && matches!(map.as_ref(), Expr::Literal(_))
+    {
+        // Validate the discarded literal too (for example integer overflow).
+        lower_expr(lowerer, map)?;
+        return materialize_exists(lowerer, input, &ExistsSubquery {
+            query: None, patterns: vec![*pattern.clone()], predicate: None,
+        });
+    }
+    // Cardinality does not need the values or ordering of a literal map.
+    // Validate it before discarding it, including invalid integer literals.
+    if let Expr::Function { name, distinct: false, args } = expr
+        && name.eq_ignore_ascii_case("size")
+        && let [Expr::PatternComprehension { variable: None, pattern, predicate: None, map }] = args.as_slice()
+        && matches!(map.as_ref(), Expr::Literal(_))
+    {
+        lower_expr(lowerer, map)?;
+        return materialize_count_exists(lowerer, input, &ExistsSubquery {
+            query: None, patterns: vec![*pattern.clone()], predicate: None,
+        });
+    }
     match expr {
         Expr::Exists(exists) => materialize_exists(lowerer, input, exists),
         Expr::Function { name, args, .. }
@@ -879,9 +906,15 @@ pub(super) fn materialize_quantifier(
     collection: &Expr,
     predicate_expr: &Expr,
 ) -> CypherPlanResult<(Node, Expr)> {
+    if let Some(value) = super::constant_quantifier::fold(
+        lowerer, &input, kind, variable, collection, predicate_expr,
+    ) {
+        return Ok((input, value));
+    }
     let alias = lowerer.synthetic("quantifier");
     if !requires_scoped_materialization(collection)
-        && !requires_scoped_materialization(predicate_expr)
+        && (!requires_scoped_materialization(predicate_expr)
+            || super::quantifier_domains::direct(&input, variable, collection, predicate_expr))
     {
         return Ok((
             Node::GraphQuantifier {

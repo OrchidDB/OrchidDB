@@ -12,6 +12,7 @@ pub mod host_execution;
 pub mod logical;
 pub mod portable;
 pub mod domain;
+pub mod scalar_union;
 pub mod search;
 pub mod json;
 mod mappings;

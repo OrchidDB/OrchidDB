@@ -625,7 +625,7 @@ impl LoweringContext<'_> {
                     list,
                     item,
                     predicate: map,
-                } => {
+                } | IrExpr::Quantifier { list, item, predicate: map, .. } => {
                     if !captures(list, bound, free) {
                         return false;
                     }

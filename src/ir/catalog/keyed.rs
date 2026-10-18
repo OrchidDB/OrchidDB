@@ -237,7 +237,8 @@ impl PropertyGraph {
                 }
                 if !edge {
                     if let Some(labels) = overlay.node_label_sets.get(&(name.clone(), id.clone())) {
-                        if labels.len() != 1 || !labels.contains(name) {
+                        if mapping.node(name).is_none_or(|node| node.labels_column.is_none())
+                            && (labels.len() != 1 || !labels.contains(name)) {
                             return Err("mapped storage cannot represent additional labels".into());
                         }
                     }

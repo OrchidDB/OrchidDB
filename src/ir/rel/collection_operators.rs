@@ -23,7 +23,10 @@ impl<'a> LoweringContext<'a> {
         }
         if let IrExpr::Call { name, args } = input_expr {
             if name.eq_ignore_ascii_case("range") || name == "cypher_range" {
-                return self.lower_range_unwind(input, args, bind, outer);
+                if args.iter().all(|arg| literal_i64(arg).is_some()) {
+                    return self.lower_range_unwind(input, args, bind, outer);
+                }
+                return self.lower_unwind_dynamic(input, input_expr, bind, outer);
             }
         }
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
@@ -144,10 +147,10 @@ impl<'a> LoweringContext<'a> {
                     agg.distinct,
                 )?,
                 AggKind::Min | AggKind::MinOrNull => {
-                    df_min(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                    df_min(self.lower_extreme_arg(&input.plan, &agg.arg)?)
                 }
                 AggKind::Max | AggKind::MaxOrNull => {
-                    df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                    df_max(self.lower_extreme_arg(&input.plan, &agg.arg)?)
                 }
                 AggKind::CollectRows | AggKind::CollectTraversers => {
                     let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
@@ -380,6 +383,20 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
         let original_columns = output_fields(&input.plan);
+        let constant_result = if crate::ir::diagnostics::constant_folding_enabled() { match input_expr {
+            IrExpr::Lit(Lit::Null) => Some(lit(ScalarValue::Boolean(None))),
+            IrExpr::List(items) if items.is_empty() =>
+                Some(lit(matches!(kind, QuantifierKind::All | QuantifierKind::None))),
+            _ => cypher_lists::literal_quantifier(kind, input_expr, predicate)
+                .or_else(|| cypher_lists::closed_quantifier(kind, item_binding, input_expr, predicate, self.graph)),
+        } } else { None };
+        if let Some(value) = constant_result {
+            // An empty or null collection never evaluates its predicate.
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
         let suffix = self.scan_counter;
         self.scan_counter += 1;
         let row_id = format!("__w_quantifier_row_{suffix}");
@@ -388,6 +405,28 @@ impl<'a> LoweringContext<'a> {
         let total = format!("__w_quantifier_total_{suffix}");
         let true_count = format!("__w_quantifier_true_{suffix}");
         let null_count = format!("__w_quantifier_unknown_{suffix}");
+
+        fn has_unscoped_aggregate(plan: &LogicalPlan) -> bool {
+            match plan {
+                LogicalPlan::Aggregate(_) => true,
+                LogicalPlan::Projection(node) => has_unscoped_aggregate(&node.input),
+                LogicalPlan::Filter(node) => has_unscoped_aggregate(&node.input),
+                LogicalPlan::Sort(node) => has_unscoped_aggregate(&node.input),
+                LogicalPlan::Limit(node) => has_unscoped_aggregate(&node.input),
+                LogicalPlan::SubqueryAlias(node) => has_unscoped_aggregate(&node.input),
+                _ => false,
+            }
+        }
+        let input = if has_unscoped_aggregate(&input.plan) {
+            // Complete collection aggregates before assigning an occurrence
+            // identity and exposing the same list under a second alias.
+            // Otherwise SQL unparse can duplicate ARRAY_AGG in both columns
+            // and mix the aggregation and window in one SELECT.
+            let mut scope = format!("__w_sql_cte_quantifier_aggregate_{suffix}");
+            while has_exact_col(&input.plan, &format!("{scope}_guard")) { scope.push('_'); }
+            let plan = collections::unnest_scope(input.plan.clone(), scope)?;
+            input.with_plan(plan)
+        } else { input };
 
         let list = self.lower_list_operand(&input.plan, input_expr)?;
         let list_type = list
@@ -402,6 +441,53 @@ impl<'a> LoweringContext<'a> {
             ));
         }
 
+        if !self.options.native_values
+            && matches!(predicate, IrExpr::Lit(Lit::Bool(_) | Lit::Null))
+        {
+            // Literal predicates depend only on list cardinality, not its
+            // items. Avoid UNNEST, per-row identities and grouped reduction.
+            // Materialize the operand once, including volatile list sources.
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(list.alias(&list_col));
+            let listed = collections::unnest_scope(
+                LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?,
+                format!("__w_sql_cte_quantifier_constant_{suffix}"),
+            )?;
+            let length = datafusion::functions_nested::expr_fn::array_length(col_exact(&list_col));
+            let empty = length.clone().eq(lit(0_u64));
+            let null_bool = lit(ScalarValue::Boolean(None));
+            let value = match (kind, predicate) {
+                (QuantifierKind::All, IrExpr::Lit(Lit::Bool(true)))
+                | (QuantifierKind::None, IrExpr::Lit(Lit::Bool(false))) => lit(true),
+                (QuantifierKind::Any | QuantifierKind::Single, IrExpr::Lit(Lit::Bool(false))) => lit(false),
+                (QuantifierKind::All | QuantifierKind::None, IrExpr::Lit(Lit::Bool(_))) => empty,
+                (QuantifierKind::Any, IrExpr::Lit(Lit::Bool(true))) => Expr::Not(Box::new(empty)),
+                (QuantifierKind::Single, IrExpr::Lit(Lit::Bool(true))) => length.eq(lit(1_u64)),
+                (_, IrExpr::Lit(Lit::Null)) => Expr::Case(Case::new(None,
+                    vec![(Box::new(empty), Box::new(lit(matches!(kind, QuantifierKind::All | QuantifierKind::None))))],
+                    Some(Box::new(null_bool.clone())))),
+                _ => unreachable!("literal predicate checked above"),
+            };
+            let value = Expr::Case(Case::new(None,
+                vec![(Box::new(col_exact(&list_col).is_null()), Box::new(null_bool))],
+                Some(Box::new(value))));
+            let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
+            columns.push(value.alias(output));
+            return Ok(input.with_plan(LogicalPlanBuilder::from(listed).project(columns)?.build()?));
+        }
+
+        if let Some(value) = self.lower_scalar_quantifier(&input.plan, kind, item_binding, list.clone(), predicate)? {
+            let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
+
+        // Only repeatable SQL sources use shared-base restoration. Native
+        // execution and effectful sources retain the single-stream reduction.
+        let restore_from_base = !self.options.native_values
+            && super::list_comparison::immutable_source_plan(&input.plan)
+            && super::list_comparison::repeatable(&input.plan, &list);
         let row_number = df_window::row_number()
             .window_frame(datafusion::logical_expr::WindowFrame::new(None))
             .build()?.alias(row_id.clone());
@@ -413,16 +499,28 @@ impl<'a> LoweringContext<'a> {
         let listed = LogicalPlanBuilder::from(numbered).project(list_projection)?.build()?;
         let listed = collections::unnest_scope(listed, format!("__w_sql_cte_quantifier_list_{suffix}"))?;
         let list_length = datafusion::functions_nested::expr_fn::array_length(col_exact(&list_col));
-        let mut base_projection = existing_columns(&listed, &BTreeSet::new());
+        // Scope guards establish SQL boundaries but are not quantifier data.
+        // Carry only original bindings and the state used by the next stage.
+        let mut base_projection = original_columns.iter().map(col_exact).collect::<Vec<_>>();
+        base_projection.extend([col_exact(&row_id), col_exact(&list_col)]);
         base_projection.extend([
             col_exact(&list_col).is_null().alias(input_null.clone()),
             Expr::Cast(Cast::new(Box::new(list_length), DataType::Int64)).alias(total.clone()),
         ]);
         let base = LogicalPlanBuilder::from(listed).project(base_projection)?.build()?;
-
         let shadowed = original_columns.iter().any(|column| column == item_binding);
         let outer_item = format!("__w_quantifier_outer_item_{suffix}");
-        let mut expanded_projection = existing_columns(&base, &BTreeSet::from([item_binding.into()]));
+        // This marker only enables SQL-emission restoration. The relational
+        // plan itself still reduces one stream, including native execution.
+        let base = if restore_from_base {
+            let mut columns = existing_columns(&base, &BTreeSet::new());
+            if shadowed { columns.push(col_exact(item_binding).alias(&outer_item)); }
+            LogicalPlanBuilder::from(base).project(columns)?
+                .alias(format!("__w_sql_cte_quantifier_base_{suffix}"))?.build()?
+        } else { base };
+        let mut expanded_projection = original_columns.iter()
+            .filter(|column| column.as_str() != item_binding).map(col_exact).collect::<Vec<_>>();
+        expanded_projection.extend([col_exact(&row_id), col_exact(&input_null), col_exact(&total)]);
         if shadowed { expanded_projection.push(col_exact(item_binding).alias(&outer_item)); }
         expanded_projection
             .push(collections::outer_list(col_exact(&list_col), &list_type)?.alias(item_binding));
@@ -443,7 +541,12 @@ impl<'a> LoweringContext<'a> {
             collections::unnest_scope(expanded, format!("__w_sql_cte_quantifier_items_{suffix}"))?;
         let predicate = self.lower_case_condition(&expanded, predicate)?;
         let predicate_col = format!("__w_quantifier_predicate_{suffix}");
-        let mut evaluated = existing_columns(&expanded, &BTreeSet::new());
+        // The item and expanded list are consumed by the predicate exactly
+        // here. Do not propagate them (or UNNEST guards) into grouped reduction.
+        let mut evaluated = original_columns.iter().map(|column| {
+            col_exact(if shadowed && column == item_binding { &outer_item } else { column })
+        }).collect::<Vec<_>>();
+        evaluated.extend([col_exact(&row_id), col_exact(&input_null), col_exact(&total)]);
         // Empty/null lists have a synthetic outer-UNNEST row. Do not evaluate
         // a possibly throwing or volatile predicate for that nonexistent item.
         let predicate = Expr::Case(Case::new(None, vec![(
@@ -463,22 +566,26 @@ impl<'a> LoweringContext<'a> {
                 Some(Box::new(lit(0_i64))),
             ))
         };
-        // Group the one expanded stream, retaining every original binding.
-        // Joining a cloned base back onto row_number() both reevaluated volatile
-        // inputs and lost aliases from preceding quantifiers in SQL emission.
-        let mut groups = original_columns.iter().map(|column| {
-            col_exact(if shadowed && column == item_binding { &outer_item } else { column })
+        // The row number identifies an input occurrence before expansion.
+        // Every carried binding and list metadata value is invariant within
+        // that occurrence, including the synthetic empty/null-list row. Hash
+        // only that identity: grouping whole lists for each expanded element
+        // otherwise adds list-length work to every predicate evaluation.
+        // Carry values from this same stream; joining a cloned base back would
+        // reevaluate volatile inputs and can lose preceding quantifier aliases.
+        let mut carried = original_columns.iter().map(|column| {
+            if shadowed && column == item_binding { outer_item.clone() } else { column.clone() }
         }).collect::<Vec<_>>();
-        groups.extend([col_exact(&row_id), col_exact(&input_null), col_exact(&total)]);
+        carried.extend([input_null.clone(), total.clone()]);
+        let mut aggregates = carried.into_iter().map(|column| {
+            datafusion::functions_aggregate::first_last::first_value(col_exact(&column), vec![]).alias(column)
+        }).collect::<Vec<_>>();
+        aggregates.extend([
+            df_sum(count_case(true_value)).alias(true_count.clone()),
+            df_sum(count_case(unknown_value)).alias(null_count.clone()),
+        ]);
         let reduced = LogicalPlanBuilder::from(expanded)
-            .aggregate(
-                groups,
-                vec![
-                    df_sum(count_case(true_value)).alias(true_count.clone()),
-                    df_sum(count_case(unknown_value)).alias(null_count.clone()),
-                ],
-            )?
-            .build()?;
+            .aggregate(vec![col_exact(&row_id)], aggregates)?.build()?;
 
         let true_is_zero = binary(col_exact(&true_count), BinaryOp::Eq, lit(0_i64));
         let true_is_one = binary(col_exact(&true_count), BinaryOp::Eq, lit(1_i64));

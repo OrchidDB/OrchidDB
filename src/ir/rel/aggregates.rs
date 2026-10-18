@@ -3,6 +3,73 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    /// A uniform scalar collection has a lossless native SQL list carrier.
+    /// Graph/domain values and heterogeneous carriers retain their runtime path.
+    pub(super) fn lower_collect_non_null(
+        &self, plan: &LogicalPlan, agg: &AggCall, ordinal: &str, rank: Option<&str>,
+    ) -> RelResult<Expr> {
+        fn encoded_collection_input(plan: &LogicalPlan, expr: &IrExpr) -> bool {
+            collections::is_encoded_property(plan, expr)
+                || matches!(expr, IrExpr::Binding(binding)
+                    if has_exact_col(plan, &casts::value_union_tag_col(binding)))
+                || matches!(expr, IrExpr::List(items)
+                    if items.iter().any(|item| encoded_collection_input(plan, item)))
+        }
+        if agg.arg.as_ref().is_some_and(|arg| encoded_collection_input(plan, arg)) {
+            return Err(RelError::Unsupported("Cypher collection of encoded properties requires native values".into()));
+        }
+        let mut value = self.lower_required_agg_arg(plan, &agg.arg)?;
+        fn concrete_null_leaves(ty: &DataType) -> DataType {
+            match ty {
+                DataType::Null => DataType::Int64,
+                DataType::List(field) => DataType::List(Arc::new(field.as_ref().clone()
+                    .with_data_type(concrete_null_leaves(field.data_type())))),
+                DataType::LargeList(field) => DataType::LargeList(Arc::new(field.as_ref().clone()
+                    .with_data_type(concrete_null_leaves(field.data_type())))),
+                DataType::FixedSizeList(field, size) => DataType::FixedSizeList(Arc::new(field.as_ref().clone()
+                    .with_data_type(concrete_null_leaves(field.data_type()))), *size),
+                _ => ty.clone(),
+            }
+        }
+        let original = value.get_type(plan.schema())?;
+        let element = concrete_null_leaves(&original);
+        if element != original {
+            value = value.cast_to(&element, plan.schema())?;
+        }
+        fn primitive_collection_type(ty: &DataType) -> bool {
+            match ty {
+                DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16
+                | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16
+                | DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64
+                | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => true,
+                DataType::List(field) | DataType::LargeList(field)
+                | DataType::FixedSizeList(field, _) => primitive_collection_type(field.data_type()),
+                _ => false,
+            }
+        }
+        // DISTINCT currently partitions by scalar Cypher keys. A nested list
+        // needs a recursive semantic key before SQL equality may deduplicate it.
+        if agg.distinct && element.is_nested() {
+            return Err(RelError::Unsupported("Distinct nested collection requires recursive Cypher identity".into()));
+        }
+        if !primitive_collection_type(&element) {
+            return Err(RelError::Unsupported("Cypher collection element requires native values".into()));
+        }
+        let mut predicate = value.clone().is_not_null();
+        if let Some(rank) = rank {
+            predicate = predicate.and(col_exact(rank).eq(lit(1_u64)));
+        }
+        let collected = df_array_agg(value.clone()).filter(predicate)
+            .order_by(vec![col_exact(ordinal).sort(true, false)]).build()?;
+        let empty_type = DataType::List(Arc::new(Field::new("item", element.clone(), true)));
+        // The SQL literal `[]` has no nested element evidence. Keep an explicit
+        // cast even when its Arrow type already matches the aggregate result.
+        let empty = Expr::Cast(Cast::new(Box::new(lit(ScalarValue::List(
+            ScalarValue::new_list_nullable(&[], &element),
+        ))), empty_type));
+        Ok(df_core::coalesce(vec![collected, empty]))
+    }
+
     pub(super) fn lower_engine_aggregate(
         &self,
         plan: &LogicalPlan,
@@ -26,7 +93,7 @@ impl<'a> LoweringContext<'a> {
                 ));
             }
         };
-        let args = args
+        let mut args = args
             .into_iter()
             .map(|arg| {
                 if matches!(arg, IrExpr::List(_)) {
@@ -38,6 +105,18 @@ impl<'a> LoweringContext<'a> {
                 }
             })
             .collect::<RelResult<Vec<_>>>()?;
+        if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) {
+            for arg in &mut args {
+                let kind = arg.get_type(plan.schema())?;
+                if kind == DataType::Null {
+                    *arg = arg.clone().cast_to(&DataType::Float64, plan.schema())?;
+                } else if !kind.is_numeric() {
+                    // Empty UNWIND sources can carry a VARCHAR placeholder.
+                    // DuckDB cannot bind STDDEV(VARCHAR), even for zero rows.
+                    return Err(RelError::Unsupported("Cypher deviation requires a numeric SQL operand".into()));
+                }
+            }
+        }
         let expr = crate::ir::functions::native_aggregate(name, args, plan.schema(), agg.distinct)?;
         // Cypher stdev variants return zero for an empty or singleton sample.
         Ok(if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) {
@@ -58,6 +137,14 @@ impl<'a> LoweringContext<'a> {
             ));
         };
         self.lower_expr(plan, arg)
+    }
+
+    pub(super) fn lower_extreme_arg(&self, plan: &LogicalPlan, arg: &Option<IrExpr>) -> RelResult<Expr> {
+        let value = self.lower_required_agg_arg(plan, arg)?;
+        if crate::ir::functions::scalar_union::is_type(&value.get_type(plan.schema())?) {
+            return Err(RelError::Unsupported("Heterogeneous primitive extrema require Cypher ordering".into()));
+        }
+        Ok(value)
     }
 
     pub(super) fn lower_avg_arg(
@@ -245,7 +332,22 @@ pub(super) fn scan_order_keys(plan: &LogicalPlan) -> Vec<datafusion::logical_exp
         .collect()
 }
 
+/// A single scan with projections, filters, and aliases does not need the unparser's
+/// join/UNWIND count workaround. Keep unfamiliar plan shapes conservative.
+pub(super) fn has_simple_count_input(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::TableScan(_) => true,
+        LogicalPlan::Projection(p) => has_simple_count_input(&p.input),
+        LogicalPlan::Filter(p) => has_simple_count_input(&p.input),
+        LogicalPlan::SubqueryAlias(p) => has_simple_count_input(&p.input),
+        _ => false,
+    }
+}
+
 pub(super) fn count_input_rows(plan: &LogicalPlan) -> Expr {
+    if has_simple_count_input(plan) {
+        return count_all();
+    }
     let Some(field) = plan.schema().fields().first() else {
         return count_all();
     };

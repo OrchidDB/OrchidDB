@@ -10,8 +10,36 @@ impl<'a> LoweringContext<'a> {
         right: &Node,
         condition: Option<&IrExpr>,
     ) -> RelResult<LoweredNode> {
-        let left = self.lower_node(left)?;
-        let right = self.lower_node(right)?;
+        let mut left = self.lower_node(left)?;
+        let mut right = self.lower_node(right)?;
+        if self.language == Language::Cypher && kind == JoinKind::Cross && condition.is_none() {
+            fn has_aggregate(plan: &LogicalPlan) -> bool {
+                match plan {
+                    LogicalPlan::Aggregate(_) => true,
+                    LogicalPlan::Projection(p) => has_aggregate(&p.input),
+                    LogicalPlan::SubqueryAlias(p) => has_aggregate(&p.input),
+                    LogicalPlan::Filter(p) => has_aggregate(&p.input),
+                    LogicalPlan::Sort(p) => has_aggregate(&p.input),
+                    LogicalPlan::Limit(p) => has_aggregate(&p.input),
+                    _ => false,
+                }
+            }
+            let mut reserved: BTreeSet<String> = left.plan.schema().fields().iter()
+                .chain(right.plan.schema().fields().iter())
+                .map(|field| field.name().clone()).collect();
+            for node in [&mut left, &mut right] {
+                if has_aggregate(&node.plan) {
+                    // Complete the aggregate before multiplication by the
+                    // other relation; SQL unparse must not lift its operands
+                    // into the cross join's scope.
+                    let mut name = format!("__w_sql_cte_join_aggregate_{}", self.scan_counter);
+                    self.scan_counter += 1;
+                    while reserved.contains(&format!("{name}_guard")) { name.push('_'); }
+                    reserved.insert(format!("{name}_guard"));
+                    node.plan = collections::unnest_scope(node.plan.clone(), name)?;
+                }
+            }
+        }
         let join_type = match kind {
             JoinKind::Inner => JoinType::Inner,
             JoinKind::LeftOuter => JoinType::Left,
@@ -76,6 +104,9 @@ impl<'a> LoweringContext<'a> {
             return self.lower_node(&pushed);
         }
         let left = self.lower_node(left)?;
+        if let Some(marked) = self.try_simple_expand_cardinality(kind, &left, right, outputs)? {
+            return Ok(marked);
+        }
         if let Some(joined) = self.try_simple_expand_apply(kind, &left, right, outputs)? {
             return Ok(joined);
         }
@@ -314,6 +345,15 @@ pub(super) fn with_distinct_ordinal(plan: LogicalPlan, ordinal: &str) -> RelResu
             .filter(filter.predicate.clone())?
             .build()?);
     }
+    if let LogicalPlan::SubqueryAlias(alias) = &plan {
+        let input = with_distinct_ordinal(alias.input.as_ref().clone(), ordinal)?;
+        return Ok(LogicalPlanBuilder::from(input).alias(alias.alias.clone())?.build()?);
+    }
+    if let LogicalPlan::Limit(limit) = &plan {
+        let mut limit = limit.clone();
+        limit.input = Arc::new(with_distinct_ordinal(limit.input.as_ref().clone(), ordinal)?);
+        return Ok(LogicalPlan::Limit(limit));
+    }
     let order = match &plan {
         LogicalPlan::Sort(sort) => sort.expr.clone(),
         _ => Vec::new(),
@@ -426,6 +466,7 @@ pub(super) fn partitioned_limit(
             LogicalPlan::Sort(sort) => !sort.expr.is_empty(),
             LogicalPlan::Projection(projection) => ordered(&projection.input),
             LogicalPlan::Filter(filter) => ordered(&filter.input),
+            LogicalPlan::SubqueryAlias(alias) => ordered(&alias.input),
             _ => false,
         }
     }
@@ -442,14 +483,30 @@ pub(super) fn partitioned_limit(
             _ => Vec::new(),
         }
     }
-    let order = order(&plan);
-    let row_number = unique_internal_alias(&plan, &BTreeSet::new(), "__apply_row_number");
+    let mut order = order(&plan);
+    let mut cleanup = BTreeSet::new();
+    let plan = if order.is_empty() && ordered(&plan) {
+        // A filter above a projection must stay before rank selection, but
+        // that projection may hide/rename the original ORDER BY expression.
+        // Carry its ordinal rather than silently using an unordered window.
+        let ordinal = unique_internal_alias(&plan, &cleanup, "__apply_order_ordinal");
+        let numbered = with_distinct_ordinal(plan, &ordinal)?;
+        let guard = unique_internal_alias(&numbered, &cleanup, "__apply_order_guard");
+        let mut columns = existing_columns_by_name(&numbered, &BTreeSet::new());
+        columns.push(lit(1_i64).alias(&guard));
+        order.push(col_exact(&ordinal).sort(true, false));
+        cleanup.extend([ordinal, guard]);
+        LogicalPlanBuilder::from(numbered).project(columns)?.alias("__w_apply_order")?.build()?
+    } else { plan };
+    let row_number = unique_internal_alias(&plan, &cleanup, "__apply_row_number");
     let partition_by = partition_cols.iter().map(col_exact).collect::<Vec<_>>();
     let mut predicate = binary(col_exact(&row_number), BinaryOp::Gt, lit(offset));
     if let Some(fetch) = fetch {
         predicate = Expr::and(
             predicate,
-            binary(col_exact(&row_number), BinaryOp::Lte, lit(offset + fetch)),
+            // A slice extending past the largest representable ordinal has
+            // no tighter upper bound. Never wrap it back to a small rank.
+            binary(col_exact(&row_number), BinaryOp::Lte, lit(offset.saturating_add(fetch))),
         );
     }
     let window = df_window::row_number()
@@ -458,7 +515,6 @@ pub(super) fn partitioned_limit(
         .order_by(order)
         .build()?
         .alias(row_number.clone());
-    let mut cleanup = BTreeSet::new();
     cleanup.insert(row_number);
     let windowed = LogicalPlanBuilder::from(plan)
         .window(vec![window])?
@@ -682,4 +738,34 @@ pub(super) fn absorbed_correlation(left: &LogicalPlan, right: &LogicalPlan) -> b
         .iter()
         .filter(|field| field.name() != "__w_one_row")
         .all(|field| right_names.contains(field.name().as_str()))
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn partitioned_slice_retains_hidden_order_after_filter_and_projection() {
+        let input = LogicalPlanBuilder::values(vec![
+            vec![lit(0_i64), lit(1_i64)], vec![lit(1_i64), lit(2_i64)],
+            vec![lit(0_i64), lit(3_i64)], vec![lit(1_i64), lit(4_i64)],
+        ]).unwrap().project(vec![col_exact("column1").alias("g"), col_exact("column2").alias("x")]).unwrap()
+            .sort(vec![col_exact("x").sort(false, true)]).unwrap()
+            .project(vec![col_exact("g"), (col_exact("x") * lit(10_i64)).alias("y")]).unwrap()
+            .filter(col_exact("y").gt_eq(lit(20_i64))).unwrap().build().unwrap();
+        let limited = partitioned_limit(input, &["g".into()], 0, Some(1)).unwrap();
+        assert!(limited.display_indent().to_string().contains("__apply_order_ordinal ASC"), "{}", limited.display_indent());
+        let plan = LogicalPlanBuilder::from(limited).sort(vec![col_exact("g").sort(true, false)]).unwrap().build().unwrap();
+        let batches = datafusion::prelude::SessionContext::new().execute_logical_plan(plan).await.unwrap().collect().await.unwrap();
+        let values = batches.iter().flat_map(|b| b.column(1).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+        assert_eq!(values, [30, 40]);
+    }
+
+    #[tokio::test]
+    async fn partitioned_slice_saturates_oversized_upper_bound() {
+        let input = LogicalPlanBuilder::values(vec![vec![lit(1_i64)]]).unwrap().build().unwrap();
+        let plan = partitioned_limit(input, &["column1".into()], u64::MAX - 1, Some(10)).unwrap();
+        let batches = datafusion::prelude::SessionContext::new().execute_logical_plan(plan).await.unwrap().collect().await.unwrap();
+        assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(), 0);
+    }
 }

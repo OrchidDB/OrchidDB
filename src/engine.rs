@@ -829,6 +829,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
             let mut context=crate::rdf_engine::RdfSession {resources:&session,mapping:Arc::new(rdf),dataset:"default".into(),scalar_registered:false,last_query_stats:None};
             return context.execute_plan(plan).await;
         }
+        if contains_mutation(&plan.root) { mapping.validate_partitioned_writes()?; }
         let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
         graph.procedures = procedures;
         let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await.map_err(|e|e.to_string())?;

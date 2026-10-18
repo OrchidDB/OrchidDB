@@ -730,6 +730,22 @@ fn load_scan_table(conn: &Connection, key: &str, table: &TableData, atomic: bool
     let arrow_load = |conn: &Connection| -> Result<(), String> {
         conn.execute_batch(&create).map_err(|err| err.to_string())?;
         created.set(true);
+        // A temporal domain is an Arrow STRUCT envelope but its SQL storage
+        // is DATE or VARCHAR. DuckDB accepts STRUCT -> VARCHAR by printing the struct,
+        // silently corrupting the exact temporal payload instead of failing.
+        // Use the domain-aware exchange literal path (including nested lists)
+        // until Arrow ingress recursively unwraps nominal storage envelopes.
+        // Other domain types retain their existing adapter behavior.
+        if renamed.schema.fields().iter().any(|field| {
+            crate::ir::temporal::transport::contains_type(field.data_type())
+        }) {
+            let statements = table_setup_sql(SqlDialect::DuckDb, &renamed)
+                .map_err(|err| err.to_string())?;
+            for statement in statements.into_iter().skip(1) {
+                conn.execute_batch(&statement).map_err(|err| err.to_string())?;
+            }
+            return Ok(());
+        }
         let insert = format!("INSERT INTO {quoted} SELECT * FROM {ARROW_SCAN_FUNCTION}(?, ?)");
         for batch in &renamed.batches {
             let mut offset = 0;

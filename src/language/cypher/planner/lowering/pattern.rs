@@ -464,10 +464,25 @@ fn lower_expand(
 ) -> Node {
     if rel.range.max.is_some_and(|max| rel.range.min > max) {
         // An empty Cypher length interval matches no paths. Keep the input
-        // in the plan so preceding writes still execute.
-        return Node::GraphFilter {
+        // in the plan so preceding writes still execute, and retain a fresh
+        // endpoint's declared node schema so later property reads can bind.
+        let empty = Node::GraphFilter {
             condition: IrExpr::Lit(Lit::Bool(false)),
             input: input.boxed(),
+        };
+        return if target_exists {
+            empty
+        } else {
+            Node::GraphJoin {
+                kind: crate::ir::plan::JoinKind::Cross,
+                left: empty.boxed(),
+                right: Node::GraphNodeScan {
+                    graph: DEFAULT_GRAPH.to_string(),
+                    binding: target.to_string(),
+                    labels: sources::label_expr(target_node.labels.clone()),
+                }.boxed(),
+                condition: None,
+            }
         };
     }
     let variable_length = is_variable_length(&rel.range);

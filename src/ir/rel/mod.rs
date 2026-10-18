@@ -21,6 +21,15 @@ mod scans;
 use scans::*;
 
 mod expression;
+mod graph_scalars;
+mod cypher_maps;
+mod cypher_lists;
+mod collection_evaluation;
+mod table_procedures;
+mod scalar_semantics;
+mod list_comparison;
+mod path_demand;
+mod temporal_semantics;
 use expression::*;
 mod scalar_functions;
 mod scalar_types;
@@ -43,6 +52,8 @@ mod operators;
 use aggregates::*;
 mod branches;
 mod collection_operators;
+mod quantifier_scalar;
+mod primitive_list_comprehension;
 pub(crate) mod range;
 mod expansion;
 mod plan_walk;
@@ -238,6 +249,7 @@ struct LoweringContext<'a> {
     scan_counter: usize,
     correlate_plan: Option<LogicalPlan>,
     rdf_typed_terms_used: bool,
+    scan_logical_labels: bool,
     /// Gremlin step-label bind multiplicity (see `gremlin::label_bind_counts`).
     gremlin_label_binds: BTreeMap<String, usize>,
 }
@@ -269,6 +281,9 @@ impl RelBackend {
     }
 
     fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
+        let specialized = table_procedures::specialize_plan(plan, graph);
+        let specialized = path_demand::specialize_plan(&specialized);
+        let plan = &specialized;
         validate_read_capabilities(plan, ReadCapabilities {read_procedures:self.options.native_values,..ReadCapabilities::LOCAL_DUCKDB})?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin
@@ -293,6 +308,7 @@ impl RelBackend {
             scan_counter: 0,
             correlate_plan: None,
             rdf_typed_terms_used: false,
+            scan_logical_labels: requires_logical_node_labels(&plan.root),
             gremlin_label_binds: if plan.policy.language == Language::Gremlin {
                 gremlin::label_bind_counts(&plan.root)
             } else {
@@ -545,3 +561,7 @@ pub(crate) fn is_language_function(name: &str) -> bool {
 }
 
 pub mod statistics;
+
+mod scalar_union;
+
+mod dynamic_slice;

@@ -82,7 +82,9 @@ async fn void_procedure_preserves_input_rows_without_return_columns() {
         .await
         .unwrap();
     assert_eq!(result.returned.batch.num_rows(), 3);
-    let result = engine.cypher("CALL example.noop()").await.unwrap();
-    assert_eq!(result.returned.batch.num_rows(), 0);
-    assert_eq!(result.returned.batch.num_columns(), 0);
+    for query in ["CALL example.noop()", "CALL example.noop"] {
+        let result = engine.cypher(query).await.unwrap();
+        assert_eq!(result.returned.batch.num_rows(), 0);
+        assert_eq!(result.returned.batch.num_columns(), 0);
+    }
 }

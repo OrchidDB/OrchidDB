@@ -12,10 +12,16 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect))
 }
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
+    if let Some(sql) = super::compact_unwind::emit(&plan, dialect)? { return Ok(sql); }
+    let plan = super::cleanup::simplify(plan)?;
     let plan = super::lowering::transform_relations(plan, dialect)?;
     let plan = crate::ir::rel::representation::select(plan)?.plan;
     validate_portable_calls(&plan, dialect)?;
     let plan = specialize_portable_calls(plan, dialect)?;
+    let plan = super::literal_case::rewrite(plan)?;
+    let plan = super::cleanup::simplify(plan)?;
+    let plan = super::aggregate_scan::rewrite(plan)?;
+    let plan = super::count_filter::rewrite(plan, dialect)?;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
     // residual is authoritative. Do not emit duplicate scan hints under aliases
@@ -39,6 +45,20 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let plan = if !dialect.requires_scope_repair() && !has_rdf_source(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
     } else { plan };
+    // DataFusion may decorrelate a scalar aggregate to a conditionless outer
+    // join. Unlike CROSS JOIN, an outer join requires an explicit SQL predicate.
+    // Add it after optimization, where it cannot be simplified away again.
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Join(mut join) = node else { return Ok(Transformed::no(node)); };
+        if matches!(join.join_type, datafusion::logical_expr::JoinType::Left
+            | datafusion::logical_expr::JoinType::Right | datafusion::logical_expr::JoinType::Full)
+            && join.on.is_empty() && join.filter.is_none()
+            && join.join_constraint == datafusion::logical_expr::JoinConstraint::On {
+            join.filter = Some(lit(true));
+            return Ok(Transformed::yes(LogicalPlan::Join(join)));
+        }
+        Ok(Transformed::no(LogicalPlan::Join(join)))
+    })?.data;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
     Ok(apply_identifier_repairs(sql, &repairs))
@@ -198,6 +218,13 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
         }
         if let Expr::Literal(value, _) = &inner {
+            // DataFusion's generic list unparser loses nested null-list
+            // validity (it renders such elements as empty arrays). Use the
+            // adapter's recursive, schema-aware literal codec instead.
+            if dialect == SqlDialect::DuckDb && matches!(value, ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) && !value.is_null() {
+                return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
+                    .map_err(|e| DataFusionError::Plan(e.to_string()))?));
+            }
             if dialect==SqlDialect::DuckDb && value.is_null() && matches!(value.data_type(),DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(lit(ScalarValue::Null),value.data_type(),dialect.name())?));
             }
@@ -206,6 +233,12 @@ pub(super) fn encode_expression_literals(
             }
             if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
                 let storage = crate::ir::functions::domain::storage(value)?;
+                // The domain cast supplies DATE already; passing Date32 to
+                // the generic unparser would add a second date cast.
+                let storage = if crate::ir::temporal::transport::is_date_type(&value.data_type()) && !storage.is_null() {
+                    let array = storage.to_array()?;
+                    ScalarValue::Utf8(Some(arrow::util::display::array_value_to_string(array.as_ref(), 0)?))
+                } else { storage };
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(storage), value.data_type(), dialect.name(),
                 )?));
@@ -400,102 +433,87 @@ pub(super) fn apply_identifier_repairs(mut sql: String, repairs: &[(String, Stri
     sql
 }
 
-/// Re-attach aggregate `ORDER BY` clauses the unparser drops.
-///
-/// `array_agg(x ORDER BY k)` is valid in every dialect here, but DataFusion's
-/// unparser only emits an aggregate's ordering as `WITHIN GROUP`, and only
-/// for functions that accept that clause. For `array_agg` the ordering simply
-/// vanishes, so the emitted SQL means something different from the plan —
-/// collection order becomes whatever the engine happens to produce.
-///
-/// The call text is regenerated with the same unparser that produced the
-/// statement, so it matches the emitted text exactly, and the ordering is
-/// spliced in before the closing parenthesis. Anything ambiguous (a call that
-/// does not appear exactly once) is reported as unsupported rather than
-/// patched on a guess — a wrong splice would be silently wrong SQL, which is
-/// precisely what this is fixing.
+/// Reattach aggregate ordering to syntax nodes, including copies introduced by
+/// the unparser when it expands COALESCE or substitutes a projected alias.
+/// Equal call syntax is safe to rewrite only when every matching logical call
+/// has the same ordering contract (including unordered calls).
 pub(super) fn restore_aggregate_ordering(
     plan: &LogicalPlan,
     unparser: &Unparser<'_>,
     dialect: SqlDialect,
-    sql: String,
+    mut statement: datafusion::sql::sqlparser::ast::Statement,
 ) -> SqlResult<String> {
-    let mut ordered: Vec<datafusion::logical_expr::expr::AggregateFunction> = Vec::new();
+    use datafusion::sql::sqlparser::ast;
+    use std::ops::ControlFlow;
+    let mut aggregates = Vec::new();
     plan.apply_with_subqueries(|node| {
         node.apply_expressions(|expr| {
             expr.apply(|inner| {
                 if let Expr::AggregateFunction(agg) = inner
-                    && !agg.params.order_by.is_empty()
                     && !agg.func.supports_within_group_clause()
                 {
-                    ordered.push(agg.clone());
+                    aggregates.push(agg.clone());
                 }
                 Ok(TreeNodeRecursion::Continue)
             })
         })?;
         Ok(TreeNodeRecursion::Continue)
     })?;
-
-    let mut sql = sql;
-    for agg in ordered {
+    // Keep AST equality rather than substring matches: call-looking text in a
+    // string literal or quoted identifier is data and must never be rewritten.
+    let mut repairs: Vec<(ast::Expr, ast::Expr, bool, usize)> = Vec::new();
+    for agg in aggregates {
         let mut plain = agg.clone();
-        plain.params.order_by = Vec::new();
-        let mut call = unparser
-            .expr_to_sql(&Expr::AggregateFunction(plain))
-            .map_err(|err| SqlError::Unsupported(format!("aggregate call: {err}")))?;
+        plain.params.order_by.clear();
+        let mut call = unparser.expr_to_sql(&Expr::AggregateFunction(plain))?;
         functions::prepare_ast(&mut call, dialect)?;
-        let call = call.to_string();
-        if sql.matches(call.as_str()).count() != 1 {
-            return Err(SqlError::Unsupported(format!(
-                "cannot place ORDER BY on `{call}` unambiguously"
-            )));
-        }
-        let mut keys = Vec::with_capacity(agg.params.order_by.len());
-        for sort in &agg.params.order_by {
-            let mut key = unparser
-                .expr_to_sql(&sort.expr)
-                .map_err(|err| SqlError::Unsupported(format!("order key: {err}")))?;
-            functions::prepare_ast(&mut key, dialect)?;
-            keys.push(format!(
-                "{key} {} NULLS {}",
-                if sort.asc { "ASC" } else { "DESC" },
-                if sort.nulls_first { "FIRST" } else { "LAST" }
-            ));
-        }
-        let Some(close) = matching_call_close(&call) else {
-            return Err(SqlError::Unsupported(format!(
-                "unrecognized aggregate call text `{call}`"
-            )));
-        };
-        let ordered_call = format!(
-            "{} ORDER BY {}{}",
-            &call[..close],
-            keys.join(", "),
-            &call[close..]
-        );
-        sql = sql.replace(call.as_str(), &ordered_call);
-    }
-    Ok(sql)
-}
-
-pub(super) fn matching_call_close(call: &str) -> Option<usize> {
-    let open = call.find('(')?;
-    let mut depth = 0_u32;
-    let mut quoted = false;
-    for (offset, ch) in call[open..].char_indices() {
-        match ch {
-            '\'' => quoted = !quoted,
-            '(' if !quoted => depth += 1,
-            ')' if !quoted => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(open + offset);
-                }
+        let mut ordered = call.clone();
+        if !agg.params.order_by.is_empty() {
+            let mut keys = Vec::new();
+            for sort in &agg.params.order_by {
+                let mut expr = unparser.expr_to_sql(&sort.expr)?;
+                functions::prepare_ast(&mut expr, dialect)?;
+                keys.push(ast::OrderByExpr {
+                    expr,
+                    options: ast::OrderByOptions {
+                        asc: Some(sort.asc), nulls_first: Some(sort.nulls_first),
+                    },
+                    with_fill: None,
+                });
             }
-            _ => {}
+            let ast::Expr::Function(function) = &mut ordered else {
+                return Err(SqlError::Unsupported(format!("unrecognized ordered aggregate `{call}`")));
+            };
+            let ast::FunctionArguments::List(args) = &mut function.args else {
+                return Err(SqlError::Unsupported(format!("unrecognized aggregate arguments `{call}`")));
+            };
+            args.clauses.push(ast::FunctionArgumentClause::OrderBy(keys));
+        }
+        if let Some((_, existing, _, _)) = repairs.iter().find(|(plain, _, _, _)| plain == &call) {
+            if existing != &ordered {
+                return Err(SqlError::Unsupported(format!(
+                    "cannot place different ORDER BY contracts on indistinguishable aggregate `{call}`"
+                )));
+            }
+        } else {
+            repairs.push((call, ordered, !agg.params.order_by.is_empty(), 0));
         }
     }
-    None
+    let _: ControlFlow<()> = ast::visit_expressions_mut(&mut statement, |expr| {
+        if matches!(expr, ast::Expr::Function(_)) {
+            if let Some((_, replacement, _, seen)) = repairs.iter_mut().find(|(plain, _, _, _)| plain == expr) {
+                *expr = replacement.clone();
+                *seen += 1;
+            }
+        }
+        ControlFlow::Continue(())
+    });
+    for (call, _, ordered, seen) in repairs {
+        if ordered && seen == 0 {
+            return Err(SqlError::Unsupported(format!("cannot locate ordered aggregate `{call}` in emitted SQL")));
+        }
+    }
+    Ok(statement.to_string())
 }
 
 /// Remove projections that select every input column unchanged. The unparser
@@ -587,20 +605,25 @@ pub(super) fn is_identity_projection(projection: &datafusion::logical_expr::Proj
         return false;
     }
     let columns_only = projection.expr.iter().zip(input_schema.iter()).all(
-        |(expr, (qualifier, field))| match expr {
+        |(expr, (qualifier, field))| {
+            // A same-name alias still only forwards the column. The output
+            // schema check below rules out renaming or qualifier changes.
+            let mut expr = expr;
+            while let Expr::Alias(alias) = expr { expr = alias.expr.as_ref(); }
+            match expr {
             Expr::Column(column) => {
                 column.name == *field.name()
                     && (column.relation.is_none() || column.relation.as_ref() == qualifier)
             }
             _ => false,
-        },
+        }},
     );
     // Removing the projection must not change the observable schema
     // (names and qualifiers) the parent plan sees.
     columns_only
         && projection.schema.iter().zip(input_schema.iter()).all(
             |((out_qualifier, out_field), (in_qualifier, in_field))| {
-                out_qualifier == in_qualifier && out_field.name() == in_field.name()
+                out_qualifier == in_qualifier && out_field == in_field
             },
         )
 }
@@ -625,6 +648,25 @@ fn strip_constant_sorts(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
 
 /// The upstream unparser overwrites an enclosing LIMIT with Sort.fetch,
 /// which includes the outer OFFSET. Keep TopK as a separate limit scope.
+fn sort_scope(input: LogicalPlan, alias: String) -> datafusion::common::Result<LogicalPlan> {
+    // A SQL scope changes physical qualifiers, not the output contract seen
+    // by the existing Sort and its parents. Rebind by ordinal, never by a
+    // potentially ambiguous unqualified name.
+    let schema = input.schema().clone();
+    let scoped = datafusion::logical_expr::LogicalPlanBuilder::from(input).alias(alias)?.build()?;
+    // Unqualified consumers already resolve through the new scope by name.
+    // Only existing qualified bindings need an explicit schema-restoring layer.
+    if schema.iter().all(|(qualifier, _)| qualifier.is_none()) {
+        return Ok(scoped);
+    }
+    let exprs = scoped.schema().columns().into_iter().zip(schema.iter())
+        .map(|(column, (qualifier, field))| Expr::Column(column)
+            .alias_qualified(qualifier.cloned(), field.name())).collect();
+    Ok(LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(
+        exprs, Arc::new(scoped), schema,
+    )?))
+}
+
 fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     let mut boundary = 0;
     Ok(plan.transform_up_with_subqueries(|node| {
@@ -632,16 +674,17 @@ fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         // SQL ORDER BY expressions can resolve a shadowed name against the
         // projection input instead of its output. Materialize that scope.
         if matches!(sort.input.as_ref(), LogicalPlan::Projection(_)) {
-            sort.input = std::sync::Arc::new(datafusion::logical_expr::LogicalPlanBuilder::from(sort.input.as_ref().clone())
-                .alias(format!("__w_sql_cte_sort_input_{boundary}"))?.build()?);
+            sort.input = Arc::new(sort_scope(sort.input.as_ref().clone(),
+                format!("__w_sql_cte_sort_input_{boundary}"))?);
             boundary += 1;
         }
         let Some(fetch) = sort.fetch.take() else { return Ok(Transformed::yes(LogicalPlan::Sort(sort))); };
         let columns = sort.input.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
         let keys = sort.expr.clone();
-        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Sort(sort))
-            .limit(0, Some(fetch))?.project(columns)?
-            .alias(format!("__w_sql_cte_topk_{boundary}"))?.sort(keys)?.build()?;
+        let limited = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Sort(sort))
+            .limit(0, Some(fetch))?.project(columns)?.build()?;
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(sort_scope(limited,
+            format!("__w_sql_cte_topk_{boundary}"))?).sort(keys)?.build()?;
         boundary += 1;
         Ok(Transformed::yes(plan))
     })?.data)
@@ -725,4 +768,67 @@ fn specialize_portable_calls(plan: LogicalPlan, dialect: SqlDialect) -> SqlResul
             })?.map_data(|expr| Ok(saved.restore(expr)))?)
         })
     })?.data)
+}
+
+#[cfg(test)]
+mod ordering_repair_tests {
+    use super::*;
+    use datafusion::logical_expr::{ExprFunctionExt, LogicalPlanBuilder};
+    use datafusion::prelude::col;
+    use datafusion::functions_aggregate::expr_fn::array_agg;
+    use datafusion::sql::sqlparser::{dialect::GenericDialect, parser::Parser};
+
+    fn plan(aggregates: Vec<Expr>) -> LogicalPlan {
+        LogicalPlanBuilder::empty(true)
+            .project(vec![lit(1_i64).alias("x"),lit(2_i64).alias("k")]).unwrap()
+            .aggregate(Vec::<Expr>::new(), aggregates).unwrap().build().unwrap()
+    }
+    fn repair(plan: &LogicalPlan, sql: &str) -> SqlResult<String> {
+        let dialect = SqlDialect::DuckDb.unparser_dialect();
+        let unparser = Unparser::new(dialect.as_ref());
+        let statement = Parser::parse_sql(&GenericDialect, sql).unwrap().remove(0);
+        restore_aggregate_ordering(plan, &unparser, SqlDialect::DuckDb, statement)
+    }
+    fn ordered(ascending: bool) -> Expr {
+        array_agg(col("x")).order_by(vec![col("k").sort(ascending,false)]).build().unwrap()
+    }
+    #[test]
+    fn repeated_ordered_calls_are_repaired_without_changing_literal_data() {
+        let plan = plan(vec![ordered(true).alias("xs")]);
+        let sql = repair(&plan, "SELECT CASE WHEN array_agg(\"x\") IS NULL THEN array_agg(\"x\") ELSE NULL END, 'array_agg(\"x\")'").unwrap();
+        assert_eq!(sql.matches("array_agg(\"x\" ORDER BY \"k\" ASC NULLS LAST)").count(),2);
+        assert!(sql.contains("'array_agg(\"x\")'"));
+    }
+    #[test]
+    fn different_ordering_contracts_cannot_be_guessed_from_equal_call_syntax() {
+        for second in [array_agg(col("x")), ordered(false)] {
+            let plan = plan(vec![ordered(true).alias("a"),second.alias("b")]);
+            assert!(repair(&plan,"SELECT array_agg(\"x\"), array_agg(\"x\")").is_err());
+        }
+    }
+    #[test]
+    fn conditionless_outer_joins_emit_an_explicit_true_predicate() {
+        use datafusion::logical_expr::JoinType;
+        for kind in [JoinType::Left, JoinType::Right, JoinType::Full] {
+            let scan = |name: &str, column: &str| {
+                let table = datafusion::datasource::empty::EmptyTable::new(Arc::new(
+                    arrow::datatypes::Schema::new(vec![Field::new(column, DataType::Int64, true)])));
+                LogicalPlanBuilder::scan(name, datafusion::datasource::provider_as_source(Arc::new(table)), None)
+                    .unwrap().build().unwrap()
+            };
+            let left = scan("left_input", "left_value");
+            let right = scan("right_input", "right_value");
+            let plan = LogicalPlanBuilder::from(left)
+                .join(right, kind, (Vec::<Column>::new(), Vec::<Column>::new()), Some(lit(true)))
+                .unwrap().build().unwrap();
+            // Reproduce the optimizer's conditionless join; the builder itself
+            // rejects this shape when supplied directly by callers.
+            let LogicalPlan::Join(mut join) = plan else { unreachable!() };
+            join.filter = None;
+            let sql = unparse_plan(LogicalPlan::Join(join), SqlDialect::DuckDb).unwrap();
+            assert!(sql.contains("ON true"), "{sql}");
+            Parser::parse_sql(&GenericDialect, &sql).unwrap();
+        }
+    }
+
 }

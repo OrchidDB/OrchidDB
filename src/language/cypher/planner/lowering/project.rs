@@ -15,6 +15,8 @@ pub(crate) use scope::{
 mod aliases;
 use aliases::{projection_aliases, shadowed_projection_fields, substitute_projection_aliases};
 mod materialize;
+mod constant_quantifier;
+mod quantifier_domains;
 pub(crate) use materialize::lower_expr_with_input;
 use materialize::requires_scoped_materialization;
 

@@ -13,13 +13,14 @@ pub(super) struct IslandMemo {
     stats: BTreeMap<usize, GraphPlanStats>,
     lowered: BTreeMap<(usize, BTreeMap<String, usize>), Option<LoweredNode>>,
     next_scan: usize,
+    scan_logical_labels: bool,
     pub attempts: usize,
     pub hits: usize,
 }
 pub(super) type SharedMemo = Arc<Mutex<IslandMemo>>;
 impl IslandMemo {
     pub fn new(root: &Node) -> SharedMemo {
-        let mut memo = Self::default();
+        let mut memo = Self { scan_logical_labels: requires_logical_node_labels(root), ..Self::default() };
         let mut results = BTreeMap::new();
         let mut pending = vec![(root, false)];
         while let Some((node, ready)) = pending.pop() {
@@ -158,6 +159,7 @@ impl RelBackend {
                 scan_counter,
                 correlate_plan: None,
                 rdf_typed_terms_used: false,
+                scan_logical_labels: memo.lock().unwrap().scan_logical_labels,
                 gremlin_label_binds: if policy.language == Language::Gremlin {
                     gremlin::label_bind_counts(root)
                 } else {

@@ -58,6 +58,21 @@ impl OptimizerRule for ConstraintDistinctGuard {
     }
 }
 
+/// Sessions can outlive the diagnostic scope; consult it at rewrite time.
+#[derive(Debug)]
+struct ScopedConstantFolding {
+    inner: Arc<dyn OptimizerRule + Send + Sync>,
+}
+impl OptimizerRule for ScopedConstantFolding {
+    fn name(&self) -> &str { self.inner.name() }
+    fn supports_rewrite(&self) -> bool { true }
+    fn apply_order(&self) -> Option<datafusion::optimizer::ApplyOrder> { self.inner.apply_order() }
+    fn rewrite(&self, plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<Transformed<LogicalPlan>> {
+        if crate::ir::diagnostics::constant_folding_enabled() { self.inner.rewrite(plan, config) }
+        else { Ok(Transformed::no(plan)) }
+    }
+}
+
 pub(super) fn session(config: SessionConfig) -> SessionContext {
     let session = SessionContext::new_with_config(config);
     let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = session
@@ -65,7 +80,9 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
         .optimizers()
         .iter()
         .map(|rule| {
-            if rule.name() == "optimize_projections" {
+            if rule.name() == "simplify_expressions" {
+                Arc::new(ScopedConstantFolding { inner: rule.clone() }) as Arc<dyn OptimizerRule + Send + Sync>
+            } else if rule.name() == "optimize_projections" {
                 Arc::new(RecursiveProjection {
                     inner: rule.clone(),
                 }) as Arc<dyn OptimizerRule + Send + Sync>
@@ -85,6 +102,7 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
 }
 
 pub(super) fn simplify_bound_expressions(plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<LogicalPlan> {
+    if !crate::ir::diagnostics::constant_folding_enabled() { return Ok(plan); }
     use datafusion::common::tree_node::TreeNode;
     use datafusion::logical_expr::Expr;
     use datafusion::optimizer::{simplify_expressions::SimplifyExpressions, utils::NamePreserver};
@@ -124,4 +142,20 @@ pub(super) fn simplify_bound_expressions(plan: LogicalPlan, config: &dyn Optimiz
         })?;
         node.transform_data(|node| SimplifyExpressions::new().rewrite(node, config))
     })?.data)
+}
+
+#[cfg(test)]
+mod diagnostic_folding_tests {
+    use super::*;
+    #[tokio::test]
+    async fn existing_session_observes_scoped_folding_mode() {
+        use datafusion::{logical_expr::LogicalPlanBuilder, prelude::lit};
+        let context = session(SessionConfig::new());
+        let plan = LogicalPlanBuilder::empty(true).project(vec![(lit(1_i64)+lit(2_i64)).alias("result")]).unwrap().build().unwrap();
+        crate::ir::diagnostics::without_constant_folding(async {
+            let optimized = context.state().optimize(&plan).unwrap();
+            assert!(optimized.display_indent().to_string().contains("+"));
+        }).await;
+        assert!(!context.state().optimize(&plan).unwrap().display_indent().to_string().contains("+"));
+    }
 }

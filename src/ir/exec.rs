@@ -114,6 +114,12 @@ pub(crate) fn batch_to_bindings(
         if name.contains(PROP_MARKER) || name.contains(STAR_SEP) {
             continue;
         }
+        // Logical labels accompany a node's identity and are not a separate
+        // user binding. A scalar alias with this suffix is still a scalar.
+        if let Some(binding) = name.strip_suffix("__cypher_labels")
+            && find(ID_SUFFIX, binding).is_some() && find(LABEL_SUFFIX, binding).is_some() {
+            continue;
+        }
         // Derive the binding name from whichever structural suffix matched.
         let binding = [
             SRC_ID_SUFFIX,
@@ -248,6 +254,16 @@ pub(crate) fn batch_to_bindings(
 fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<Value> {
     if row >= array.len() || array.is_null(row) {
         return Some(Value::Null);
+    }
+    if crate::ir::functions::scalar_union::is_type(array.data_type()) {
+        return crate::ir::functions::scalar_union::decode(&datafusion::common::ScalarValue::try_from_array(array,row).ok()?);
+    }
+    if crate::ir::functions::domain::descriptor(array.data_type()).is_some_and(|(name,_)|name == "cypher_integer") {
+        return crate::ir::value::scalar_semantic_value(&datafusion::common::ScalarValue::try_from_array(array,row).ok()?);
+    }
+    if crate::ir::temporal::transport::is_type(array.data_type()) {
+        let value = datafusion::common::ScalarValue::try_from_array(array, row).ok()?;
+        return crate::ir::temporal::transport::decode(&value).ok().map(Value::Temporal);
     }
     if crate::ir::functions::domain::descriptor(array.data_type()).is_some()
         || crate::ir::rel::native_values::is_value(array.data_type())

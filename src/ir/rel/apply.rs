@@ -1,6 +1,7 @@
 //! Relational contracts for per-row apply and scalar subqueries.
 
 use super::*;
+use datafusion::common::ExprSchema;
 
 fn simple_expand(mut node: &Node) -> Option<&Node> {
     while let Node::GraphApply {
@@ -101,6 +102,224 @@ pub(super) fn push_simple_existence(kind: ApplyKind, left: &Node, right: &Node) 
 }
 
 impl LoweringContext<'_> {
+    /// One-hop existence/count has one value per input occurrence. Correlated
+    /// EXISTS/COUNT preserves duplicates without occurrence windows or lists.
+    pub(super) fn try_simple_expand_cardinality(
+        &mut self,
+        kind: ApplyKind,
+        left: &LoweredNode,
+        right: &Node,
+        outputs: &[String],
+    ) -> RelResult<Option<LoweredNode>> {
+        if self.language != Language::Cypher
+            || kind != ApplyKind::Scalar
+            || self.options.native_values
+        {
+            return Ok(None);
+        }
+        let Node::GraphProject {
+            mode: ProjectMode::ReplaceScope,
+            items,
+            input,
+            ..
+        } = right
+        else {
+            return Ok(None);
+        };
+        let [ProjectionItem { alias, expr }] = items.as_slice() else {
+            return Ok(None);
+        };
+        if outputs != [alias.clone()] {
+            return Ok(None);
+        }
+        let (count_binding, existence) = match expr {
+            IrExpr::Binding(name) => (name, false),
+            IrExpr::Binary {
+                op: BinaryOp::Gt,
+                lhs,
+                rhs,
+            } if matches!(rhs.as_ref(), IrExpr::Lit(Lit::Int(0))) => {
+                let IrExpr::Binding(name) = lhs.as_ref() else {
+                    return Ok(None);
+                };
+                (name, true)
+            }
+            _ => return Ok(None),
+        };
+        // General Apply materializes its inner scopes. Keep nested counts on
+        // that path until scalar-query correlation can cross those CTE fences;
+        // an outer reference here would otherwise escape its owning scope.
+        if !existence && self.correlate_plan.is_some() {
+            return Ok(None);
+        }
+        let Node::GraphAggregate {
+            group, aggs, input, ..
+        } = input.as_ref()
+        else {
+            return Ok(None);
+        };
+        let [AggCall {
+            kind: AggKind::CountRows,
+            alias: count,
+            arg: None,
+            distinct: false,
+        }] = aggs.as_slice()
+        else {
+            return Ok(None);
+        };
+        if !group.is_empty() || count_binding != count {
+            return Ok(None);
+        }
+        let Some(Node::GraphExpand {
+            source,
+            target,
+            target_mode,
+            target_labels,
+            rel_binding,
+            rel_types,
+            dir,
+            history,
+            ..
+        }) = simple_expand(input)
+        else {
+            return Ok(None);
+        };
+        if source == target
+            || *target_mode != TargetMode::BindNew
+            || has_binding_shape(&left.plan, source) != Some(BindingShape::Node)
+            || has_binding_shape(&left.plan, target).is_some()
+            || history
+                .as_ref()
+                .is_some_and(|name| has_exact_col(&left.plan, name))
+            || rel_binding
+                .as_ref()
+                .is_some_and(|name| has_binding_shape(&left.plan, name).is_some())
+        {
+            return Ok(None);
+        }
+        // Keep computed graph sources on their existing evaluation path;
+        // existence short-circuiting must not suppress their effects/errors.
+        if self.options.mapping.as_ref().is_some_and(|mapping| {
+            mapping.labels().iter().any(|label| {
+                mapping
+                    .node(label)
+                    .is_some_and(|node| !matches!(&node.source, mapping::MappedSource::Table(_)))
+            }) || mapping.rel_types().iter().any(|rel_type| {
+                mapping.edge_partitions(rel_type).iter()
+                    .any(|edge| !matches!(&edge.source, mapping::MappedSource::Table(_)))
+            })
+        }) {
+            return Ok(None);
+        }
+        // Give the underlying graph bindings fresh names, not just their final
+        // projection. Optimizers may push the correlation filter beneath that
+        // projection; inner fields must never capture an outer SQL identifier.
+        let fresh_binding = |prefix: &str| {
+            let mut suffix = self.scan_counter;
+            loop {
+                let candidate = format!("{prefix}_{suffix}");
+                if !left
+                    .plan
+                    .schema()
+                    .fields()
+                    .iter()
+                    .any(|field| field.name().starts_with(&candidate))
+                {
+                    break candidate;
+                }
+                suffix += 1;
+            }
+        };
+        let inner_source = fresh_binding(if existence {
+            "__exists_source"
+        } else {
+            "__count_source"
+        });
+        let inner_target = fresh_binding(if existence {
+            "__exists_target"
+        } else {
+            "__count_target"
+        });
+        let inner_relationship = fresh_binding(if existence {
+            "__exists_relationship"
+        } else {
+            "__count_relationship"
+        });
+        // The anchor already exists in the outer row. Supply its identity as
+        // a one-row correlated seed instead of scanning the node catalog again.
+        let mut seed_columns = Vec::new();
+        let mut outer = Vec::new();
+        for (name, inner_name) in [
+            (id_col(source), id_col(&inner_source)),
+            (label_col(source), label_col(&inner_source)),
+        ] {
+            let column = Column::new_unqualified(&name);
+            let field = left.plan.schema().field_from_column(&column)?.clone();
+            let reference = Expr::OuterReferenceColumn(field, column);
+            seed_columns.push(reference.clone().alias(inner_name));
+            outer.push(reference);
+        }
+        let seed_plan = LogicalPlanBuilder::empty(true)
+            .project(seed_columns)?
+            .build()?;
+        let seed = Node::GraphCorrelate {
+            bindings: vec![inner_source.clone()],
+        };
+        let previous = self.correlate_plan.replace(seed_plan);
+        let inner = self.lower_expand(
+            &seed,
+            &inner_source,
+            &inner_target,
+            TargetMode::BindNew,
+            target_labels,
+            Some(&inner_relationship),
+            rel_types,
+            *dir,
+            None,
+            None,
+        );
+        self.correlate_plan = previous;
+        let inner = inner?;
+        if !super::list_comparison::immutable_source_plan(&inner.plan) {
+            return Ok(None);
+        }
+        let inner_plan = if existence {
+            LogicalPlanBuilder::from(inner.plan)
+                .project(vec![lit(1_i64)])?
+                .build()?
+        } else {
+            LogicalPlanBuilder::from(inner.plan)
+                .aggregate(Vec::<Expr>::new(), vec![df_count(lit(1_i64)).alias(count)])?
+                .build()?
+        };
+        let subquery = datafusion::logical_expr::Subquery {
+            subquery: Arc::new(inner_plan),
+            outer_ref_columns: outer,
+            spans: Default::default(),
+        };
+        let value = if existence {
+            Expr::Exists(datafusion::logical_expr::expr::Exists {
+                subquery,
+                negated: false,
+            })
+        } else {
+            Expr::ScalarSubquery(subquery)
+        };
+        let mut projection = existing_columns_by_name(&left.plan, &BTreeSet::new());
+        projection.push(value.alias(alias));
+        let plan = LogicalPlanBuilder::from(left.plan.clone())
+            .project(projection)?
+            .build()?;
+        let mut islands = left.islands.clone();
+        islands.merge(inner.islands);
+        Ok(Some(LoweredNode {
+            plan,
+            islands,
+            fields: left.fields.clone(),
+            result_form: left.result_form,
+        }))
+    }
+
     /// A single correlated hop has no per-input barrier. Evaluate its graph
     /// relation once and join on just its endpoints, instead of copying the
     /// complete outer relation into the right side and joining it back again.
@@ -178,7 +397,9 @@ impl LoweringContext<'_> {
             rel_types,
             *dir,
             None,
-            history.as_deref().filter(|_| self.options.mapping.is_some()),
+            history
+                .as_deref()
+                .filter(|_| self.options.mapping.is_some()),
         )?;
         let mut bindings = vec![source];
         if existing {
@@ -260,7 +481,8 @@ pub(super) fn with_row_identity(
     let key = unique_internal_alias(&plan, cleanup, "__apply_corr_key_row");
     let row_number = df_window::row_number()
         .window_frame(datafusion::logical_expr::WindowFrame::new(None))
-        .build()?.alias(&key);
+        .build()?
+        .alias(&key);
     let windowed = LogicalPlanBuilder::from(plan)
         .window(vec![row_number])?
         .build()?;

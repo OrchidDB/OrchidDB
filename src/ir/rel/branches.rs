@@ -12,6 +12,30 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let left = self.lower_node(left)?;
         let right = self.lower_node(right)?;
+        if self.language == Language::Cypher {
+            let graph_fields = |node: &LoweredNode| node.fields.as_ref().is_some_and(|fields|
+                fields.iter().any(|field| has_binding_shape(&node.plan, field).is_some()));
+            if graph_fields(&left) || graph_fields(&right) {
+                return self.lower_graph_union(all, left, right);
+            }
+        }
+        if self.language == Language::Cypher && !self.options.native_values {
+            // SQL UNION type coercion can merge distinct Cypher values (e.g.
+            // 1 and '1'), or round a large integer through DOUBLE. Only use
+            // SQL set equality for matching, lossless scalar column types.
+            let left_fields = left.plan.schema().fields();
+            let right_fields = right.plan.schema().fields();
+            if left_fields.len() != right_fields.len() || left_fields.iter().zip(right_fields).any(|(l, r)| {
+                let kind = l.data_type();
+                kind != r.data_type() || !matches!(kind,
+                    DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16
+                    | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16
+                    | DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64
+                    | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)
+            }) {
+                return Err(RelError::Unsupported("Cypher UNION column coercion requires native values".into()));
+            }
+        }
         let left_rdf_identity = left
             .plan
             .schema()

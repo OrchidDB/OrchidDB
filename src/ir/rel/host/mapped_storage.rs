@@ -68,10 +68,9 @@ pub fn metadata(
     // Bind those schemas without executing scores or reading data rows.
     let mut resolved = (*mapping).clone();
     if mapping.rel_types().iter().any(|name| {
-        matches!(
-            mapping.edge(name).unwrap().source,
-            MappedSource::Computed(_) | MappedSource::Cypher(_)
-        )
+        mapping.edge_partitions(name).iter().any(|edge| matches!(
+            edge.source, MappedSource::Computed(_) | MappedSource::Cypher(_)
+        ))
     }) {
         for name in mapping.labels() {
             if let MappedSource::Table(table_name) = &mapping.node(&name).unwrap().source {
@@ -124,7 +123,7 @@ pub fn metadata(
             .map_err(|e| e.to_string())?;
     }
     for rel_type in mapping.rel_types() {
-        let m = mapping.edge(&rel_type).unwrap();
+        for m in mapping.edge_partitions(&rel_type) {
         let mut projection = vec![
             format!(
                 "{} AS __key",
@@ -169,6 +168,9 @@ pub fn metadata(
             )?;
             batch
         };
+        if graph.key_types.get(&(true, rel_type.clone())).is_some_and(|kind| kind != batch.column(0).data_type()) {
+            return Err(format!("relationship `{rel_type}` partitions need a common key type for native access"));
+        }
         graph.key_types.insert(
             (true, rel_type.clone()),
             batch.column(0).data_type().clone(),
@@ -208,7 +210,7 @@ pub fn metadata(
         graph
             .add_keyed_edges(
                 EdgeTable {
-                    rel_type,
+                    rel_type: rel_type.clone(),
                     src_label: m.src_label.clone(),
                     dst_label: m.dst_label.clone(),
                     batch: props,
@@ -216,6 +218,7 @@ pub fn metadata(
                 ids,
             )
             .map_err(|e| e.to_string())?;
+        }
     }
     for edge in [false, true] {
         for name in if edge {
@@ -278,6 +281,16 @@ pub(crate) fn value_scalar(value: &Value) -> Result<ScalarValue, String> {
         // Property values can contain lists/arrays; ElementId validation is
         // intentionally stricter and must not reject preserved source values.
         Value::Scalar(value) => Ok(value.clone()),
+        Value::List(items) => {
+            let mut values = items.iter().map(value_scalar).collect::<Result<Vec<_>, _>>()?;
+            let kind = values.iter().find(|value| !value.is_null()).map(ScalarValue::data_type)
+                .unwrap_or(arrow::datatypes::DataType::Null);
+            for value in &mut values {
+                if value.is_null() { *value = ScalarValue::try_from(&kind).map_err(|e| e.to_string())?; }
+                else if value.data_type() != kind { return Err("heterogeneous list property requires explicit lossless storage".into()); }
+            }
+            Ok(ScalarValue::List(ScalarValue::new_list_nullable(&values, &kind)))
+        }
         Value::BigDecimal(v) => Ok(ScalarValue::Utf8(Some(v.to_string()))),
         Value::BigInt(v) | Value::UInt128(v) => Ok(ScalarValue::Utf8(Some(v.to_string()))),
         _ => ElementId::try_from(value).map(|id| id.scalar().clone()),
@@ -374,7 +387,7 @@ type Reference = (String, KeyColumns, String, KeyColumns);
 fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
     let mut refs = std::collections::BTreeSet::new();
     for name in mapping.rel_types() {
-        let m = mapping.edge(&name).unwrap();
+        for m in mapping.edge_partitions(&name) {
         let MappedSource::Table(child_table) = &m.source else {
             continue;
         };
@@ -399,6 +412,7 @@ fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
                 ));
             }
         }
+    }
     }
     Ok(refs.into_iter().collect())
 }
@@ -541,16 +555,37 @@ pub fn persist(
     graph: &PropertyGraph,
     mapping: &GraphMapping,
 ) -> Result<(), String> {
+    mapping.validate_partitioned_writes()?;
+    // A representative mapping cannot supply partition-specific SQL defaults.
+    // Reject this layout before emitting any writes instead of copying another
+    // partition's default into the selected physical table.
+    for name in mapping.rel_types() {
+        let partitions = mapping.edge_partitions(&name);
+        if partitions.len() <= 1 { continue; }
+        for partition in partitions {
+            let MappedSource::Table(table_name) = &partition.source else { continue; };
+            let reference = datafusion::common::TableReference::from(table_name.as_str());
+            let defaults = connection.query(HostRequest::new("SELECT column_name FROM duckdb_columns() WHERE table_name = $1 AND schema_name = coalesce($2, current_schema()) AND database_name = coalesce($3, current_database()) AND column_default IS NOT NULL LIMIT 1").parameters(vec![ScalarValue::Utf8(Some(reference.table().into())), ScalarValue::Utf8(reference.schema().map(str::to_owned)), ScalarValue::Utf8(reference.catalog().map(str::to_owned))]))?;
+            if defaults.num_rows() > 0 { return Err(format!("partition-specific defaults for relationship `{name}` are not yet writable")); }
+        }
+    }
     graph.validate_mapped_changes()?;
     let pending = graph.pending_changes();
     let mut rows = BTreeMap::<RowAddress, RowWrite>::new();
     for edge in [false, true] {
         let touched = if edge { &pending.edges } else { &pending.nodes };
         for (name, key) in touched {
+            let mapped_edge = if edge {
+                let endpoints = graph.edge_endpoints(name, key.clone())
+                    .or_else(|| graph.source.as_ref().and_then(|source| source.endpoints(name, key)));
+                if let Some((src, _, dst, _)) = endpoints {
+                    Some(mapping.edge_for_endpoints(name, &src, &dst)?)
+                } else if !graph.base_exists(true, name, key) {
+                    continue; // create then delete leaves no physical relationship
+                } else { return Err(format!("missing relationship endpoints for `{name}`")); }
+            } else { None };
             let (mapped_source, id_column, props) = if edge {
-                let m = mapping
-                    .edge(name)
-                    .ok_or_else(|| format!("unmapped relationship `{name}`"))?;
+                let m = mapped_edge.unwrap();
                 (
                     &m.source,
                     m.id_column.as_ref().unwrap_or(&m.src_column),
@@ -595,8 +630,17 @@ pub fn persist(
                     values.insert(column.clone(), value_scalar(&value)?);
                 }
             }
+            if !edge && live {
+                if let Some(column) = &mapping.node(name).unwrap().labels_column {
+                    let labels = graph.node_labels(name, key.clone()).into_iter()
+                        .map(|label| ScalarValue::Utf8(Some(label))).collect::<Vec<_>>();
+                    values.insert(column.clone(), ScalarValue::List(ScalarValue::new_list_nullable(
+                        &labels, &arrow::datatypes::DataType::Utf8,
+                    )));
+                }
+            }
             if edge {
-                let m = mapping.edge(name).unwrap();
+                let m = mapped_edge.unwrap();
                 if let Some((child, child_key, _, fk)) = m.foreign_key_columns() {
                     // Removing a child already removes its FK edge. Removing an
                     // edge alone never deletes the child row or its properties.
@@ -716,7 +760,13 @@ pub fn persist(
                 .field_with_name(column)
                 .map_err(|e| e.to_string())?
                 .data_type();
-            *value = value.cast_to(kind).map_err(|e| e.to_string())?;
+            if crate::ir::functions::scalar_union::is_type(kind) {
+                let semantic = crate::ir::value::scalar_semantic_value(value)
+                    .ok_or("unsupported value for heterogeneous primitive property")?;
+                *value = crate::ir::functions::scalar_union::scalar(&semantic).map_err(|e| e.to_string())?;
+            } else {
+                *value = value.cast_to(kind).map_err(|e| e.to_string())?;
+            }
         }
     }
     graph.check_source()?;
