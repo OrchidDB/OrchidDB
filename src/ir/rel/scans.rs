@@ -195,9 +195,13 @@ impl<'a> LoweringContext<'a> {
         bindings: &[String],
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
+        // Cypher lists may use homogeneous Arrow arrays. Gremlin collections
+        // retain their native carrier: integer widths are observable, and inject
+        // can union a collection traverser with a scalar traverser.
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) && !rows.is_empty()
             && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()
-                && collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none()) {
+                && (self.language != Language::Cypher
+                    || collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none())) {
             let mut plans = rows.iter().map(|row| {
                 let expressions = row.iter().zip(bindings).map(|(v,b)| native_values::literal(v).map(|e|e.alias(b)))
                     .collect::<RelResult<Vec<_>>>()?;
@@ -217,7 +221,8 @@ impl<'a> LoweringContext<'a> {
                     .filter_map(|row| row.get(index))
                     .collect::<Vec<_>>();
                 if homogeneous_scalar_type(values.iter().copied()).is_none()
-                    && collections::uniform_list_type(values.iter().copied()).is_none()
+                    && (self.language != Language::Cypher
+                        || collections::uniform_list_type(values.iter().copied()).is_none())
                     && !values.iter().all(|v|matches!(v,Value::Null)) {
                     return Err(RelError::Unsupported(
                         "Heterogeneous graph-language values require native runtime types".into(),

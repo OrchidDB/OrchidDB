@@ -173,6 +173,13 @@ pub(super) fn simplify(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         }
         let mut changed = false;
         while let LogicalPlan::Projection(inner) = outer.input.as_ref() {
+            // A projection directly above a window is an SQL emission boundary.
+            // In particular, SPARQL adds a guard literal here so DataFusion's
+            // unparser retains the window outputs. Composing away that guard
+            // can leave ORDER BY or aggregates referring to a missing ordinal.
+            if matches!(inner.input.as_ref(), LogicalPlan::Window(_)) {
+                break;
+            }
             let values = match inner.expr.iter().map(simple_value).collect::<Option<Vec<_>>>() {
                 Some(values) => Some(values),
                 None => rename_values(&outer, inner)?,

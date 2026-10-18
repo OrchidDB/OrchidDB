@@ -261,3 +261,31 @@ async fn local_map_order_retains_entry_keys_and_values() {
     assert_eq!(value[0][0]["value"][0]["value"],"a", "{value}");
     assert_eq!(value[0][0]["value"][1]["value"],1,"{value}");
 }
+
+#[tokio::test]
+async fn injected_collection_bindings_preserve_integer_widths_and_union_types() {
+    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let bindings = [
+        ("xx1".into(), GremlinBinding::Value(GValue::List(vec![GValue::Int(5), GValue::Int(8), GValue::Int(10)]))),
+        ("xx2".into(), GremlinBinding::Value(GValue::List(vec![GValue::Int(10), GValue::Int(7)]))),
+    ].into();
+    for query in ["g.inject(xx1,xx2).all(P.gte(7))", "g.inject(xx1,xx2).any(P.eq(7))"] {
+        let result = engine.gremlin_with_bindings(query, &bindings).await.unwrap();
+        let values: Value = serde_json::from_str(
+            &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
+        ).unwrap();
+        assert_eq!(values[0][0]["type"], "list", "{query}: {values}");
+        assert_eq!(values[0][0]["value"], json!([
+            {"type": "int", "value": 10}, {"type": "int", "value": 7}
+        ]), "{query}: {values}");
+    }
+    let bindings = [("xx1".into(), GremlinBinding::Value(GValue::List(vec![
+        GValue::String("b".into()), GValue::String("c".into()),
+    ])))].into();
+    let result = engine.gremlin_with_bindings("g.inject('a').concat(__.inject(xx1))", &bindings).await.unwrap();
+    let values: Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
+    ).unwrap();
+    assert_eq!(values[0][0], json!({"type": "string", "value": "aa"}));
+}

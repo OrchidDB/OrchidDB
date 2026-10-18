@@ -365,3 +365,21 @@ async fn correlated_zero_length_domains_do_not_leak_between_rows() {
         vec![vec![iri("missing"), Some(RdfTermValue::typed("true", format!("{XSD}boolean")))],
              vec![None, Some(RdfTermValue::typed("false", format!("{XSD}boolean")))]]);
 }
+
+#[tokio::test]
+async fn ordered_nested_zero_or_more_retains_window_ordinal() {
+    let mut engine = engine();
+    assert_eq!(
+        rows(&mut engine, "SELECT ?t WHERE { ex:alice ((ex:knows)*)* ?t } ORDER BY ?t").await,
+        vec![vec![iri("alice")], vec![iri("bob")], vec![iri("cara")]],
+    );
+}
+
+#[tokio::test]
+async fn ordered_distinct_subquery_retains_ordinal_through_aggregation() {
+    let mut engine = engine();
+    assert_eq!(
+        rows(&mut engine, "SELECT ?name WHERE { ?person ex:name ?name . { SELECT DISTINCT ?person WHERE { ?person ex:age ?age } ORDER BY ?person LIMIT 2 } } ORDER BY ?name").await,
+        vec![vec![string("Alice")], vec![string("Bob")]],
+    );
+}
