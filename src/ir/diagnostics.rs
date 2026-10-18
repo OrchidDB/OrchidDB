@@ -103,6 +103,20 @@ pub async fn conformance_sql(
     plan: &crate::ir::plan::GraphPlan,
     procedures: std::sync::Arc<crate::ir::procedures::ProcedureCatalog>,
 ) -> Result<serde_json::Value, String> {
+    conformance_sql_with_estimates(connection, mapping, plan, procedures, false).await
+}
+
+/// Internal plan-audit entry point. EXPLAIN (never EXPLAIN ANALYZE) binds and
+/// optimizes SQL against the prepared fixture without opening query results.
+#[cfg(feature = "duckdb")]
+#[doc(hidden)]
+pub async fn conformance_sql_with_estimates(
+    connection: duckdb::Connection,
+    mapping: std::sync::Arc<crate::ir::rel::mapping::GraphMapping>,
+    plan: &crate::ir::plan::GraphPlan,
+    procedures: std::sync::Arc<crate::ir::procedures::ProcedureCatalog>,
+    estimates: bool,
+) -> Result<serde_json::Value, String> {
     use crate::ir::rel::{dag::DagSession, sql::DuckDbExecutor};
     use crate::engine::mapped_source;
     use std::sync::{Arc, Mutex};
@@ -116,13 +130,48 @@ pub async fn conformance_sql(
     graph.procedures = procedures;
     let stats = crate::ir::rel::runtime::inspect_with_session(plan, &graph, &resources).await?;
     let full = stats.sql_queries.len() == 1 && stats.datafusion_operators == 0;
-    Ok(serde_json::json!({
+    let mut output = serde_json::json!({
         "schema_mode":"conformance_runner_mapping", "capture":"prepared_not_executed",
         "sql": if full {stats.sql_queries.first().cloned()} else {None},
         "regions": if full {Vec::<serde_json::Value>::new()} else {stats.sql_queries.iter().map(|sql| serde_json::json!({"sql":sql})).collect()},
         "residual_operators":stats.datafusion_operators,
+        "residual_compute_operators":stats.datafusion_operators.saturating_sub(stats.output_decode_operators),
+        "output_decode_operators":stats.output_decode_operators, "sql_boundaries":stats.sql_boundaries,
+        "runtime_input_tables":stats.runtime_inputs.iter().map(|t|t.name.clone()).collect::<Vec<_>>(),
         "logical_plan":stats.logical_plan, "physical_plan":stats.physical_plan,
         "execution_kind":if full {"sql"} else {"hybrid"}, "fully_lowered":full,
         "validation":"prepared_with_conformance_mapping",
-    }))
+    });
+    if estimates {
+        let shared = resources.shared_executor();
+        let mut executor = shared.lock().map_err(|e| e.to_string())?;
+        let connection = executor.source_query_connection().map_err(|e| e.to_string())?;
+        // Runtime inputs have known schemas but unknown rows at inspection.
+        // Bind their interfaces temporarily; never execute the native producer.
+        let mut installed: Vec<String>=Vec::new();
+        for table in &stats.runtime_inputs {
+            let ddl=crate::ir::rel::sql::create_table_sql(crate::ir::rel::sql::SqlDialect::DuckDb,table).map_err(|e|e.to_string())?;
+            if let Err(error)=connection.execute_batch(&ddl) {
+                for name in &installed {let _=connection.execute_batch(&format!("DROP TABLE {}",crate::ir::rel::sql::SqlDialect::DuckDb.quote_ident(name)));}
+                return Err(error.to_string());
+            }
+            installed.push(table.name.clone());
+        }
+        let plans = stats.sql_queries.iter().map(|sql| {
+            let explain = (|| -> Result<serde_json::Value, String> {
+                let mut statement = connection.prepare(&format!("EXPLAIN (FORMAT JSON) {sql}"))
+                    .map_err(|e| e.to_string())?;
+                let json: String = statement.query_row([], |row| row.get(1)).map_err(|e| e.to_string())?;
+                serde_json::from_str(&json).map_err(|e| e.to_string())
+            })();
+            match explain {
+                Ok(plan) => serde_json::json!({"sql":sql,"plan":plan,"runtime_input_estimates_unknown":stats.runtime_inputs.iter().any(|table|sql.contains(&table.name))}),
+                Err(error) => serde_json::json!({"sql":sql,"error":error}),
+            }
+        }).collect::<Vec<_>>();
+        for name in installed {connection.execute_batch(&format!("DROP TABLE {}",crate::ir::rel::sql::SqlDialect::DuckDb.quote_ident(&name))).map_err(|e|e.to_string())?;}
+        output["sql_plans"] = serde_json::json!(plans);
+        output["estimate_method"] = serde_json::json!("EXPLAIN (FORMAT JSON); target query not executed");
+    }
+    Ok(output)
 }

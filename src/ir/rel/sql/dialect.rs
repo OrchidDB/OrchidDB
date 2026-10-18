@@ -67,6 +67,11 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
     }
     /// Whether code lowering can handle this UDF identity. Argument-specific
     /// support is still checked before placing an island.
+    /// Inspect the actual subquery shape, types and correlation requirements.
+    /// Adapters must opt in; unsupported shapes can be transformed before placement.
+    fn check_subquery(&self, _requirements: &super::SubqueryRequirements) -> Result<(), &'static str> {
+        Err("adapter has no implementation for this subquery shape")
+    }
     fn supports_scalar_function(&self, _name: &str) -> bool {
         false
     }

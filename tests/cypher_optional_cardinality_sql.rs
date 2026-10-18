@@ -355,3 +355,56 @@ async fn aesthetic_collection_and_fixed_paths_preserve_results() {
         }
     }).await;
 }
+
+#[tokio::test]
+async fn conformance_plan_audit_explains_real_tables_without_query_results() {
+    let mut fixture = relational_fixture::RelationalFixture::new().unwrap();
+    let setup = prepare("CREATE (:P {num: 1}), (:P {num: 2})");
+    let target = prepare("MATCH (n:P) WHERE n.num > 0 RETURN n.num AS value");
+    fixture.configure_cypher(&[setup.clone(), target.clone()]).unwrap();
+    fixture.prepare(&setup).unwrap();
+    fixture.engine.execute_plan(&setup).await.unwrap();
+    let plain = fixture.diagnostic_sql(&target).await.unwrap();
+    assert!(plain.get("sql_plans").is_none());
+    let report = fixture.diagnostic_sql_with_estimates(&target, true).await.unwrap();
+    assert_eq!(report["capture"], "prepared_not_executed");
+    assert_eq!(report["regions"], plain["regions"]);
+    let plans = report["sql_plans"].as_array().unwrap();
+    assert!(!plans.is_empty());
+    for plan in plans {
+        assert!(plan.get("error").is_none(), "{plan}");
+        assert!(plan["plan"].is_array(), "{plan}");
+    }
+    let encoded = report["sql_plans"].to_string();
+    assert!(encoded.contains("Estimated Cardinality"), "{encoded}");
+    assert!(encoded.contains("SEQ_SCAN"), "{encoded}");
+}
+
+#[tokio::test]
+async fn mapped_correlations_bind_and_execute_in_both_folding_modes() {
+    for nofold in [false,true] {
+        let work=async {
+            let mut fixture=relational_fixture::RelationalFixture::new().unwrap();
+            let setup=prepare("CREATE (a:P {num: 1, xs: [1,2]}), (b:P {num: 2, xs: []}), (:P {num: 3}), (a)-[:R]->(b)");
+            let cases=[
+                ("all(x IN n.xs WHERE x > 0)", vec!["true","true",""]),
+                ("any(x IN n.xs WHERE x = 2)", vec!["true","false",""]),
+                ("none(x IN n.xs WHERE x < 0)", vec!["true","true",""]),
+                ("single(x IN n.xs WHERE x = 2)", vec!["true","false",""]),
+                ("size([x IN n.xs WHERE x > 1])",vec!["1","0",""]),
+                ("size([(n)-[:R]->(m) | 1]) > 0",vec!["true","false","false"]),
+            ];
+            let plans=cases.iter().map(|(expr,_)|prepare(&format!("MATCH (n:P) RETURN {expr} AS result ORDER BY n.num"))).collect::<Vec<_>>();
+            let mut all=vec![setup.clone()];all.extend(plans.clone());
+            fixture.configure_cypher(&all).unwrap();fixture.prepare(&setup).unwrap();fixture.engine.execute_plan(&setup).await.unwrap();
+            for (plan,(_,expected)) in plans.iter().zip(cases) {
+                let report=fixture.diagnostic_sql_with_estimates(plan,true).await.unwrap();
+                for sql in report["sql_plans"].as_array().unwrap() {assert!(sql.get("error").is_none(),"{sql}");}
+                let result=fixture.engine.execute_plan(plan).await.unwrap();
+                let values=(0..result.returned.batch.num_rows()).map(|i|arrow::util::display::array_value_to_string(result.returned.batch.column(0),i).unwrap()).collect::<Vec<_>>();
+                assert_eq!(values,expected,"{report}");
+            }
+        };
+        if nofold {without_constant_folding(work).await;} else {work.await;}
+    }
+}

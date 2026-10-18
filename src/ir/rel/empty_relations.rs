@@ -9,7 +9,7 @@ fn empty(plan: &LogicalPlan) -> bool {
 fn discardable(plan: &LogicalPlan) -> bool {
     fn simple(expr: &Expr) -> bool {
         match expr {
-            Expr::Column(_) | Expr::Literal(..) => true,
+            Expr::Column(_) | Expr::OuterReferenceColumn(..) | Expr::Literal(..) => true,
             Expr::Alias(a) => simple(&a.expr),
             _ => false,
         }

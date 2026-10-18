@@ -604,3 +604,5 @@ mod scalar_union;
 mod dynamic_slice;
 
 pub(crate) mod entity_values;
+
+mod lowering_stage;

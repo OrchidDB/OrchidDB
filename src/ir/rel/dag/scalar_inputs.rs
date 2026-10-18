@@ -255,3 +255,27 @@ async fn row_dependent_and_volatile_native_calls_are_not_pre_evaluated() {
         }
     }
 }
+
+#[tokio::test]
+async fn native_rows_reenter_sql_without_repeating_the_native_call() {
+    for mode in [1,2] {
+        let calls=Arc::new(AtomicUsize::new(0));let count=calls.clone();
+        let native=create_udf("native_identity_no_sql",vec![DataType::Int64],DataType::Int64,Volatility::Volatile,
+            Arc::new(move |args| {
+                let rows=match &args[0] {ColumnarValue::Array(a)=>a.len(),ColumnarValue::Scalar(_)=>1};
+                count.fetch_add(rows,Ordering::SeqCst);Ok(args[0].clone())
+            }));
+        let plan=scan(vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(2)),ScalarValue::Int64(Some(2)),ScalarValue::Int64(None)])
+            .project(vec![native.call(vec![col("column1")]).alias("x")]).unwrap()
+            .filter(col("x").gt(lit(1_i64))).unwrap()
+            .aggregate(Vec::<Expr>::new(),vec![datafusion::functions_aggregate::expr_fn::count(col("x")).alias("n")]).unwrap()
+            .build().unwrap();
+        let resources=resources(mode);
+        let (result,stats)=execute_with_extensions(lowered(plan),vec![],None,Some(&resources)).await.unwrap();
+        assert_eq!(arrow::util::display::array_value_to_string(result.batch.column(0),0).unwrap(),"2");
+        assert_eq!(calls.load(Ordering::SeqCst),4,"{stats:?}");
+        assert_eq!(stats.runtime_inputs.len(),1,"{stats:?}");
+        assert!(stats.sql_queries.iter().any(|s|s.contains("count(") && s.contains("WHERE")),"{stats:?}");
+        assert!(stats.sql_boundaries.iter().any(|b|b.reason.contains("capability/effect")),"{stats:?}");
+    }
+}

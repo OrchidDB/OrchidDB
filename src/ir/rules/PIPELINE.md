@@ -80,3 +80,29 @@ retain their distinct proof domains; sharing vocabulary does not authorize
 merging their effect assumptions. The disconnected transform prototype remains
 untouched. Island memoization is query-local and excludes correlated/temporary
 nodes; revision tokens do not replace its immutable-node identity contract.
+
+## SQL-first relational implementation
+
+The shared relational plan enters `lowering_stage::normalize` before SQL
+partitioning. Required DISTINCT and structural-empty rewrites, followed by
+adapter relational rewrites, run to a bounded structural fixed point even when
+optional optimization or constant folding is disabled. Exhaustion is an error.
+
+`sql::eligibility` owns region eligibility. Subquery requirements include kind,
+correlation, UNNEST, aggregation, windows, correlated limits, and result types;
+adapters inspect these requirements through `check_subquery`. Terminal emission
+checks the same contract. Correlated pure renames update both subquery bodies
+and outer-reference metadata before projection pruning.
+
+Partitioning first attempts the largest supported region. When an unsupported
+input prevents placement, typed batch interfaces can reconnect SQL above the
+native operation. The producer runs once per dependency; collection happens
+before taking the SQL session lock. Ordered inputs, zero-column interfaces, and
+ambiguous column names retain a boundary until a lossless representation exists.
+No failed query execution is retried through another engine.
+
+Only after SQL placement do required host decorrelation rules run. Residual
+validation rejects logical constructs with no physical implementation before
+execution. Diagnostics record region boundary reasons, output decoding, and
+runtime input interfaces separately. EXPLAIN uses empty typed runtime-input
+interfaces and explicitly marks their cardinality estimates as unknown.

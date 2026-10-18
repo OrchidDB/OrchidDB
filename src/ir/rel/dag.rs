@@ -42,6 +42,16 @@ use futures::stream;
 
 #[cfg(all(test, feature = "duckdb"))]
 mod scalar_inputs;
+#[cfg(feature = "duckdb")]
+mod exchange;
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SqlBoundary {
+    pub operator: String,
+    pub engine: String,
+    pub category: String,
+    pub reason: String,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct DagStats {
@@ -51,6 +61,10 @@ pub struct DagStats {
     pub postgres_regions: usize,
     pub other_sql_regions: usize,
     pub datafusion_operators: usize,
+    pub output_decode_operators: usize,
+    pub sql_boundaries: Vec<SqlBoundary>,
+    pub runtime_inputs: Vec<sql::TableData>,
+    next_runtime_input: usize,
     pub physical_plan: String,
     /// Optimized logical plan with physical table selections applied.
     pub logical_plan: String,
@@ -155,6 +169,8 @@ struct DuckDbRegion {
     id: usize,
     schema: DFSchemaRef,
     prepared: Arc<sql::PreparedSql>,
+    inputs: Vec<LogicalPlan>,
+    input_tables: Vec<sql::TableData>,
 }
 #[cfg(feature = "duckdb")]
 impl fmt::Debug for DuckDbRegion {
@@ -170,6 +186,7 @@ impl PartialEq for DuckDbRegion {
         self.id == other.id
             && self.prepared.query == other.prepared.query
             && self.schema == other.schema
+            && self.inputs == other.inputs
     }
 }
 #[cfg(feature = "duckdb")]
@@ -198,9 +215,7 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
     fn name(&self) -> &str {
         match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbRegion", sql::SqlDialect::Postgres => "PostgresRegion", sql::SqlDialect::Custom(_) => "SqlRegion" }
     }
-    fn inputs(&self) -> Vec<&LogicalPlan> {
-        vec![]
-    }
+    fn inputs(&self) -> Vec<&LogicalPlan> { self.inputs.iter().collect() }
     fn schema(&self) -> &DFSchemaRef {
         &self.schema
     }
@@ -215,121 +230,16 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
         expressions: Vec<Expr>,
         inputs: Vec<LogicalPlan>,
     ) -> Result<Self> {
-        if !expressions.is_empty() || !inputs.is_empty() {
+        if !expressions.is_empty() || inputs.len() != self.inputs.len() {
             return Err(DataFusionError::Plan("DuckDB region dependency mismatch".into()));
         }
-        Ok(self.clone())
+        let mut updated=self.clone(); updated.inputs=inputs;
+        Ok(updated)
     }
 }
 
-/// Unknown or volatile UDFs and extension nodes execute only in DataFusion.
-/// DuckDB eligibility is a planning decision; execution errors are never retried
-/// through another engine, avoiding repeated effects or changed error semantics.
-/// Analyze each logical node once. A rejected ancestor must not repeatedly
-/// rescan its descendants while partitioning into smaller regions.
 #[cfg(feature = "duckdb")]
-#[derive(Default)]
-struct SqlEligibility {
-    reasons: std::collections::HashMap<usize, Option<&'static str>>,
-    dialect: Option<sql::SqlDialect>,
-    language_functions: bool,
-}
-#[cfg(feature = "duckdb")]
-impl SqlEligibility {
-    fn visit(&mut self, plan: &LogicalPlan) -> Option<&'static str> {
-        let key = plan as *const LogicalPlan as usize;
-        if let Some(reason) = self.reasons.get(&key) { return *reason; }
-        // A complete SQL lowering consumes the node's expressions and inputs.
-        // Requiring their scalar mappings again would reject index-provided
-        // scores or engine operations that have no standalone scalar form.
-        if matches!(plan, LogicalPlan::Extension(_)) && matches!(
-            sql::lowering::lower_relation(plan, &sql::lowering::LoweringContext {
-                dialect: self.dialect.unwrap_or(sql::SqlDialect::DuckDb),
-                mode: sql::lowering::LoweringMode::InIsland,
-            }), Ok(Some(sql::lowering::RelationLowering::Sql(_)))
-        ) {
-            self.reasons.insert(key, None);
-            return None;
-        }
-        let mut reason = match plan {
-            LogicalPlan::Extension(_) if matches!(sql::lowering::lower_relation(plan, &sql::lowering::LoweringContext {
-                dialect: self.dialect.unwrap_or(sql::SqlDialect::DuckDb), mode: sql::lowering::LoweringMode::InIsland,
-            }), Ok(Some(sql::lowering::RelationLowering::Sql(_) | sql::lowering::RelationLowering::Rewrite(_)))) => None,
-            LogicalPlan::Extension(_) => Some("residual extension"),
-            LogicalPlan::EmptyRelation(empty) if empty.produce_one_row => None,
-            LogicalPlan::EmptyRelation(_) => Some("empty relation"),
-            _ if plan.schema().fields().is_empty() => Some("zero-column relation"),
-            _ => None,
-        };
-        if reason.is_some() {
-            self.reasons.insert(key, reason);
-            return reason;
-        }
-        let mut portable_schema = datafusion::common::DFSchema::empty();
-        for input in plan.inputs() { portable_schema.merge(input.schema()); }
-        portable_schema.merge(plan.schema());
-        for expr in plan.expressions() {
-            let _ = expr.apply(|expr| {
-                if let Expr::Literal(value, _) = expr {
-                    if let Some(why) = crate::ir::functions::portable::literal_issue(value, self.dialect.unwrap_or(sql::SqlDialect::DuckDb).name()) {
-                        reason.get_or_insert(why);
-                        return Ok(TreeNodeRecursion::Stop);
-                    }
-                }
-                if let Expr::ScalarFunction(function) = expr {
-                    if function.func.name() == super::conversion_rules::NATIVE_FLOAT {
-                        if self.dialect != Some(sql::SqlDialect::DuckDb) { reason.get_or_insert("native conversion requires its owning DuckDB engine"); }
-                        return Ok(TreeNodeRecursion::Continue);
-                    }
-                    if super::language_functions::supported(function.func.name()) {
-                        if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb) {
-                            return Ok(TreeNodeRecursion::Continue);
-                        }
-                        reason.get_or_insert("language functions disabled on SQL session");
-                        return Ok(TreeNodeRecursion::Stop);
-                    }
-                    if self.dialect == Some(sql::SqlDialect::Postgres) && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
-                        reason.get_or_insert("native RDF scalar kernel");
-                        return Ok(TreeNodeRecursion::Stop);
-                    }
-                    if let Some(logical) = crate::ir::functions::logical::definition(&function.func) {
-                        let dialect = self.dialect.unwrap_or(sql::SqlDialect::DuckDb);
-                        let adapter_mapping = match dialect { sql::SqlDialect::Custom(adapter) => adapter.function_mapping(logical.logical_name()).is_some(), _ => false };
-                        if !adapter_mapping && !logical.has_sql_mapping(dialect.name(), function.args.len()) {
-                            reason.get_or_insert("logical function requires native execution");
-                            return Ok(TreeNodeRecursion::Stop);
-                        }
-                        if !adapter_mapping && logical.portable_builtin {
-                            if let Err(why) = crate::ir::functions::portable::validate_call(logical.logical_name(), &function.args, &portable_schema, dialect.name()) {
-                                reason.get_or_insert(why);
-                                return Ok(TreeNodeRecursion::Stop);
-                            }
-                        }
-                        return Ok(TreeNodeRecursion::Continue);
-                    }
-                    let native = self.dialect.unwrap_or(sql::SqlDialect::DuckDb).supports_scalar_function(function.func.name())
-                        || super::sparql::is_duck_function(&function.func)
-                        || function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
-                        || function.func.name() == crate::ir::functions::ENGINE_CAST_FUNCTION;
-                    if !native && (function.func.signature().volatility == datafusion::logical_expr::Volatility::Volatile
-                        || function.func.documentation().is_none()) {
-                        reason.get_or_insert("function capability/effect boundary");
-                        return Ok(TreeNodeRecursion::Stop);
-                    }
-                }
-                Ok(TreeNodeRecursion::Continue)
-            });
-        }
-        if reason.is_none() {
-            for input in plan.inputs() {
-                reason = self.visit(input);
-                if reason.is_some() { break; }
-            }
-        }
-        self.reasons.insert(key, reason);
-        reason
-    }
-}
+use super::sql::eligibility::SqlEligibility;
 
 #[cfg(feature = "duckdb")]
 fn partition<'a>(
@@ -345,17 +255,22 @@ fn partition<'a>(
     Box::pin(async move {
         let explain = std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some();
         let reason = eligibility.visit(plan);
+        let mut emission_error = None;
         if explain && let Some(reason) = reason {
             eprintln!("DuckDB boundary: {reason}");
         }
+        let cut = if reason.is_some() { exchange::cut_inputs(plan, eligibility, &mut stats.next_runtime_input, external)? } else {None};
+        let (sql_plan, bindings) = cut.unwrap_or_else(||(plan.clone(),vec![]));
+        let mut candidate_external=external.clone();
+        candidate_external.extend(bindings.iter().map(|(_,table)|table.name.clone()));
         // A one-row, zero-column input can be absorbed into a parent SQL
         // projection, but cannot be emitted as a standalone SELECT * island.
         // Native scalar projections (including calls that fail to fold) need
         // that input to remain executable when they form a boundary.
-        if reason.is_none() && !plan.schema().fields().is_empty() {
+        if (reason.is_none() || !bindings.is_empty()) && !plan.schema().fields().is_empty() {
             // The SQL unparser requires an explicit select list for roots such
             // as joins. Unique aliases also handle duplicate qualified names.
-            let projected = datafusion::logical_expr::LogicalPlanBuilder::from(plan.clone())
+            let projected = datafusion::logical_expr::LogicalPlanBuilder::from(sql_plan)
                 .project(
                     plan.schema()
                         .columns()
@@ -375,7 +290,7 @@ fn partition<'a>(
                 islands: Default::default(),
             };
             let empty = Default::default();
-            let prepared = sql::prepare_with_external(&candidate, dialect, if bind_inputs { &empty } else { external }).await.and_then(|mut prepared| {
+            let prepared = sql::prepare_with_external(&candidate, dialect, if bind_inputs && bindings.is_empty() { &empty } else { &candidate_external }).await.and_then(|mut prepared| {
                 if bind_inputs {
                     for table in &mut prepared.tables {
                         if external.contains(&table.name) {
@@ -393,11 +308,18 @@ fn partition<'a>(
                 }
                 Ok(prepared)
             });
+            if let Err(error) = &prepared { emission_error = Some(error.to_string()); }
             if explain && let Err(error) = &prepared {
                 eprintln!("DuckDB boundary: SQL preparation: {error}");
             }
             if let Err(sql::SqlError::RulePipeline(error)) = &prepared { return Err(DataFusionError::Plan(error.to_string())); }
             if let Ok(prepared) = prepared {
+                let mut dependencies=Vec::new(); let mut input_tables=Vec::new();
+                for (input,table) in bindings {
+                    let mut child_eligibility=SqlEligibility {dialect:Some(dialect),language_functions:eligibility.language_functions,..Default::default()};
+                    dependencies.push(partition(&input, stats, &mut child_eligibility, external, dialect, bind_inputs, source_executor, rule_context).await?);
+                    stats.runtime_inputs.push(table.clone()); input_tables.push(table);
+                }
                 if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
                     eprintln!("DuckDB candidate: {}", prepared.query);
                 }
@@ -409,6 +331,7 @@ fn partition<'a>(
                         id,
                         schema: plan.schema().clone(),
                         prepared: Arc::new(prepared),
+                        inputs: dependencies, input_tables,
                     }),
                 }));
             }
@@ -442,6 +365,14 @@ fn partition<'a>(
             inputs.push(partition(input, stats, eligibility,external,dialect,bind_inputs,source_executor,rule_context).await?);
         }
         stats.datafusion_operators += 1;
+        let output_decode = matches!(plan, LogicalPlan::Extension(e) if e.node.name() == "Pruned(DecodeTraversers)");
+        stats.output_decode_operators += usize::from(output_decode);
+        let category = if output_decode { "output_decode" } else if emission_error.is_some() { "emission_failure" }
+            else if matches!(reason,Some("residual extension" | "empty relation")) { "missing_transformation" } else { "capability_boundary" };
+        stats.sql_boundaries.push(SqlBoundary {
+            operator: plan.display().to_string(), engine: dialect.name().into(), category: category.into(),
+            reason: if output_decode {"decode SQL values into the language result representation".into()} else {emission_error.unwrap_or_else(|| reason.unwrap_or("no standalone SQL representation").into())},
+        });
         // DataFusion 53 reports UNNEST execution columns as expressions, but
         // its with_new_exprs constructor expects an empty expression list.
         // Partitioning replaces only children, keeping their schemas intact.
@@ -493,6 +424,7 @@ impl ExtensionPlanner for RegionPlanner {
         ));
         Ok(Some(Arc::new(DuckDbExec {
             prepared: region.prepared.clone(),
+            inputs: _physical_inputs.to_vec(), input_tables: region.input_tables.clone(),
             executor: self.executor.clone(),
             region_session: self.region_session.clone(),
             cost: self.cost.clone(),
@@ -504,6 +436,8 @@ impl ExtensionPlanner for RegionPlanner {
 #[cfg(feature = "duckdb")]
 #[derive(Debug)]
 struct DuckDbExec {
+    inputs: Vec<Arc<dyn ExecutionPlan>>,
+    input_tables: Vec<sql::TableData>,
     region_session: Option<sql::region::SharedRegionSession>,
     cost: Arc<Mutex<crate::ir::QueryCost>>,
     prepared: Arc<sql::PreparedSql>,
@@ -527,17 +461,16 @@ impl ExecutionPlan for DuckDbExec {
     fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
-    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        vec![]
-    }
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> { self.inputs.iter().collect() }
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        if !children.is_empty() {
+        if children.len()!=self.inputs.len() {
             return Err(DataFusionError::Plan("DuckDbExec dependency mismatch".into()));
         }
-        Ok(self)
+        Ok(Arc::new(Self {inputs:children,input_tables:self.input_tables.clone(),region_session:self.region_session.clone(),
+            cost:self.cost.clone(),executor:self.executor.clone(),prepared:self.prepared.clone(),properties:self.properties.clone()}))
     }
     fn execute(
         &self,
@@ -555,7 +488,16 @@ impl ExecutionPlan for DuckDbExec {
         let cost = self.cost.clone();
         let schema = self.schema();
         let expected = schema.clone();
+        let inputs=self.inputs.clone();
+        let tables=self.input_tables.clone();
+        let context=_context;
         let work = async move {
+            let mut prepared=prepared.as_ref().clone();
+            for (input,mut table) in inputs.into_iter().zip(tables) {
+                table.batches=datafusion::physical_plan::collect(input,context.clone()).await?;
+                prepared.tables.push(table);
+            }
+            if region_session.is_some() { sql::region::bind_inputs(&mut prepared).map_err(|e|DataFusionError::Execution(e.to_string()))?; }
             tokio::task::spawn_blocking(move || {
                 let returned = if let Some(session) = region_session {
                     let mut session = session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?;
@@ -630,12 +572,6 @@ pub(crate) async fn prepare_with_extensions(
             Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
         ]).optimize(optimized, &query_state, |_, _| {})?
     } else { optimized };
-    let optimized = if resources.region_session.is_some() && !resources.optimize {
-        datafusion::optimizer::Optimizer::with_rules(vec![
-            Arc::new(datafusion::optimizer::replace_distinct_aggregate::ReplaceDistinctWithAggregate::new()),
-        ])
-            .optimize(optimized, &query_state, |_, _| {})?
-    } else { optimized };
     let mut has_search=false;
     optimized.apply_with_subqueries(|p| {has_search |= super::search::node(p).is_some(); Ok(TreeNodeRecursion::Continue)})?;
     let optimized=if has_search && !resources.optimize {
@@ -662,7 +598,7 @@ pub(crate) async fn prepare_with_extensions(
             Some(session) => session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?.dialect(),
             None => sql::SqlDialect::DuckDb,
         };
-        let optimized = sql::lowering::rewrite_relations(optimized, dialect).map_err(|error| DataFusionError::Plan(error.to_string()))?;
+        let optimized = super::lowering_stage::normalize(optimized, &query_state, Some(dialect), rule_context)?;
         let optimized = if matches!(dialect, sql::SqlDialect::Custom(_)) {
             super::optimizer::simplify_bound_expressions(optimized, &query_state)?
         } else { optimized };
@@ -678,7 +614,7 @@ pub(crate) async fn prepare_with_extensions(
             stats.datafusion_operators += 1;
             Ok(TreeNodeRecursion::Continue)
         });
-        super::dependent::native(super::search::native(optimized.clone())?)?
+        super::lowering_stage::normalize(super::dependent::native(super::search::native(optimized.clone())?)?, &query_state, None, rule_context)?
     };
 
     #[cfg(feature = "duckdb")]
@@ -691,6 +627,8 @@ pub(crate) async fn prepare_with_extensions(
         }));
         extensions
     };
+    let plan = super::lowering_stage::normalize_residual(plan, &query_state, rule_context)?;
+    super::lowering_stage::validate_residual(&plan)?;
     super::pipeline::validate_host_contract(&plan)?;
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
@@ -801,6 +739,9 @@ impl DagStats {
         self.representation_selections.extend(nested.representation_selections.iter().cloned());
         self.plan_estimates.extend(nested.plan_estimates.iter().cloned());
         self.optimizer_decisions.extend(nested.optimizer_decisions.iter().cloned());
+        self.output_decode_operators += nested.output_decode_operators;
+        self.sql_boundaries.extend(nested.sql_boundaries.iter().cloned());
+        self.runtime_inputs.extend(nested.runtime_inputs.iter().cloned());
         if !nested.logical_plan.is_empty() {
             self.logical_plan.push_str("\nExecuted subplan:\n");
             self.logical_plan.push_str(&nested.logical_plan);

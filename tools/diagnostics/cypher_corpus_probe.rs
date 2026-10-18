@@ -11,6 +11,8 @@
 //! to infer the same schema from all scenario statements as the runner does.
 //! It exports prepared SQL regions and residual operator counts without executing
 //! the target query; only fixture setup is executed.
+//! Add `--explain-sql` to export DuckDB JSON EXPLAIN plans and cardinality
+//! estimates for these regions. This never uses EXPLAIN ANALYZE.
 //! `--mapped-sql` compiles against declared physical SQL tables and exports
 //! `fixture_sql` (CREATE/INSERT) separately. A diagnostic request may include
 //! `schema: {nodes: [...], edges: [...]}`; otherwise fixture types are inferred.
@@ -141,6 +143,8 @@ async fn main() {
     let rule_trace = std::env::args().any(|arg| arg == "--rule-trace");
     let rule_metrics = rule_trace || std::env::args().any(|arg| arg == "--rule-metrics");
     let conformance_sql = std::env::args().any(|arg| arg == "--conformance-sql");
+    let explain_sql = std::env::args().any(|arg| arg == "--explain-sql");
+    assert!(!explain_sql || conformance_sql, "--explain-sql requires --conformance-sql");
     let mapped_sql = std::env::args().any(|arg| arg == "--mapped-sql");
     let describe_fixture = std::env::args().any(|arg| arg == "--describe-fixture");
     let sql_only = conformance_sql || mapped_sql || std::env::args().any(|arg| arg == "--sql");
@@ -206,7 +210,7 @@ async fn main() {
                 if cypher_noop::is_noop(&target, &catalog) {
                     return Ok(cypher_noop::output());
                 }
-                let work = fixture.diagnostic_sql(&target);
+                let work = fixture.diagnostic_sql_with_estimates(&target, explain_sql);
                 return if no_constant_folding {
                     orchiddb::ir::diagnostics::without_constant_folding(work).await
                 } else { work.await };

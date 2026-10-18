@@ -1190,11 +1190,15 @@ impl RelationalFixture {
     }
     /// Compile-only diagnostic using exactly the catalog installed above.
     pub async fn diagnostic_sql(&self, plan: &GraphPlan) -> Result<Value> {
-        let mut result = orchiddb::ir::diagnostics::conformance_sql(
+        self.diagnostic_sql_with_estimates(plan, false).await
+    }
+    pub async fn diagnostic_sql_with_estimates(&self, plan: &GraphPlan, estimates: bool) -> Result<Value> {
+        let mut result = orchiddb::ir::diagnostics::conformance_sql_with_estimates(
             self.storage.try_clone().map_err(|e| e.to_string())?,
             self.diagnostic_mapping.clone(),
             plan,
             Arc::new(self.engine.procedure_catalog().clone()),
+            estimates,
         )
         .await?;
         result["schema_sql"] = serde_json::json!(self.schema_sql()?);

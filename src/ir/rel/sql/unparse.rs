@@ -16,6 +16,7 @@ pub(crate) fn unparse_plan_with_context(plan: LogicalPlan, dialect: SqlDialect, 
 }
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
     super::super::pipeline::validate_sql_contract(&plan, dialect, context)?;
+    let plan = super::correlation::preserve_scopes(plan)?;
     // Compact emission is an implementation alternative, after the same required
     // semantic and capability validation as the ordinary emitter.
     if let Some(sql) = super::compact_unwind::emit(&plan, dialect)? {
@@ -30,6 +31,17 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
         error => SqlError::Unsupported(error.to_string()),
     })?.plan;
     validate_portable_calls(&plan, dialect)?;
+    plan.apply_with_subqueries(|node| {
+        for expr in node.expressions() {
+            expr.apply(|expr| {
+                if let Some(requirements) = super::capabilities::SubqueryRequirements::from_expr(expr) {
+                    dialect.check_subquery(&requirements).map_err(|why| DataFusionError::Plan(why.into()))?;
+                }
+                Ok(TreeNodeRecursion::Continue)
+            })?;
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })?;
     let plan = specialize_portable_calls(plan, dialect)?;
     crate::ir::rules::RuleSession::new(context.clone()).invalidate();
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
@@ -80,6 +92,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
         }
         Ok(Transformed::no(LogicalPlan::Join(join)))
     })?.data;
+    let plan = super::correlation::preserve_scopes(plan)?;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
     Ok(apply_identifier_repairs(sql, &repairs))
