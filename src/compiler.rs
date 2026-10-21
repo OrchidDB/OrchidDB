@@ -364,6 +364,7 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "duration" => DataType::Duration(TimeUnit::Microsecond),
         "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
+        "timestamptz" => DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
         _ if value.starts_with("domain:") => {
             let (name, storage) = value[7..].split_once(':').ok_or("domain type requires name and storage type")?;
             if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') { return Err("invalid domain name".into()); }

@@ -48,6 +48,10 @@ impl<'a> LoweringContext<'a> {
             return Ok(value);
         }
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
+            // Map literals must retain their typed runtime value across collect/UNWIND.
+            if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if name == "map") {
+                return self.native_expr(plan, expr);
+            }
             // These functions return predicates, although the generic scalar
             // function catalog exposes an opaque value. Their shared runtime
             // implementation owns promotion, NaN and heterogeneous equality.

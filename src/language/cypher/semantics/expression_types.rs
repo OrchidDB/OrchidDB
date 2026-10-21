@@ -149,6 +149,7 @@ pub(super) fn validate_clause_static_expression_types(clause: &Clause) -> Cypher
         // UNWIND accepts heterogeneous list literals (bound as ANY[]),
         // so skip static homogeneity validation on its source.
         Clause::Unwind(_) => Ok(()),
+        Clause::Subquery(_) => Ok(()),
         Clause::Call(clause) => {
             for arg in &clause.args {
                 validate_static_expression_types(arg)?;

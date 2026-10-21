@@ -233,6 +233,20 @@ impl SemanticAnalyzer {
                         unwind_element_kind(&clause.expr, scope),
                     );
                 }
+                Clause::Subquery(call) => {
+                    let mut inner = SemanticScope::default();
+                    for name in &call.imports {
+                        let kind = scope.kind(name).ok_or_else(|| CypherPlanError::Invalid(format!("Undefined CALL import {name}")))?;
+                        inner.insert(name.clone(), kind);
+                    }
+                    let outputs = self.analyze_query_with_scope(&call.query, &mut inner)?;
+                    for output in outputs {
+                        if scope.contains(&output.name) {
+                            return Err(CypherPlanError::Invalid(format!("CALL output {} already exists", output.name)));
+                        }
+                        scope.insert(output.name, output.kind);
+                    }
+                }
                 Clause::Call(clause) => {
                     let (source_yields, alias_yields) = procedure_yields(clause);
                     validate_unique(

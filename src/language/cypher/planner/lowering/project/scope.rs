@@ -301,6 +301,10 @@ pub(super) fn add_candidate_bindings_from_query_body(
                 add_candidate_refs_from_expr_scoped(&clause.expr, candidates, locals, refs);
                 locals.insert(clause.alias.clone());
             }
+            Clause::Subquery(call) => {
+                refs.extend(call.imports.iter().filter(|n| candidates.contains(*n) && !locals.contains(*n)).cloned());
+                locals.extend(call.outputs.iter().cloned());
+            }
             Clause::Call(clause) => {
                 for arg in &clause.args {
                     add_candidate_refs_from_expr_scoped(arg, candidates, locals, refs);
@@ -775,6 +779,7 @@ pub(super) fn remove_local_query_body_bindings(
                 remove_local_exists_bindings(&clause.expr, candidates, refs);
                 remove_query_local_name(&clause.alias, candidates, refs);
             }
+            Clause::Subquery(call) => { for name in &call.outputs { remove_query_local_name(name, candidates, refs); } }
             Clause::Call(clause) => {
                 for arg in &clause.args {
                     remove_local_exists_bindings(arg, candidates, refs);
@@ -1180,6 +1185,10 @@ pub(super) fn collect_query_body_variable_references(
             Clause::Unwind(clause) => {
                 collect_free_variables(&clause.expr, bound, out);
                 bound.insert(clause.alias.clone());
+            }
+            Clause::Subquery(call) => {
+                out.extend(call.imports.iter().filter(|n| !bound.contains(*n)).cloned());
+                bound.extend(call.outputs.iter().cloned());
             }
             Clause::Call(clause) => {
                 for arg in &clause.args {

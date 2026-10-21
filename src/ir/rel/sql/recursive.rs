@@ -318,7 +318,22 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
     let mut recursive_ctes: Vec<RecursiveCte> = Vec::new();
     let mut seen = BTreeSet::new();
     let mut plain_versions = std::collections::BTreeMap::<String, Vec<usize>>::new();
+    fn aggregate_scope(plan: &LogicalPlan) -> bool {
+        match plan {
+            LogicalPlan::Aggregate(_) => true,
+            LogicalPlan::Projection(p) => aggregate_scope(&p.input),
+            LogicalPlan::SubqueryAlias(a) => aggregate_scope(&a.input),
+            _ => false,
+        }
+    }
     let transformed = plan.transform_up(|node| match node {
+        LogicalPlan::Filter(mut filter) if aggregate_scope(&filter.input) => {
+            // Keep projected aggregate aliases in their own SELECT. DF53 can
+            // otherwise resolve a HAVING alias against the wrong aggregate.
+            filter.input = Arc::new(hoist_operator(filter.input.as_ref().clone(),
+                "aggregate_filter", &mut plain_ctes, &mut seen)?.data);
+            Ok(Transformed::yes(LogicalPlan::Filter(filter)))
+        }
         LogicalPlan::Filter(mut filter) if matches!(filter.input.as_ref(),LogicalPlan::Projection(p) if p.schema.fields().iter().any(|f|crate::ir::rel::native_values::is_value(f.data_type()))) => {
             filter.input=Arc::new(hoist_operator(filter.input.as_ref().clone(),"native_projection",&mut plain_ctes,&mut seen)?.data);
             Ok(Transformed::yes(LogicalPlan::Filter(filter)))

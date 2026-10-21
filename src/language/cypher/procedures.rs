@@ -16,6 +16,7 @@ pub fn prepare(query: &mut Query, catalog: &ProcedureCatalog) -> CypherPlanResul
             Clause::Merge(clause) => validate_pattern_parameters(&clause.pattern)?,
             _ => {}
         }
+        if let Clause::Subquery(call) = clause { prepare(&mut call.query, catalog)?; continue; }
         let Clause::Call(call) = clause else { continue };
         let Some(procedure) = catalog.get(&call.name) else {
             if matches!(

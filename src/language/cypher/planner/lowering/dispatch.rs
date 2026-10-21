@@ -22,6 +22,22 @@ pub fn lower_clause(lowerer: &mut Lowerer, input: Node, clause: &Clause) -> Cyph
         Clause::Match(clause) => lower_match(lowerer, input, clause),
         Clause::Unwind(clause) => lower_unwind(lowerer, input, clause),
         Clause::Call(clause) => lower_call(lowerer, input, clause),
+        Clause::Subquery(call) => {
+            let imports = call.imports.clone();
+            let (right, outputs, kinds) = lowerer.with_preserved_scope(|lowerer| {
+                let kinds: Vec<_> = imports.iter().map(|name| (name.clone(), lowerer.binding_kind(name).unwrap_or(BindingKind::Unknown))).collect();
+                lowerer.replace_scope(imports.clone());
+                for (name, kind) in kinds { lowerer.add_visible_kind(name, kind); }
+                lowerer.with_child_traversal(CypherTraversalKind::ExistsSubquery, |lowerer| {
+                    let (right, outputs) = lowerer.lower_query_with_unions(&call.query)?;
+                    let kinds: Vec<_> = outputs.iter().map(|name| lowerer.binding_kind(name).unwrap_or(BindingKind::Unknown)).collect();
+                    Ok((right, outputs, kinds))
+                })
+            })?;
+            for (name, kind) in outputs.iter().zip(kinds) { lowerer.add_visible_kind(name.clone(), kind); }
+            Ok(Node::GraphApply { kind: ApplyKind::Inner, correlation: imports, outputs,
+                optional_missing: OptionalMissing::Null, left: input.boxed(), right: right.boxed() })
+        },
         Clause::Create(clause) => lower_create(lowerer, input, clause),
         Clause::Merge(clause) => lower_merge(lowerer, input, clause),
         Clause::Set(clause) => lower_set(lowerer, input, clause),

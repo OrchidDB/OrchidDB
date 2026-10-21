@@ -1,4 +1,5 @@
 mod normalization;
+mod subqueries;
 use normalization::normalize_cypher_extensions;
 
 use crate::ParsedGraphProgram;
@@ -93,11 +94,15 @@ pub fn parse_query(input: &str) -> Result<Query> {
 }
 
 fn parse_query_inner(input: &str) -> Result<Query> {
-    let normalized = normalize_cypher_extensions(input);
+    let (input, mut calls) = subqueries::extract(input)?;
+    let normalized = normalize_cypher_extensions(&input);
     let (root, _syntax) = parse_root(&normalized)?;
     let mut visitor = lowering::visitor::AstLoweringVisitor::new();
     visitor.visit_oC_Cypher(&root);
-    visitor.finish()
+    let mut query = visitor.finish()?;
+    subqueries::restore(&mut query, &mut calls);
+    if !calls.is_empty() { return Err(CypherParseError::Unsupported("CALL in this expression context".into())); }
+    Ok(query)
 }
 
 pub fn parse_syntax(input: &str) -> Result<CypherSyntax> {
