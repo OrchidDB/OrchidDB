@@ -99,10 +99,14 @@ def main():
     if system == 'linux':
         rust_target = args.rust_target or {"linux_arm64": "aarch64-unknown-linux-gnu",
                                           "linux_amd64": "x86_64-unknown-linux-gnu"}[target_platform]
-        zig = os.environ.get('ZIG', 'zig')
         target = rust_target.replace('-unknown-', '-') + '.2.28'
-        compiler = [zig, 'c++']
-        compiler += ['-target', target]
+        if host_system == 'linux' and host_arch == arch:
+            # Official Linux DuckDB uses libstdc++'s C++11 ABI. Use the host
+            # compiler when packaging in a matching Linux container; Zig's
+            # bundled libc++ produces incompatible DuckDB symbol names.
+            compiler = [os.environ.get('CXX', 'c++')]
+        else:
+            compiler = [os.environ.get('ZIG', 'zig'), 'c++', '-target', target]
     else:
         target = None
     run([*compiler, "-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DDUCKDB_BUILD_LOADABLE_EXTENSION",
