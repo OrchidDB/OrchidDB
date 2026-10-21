@@ -28,3 +28,8 @@ bundled-test-driver = ["duckdb/bundled"]
 async-trait = "0.1"
 duckdb = "=1.10502.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[example]]
+name = "catalog_smoke"
+path = "../../tools/diagnostics/catalog-smoke/rust.rs"
+required-features = ["orchid-catalog"]

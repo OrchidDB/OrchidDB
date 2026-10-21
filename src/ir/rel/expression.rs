@@ -1066,7 +1066,10 @@ impl<'a> LoweringContext<'a> {
                             Ok(Transformed::yes(value.clone()))
                         } else { Ok(Transformed::no(expr)) }
                     })?.data;
-                    let selected = datafusion::logical_expr::when(value.clone().is_not_null().and(condition), make_array(vec![value])).otherwise(make_array(vec![]))?;
+                    let empty = lit(ScalarValue::List(ScalarValue::new_list_nullable(
+                        &[], &value.get_type(plan.schema())?,
+                    )));
+                    let selected = datafusion::logical_expr::when(value.clone().is_not_null().and(condition), make_array(vec![value])).otherwise(empty)?;
                     result = Some(match result { Some(previous) => array_concat(vec![previous, selected]), None => selected });
                 }
                 Ok(result.unwrap_or_else(||make_array(vec![])))
@@ -1108,7 +1111,13 @@ impl<'a> LoweringContext<'a> {
                 use datafusion::functions_nested::expr_fn::{make_array, array_concat};
                 let mut result: Option<Expr> = None;
                 for column in columns {
-                    let item = datafusion::logical_expr::when(column.clone().is_not_null(),make_array(vec![column])).otherwise(make_array(vec![]))?;
+                    // Keep the empty arm in the property's type. An untyped
+                    // empty list becomes INTEGER[] in SQL and cannot share a
+                    // CASE with string (or other nonnumeric) property values.
+                    let empty = lit(ScalarValue::List(ScalarValue::new_list_nullable(
+                        &[], &column.get_type(plan.schema())?,
+                    )));
+                    let item = datafusion::logical_expr::when(column.clone().is_not_null(),make_array(vec![column])).otherwise(empty)?;
                     result = Some(match result { Some(previous) => array_concat(vec![previous,item]), None => item });
                 }
                 Ok(result.unwrap_or_else(||make_array(vec![])))

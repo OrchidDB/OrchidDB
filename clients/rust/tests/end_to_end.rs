@@ -509,6 +509,30 @@ async fn failed_statistics_generation_keeps_the_previous_snapshot() {
 mod statistics_adapter;
 
 #[tokio::test]
+async fn client_gremlin_string_values_skip_nulls_with_and_without_filtering() {
+    use orchiddb_client::{Connection as GraphConnection, Query, Schema};
+    let db = database();
+    db.execute("INSERT INTO people VALUES (4, NULL)", []).unwrap();
+    let config = request("gremlin", "g.V()");
+    let schema = Schema::from_value(json!({
+        "tables": config["tables"], "nodes": config["nodes"], "edges": config["edges"]
+    })).unwrap();
+    let mut graph = GraphConnection::new(Session::new(&db), schema);
+    for (query, expected) in [
+        ("g.V().hasLabel('Person').values('name').order()", vec!["Ada", "Grace", ADVERSARIAL_NAME]),
+        ("g.V().hasLabel('Person').values('name').is(neq('Grace')).order()", vec!["Ada", ADVERSARIAL_NAME]),
+    ] {
+        let mut names = Vec::new();
+        for batch in graph.query(Query::gremlin(query)).await.unwrap() {
+            let batch = batch.unwrap();
+            let column = batch.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+            names.extend(column.iter().map(|value| value.unwrap().to_owned()));
+        }
+        assert_eq!(names, expected, "{query}");
+    }
+}
+
+#[tokio::test]
 async fn generated_statistics_use_the_existing_session_and_keep_all_languages_correct() {
     use statistics::Statistics;
     let db = database();
@@ -550,7 +574,10 @@ async fn generated_statistics_use_the_existing_session_and_keep_all_languages_co
         ),
     ] {
         let plan = statistics.compile(request(language, query)).await.unwrap();
-        let mut statement = db.prepare(plan["sql"].as_str().unwrap()).unwrap();
+        let sql = plan["sql"].as_str().unwrap();
+        let mut statement = db.prepare(sql).unwrap_or_else(|error| {
+            panic!("{language} execution failed: {error}\n{sql}")
+        });
         let names = statement
             .query_map([], |row| row.get::<_, String>(0))
             .unwrap()

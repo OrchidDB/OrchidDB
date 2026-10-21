@@ -3,6 +3,19 @@
 Retain schema on a connection and execute queries directly. Add a local path
 dependency on `clients/rust`; the application supplies its database driver.
 
+From the extracted OrchidDB source release, add this to your application's
+`Cargo.toml` (adjust the path to the extracted directory):
+
+```toml
+[dependencies]
+orchiddb-client = { path = "../orchiddb-source/clients/rust" }
+```
+
+Keep the complete source directory: the client depends on the shared core two
+directories above it. This version is distributed through GitHub source releases,
+not crates.io. Enable `features = ["orchid-catalog"]` on this dependency to use
+`OrchidCatalog` with `Connection::with_catalog`.
+
 ```rust,ignore
 use orchiddb_client::{Connection, Query, Schema};
 let schema = Schema::from_json(&std::fs::read_to_string("schema.json")?)?;
@@ -25,7 +38,7 @@ Schema configuration rejects query fields. Query language is selected with
 From the repository root, run the complete borrowed-connection example:
 
 ```sh
-cargo run --manifest-path clients/rust/examples/Cargo.toml --features bundled
+cargo run --locked --manifest-path clients/rust/examples/Cargo.toml --features bundled
 ```
 
 [The example](examples/borrowed_duckdb.rs) includes a concrete adapter, tables,

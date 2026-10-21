@@ -2,7 +2,6 @@ import argparse
 import os
 from pathlib import Path
 import platform
-import json
 import subprocess
 import sys
 
@@ -80,29 +79,11 @@ def clients(only):
         subprocess.run(['mix', 'run', str(SOURCES / 'elixir.exs')],
                        cwd=ROOT / 'clients/elixir', env=elixir_env(env), check=True)
     if 'rust' in selected:
-        binary=output/'rust-smoke'
-        command=['rustc','--edition=2024','-C','debuginfo=0','-C','strip=debuginfo','-L','dependency='+str(ROOT/'target/debug/deps'),'-L',str(library),SOURCES/'rust.rs','-o',binary]
-        client_artifact = max((ROOT/'target/debug/deps').glob('liborchiddb_client-*.rlib'), key=lambda path:path.stat().st_mtime)
-        client_fingerprint = ROOT/'target/debug/.fingerprint'/client_artifact.stem.removeprefix('lib').replace('orchiddb_client-', 'orchiddb-client-', 1)/'lib-orchiddb_client.json'
-        client_dependencies = json.loads(client_fingerprint.read_text())['deps']
-        core_hash = next(dep[3] for dep in client_dependencies if dep[1] == 'orchiddb').to_bytes(8, 'little').hex()
-        core_fingerprint = next(path for path in (ROOT/'target/debug/.fingerprint').glob('orchiddb-*/lib-orchiddb') if path.read_text() == core_hash)
-        for crate in ('orchiddb','orchiddb_client','duckdb','tokio'):
-            artifacts=list((ROOT/'target/debug/deps').glob('lib'+crate+'-*.rlib'))
-            artifact=max(artifacts,key=lambda path:path.stat().st_mtime)
-            if crate == 'orchiddb_client':
-                artifact = client_artifact
-            if crate == 'orchiddb':
-                artifact = ROOT/'target/debug/deps'/('lib'+core_fingerprint.parent.name+'.rlib')
-                fingerprint = ROOT / 'target/debug/.fingerprint' / artifact.stem.removeprefix('lib') / 'lib-orchiddb.json'
-                dependencies = json.loads(fingerprint.read_text())['deps']
-                tokio_hash = next(dep[3] for dep in dependencies if dep[1] == 'tokio').to_bytes(8, 'little').hex()
-            if crate == 'tokio':
-                fingerprint = next(path for path in (ROOT/'target/debug/.fingerprint').glob('tokio-*/lib-tokio') if path.read_text() == tokio_hash)
-                artifact = ROOT / 'target/debug/deps' / ('lib'+fingerprint.parent.name+'.rlib')
-            command.extend(['--extern',crate+'='+str(artifact)])
-        run(command,env=env)
-        run([binary],env=env)
+        # Cargo selects a coherent dependency graph; private fingerprint formats
+        # and modification times cannot safely identify compatible Rust artifacts.
+        run(['cargo', 'run', '--locked', '-p', 'orchiddb-client',
+             '--example', 'catalog_smoke', '--features', 'orchid-catalog'],
+            env=env | dict(DUCKDB_LIB_DIR=str(library), CARGO_TARGET_DIR=str(ROOT/'target')))
     if 'extension' in selected:
         extension=ROOT/'extension/build/orchid.duckdb_extension'
         cli=ROOT/'extension/vendor/cli/duckdb'
@@ -139,6 +120,11 @@ def main():
         for command in (['mix', 'deps.get'], ['mix', 'compile'],
                         ['mix', 'run', '-e', 'Adbc.download_driver!(:duckdb)']):
             subprocess.run(command, cwd=ROOT / 'clients/elixir', env=env, check=True)
+    if not args.no_build and (not args.only or 'rust' in args.only):
+        # Complete a cold Rust build before the fixture issues short-lived tokens.
+        run(['cargo', 'build', '--locked', '-p', 'orchiddb-client',
+             '--example', 'catalog_smoke', '--features', 'orchid-catalog'],
+            env=os.environ | dict(DUCKDB_LIB_DIR=str(duckdb_library()), CARGO_TARGET_DIR=str(ROOT/'target')))
     command=[sys.executable,args.catalog/'tools/auth_smoke.py','--clients',sys.executable,Path(__file__).resolve(),'--no-build']
     if args.only:
         command.extend(['--only',*args.only])

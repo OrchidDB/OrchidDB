@@ -1,4 +1,4 @@
-use orchiddb::catalog::{CatalogAuth, Credential, OrchidCatalog};
+use orchiddb_client::{CatalogAuth, Credential, OrchidCatalog};
 use orchiddb_client::{Connection, Query, SqlDialect, SqlSession, SqlWork};
 use duckdb::arrow::{array::StringArray, datatypes::SchemaRef, error::ArrowError, record_batch::{RecordBatch, RecordBatchReader}};
 struct Rows<'a>(duckdb::Arrow<'a>);

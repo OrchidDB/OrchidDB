@@ -93,7 +93,7 @@ class Release:
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT):
             raise RuntimeError('Commit the source changes before a release; the release must identify one clean commit')
         versions = {}
-        for name in ('Cargo.toml', 'clients/rust/Cargo.toml', 'clients/native/Cargo.toml', 'clients/java/native/Cargo.toml', 'clients/python/pyproject.toml'):
+        for name in ('Cargo.toml', 'clients/rust/Cargo.toml', 'clients/rust/examples/Cargo.toml', 'clients/native/Cargo.toml', 'clients/java/native/Cargo.toml', 'clients/python/pyproject.toml'):
             config = tomllib.loads((ROOT / name).read_text())
             versions[name] = (config.get('package') or config['project'])['version']
         versions['clients/js/package.json'] = read(ROOT / 'clients/js/package.json')['version']
@@ -104,6 +104,10 @@ class Release:
         wrong = {name: value for name, value in versions.items() if value != self.version}
         if wrong:
             raise RuntimeError(f'Update and commit component versions to {self.version} first: {wrong}')
+        # The standalone application has its own lockfile outside the workspace.
+        # Resolve it before publishing source that customers cannot build locked.
+        run(['cargo', 'metadata', '--locked', '--format-version', '1',
+             '--manifest-path', 'clients/rust/examples/Cargo.toml'], env=self.env, capture=True)
         matrix.prerequisites()
         self.env['JAVA_HOME'] = subprocess.check_output(
             ['/usr/libexec/java_home', '-F', '-v', '21'], text=True).strip()
