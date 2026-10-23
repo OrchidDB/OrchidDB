@@ -257,6 +257,10 @@ pub(super) fn new_session(adapter: &str, options: Value) -> Result<HttpSession, 
         "quickwit" => Engine::Quickwit,
         #[cfg(feature = "elasticsearch")]
         "elasticsearch" => Engine::Elasticsearch,
+        #[cfg(feature = "prometheus")]
+        "prometheus" => Engine::Prometheus,
+        #[cfg(feature = "loki")]
+        "loki" => Engine::Loki,
         _ => return Err("unsupported or disabled remote adapter".into()),
     };
     // Do not include raw option values (potential credentials) in errors.

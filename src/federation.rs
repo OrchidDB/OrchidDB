@@ -677,8 +677,10 @@ fn route_request(
         .schema()
         .columns()
         .into_iter()
-        .zip(prepared.schema.fields())
-        .map(|(column, field)| Expr::Column(column).alias(field.name()))
+        .zip(prepared.schema.iter())
+        .map(|(column, (qualifier, field))| {
+            Expr::Column(column).alias_qualified(qualifier.cloned(), field.name())
+        })
         .collect();
     let replacement = LogicalPlan::Projection(
         Projection::try_new_with_schema(expressions, Arc::new(scan), prepared.schema.clone())
@@ -763,6 +765,7 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         Date32 | Date64 => "date".into(),
         Time32(_) | Time64(_) => "time".into(),
         Timestamp(_, None) => "timestamp".into(),
+        Timestamp(_, Some(zone)) if zone.as_ref() == "UTC" => "timestamptz".into(),
         Decimal128(p, s) => format!("decimal:{p}:{s}"),
         List(f) | LargeList(f) | FixedSizeList(f, _) => {
             format!("list:{}", type_name(f.data_type())?)

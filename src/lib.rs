@@ -14,7 +14,7 @@ pub mod catalog;
 pub mod execution;
 pub mod federation;
 pub mod operations;
-#[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate"))]
+#[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
 pub mod remote;
 pub mod grammar;
 pub mod ir;

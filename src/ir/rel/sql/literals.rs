@@ -31,7 +31,7 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
             Some(text) => string_literal(dialect, text)?,
             None => "NULL".to_string(),
         },
-        ScalarValue::Date32(_) | ScalarValue::TimestampSecond(_, None) | ScalarValue::TimestampMillisecond(_, None) | ScalarValue::TimestampMicrosecond(_, None) | ScalarValue::TimestampNanosecond(_, None) | ScalarValue::Time32Second(_) | ScalarValue::Time32Millisecond(_) | ScalarValue::Time64Microsecond(_) => {
+        ScalarValue::Date32(_) | ScalarValue::TimestampSecond(_, _) | ScalarValue::TimestampMillisecond(_, _) | ScalarValue::TimestampMicrosecond(_, _) | ScalarValue::TimestampNanosecond(_, None) | ScalarValue::Time32Second(_) | ScalarValue::Time32Millisecond(_) | ScalarValue::Time64Microsecond(_) => {
             if value.is_null() { "NULL".into() } else {
                 let array = value.to_array()?;
                 let text = arrow::util::display::array_value_to_string(array.as_ref(), 0)?;

@@ -356,6 +356,23 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
             Ok(Transformed::yes(LogicalPlan::SubqueryAlias(alias)))
         }
         LogicalPlan::Join(mut join) if matches!(join.join_type,
+            datafusion::logical_expr::JoinType::Inner | datafusion::logical_expr::JoinType::Left
+            | datafusion::logical_expr::JoinType::Right | datafusion::logical_expr::JoinType::Full)
+            && (aggregate_scope(&join.left) || aggregate_scope(&join.right)) => {
+            // DF53 can discard a projected GROUP BY when it becomes a join
+            // input. Materialize its SELECT boundary before unparsing the join.
+            for input in [&mut join.left, &mut join.right] {
+                if aggregate_scope(input) {
+                    let schema = input.schema().clone();
+                    let scan = hoist_operator(input.as_ref().clone(), "aggregate_join", &mut plain_ctes, &mut seen)?.data;
+                    let expressions = scan.schema().columns().into_iter().zip(schema.iter())
+                        .map(|(c,(q,f))| datafusion::logical_expr::Expr::Column(c).alias_qualified(q.cloned(),f.name())).collect();
+                    *input = Arc::new(LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(expressions,Arc::new(scan),schema)?));
+                }
+            }
+            Ok(Transformed::yes(LogicalPlan::Join(join)))
+        }
+        LogicalPlan::Join(mut join) if matches!(join.join_type,
             datafusion::logical_expr::JoinType::LeftSemi | datafusion::logical_expr::JoinType::LeftAnti) => {
             let mut changed = false;
             if !repair_scopes && matches!(join.left.as_ref(), LogicalPlan::Filter(_)) {
