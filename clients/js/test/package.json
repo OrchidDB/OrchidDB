@@ -1,6 +1,6 @@
 {
   "name": "@orchiddb/client-tests",
-  "version": "0.4.3-foundry.2",
+  "version": "0.4.3-foundry.3",
   "private": true,
   "type": "module",
   "dependencies": {
