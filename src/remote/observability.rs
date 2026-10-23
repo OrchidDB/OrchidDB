@@ -4,7 +4,8 @@
 //! Prometheus table names identify metrics evaluated on an epoch-aligned 60s
 //! grid, not raw scrape samples. `timestamp` is a microsecond timestamp, `value`
 //! is float64, and other string columns are labels. Loki adds `line` and optional
-//! JSON `labels`/`structured_metadata`. Both require constant time bounds.
+//! JSON `labels`/`structured_metadata`. `sample_id` is a stable scalar source key.
+//! Both require constant time bounds.
 use super::*;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::logical_expr::LogicalPlan;
@@ -168,7 +169,7 @@ fn label_column(e: &Expr) -> Option<&str> {
     (valid_name(&c.name, false)
         && !matches!(
             c.name.as_str(),
-            "timestamp" | "value" | "line" | "labels" | "structured_metadata"
+            "timestamp" | "value" | "line" | "labels" | "structured_metadata" | "sample_id"
         ))
     .then_some(c.name.as_str())
 }

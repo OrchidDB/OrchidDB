@@ -136,6 +136,8 @@ impl HttpSession {
                 .ok_or("invalid timestamp")?
                 .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
                 let mut row = labels.clone();
+                // Lossless source key: retain Loki nanoseconds and the complete label set.
+                row.insert("sample_id".into(), json!(json!([ns.to_string(), labels, if logs { sample.get(1) } else { None }]).to_string()));
                 row.insert("timestamp".into(), json!(stamp));
                 row.insert("labels".into(), json!(labels));
                 if logs {
