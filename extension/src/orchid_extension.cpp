@@ -266,6 +266,21 @@ Json Parameter(const Value &value, bool native = false) {
     if (native && (value.type().id()==LogicalTypeId::TINYINT || value.type().id()==LogicalTypeId::SMALLINT || value.type().id()==LogicalTypeId::INTEGER || value.type().id()==LogicalTypeId::BIGINT || value.type().id()==LogicalTypeId::HUGEINT || value.type().id()==LogicalTypeId::DECIMAL || value.type().id()==LogicalTypeId::FLOAT || value.type().id()==LogicalTypeId::DOUBLE)) {
         return {{"__orchiddb_number",Json::array({value.type().ToString(),value.ToString()})}};
     }
+    if (native) {
+        int64_t ticks;
+        int64_t ticks_per_second = 1000000;
+        bool zoned = false;
+        bool timestamp = true;
+        switch (value.type().id()) {
+        case LogicalTypeId::TIMESTAMP: ticks = value.GetValue<timestamp_t>().value; break;
+        case LogicalTypeId::TIMESTAMP_TZ: ticks = value.GetValue<timestamp_tz_t>().value; zoned = true; break;
+        case LogicalTypeId::TIMESTAMP_SEC: ticks = value.GetValue<timestamp_sec_t>().value; ticks_per_second = 1; break;
+        case LogicalTypeId::TIMESTAMP_MS: ticks = value.GetValue<timestamp_ms_t>().value; ticks_per_second = 1000; break;
+        case LogicalTypeId::TIMESTAMP_NS: ticks = value.GetValue<timestamp_ns_t>().value; ticks_per_second = 1000000000; break;
+        default: timestamp = false;
+        }
+        if (timestamp) { return {{"__orchiddb_timestamp", Json::array({ticks, ticks_per_second, zoned})}}; }
+    }
     switch (value.type().id()) {
     case LogicalTypeId::BOOLEAN: return value.GetValue<bool>();
     case LogicalTypeId::TINYINT:
