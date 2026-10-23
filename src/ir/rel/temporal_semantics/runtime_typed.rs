@@ -541,21 +541,22 @@ fn native_timestamp_comparison(
     let DataType::Timestamp(unit, zone) = column.get_type(plan.schema()).ok()? else {
         return None;
     };
-    let value = match constant {
-        Expr::Literal(value, _) => value,
-        Expr::Column(c) => match temporal_constant_bindings(plan).get(&c.name)? {
-            Value::Temporal(value) => transport::scalar(value).ok()?,
+    let temporal = if let Some(Value::Temporal(value)) = native_values::literal_value(&constant) {
+        value
+    } else {
+        let value = match constant {
+            Expr::Literal(value, _) => value,
+            Expr::Column(c) => match temporal_constant_bindings(plan).get(&c.name)? {
+                Value::Temporal(value) => transport::scalar(value).ok()?,
+                _ => return None,
+            },
             _ => return None,
-        },
-        _ => return None,
+        };
+        if !transport::is_type(&value.data_type()) { return None; }
+        if value.is_null() { return Some(lit(ScalarValue::Boolean(None))); }
+        transport::decode(&value).ok()?
     };
-    if !transport::is_type(&value.data_type()) {
-        return None;
-    }
-    if value.is_null() {
-        return Some(lit(ScalarValue::Boolean(None)));
-    }
-    let value = match transport::decode(&value).ok()? {
+    let value = match temporal {
         TemporalValue::DateTime(value, _) if zone.is_some() => value.naive_utc(),
         TemporalValue::LocalDateTime(value) if zone.is_none() => value,
         _ => return None,

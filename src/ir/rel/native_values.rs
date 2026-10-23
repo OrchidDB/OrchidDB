@@ -40,6 +40,16 @@ pub(super) fn literal(value: &Value) -> RelResult<Expr> {
     }
     Ok(df_core::named_struct(vec![lit(FIELD), lit(encode(value))]))
 }
+// Recognize only the literal constructor emitted above, never runtime expressions.
+pub(super) fn literal_value(expr: &Expr) -> Option<Value> {
+    let Expr::ScalarFunction(function) = expr else { return None; };
+    if function.func.name() != "named_struct" { return None; }
+    match function.args.as_slice() {
+        [Expr::Literal(ScalarValue::Utf8(Some(field)), _), Expr::Literal(ScalarValue::Utf8(Some(encoded)), _)]
+            if field == FIELD => decode(encoded).ok(),
+        _ => None,
+    }
+}
 fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, String> {
     Ok(match value {
         serde_json::Value::Object(map) if map.len() == 1 && map.contains_key(elements::FIELD) => {
