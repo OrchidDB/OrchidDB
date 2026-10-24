@@ -550,6 +550,95 @@ The map binds the two declared parameters before the edge body is lowered.
 threshold. A further `WHERE r.score ...` condition filters the expanded results.
 
 
+## DuckDB PromQL and LogQL extension sources
+
+Keep the engine dialect `duckdb` and select `duckdb_prometheus` or `duckdb_loki`
+in a table's `source_metadata.format`. This executes through DuckDB's community
+extensions instead of OrchidDB's direct HTTP engines. With named engines, assign
+the table to the DuckDB engine. The caller loads the extensions in its own
+DuckDB session:
+
+```sql
+INSTALL prometheus FROM community;
+LOAD prometheus;
+INSTALL loki FROM community;
+LOAD loki;
+```
+
+Register the ordinary table/node schema separately from queries, with these
+source settings (the `up` table name is also the default Prometheus metric):
+
+```json
+{
+  "source_metadata": [{
+    "table": "up",
+    "format": "duckdb_prometheus",
+    "options": {
+      "endpoint": "http://localhost:9090",
+      "start": "2026-10-24T00:00:00Z",
+      "end": "2026-10-24T00:10:00Z"
+    }
+  }]
+}
+```
+
+The schema uses `timestamp` (`timestamp`, UTC microseconds), `value` (`float64`,
+Prometheus), `line` (`string`, Loki), and string label columns such as `job`.
+`labels` and Loki's `structured_metadata` expose JSON text. `sample_id` is a
+stable string key containing the original timestamp, sorted labels, and log line
+for Loki; use it for node identity. It retains Loki's nanoseconds even though the
+mapped timestamp column uses microseconds. Missing labels remain SQL null.
+
+OrchidDB translates supported label, metric-value, and log-line predicates into
+PromQL/LogQL, then emits `prometheus_scan(...)` or `loki_scan(...)`. Every original
+predicate remains in SQL; joins, aggregation, ordering, and pagination run in
+DuckDB. Prometheus uses the same epoch-aligned 60-second evaluation grid as the
+native adapter. Generated scans require constant lower and upper timestamp
+bounds. Supply `start`/`end` in source metadata for graph queries; typed relational
+timestamp predicates can narrow them. Bounds in metadata are
+RFC3339 and define a half-open interval. Generated windows are limited to one day
+for Prometheus and 15 minutes for Loki. Loki also requires a label matcher that
+excludes empty labels, such as `job = 'api'`.
+
+Options also support `metric` to override the Prometheus metric name, or `query`
+to supply an explicit native expression. An explicit `query` requires `start`
+and `end`; graph predicates remain outside it so filtering does not change the
+meaning of native rate functions or aggregates. For example:
+
+```json
+{"table":"logs","format":"duckdb_loki","options":{
+  "secret":"production_logs",
+  "query":"{job=\"api\"} |= \"timeout\"",
+  "start":"2026-10-24T00:00:00Z",
+  "end":"2026-10-24T00:10:00Z"
+}}
+```
+
+Loki accepts `endpoint` or a named DuckDB `secret`; credentials stay in DuckDB's
+Secret Manager. The Prometheus extension currently requires `endpoint` and has
+no authentication support. Loki sources return log streams, not LogQL metric
+results. The generated call overrides Loki's default total row cap and leaves
+paging to the extension; upstream paging behavior, including its limitations
+for many entries at the same nanosecond, still applies. Native HTTP engines
+retain their own response validation and resource limits. Planning performs no
+HTTP calls and does not install extensions automatically.
+
+See the [Prometheus extension](https://github.com/botan/duckdb-prometheus) and
+[Loki extension](https://github.com/prochac/duckdb-loki) for installation,
+authentication, and backend limitations. If no community binary exists for your
+DuckDB version/platform, build the matching extension locally and load it in the
+caller-owned session.
+
+`make duckdb-observability-test` checks generated SQL and executes the real
+extensions against a deterministic local HTTP fixture. It requires the Python
+`duckdb` package and available extension binaries. Set `ORCHIDDB_TEST_PYTHON` to
+select a Python environment and `ORCHIDDB_LOKI_EXTENSION` to test a locally built
+Loki binary. The tests check outbound query syntax, UTC/time-grid behavior,
+residual filtering, missing labels, stable identities, aggregation, and Loki
+paging beyond 5,000 rows. Live validation used DuckDB 1.5.6, the Prometheus
+community binary, and a local Loki build from upstream revision
+`ef576056a0c56d0324ab99f58c2757b3999d5aa4`.
+
 ## Trino
 
 Select the `trino` SQL dialect. The shared adapter targets Trino **484** and

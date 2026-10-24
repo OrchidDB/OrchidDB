@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod execution;
 pub mod federation;
 pub mod operations;
+mod observability;
 #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
 pub mod remote;
 pub mod grammar;

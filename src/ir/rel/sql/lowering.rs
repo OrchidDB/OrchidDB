@@ -140,6 +140,11 @@ pub fn builtin_lower_relation(
     plan: &LogicalPlan,
     ctx: &LoweringContext,
 ) -> SqlResult<Option<RelationLowering>> {
+    if ctx.dialect == SqlDialect::DuckDb {
+        if let Some(statement) = super::duckdb_observability::lower(plan)? {
+            return Ok(Some(RelationLowering::Sql(statement)));
+        }
+    }
     let LogicalPlan::Extension(extension) = plan else {
         return Ok(None);
     };
@@ -580,22 +585,24 @@ pub(crate) fn transform_relations(
     plan: LogicalPlan,
     dialect: SqlDialect,
 ) -> SqlResult<LogicalPlan> {
-    if !matches!(dialect, SqlDialect::Custom(_)) {
+    if !matches!(dialect, SqlDialect::Custom(_) | SqlDialect::DuckDb) {
         return Ok(plan);
     }
+    let plan = if dialect == SqlDialect::DuckDb {
+        let (plan, found) = super::duckdb_observability::push_filters(plan)?;
+        if !found { return Ok(plan); }
+        plan
+    } else { plan };
     Ok(plan
         .transform_down_with_subqueries(|node| {
             if matches!(&node, LogicalPlan::Extension(extension) if extension.node.as_any().is::<SqlRelation>()) {
                 return Ok(Transformed::no(node));
             }
-            let lowered = lower_relation(
-                &node,
-                &LoweringContext {
-                    dialect,
-                    mode: LoweringMode::InIsland,
-                },
-            )
-            .map_err(|e| DataFusionError::Plan(e.to_string()))?;
+            let lowered = if dialect == SqlDialect::DuckDb {
+                super::duckdb_observability::lower(&node).map(|s| s.map(RelationLowering::Sql))
+            } else {
+                lower_relation(&node, &LoweringContext { dialect, mode: LoweringMode::InIsland })
+            }.map_err(|e| DataFusionError::Plan(e.to_string()))?;
             match lowered {
                 Some(RelationLowering::Sql(statement)) => {
                     Ok(Transformed::yes(LogicalPlan::Extension(Extension {

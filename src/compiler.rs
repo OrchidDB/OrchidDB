@@ -490,12 +490,14 @@ fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Resu
         let owner = table.engine.as_ref()
             .and_then(|name| request.engines.get(name))
             .map(|e| e.dialect.as_str()).unwrap_or(&request.dialect);
-        if let Ok(SqlDialect::Custom(adapter)) = SqlDialect::resolve(owner) {
+        if let Ok(dialect) = SqlDialect::resolve(owner) {
             if let Some(metadata) = request.source_metadata.iter().find(|m| m.table == table.name) {
-                if let Some(bound) = adapter.source_provider(metadata, schema.clone())
-                    .map_err(|e| e.to_string())? {
-                    provider = bound;
-                }
+                let bound = match dialect {
+                    SqlDialect::Custom(adapter) => adapter.source_provider(metadata, schema.clone()),
+                    SqlDialect::DuckDb => crate::ir::rel::sql::duckdb_observability::provider(metadata, schema.clone()),
+                    _ => Ok(None),
+                }.map_err(|e| e.to_string())?;
+                if let Some(bound) = bound { provider = bound; }
             }
         }
         mapping.register_table(&table.name, provider.clone());
