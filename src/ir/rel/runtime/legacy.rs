@@ -62,6 +62,11 @@ pub(super) fn run(
                 cost.clone(),
                 &rule_context,
             ))
+        } else if rule_context.lowering_policy == super::policy::LoweringPolicy::SqlRequired {
+            let mut resources = super::super::dag::DagSession::new(state.lock().map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?.context.sql_timeout);
+            resources.set_rule_context(rule_context.clone());
+            runtime.block_on(super::super::dag::prepare_with_extensions(plan,
+                vec![Arc::new(KernelPlanner { state: state.clone() })], &resources, cost.clone(), &rule_context))
         } else {
             let session = datafusion::prelude::SessionContext::new_with_config(
                 datafusion::prelude::SessionConfig::new().with_target_partitions(1),

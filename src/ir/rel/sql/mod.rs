@@ -22,6 +22,8 @@
 #[cfg(feature = "duckdb")]
 pub mod language_functions;
 #[cfg(feature = "duckdb")]
+mod native_language_functions;
+#[cfg(feature = "duckdb")]
 mod language_vectors;
 mod logical_functions;
 mod structured;

@@ -151,7 +151,9 @@ fn compile(input: Value, inspect: bool) -> Result<Value, String> {
             }
             match program::compile_request_json(input) {
                 Ok(compiled) => return Ok(compiled),
-                Err(_) => {},
+                Err(program_error) => {
+                    if catalog::rule_context()?.lowering_policy == orchiddb::ir::rel::runtime::policy::LoweringPolicy::SqlRequired { return Err(program_error); }
+                },
             }
             if inspect {
                 let classification = diagnostic.filter(|d| d.message == error).and_then(|d| d.classification);

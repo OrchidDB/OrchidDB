@@ -350,6 +350,19 @@ impl GraphEngine {
         self.dag_session.set_rule_context(context);
     }
 
+    /// Require relational work to lower to SQL while preserving explicit boundaries.
+    pub fn set_lowering_policy(&mut self, policy: crate::ir::rel::runtime::policy::LoweringPolicy) {
+        self.backend.execution_context_mut().lowering_policy = policy;
+        self.dag_session.set_lowering_policy(policy);
+    }
+    pub fn set_boundary_executables(&mut self, executables: crate::ir::rel::runtime::policy::ExecutableSet) {
+        self.backend.execution_context_mut().executables = executables.clone();
+        self.dag_session.set_boundary_executables(executables);
+    }
+    pub fn set_cypher_aggregate_policy(&mut self, policy: crate::ir::rules::CypherAggregatePolicy) {
+        self.backend.execution_context_mut().profile.cypher_aggregates = policy;
+        self.dag_session.set_cypher_aggregate_policy(policy);
+    }
     pub fn set_read_mode(&mut self, mode: ReadMode) {
         self.read_mode = mode;
     }
@@ -737,7 +750,7 @@ impl GraphEngine {
             lease.executor.set_language_functions(self.language_functions).map_err(|e| e.to_string())?;
             if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
             if self.in_transaction {self.failed_transaction=true;}
-            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone(), self.dag_session.region_session.clone()).await;
+            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone(), self.dag_session.region_session.clone(), self.backend.execution_context_mut().clone()).await;
             if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
             if result.is_ok() && contains_mutation(&plan.root) { self.invalidate_statistics(); }
@@ -837,16 +850,17 @@ impl Drop for GraphEngine {
 /// Compatibility entry point sharing the runtime and storage adapter while
 /// retaining the caller's exact DuckDB connection and active transaction.
 pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<ReturnedBatches> {
-    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers, None).await.map(|(returned,_)|returned).map_err(|error| error.to_string())
+    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers, None, Default::default()).await.map(|(returned,_)|returned).map_err(|error| error.to_string())
 }
 
-async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool, region_session: Option<sql::region::SharedRegionSession>) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
+async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool, region_session: Option<sql::region::SharedRegionSession>, rule_context: crate::ir::rules::RuleContext) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
     let automatic = !executor.in_transaction();
     if automatic { executor.begin().map_err(|e|e.to_string())?; }
     let shared=Arc::new(std::sync::Mutex::new(std::mem::take(executor)));
     let mut lease=MappedExecutorLease {target:executor,shared:shared.clone(),automatic,finished:false};
     let mut session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
     session.region_session = region_session;
+    session.set_rule_context(rule_context);
     let result: Result<_, QueryExecutionError> = async {
         let rdf=mapping.rdf_mapping();
         if crate::ir::rel::sparql::handles(plan) {

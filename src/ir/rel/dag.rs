@@ -93,6 +93,9 @@ pub(crate) struct DagSession {
     pub(crate) region_session: Option<sql::region::SharedRegionSession>,
 }
 impl DagSession {
+    pub(crate) fn set_cypher_aggregate_policy(&mut self, policy: crate::ir::rules::CypherAggregatePolicy) { self.rule_template.profile.cypher_aggregates = policy; }
+    pub(crate) fn set_lowering_policy(&mut self, policy: super::runtime::policy::LoweringPolicy) { self.rule_template.lowering_policy = policy; }
+    pub(crate) fn set_boundary_executables(&mut self, executables: super::runtime::policy::ExecutableSet) { self.rule_template.executables = executables; }
     pub(crate) fn rule_context(&self) -> RelResult<crate::ir::rules::RuleContext> {
         let mut context = self.rule_template.new_query();
         #[cfg(feature = "duckdb")]
@@ -359,6 +362,17 @@ fn partition<'a>(
             }
             Some(RelationLowering::Sql(_)) => return Err(DataFusionError::Plan("required relational operation could not form a SQL island".into())),
             None => {},
+        }
+        if rule_context.lowering_policy == super::runtime::policy::LoweringPolicy::SqlRequired {
+            let boundary = if let Some(kernel) = super::runtime::CompiledKernel::from_plan(plan) {
+                super::runtime::policy::validate_kernel(kernel, rule_context.lowering_policy)
+                    .map_err(|e| DataFusionError::Plan(e.to_string()))?;
+                true
+            } else { matches!(plan, LogicalPlan::SubqueryAlias(_) | LogicalPlan::EmptyRelation(_)) };
+            if !boundary {
+                return Err(DataFusionError::Plan(format!("SQL-required lowering rejected residual {}: {}",
+                    plan.display(), emission_error.as_deref().unwrap_or(reason.unwrap_or("no SQL implementation")))));
+            }
         }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
@@ -630,10 +644,17 @@ pub(crate) async fn prepare_with_extensions(
     let plan = super::lowering_stage::normalize_residual(plan, &query_state, rule_context)?;
     super::lowering_stage::validate_residual(&plan)?;
     super::pipeline::validate_host_contract(&plan)?;
+    #[cfg(not(feature = "duckdb"))]
+    if rule_context.lowering_policy == super::runtime::policy::LoweringPolicy::SqlRequired {
+        return Err(RelError::Unsupported("SQL-required DAG execution needs a SQL region adapter".into()));
+    }
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
         .create_physical_plan(&plan, &query_state)
         .await?;
+    if rule_context.lowering_policy == super::runtime::policy::LoweringPolicy::SqlRequired {
+        validate_sql_required_physical(&physical)?;
+    }
     stats.rule_trace = rule_context.trace();
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
@@ -772,5 +793,39 @@ impl sql::region::RegionSession for EmbeddedRegionSession {
     fn query(&mut self, query:&str, schema:arrow::datatypes::SchemaRef) -> sql::SqlResult<RecordBatch> {
         self.0.lock().map_err(|_| sql::SqlError::Execution("embedded SQL session poisoned".into()))?
             .execute_prepared_arrow(&sql::PreparedSql::query_only(query.into(), schema))
+    }
+}
+
+/// Validate after physical planning as well: optimizer-inserted operators must
+/// not reintroduce a relational fallback under a permitted boundary.
+#[allow(deprecated)] // Older optimizer plans can retain the transport-only coalescer.
+pub(crate) fn validate_sql_required_physical(plan: &Arc<dyn ExecutionPlan>) -> RelResult<()> {
+    let mut pending = vec![plan.clone()];
+    while let Some(plan) = pending.pop() {
+        let allowed = super::runtime::is_kernel_exec(plan.as_ref())
+            || plan.as_any().is::<datafusion::physical_plan::empty::EmptyExec>()
+            || plan.as_any().is::<datafusion::physical_plan::coop::CooperativeExec>()
+            || plan.as_any().is::<super::dependent::exec::DependentOperationExec>()
+            || plan.as_any().is::<datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec>()
+            || plan.as_any().is::<datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec>();
+        #[cfg(feature = "duckdb")]
+        let allowed = allowed || plan.as_any().is::<DuckDbExec>();
+        if !allowed { return Err(RelError::Unsupported(format!("SQL-required lowering rejected physical operator {}",plan.name()))); }
+        pending.extend(plan.children().into_iter().cloned());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod sql_required_tests {
+    use super::*;
+
+    #[test]
+    fn physical_audit_rejects_datafusion_join() {
+        use datafusion::physical_plan::{empty::EmptyExec, joins::CrossJoinExec};
+        let leaf: Arc<dyn ExecutionPlan> = Arc::new(EmptyExec::new(Arc::new(arrow::datatypes::Schema::empty())));
+        let join: Arc<dyn ExecutionPlan> = Arc::new(CrossJoinExec::new(leaf.clone(), leaf));
+        let error = validate_sql_required_physical(&join).unwrap_err();
+        assert!(error.to_string().contains("CrossJoinExec"), "{error}");
     }
 }

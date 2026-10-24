@@ -130,25 +130,21 @@ pub(super) fn source_kernel(name: &str, source: Source) -> LogicalPlan {
 
 pub(super) fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
     if let Some(fields) = &kernel.relational_input {
-        let returned = ReturnedBatches {
-            fields: fields.clone(),
-            result_form: crate::ir::policy::ResultForm::RowSet,
-            batch,
-        };
-        let (bindings, values) = crate::ir::exec::batch_to_bindings(&returned)
-            .ok_or_else(|| failure("Unsupported Arrow boundary value"))?;
-        Ok(values
-            .into_iter()
-            .map(|values| Row {
-                bindings: bindings.iter().cloned().zip(values).collect(),
-                bulk: 1,
-            })
-            .collect())
+        super::super::native_values::decode_boundary_rows(&batch, fields).map_err(|e| failure(e.to_string()))
     } else {
         decode_rows(&batch)
     }
 }
 pub(super) fn run(kernel: &RowKernel, inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
+    super::policy::validate_kernel(kernel, state.context.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
+    if let Some(executable) = kernel.boundary.and_then(|kind| state.context.rule_context.executables.get(kind)) {
+        state.context.jvm.check().map_err(failure)?;
+        return executable.execute(kernel, inputs, state).map_err(|e| failure(e.to_string()));
+    }
+    run_default(kernel, inputs, state)
+}
+pub(super) fn run_default(kernel: &RowKernel, inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
+    policy::validate_kernel(kernel, state.context.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
     let preparation = state.context.scalar_preparation.clone();
     crate::ir::runtime::scalar::preparation::with_preparation(&preparation, || run_prepared(kernel, inputs, state))
 }

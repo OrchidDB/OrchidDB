@@ -406,7 +406,12 @@ char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
         auto &context=*static_cast<ClientContext *>(state);
         auto request=Json::parse(input);
         Json value;
-        if (request.at("op")=="float_helper_capability") {
+        if (request.at("op")=="execution_policy") {
+            Value lowering, aggregates;
+            context.TryGetCurrentSetting("orchid_lowering_policy", lowering);
+            context.TryGetCurrentSetting("orchid_cypher_aggregates", aggregates);
+            value = {{"lowering_policy", lowering.GetValue<string>()}, {"cypher_aggregates", aggregates.GetValue<string>()}};
+        } else if (request.at("op")=="float_helper_capability") {
             // Resolve through this caller's search path and inspect the actual
             // callback. A same-named macro/UDF is not evidence of our contract.
             value = nullptr;
@@ -1021,6 +1026,8 @@ void LoadOrchid(ExtensionLoader &loader) {
     ParserExtension parser;
     parser.parser_override = Rewrite;
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
+    config.AddExtensionOption("orchid_lowering_policy", "Relational execution: hybrid or sql_required", LogicalType::VARCHAR, Value("hybrid"));
+    config.AddExtensionOption("orchid_cypher_aggregates", "Cypher aggregate semantics: conformant or sql_native", LogicalType::VARCHAR, Value("conformant"));
     ParserExtension::Register(config, std::move(parser));
     config.SetOptionByName("allow_parser_override_extension", Value("fallback"));
 }

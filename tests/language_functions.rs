@@ -56,7 +56,7 @@ fn rows(r: &orchiddb::engine::QueryResult) -> Vec<Vec<String>> {
 async fn cypher_grouping_and_distinct_move_into_duckdb() {
     let mut engine = GraphEngine::in_memory().unwrap();
     engine
-        .cypher("CREATE (:P {x: 1}), (:P {x: 1}), (:P {x: 2})")
+        .cypher("CREATE (:P {x: 1.5}), (:P {x: 1.5}), (:P {x: 2.5})")
         .await
         .unwrap();
     for q in [
@@ -212,7 +212,7 @@ fn batched_nested_values_and_gremlin_null_contracts() {
 async fn nulls_empty_groups_and_unsupported_shapes_preserve_results() {
     let mut engine = GraphEngine::in_memory().unwrap();
     engine
-        .cypher("CREATE (:P {x: 1}), (:P), (:P {x: 2})")
+        .cypher("CREATE (:P {x: 1.5}), (:P), (:P {x: 2.5})")
         .await
         .unwrap();
     for q in [
@@ -292,7 +292,7 @@ fn executor_defaults_include_borrowed_active_transactions() {
 async fn graph_engine_uses_language_functions_by_default_with_explicit_opt_out() {
     let mut engine = GraphEngine::in_memory().unwrap();
     engine
-        .cypher("CREATE (:P {x: 1}), (:P {x: 2})")
+        .cypher("CREATE (:P {x: 1.5}), (:P {x: 2.5})")
         .await
         .unwrap();
     let query = "MATCH (p:P) RETURN count(DISTINCT p.x)";

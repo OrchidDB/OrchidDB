@@ -11,6 +11,7 @@ use std::any::Any;
 mod elements;
 mod rows;
 pub use rows::{decode_rows, result_batch, result_schema};
+pub(crate) use rows::decode_boundary_rows;
 use elements::Context;
 pub const FIELD: &str = "__orchiddb_value_v1";
 pub const VALUE: &str = "__orchiddb_value";

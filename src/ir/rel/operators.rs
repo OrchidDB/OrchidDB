@@ -264,6 +264,7 @@ impl LoweringContext<'_> {
                 // are projected away. Record that ordering once, before the
                 // aggregate, and share it across all collected expressions.
                 let collect_ordinal = if self.language == Language::Cypher
+                    && self.options.rule_context.profile.cypher_aggregates != crate::ir::rules::CypherAggregatePolicy::SqlNative
                     && !self.options.native_values
                     && aggs.iter().any(|agg| !self.unordered_collects.contains(&(agg as *const AggCall as usize)) && !compact_collections.contains_key(&agg.alias) && crate::ir::rules::aggregate::CollectionContract::for_aggregate(agg)
                         .is_some_and(|contract| contract.order == crate::ir::rules::aggregate::CollectionOrder::PreserveInput))
@@ -303,8 +304,10 @@ impl LoweringContext<'_> {
                     .iter()
                     .map(|key| col_exact(key).alias(key))
                     .collect::<Vec<_>>();
-                let cypher_keys = (self.options.language_functions && self.language == Language::Cypher)
-                    || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin));
+                let sql_native_aggregates = self.language == Language::Cypher
+                    && self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative;
+                let cypher_keys = !sql_native_aggregates && ((self.options.language_functions && self.language == Language::Cypher)
+                    || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin)));
                 let mut representatives = Vec::new();
                 let mut hidden_keys = BTreeSet::new();
                 for (i, item) in group.iter().enumerate() {
@@ -415,7 +418,7 @@ impl LoweringContext<'_> {
                     .iter()
                     .map(|agg| {
                         if let Some(expr) = compact_collections.get(&agg.alias) { return Ok(expr.clone().alias(&agg.alias)); }
-                        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
+                        if !sql_native_aggregates && self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
                             && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction|AggKind::StDev|AggKind::StDevP|AggKind::PercentileCont|AggKind::PercentileDisc)
                             && let Some(arg)=&agg.arg {
                             let lowered=self.lower_expr(&input.plan,arg)?;
@@ -459,6 +462,7 @@ impl LoweringContext<'_> {
                             // SQL's SUM/AVG are NULL over an empty or all-NULL
                             // group; Kuzu's identity for these is zero. Only
                             // the `OrNull`/plain-AVG kinds want SQL's answer.
+                            AggKind::Sum | AggKind::SumOrZero if sql_native_aggregates => distinct_if(df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?), agg.distinct)?,
                             AggKind::Sum | AggKind::SumOrZero => df_core::coalesce(vec![
                                 distinct_if(
                                     df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
@@ -500,6 +504,10 @@ impl LoweringContext<'_> {
                                 } else {
                                     df_max(arg)
                                 }
+                            }
+                            AggKind::CollectNonNull if sql_native_aggregates => {
+                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                distinct_if(df_array_agg(arg.clone()).filter(arg.is_not_null()).build()?, agg.distinct)?
                             }
                             AggKind::CollectNonNull => {
                                 let ordinal = if self.unordered_collects.contains(&(agg as *const AggCall as usize)) { None }

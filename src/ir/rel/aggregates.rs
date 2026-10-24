@@ -4,7 +4,7 @@ use super::*;
 
 impl<'a> LoweringContext<'a> {
     pub(super) fn compact_distinct_collect(&self, plan: &LogicalPlan, agg: &AggCall) -> RelResult<Option<Expr>> {
-        if self.language != Language::Cypher || !self.options.language_functions || self.options.native_values
+        if self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative || self.language != Language::Cypher || !self.options.language_functions || self.options.native_values
             || agg.kind != AggKind::CollectNonNull || !agg.distinct || !compact_collection_input(plan) {
             return Ok(None);
         }
@@ -162,7 +162,7 @@ impl<'a> LoweringContext<'a> {
         }
         let expr = crate::ir::functions::native_aggregate(name, args, plan.schema(), agg.distinct)?;
         // Cypher stdev variants return zero for an empty or singleton sample.
-        Ok(if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) {
+        Ok(if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) && !(self.language == Language::Cypher && self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative) {
             df_core::coalesce(vec![expr, lit(0.0_f64)])
         } else {
             expr

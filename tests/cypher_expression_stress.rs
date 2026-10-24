@@ -160,6 +160,8 @@ async fn unicode_escape_width_and_surrogate_pairs_preserve_values() {
         assert_eq!(rows(&query).await, vec![vec![expected]], "{query}");
     }
     for literal in [
+        r"'\uH'",
+        r"'\u12'",
         r"'\uD800'",
         r"'\uDC00'",
         r"'\uD800\u0041'",
@@ -205,7 +207,9 @@ async fn case_regressions_compile_to_both_sql_dialects() {
             let compiled: serde_json::Value = serde_json::from_str(&compiled).unwrap();
             let sql = compiled["sql"].as_str().unwrap();
             assert!(!sql.is_empty());
-            if dialect == "postgres" && query.starts_with("MATCH") {
+            // Constant CASE conditions may be folded away entirely. When retained,
+            // PostgreSQL requires their NULL predicate to stay boolean.
+            if dialect == "postgres" && query.starts_with("MATCH") && sql.contains("CASE") {
                 assert!(
                     sql.contains("AS BOOLEAN"),
                     "null CASE condition lost its boolean type: {sql}"

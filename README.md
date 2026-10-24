@@ -1694,6 +1694,47 @@ programs, native value transport, and storage access live in `src/ir/rel`.
 Compiler probes and historical implementation diagnostics live in `tools/diagnostics`.
 They are developer tooling, not product usage examples or a client SDK.
 
+### SQL-required execution and boundary executables
+
+`LoweringPolicy::SqlRequired` requires SQL for relational work, including joins,
+filters, projections, and aggregates. Compilation fails when an operation has no
+SQL lowering; it cannot fall back to a native relational kernel or DataFusion
+physical operator. Planning and transport still use shared infrastructure.
+Explicit boundaries such as Gremlin barriers, traversal state, mutation, and
+control flow retain their executables. Nested subplans obey the same policy.
+`Hybrid` remains the default.
+
+In Rust, use `GraphEngine::set_lowering_policy` and
+`GraphEngine::set_boundary_executables`. An `ExecutableSet` supplies optional
+`BoundaryExecutable` implementations by `BoundaryKind`; omitted entries retain
+the built-in executable. A replacement can call `CompiledKernel::invoke_default`
+to wrap the existing behavior. These callbacks execute compiled boundaries and
+receive query state and rows. They are not database UDF registrations.
+
+The DuckDB extension exposes the placement setting independently from aggregate
+semantics:
+
+```sql
+SET orchid_lowering_policy = 'sql_required';
+SET orchid_cypher_aggregates = 'conformant';
+```
+
+Conformant semantics may use Orchid's built-in DuckDB language helpers.
+`CypherAggregatePolicy::SqlNative` (extension setting `sql_native`) opts into
+ordinary SQL aggregate and grouping semantics for representable values. For
+example, an empty `sum` or collection returns SQL NULL, and `stDev` follows the
+host's empty/singleton behavior. This portability option can change Cypher results;
+it does not relax SQL-required execution. Unsupported value types still fail.
+Use `GraphEngine::set_cypher_aggregate_policy` to select it independently.
+
+SQL-required execution currently accepts a subset of graph queries. In particular,
+managed storage and relational operations above some stateful boundaries still
+lack SQL lowering and are rejected. The full conformance suite uses the default
+hybrid policy; `--lowering-policy sql_required` on the extension conformance runner
+records strict coverage separately. `--cypher-aggregates sql_native` selects the
+portable aggregate profile for comparison; it is expected to differ from Cypher
+conformance assertions. Existing clients retain their defaults.
+
 ## Conformance and local verification
 
 | Pinned corpus | Recorded result |

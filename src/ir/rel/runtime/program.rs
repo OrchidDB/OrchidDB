@@ -38,6 +38,7 @@ impl CompiledProgram {
     }
     fn add(&mut self, plan: &LogicalPlan, seen: &mut HashMap<u64, usize>) -> Result<usize> {
         if let Some(kernel) = RowKernel::from_plan(plan) {
+            super::policy::validate_kernel(kernel, self.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
             if let Some(id) = seen.get(&kernel.id()) {
                 return Ok(*id);
             }
@@ -109,7 +110,7 @@ impl CompiledProgram {
         let nodes = self.stages.iter().map(|stage| {
             match &stage.operation {
                 StageOperation::Kernel(kernel) => json!({
-                    "id":stage.id,"kind":"kernel","name":kernel.name(),"inputs":stage.inputs,
+                    "id":stage.id,"kind":"kernel","name":kernel.name(),"boundary":kernel.boundary_kind(),"inputs":stage.inputs,
                     "streaming":kernel.streaming() && (kernel.is_source() || kernel.slice().is_none()),"source":kernel.is_source(),
                     "relational_fields":kernel.relational_fields(),
                     "required_bindings":kernel.required_bindings(),"written_bindings":kernel.written_bindings(),

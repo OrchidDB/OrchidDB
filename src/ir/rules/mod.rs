@@ -16,16 +16,28 @@ pub enum StringToFloatPolicy {
     Orchid,
     DuckDbNative,
 }
+/// Optional portability tradeoff; unrelated to whether execution must be SQL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CypherAggregatePolicy {
+    #[default]
+    Conformant,
+    /// Use database aggregate/equality semantics on SQL-representable values.
+    SqlNative,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SemanticProfile {
     pub version: u16,
     pub string_to_float: StringToFloatPolicy,
+    #[serde(default)]
+    pub cypher_aggregates: CypherAggregatePolicy,
 }
 impl Default for SemanticProfile {
     fn default() -> Self {
         Self {
             version: 1,
             string_to_float: StringToFloatPolicy::Orchid,
+            cypher_aggregates: CypherAggregatePolicy::Conformant,
         }
     }
 }
@@ -61,6 +73,8 @@ impl Default for RewriteBudget {
 }
 #[derive(Debug, Clone)]
 pub struct RuleContext {
+    pub lowering_policy: crate::ir::rel::runtime::policy::LoweringPolicy,
+    pub executables: crate::ir::rel::runtime::policy::ExecutableSet,
     pub profile: SemanticProfile,
     pub capabilities: TargetCapabilities,
     pub owner: Option<EngineIdentity>,
@@ -75,6 +89,8 @@ pub struct RuleContext {
 impl Default for RuleContext {
     fn default() -> Self {
         Self {
+            lowering_policy: Default::default(),
+            executables: Default::default(),
             profile: SemanticProfile::default(),
             capabilities: TargetCapabilities::default(),
             owner: None,
@@ -91,6 +107,8 @@ impl Default for RuleContext {
 /// query/parameter/schema keys; this does not replace parameter-sensitive keys.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RuleCacheIdentity {
+    pub lowering_policy: crate::ir::rel::runtime::policy::LoweringPolicy,
+    pub executable_revision: u64,
     pub profile: SemanticProfile,
     pub capabilities: TargetCapabilities,
     pub owner: Option<EngineIdentity>,
@@ -100,6 +118,8 @@ pub struct RuleCacheIdentity {
 impl RuleContext {
     pub fn cache_identity(&self) -> RuleCacheIdentity {
         RuleCacheIdentity {
+            lowering_policy: self.lowering_policy,
+            executable_revision: self.executables.revision(),
             profile: self.profile.clone(),
             capabilities: self.capabilities.clone(),
             owner: self.owner.clone(),

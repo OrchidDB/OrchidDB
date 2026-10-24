@@ -41,7 +41,7 @@ impl GraphEngine {
             .map(|_| ())
     }
     pub async fn sparql_sql(&self, query: &str, dataset: &str) -> EngineResult<String> {
-        let resources = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
+        let resources = self.dag_session.recreated(self.sql_timeout);
         let context = RdfSession {
             resources: &resources,
             mapping: self.rdf_catalog()?,
@@ -105,6 +105,7 @@ impl GraphEngine {
             mapping.physical_table_names(),
         );
         resources.region_session = self.dag_session.region_session.clone();
+        resources.set_rule_context(self.backend.execution_context_mut().clone());
         let mut context = RdfSession {
             resources: &resources,
             mapping,

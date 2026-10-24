@@ -42,6 +42,7 @@ use std::{
 };
 
 pub mod host;
+pub mod policy;
 pub mod program;
 pub use host::{CompileOptions, KernelState, SubplanRunner, compile_for_host};
 pub type CompiledKernel = RowKernel;
@@ -61,6 +62,7 @@ use transport::{schema, encode_rows, decode_rows};
 
 #[derive(Clone)]
 pub struct RowKernel {
+    boundary: Option<policy::BoundaryKind>,
     id: u64,
     name: String,
     inputs: Vec<LogicalPlan>,
@@ -144,6 +146,7 @@ fn kernel(
 ) -> LogicalPlan {
     LogicalPlan::Extension(Extension {
         node: Arc::new(RowKernel {
+            boundary: if name == "DecodeTraversers" { Some(policy::BoundaryKind::ResultTransport) } else { None },
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             name: name.into(),
             inputs,
@@ -178,10 +181,10 @@ fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
     Ok(plan.transform_up(|plan| {
         let LogicalPlan::Extension(extension) = &plan else { return Ok(Transformed::no(plan)); };
         let Some(parent) = extension.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
-        if !parent.fuse_unary || parent.inputs.len()!=1 { return Ok(Transformed::no(plan)); }
+        if parent.boundary.is_some() || !parent.fuse_unary || parent.inputs.len()!=1 { return Ok(Transformed::no(plan)); }
         let LogicalPlan::Extension(input) = &parent.inputs[0] else { return Ok(Transformed::no(plan)); };
         let Some(child) = input.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
-        if !child.fuse_unary || (child.inputs.len()!=1 && child.source.is_none()) || child.relational_input.is_some() || parent.relational_input.is_some()
+        if child.boundary.is_some() || !child.fuse_unary || (child.inputs.len()!=1 && child.source.is_none()) || child.relational_input.is_some() || parent.relational_input.is_some()
             || !child.streaming || !parent.streaming {
             return Ok(Transformed::no(plan));
         }
@@ -214,6 +217,8 @@ impl ExtensionPlanner for KernelPlanner {
         let Some(kernel) = node.as_any().downcast_ref::<RowKernel>() else {
             return Ok(None);
         };
+        policy::validate_kernel(kernel, self.state.lock().map_err(|_| failure("Query state poisoned"))?.context.rule_context.lowering_policy)
+            .map_err(|e| failure(e.to_string()))?;
         // SQL islands may project away ORDER BY keys before decoding. Their
         // output ordering then cannot be named in the boundary schema. Give
         // each island its own output requirement while the physical sort is
@@ -397,6 +402,7 @@ impl Compiler<'_> {
             islands.safe(node)
                 && !(self.policy.language == crate::ir::policy::Language::Cypher
                     && !self.language_functions
+                    && self.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::Conformant
                     && islands.requires_cypher_equality(node))
         };
         let terminal_gremlin = self.language_functions
@@ -458,12 +464,25 @@ impl Compiler<'_> {
         Ok(None)
     }
     fn lower_native(&self, node: &Node) -> Result<LogicalPlan> {
-        if let Node::GraphSlice { input, slice } = node {
+        if matches!(node, Node::GraphAggregate { .. }) && self.policy.language == crate::ir::policy::Language::Cypher
+            && self.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative {
+            return Err(failure("SQL-native aggregate semantics require SQL lowering; native conformant aggregation is not an equivalent fallback"));
+        }
+        if let Node::GraphSlice { input, slice } = node && self.rule_context.lowering_policy != policy::LoweringPolicy::SqlRequired {
             if let Some(plan) = self.lower_bounded(input, slice)? {
                 return Ok(plan);
             }
         }
-        self.lower_kernel(node).map(|plan| optimize::annotate(plan, node))
+        let plan = self.lower_kernel(node)?;
+        let plan = if let LogicalPlan::Extension(e) = &plan {
+            if let Some(kernel) = e.node.as_any().downcast_ref::<RowKernel>() {
+                let mut kernel = kernel.clone();
+                kernel.boundary = kernel.boundary.or_else(|| policy::boundary(node));
+                policy::validate_kernel(&kernel, self.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
+                LogicalPlan::Extension(Extension { node: Arc::new(kernel) })
+            } else { plan }
+        } else { plan };
+        Ok(optimize::annotate(plan, node))
     }
     fn lower_kernel(&self, node: &Node) -> Result<LogicalPlan> {
         if self.rule_context.profile.string_to_float == crate::ir::rules::StringToFloatPolicy::DuckDbNative {
@@ -534,7 +553,7 @@ pub(crate) async fn inspect_with_session(
     let rule_context = resources.rule_context().map_err(|e| e.to_string())?;
     let logical = host::compile_for_host(plan, graph, CompileOptions {
         rule_context: rule_context.clone(), sql_islands: true,
-        language_functions: resources.language_functions_enabled(), native_values: false,
+        language_functions: resources.language_functions_enabled(), native_values: rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired,
         prune_return: true,
     }).map_err(|e| e.to_string())?;
     let mut context = ExecutionContext::default();
@@ -567,7 +586,7 @@ async fn execute_rows_inner(
         rule_context: rule_context.clone(),
         sql_islands: true,
         language_functions: resources.is_some_and(|r| r.language_functions_enabled()),
-        native_values: false,
+        native_values: rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired,
         prune_return,
     })?;
     let mut context = ExecutionContext::default();
@@ -1564,3 +1583,5 @@ fn has_mutating_branches(node: &Node) -> bool {
     }
     false
 }
+
+pub(crate) fn is_kernel_exec(plan: &dyn ExecutionPlan) -> bool { plan.as_any().is::<KernelExec>() }

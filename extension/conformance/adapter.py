@@ -59,6 +59,8 @@ class Extension:
         self.db = duckdb.connect(config={'allow_unsigned_extensions': 'true'})
         self.db.execute('LOAD ' + literal(str(EXTENSION)))
         self.db.execute('SET errors_as_json=true')
+        self.db.execute('SET orchid_lowering_policy = ' + literal(os.environ.get('ORCHID_CONFORMANCE_LOWERING_POLICY', 'hybrid')))
+        self.db.execute('SET orchid_cypher_aggregates = ' + literal(os.environ.get('ORCHID_CONFORMANCE_CYPHER_AGGREGATES', 'conformant')))
         self.fixtures = {}
         self.reset()
 
@@ -175,6 +177,9 @@ class Extension:
                     'extension_artifact_sha256': self.artifact_sha256,
                     'fixture_transport': 'original-upstream-property-records',
                     'query_transport': 'original-upstream-remote-bytecode'}
+        # Managed graph storage discovers properties at runtime and needs no
+        # fixture schema; acknowledge the shared upstream harness handshake.
+        if op == 'configure-schema': return {'ok': True}
         if op == 'reset': self.reset(); return {'ok': True}
         if op == 'register-procedure':
             procedures = dict(self.procedures)

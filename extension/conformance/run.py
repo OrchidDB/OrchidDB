@@ -27,7 +27,11 @@ def main():
     p.add_argument('--limit', type=int)
     p.add_argument('--filter', default='')
     p.add_argument('--case', action='append', default=[], help='Exact pinned case ID; repeatable')
+    p.add_argument("--lowering-policy", choices=["hybrid", "sql_required"], default="hybrid")
+    p.add_argument("--cypher-aggregates", choices=["conformant", "sql_native"], default="conformant")
     args = p.parse_args()
+    os.environ["ORCHID_CONFORMANCE_LOWERING_POLICY"] = args.lowering_policy
+    os.environ["ORCHID_CONFORMANCE_CYPHER_AGGREGATES"] = args.cypher_aggregates
     os.chdir(REPO)
     os.environ['CONFORMANCE_ORCHIDDB_BINARY'] = str(Path(__file__).with_name('adapter.py').resolve())
     os.environ['PATH'] = str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH']
@@ -52,7 +56,7 @@ def main():
     if args.case and set(args.case) - {c['id'] for c in cases}:
         p.error('An exact case ID is missing from the selected pinned suite/filter')
     if args.limit: cases = cases[:args.limit]
-    build = {'extension': identity(EXTENSION), 'duckdb': duckdb.__version__,
+    build = {'lowering_policy': args.lowering_policy, 'cypher_aggregates': args.cypher_aggregates, 'extension': identity(EXTENSION), 'duckdb': duckdb.__version__,
              'revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
              'working_tree_modified': bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True)),
              'adapter_sources': [identity(__file__), identity(Path(__file__).with_name('adapter.py')), identity(Path(__file__).with_name('provider.py'))]}

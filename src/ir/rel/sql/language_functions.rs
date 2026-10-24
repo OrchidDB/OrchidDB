@@ -139,6 +139,7 @@ function!(
 /// compiling SQL themselves must also opt in via RelBackendOptions.
 /// Registration is idempotent on connections sharing a DuckDB catalog.
 pub fn register(connection: &Connection) -> duckdb::Result<()> {
+    super::native_language_functions::register(connection)?;
     register_float(connection)?;
     // Bind null calls without evaluating kernels. This is much cheaper than
     // enumerating DuckDB's full function catalog on every borrowed connection.

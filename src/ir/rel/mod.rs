@@ -272,6 +272,7 @@ struct LoweringContext<'a> {
 }
 
 impl RelBackend {
+    pub(crate) fn execution_context_mut(&mut self) -> &mut crate::ir::rules::RuleContext { &mut self.options.rule_context }
     pub(crate) fn set_rule_context(&mut self, context: crate::ir::rules::RuleContext) { self.options.rule_context = context; }
     pub(crate) fn options_rule_context(&mut self, helper: Option<language_functions::FloatHelperCapability>, enabled: bool) {
         self.options.rule_context = self.options.rule_context.new_query();

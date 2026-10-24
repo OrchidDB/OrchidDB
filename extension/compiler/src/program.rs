@@ -91,7 +91,8 @@ impl Program {
                 &prepared.graph,
                 CompileOptions {
                     rule_context: request.rule_context.clone(),
-                    sql_islands: prepared.managed_table.is_none() && !computed_mutation,
+                    sql_islands: (prepared.managed_table.is_none() || request.rule_context.lowering_policy == orchiddb::ir::rel::runtime::policy::LoweringPolicy::SqlRequired) && !computed_mutation,
+                    language_functions: request.rule_context.lowering_policy == orchiddb::ir::rel::runtime::policy::LoweringPolicy::SqlRequired,
                     ..Default::default()
                 },
             )

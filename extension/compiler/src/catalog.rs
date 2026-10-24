@@ -86,6 +86,9 @@ pub unsafe fn with_catalog<T>(
 pub fn rule_context() -> Result<orchiddb::ir::rules::RuleContext, String> {
     let mut context = orchiddb::ir::rules::RuleContext::default();
     if !ACTIVE.with_borrow(|callbacks| !callbacks.is_empty()) { return Ok(context); }
+    let policy = query(json!({"op":"execution_policy"}), std::ptr::null_mut())?;
+    context.lowering_policy = serde_json::from_value(policy["lowering_policy"].clone()).map_err(|e| format!("Invalid orchid_lowering_policy: {e}"))?;
+    context.profile.cypher_aggregates = serde_json::from_value(policy["cypher_aggregates"].clone()).map_err(|e| format!("Invalid orchid_cypher_aggregates: {e}"))?;
     let capability = query(json!({"op":"float_helper_capability"}), std::ptr::null_mut())?;
     context.capabilities.language_functions_enabled = true;
     if let Some(identity) = capability["registration_identity"].as_str() {

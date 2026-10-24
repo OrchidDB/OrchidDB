@@ -146,6 +146,11 @@ impl RowKernel {
         };
         extension.node.as_any().downcast_ref()
     }
+    pub fn boundary_kind(&self) -> Option<policy::BoundaryKind> { self.boundary }
+    /// Invoke the built-in executable, bypassing any override for this boundary.
+    pub fn invoke_default(&self, inputs: Vec<Vec<Row>>, state: &mut KernelState) -> std::result::Result<Vec<Row>, QueryExecutionError> {
+        execution::run_default(self, inputs, state).map_err(QueryExecutionError::from_error)
+    }
     pub fn id(&self) -> u64 {
         self.id
     }

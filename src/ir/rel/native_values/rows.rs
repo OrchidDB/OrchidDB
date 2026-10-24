@@ -68,6 +68,14 @@ fn decode_value(value: Value, context: &mut Context) -> Result<Value, String> {
 }
 
 pub fn decode_rows(batch: &RecordBatch, fields: &[String], graph: &PropertyGraph) -> QueryResult<Vec<Row>> {
+    let rows = decode_boundary_rows(batch, fields)?;
+    graph.prefetch_source(&rows);
+    graph.check_source()?;
+    Ok(rows)
+}
+
+// Decode transport without source I/O; the runtime prefetches before invoking a kernel.
+pub(crate) fn decode_boundary_rows(batch: &RecordBatch, fields: &[String]) -> QueryResult<Vec<Row>> {
     let returned = ReturnedBatches {fields:fields.to_vec(),result_form:ResultForm::RowSet,batch:batch.clone()};
     let (bindings, rows) = crate::ir::exec::batch_to_bindings(&returned).ok_or("Unsupported Arrow boundary value")?;
     let mut context = Context::default();
@@ -78,7 +86,5 @@ pub fn decode_rows(batch: &RecordBatch, fields: &[String], graph: &PropertyGraph
     // Returned graph references remain references to the caller's graph. Read
     // its authoritative metadata instead of installing a detached snapshot as
     // inserted graph entities (which would alter subsequent source scans).
-    graph.prefetch_source(&rows);
-    graph.check_source()?;
     Ok(rows)
 }
