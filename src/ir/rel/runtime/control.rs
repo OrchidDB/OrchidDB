@@ -90,7 +90,7 @@ impl Compiler<'_> {
             // Mapped reads share the statement connection. Independent scans
             // inside a correlated body remain eligible for SQL pushdown;
             // mutation fences retain the live overlay path.
-            sql: self.sql && (self.graph.source.is_some() || (self.native_values && self.graph.mapping.is_some())),
+            sql: self.sql && (self.rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired || self.graph.source.is_some() || (self.native_values && self.graph.mapping.is_some())),
             islands: self.islands.clone(),
             lowered: Default::default(),
         };
@@ -98,13 +98,23 @@ impl Compiler<'_> {
             plan: optimize::optimize(compiler.lower(node)?, None)?,
             prepared: Default::default(),
             observable: observable(node),
-            batchable: optimize::batchable(node),
+            batchable: self.rule_context.lowering_policy != policy::LoweringPolicy::SqlRequired && optimize::batchable(node),
             batch_names: if optimize::batchable(node) {optimize::batch_names(node)} else {Default::default()},
             barrier: ops::choose::contains_barrier(node),
             group_barrier: ops::aggregate::split_group_prefix(&mut node.clone()).is_some(),
             group_split: None,
             writer_split: None,
         })
+    }
+    pub(super) fn eager_sql_boundary(&self, node: &Node, input: LogicalPlan) -> Result<LogicalPlan> {
+        let body = self.subplan(node)?;
+        let plan = kernel("SqlEffectBarrier", vec![input], move |mut inputs, state| {
+            body.run(inputs.remove(0), &state.graph, &mut state.context)
+        });
+        let LogicalPlan::Extension(e) = plan else { unreachable!() };
+        let mut barrier = e.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+        barrier.boundary = Some(policy::BoundaryKind::Barrier);
+        Ok(LogicalPlan::Extension(Extension { node: Arc::new(barrier) }))
     }
     pub(super) fn lower_control(&self, node: &Node) -> Result<LogicalPlan> {
         match node {

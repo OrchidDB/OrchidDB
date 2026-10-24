@@ -57,7 +57,7 @@ pub mod computed;
 mod retrieval;
 /// A corpus binding error is final: a row kernel cannot infer corpus scope.
 pub const BM25_CORPUS_ERROR: &str = "two-argument text.bm25 requires a mapped vertex text property (or its WITH alias)";
-pub use computed::{ComputedRelationship, RelationshipOrder, RelationshipStage, SortDirection, NullOrder, RetrievalMode};
+pub use computed::{AsOfRelationship, ComputedRelationship, RelationshipOrder, RelationshipStage, SortDirection, NullOrder, RetrievalMode};
 use super::{
     LoweredNode, LoweringContext, RelError, RelResult, col_exact, dst_id_col,
     dst_label_col, edge_schema, id_col, label_col, node_schema, prop_col, src_id_col,
@@ -441,6 +441,7 @@ impl EdgeMapping {
 /// against.
 #[derive(Default, Clone)]
 pub struct GraphMapping {
+    pub(crate) managed_table: Option<String>,
     pub(crate) rdf: super::rdf::RdfDatasetMapping,
     pub(crate) cypher_relationships: BTreeMap<String, crate::catalog::CypherRelationship>,
     pub(crate) catalog_procedures: crate::ir::procedures::ProcedureCatalog,

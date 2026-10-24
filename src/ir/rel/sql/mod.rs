@@ -38,6 +38,7 @@ pub use capabilities::{SubqueryKind, SubqueryRequirements};
 pub mod starrocks;
 pub mod trino;
 pub(crate) mod duckdb_observability;
+pub(crate) mod duckdb_iceberg;
 pub use dialect::{DialectAdapter, EngineAdapter};
 pub mod search;
 pub mod lowering;

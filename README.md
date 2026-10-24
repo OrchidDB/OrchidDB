@@ -695,7 +695,7 @@ stable keys in the ordinary table/node schema.
 
 | `connector` | Required options | Lowering |
 | --- | --- | --- |
-| `iceberg` | `catalog`, `schema`, `table` | Qualified table; optional `snapshot` emits `FOR VERSION AS OF`; optional `metadata` selects `$snapshots`, `$files`, `$history`, etc. |
+| `iceberg` | `catalog`, `schema`, `table` | Qualified table; optional `snapshot` emits `FOR VERSION AS OF`, `timestamp_as_of` emits `FOR TIMESTAMP AS OF`; optional `metadata` selects `$snapshots`, `$files`, `$history`, etc. |
 | `iceberg_changes` | `catalog`, `schema`, `table`, `start_snapshot`, `end_snapshot` | `TABLE(catalog.system.table_changes(...))`; start exclusive, end inclusive |
 | `delta` | `catalog`, `schema`, `table` | Qualified table; optional `version` for time travel |
 | `delta_changes` | `catalog`, `schema`, `table`, `since_version` | Delta change-data-feed table function; requires CDF enabled |
@@ -737,7 +737,9 @@ for the vector functions or tested scalar queries.
 `make trino-test` starts reusable local Trino, PostgreSQL (Iceberg metadata), Loki,
 and Prometheus containers and runs compiler-to-server checks. It covers scalar
 and graph queries, vector edge cases, Iceberg scans/snapshots/change feeds, and
-actual LogQL and Prometheus connector reads. Other connector bindings have SQL
+actual LogQL and Prometheus connector reads. It also runs temporal edge matching
+and Iceberg timestamp history checks on DuckDB and Trino; install
+`extension/tests/requirements.txt` into `TEST_PYTHON` first. Other connector bindings have SQL
 lowering tests, not live backend conformance certification. Run Python transport
 checks separately with `ORCHIDDB_TEST_TRINO=1 pytest clients/python/tests/test_trino.py`.
 These fixtures stay local and do not dispatch CI or modify cloud catalogs.
@@ -1727,13 +1729,72 @@ host's empty/singleton behavior. This portability option can change Cypher resul
 it does not relax SQL-required execution. Unsupported value types still fail.
 Use `GraphEngine::set_cypher_aggregate_policy` to select it independently.
 
-SQL-required execution currently accepts a subset of graph queries. In particular,
-managed storage and relational operations above some stateful boundaries still
-lack SQL lowering and are rejected. The full conformance suite uses the default
-hybrid policy; `--lowering-policy sql_required` on the extension conformance runner
-records strict coverage separately. `--cypher-aggregates sql_native` selects the
+Managed graph scans and relational operations following execution boundaries
+resume in SQL through typed inputs. Effect barriers complete writes before the
+next SQL island, including queries with `LIMIT 0`. Nested reads observe writes in
+the caller's transaction. SQL result types and deleted-element state survive the
+handoff. Variable-length Cypher paths use recursive SQL with typed path values.
+`--lowering-policy sql_required` on the extension conformance runner records
+strict coverage separately. `--cypher-aggregates sql_native` selects the
 portable aggregate profile for comparison; it is expected to differ from Cypher
 conformance assertions. Existing clients retain their defaults.
+
+### Temporal edges and historical sources
+
+A computed relationship can select the latest target row at or before each
+source row's timestamp. Register this with the graph schema:
+
+```json
+{
+  "computed_relationships": [{
+    "name": "PRICE",
+    "source": "Trade",
+    "target": "Quote",
+    "as_of": {
+      "source_time": "executed_at",
+      "target_time": "quoted_at",
+      "partition_by": {"symbol": "symbol"}
+    }
+  }]
+}
+```
+
+The timestamp names and partition keys refer to mapped properties. Source and
+target timestamp types must match. Matching is inclusive (`target <= source`),
+null timestamps and null partition keys do not match, and equal target timestamps
+are resolved by ascending target identity. The shared SQL lowering uses a join
+and `ROW_NUMBER` per source identity on DuckDB and Trino. `OPTIONAL MATCH` retains
+sources without a matching target. `as_of` owns ordering and the one-row limit;
+do not combine it with `order_by`, `limit_per_source`, or `candidates`. An optional
+`predicate` restricts eligible targets before selection.
+
+Historical table reads use a separately registered source. For DuckDB's Iceberg
+extension, register `source_metadata` with `format: "duckdb_iceberg"`:
+
+```json
+{
+  "table": "historical_quotes",
+  "format": "duckdb_iceberg",
+  "options": {
+    "path": "/warehouse/quotes/metadata/v2.metadata.json",
+    "timestamp_as_of": "2026-10-01T12:00:00Z"
+  }
+}
+```
+
+This emits `iceberg_scan(..., snapshot_from_timestamp = TIMESTAMP '...')`.
+Alternatively, `snapshot` selects a snapshot ID; omitting both reads the current
+snapshot from the supplied metadata. The host installs and loads `iceberg` and
+owns credentials. Trino uses `format: "trino"` with options
+`{"connector":"iceberg","catalog":"iceberg","schema":"market","table":"quotes","timestamp_as_of":"2026-10-01T12:00:00Z"}`,
+which emits `FOR TIMESTAMP AS OF`. Timestamps require an explicit RFC3339 offset
+and normalize to UTC. Snapshot ID, timestamp, and metadata-table selection are
+mutually exclusive.
+
+Map the historical source to a target label and use it in an ordinary or `as_of`
+computed relationship. A separate live-source binding can coexist in the same
+schema. Snapshot selection chooses a table version; the edge's `as_of` rule then
+matches rows within that version. Neither changes the other source binding.
 
 ## Conformance and local verification
 

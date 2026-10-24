@@ -22,6 +22,8 @@ pub enum ConnectorSource {
         #[serde(default)]
         snapshot: Option<i64>,
         #[serde(default)]
+        timestamp_as_of: Option<String>,
+        #[serde(default)]
         metadata: Option<String>,
     },
     IcebergChanges {
@@ -95,10 +97,11 @@ impl ConnectorSource {
                 schema,
                 table: name,
                 snapshot,
+                timestamp_as_of,
                 metadata,
             } => {
-                if snapshot.is_some() && metadata.is_some() {
-                    return Err(invalid("snapshot and metadata are mutually exclusive"));
+                if [snapshot.is_some(), timestamp_as_of.is_some(), metadata.is_some()].into_iter().filter(|v| *v).count() > 1 {
+                    return Err(invalid("snapshot, timestamp_as_of and metadata are mutually exclusive"));
                 }
                 let mut name = name.clone();
                 if let Some(suffix) = metadata {
@@ -122,6 +125,13 @@ impl ConnectorSource {
                     name.push_str(suffix);
                 }
                 let mut sql = table(catalog, schema, &name);
+                if let Some(timestamp) = timestamp_as_of {
+                    let time = chrono::DateTime::parse_from_rfc3339(timestamp)
+                        .map_err(|_| invalid("timestamp_as_of must be RFC3339 with an explicit offset"))?
+                        .with_timezone(&chrono::Utc);
+                    let keyword = if ast_form { "TIMESTAMP" } else { "FOR TIMESTAMP" };
+                    sql.push_str(&format!(" {keyword} AS OF TIMESTAMP {}", string(&time.format("%Y-%m-%d %H:%M:%S%.9f UTC").to_string())));
+                }
                 if let Some(id) = snapshot {
                     if *id < 0 {
                         return Err(invalid("negative snapshot"));

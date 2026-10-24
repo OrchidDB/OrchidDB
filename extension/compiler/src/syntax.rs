@@ -424,7 +424,7 @@ impl Parser<'_> {
             let source = self.name()?;
             self.expect("DESTINATION")?;
             let target = self.name()?;
-            let mut rule = ComputedRelationship { name, source, target, predicate: None, properties: BTreeMap::new(),
+            let mut rule = ComputedRelationship { as_of: None, name, source, target, predicate: None, properties: BTreeMap::new(),
                 order_by: vec![], limit_per_source: None, retrieval: RetrievalMode::default(), candidates: None };
             self.computed_stage(&mut rule, false)?;
             rules.push(rule);

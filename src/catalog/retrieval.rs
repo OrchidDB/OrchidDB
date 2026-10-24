@@ -322,6 +322,7 @@ pub(super) fn plan(
             RetrievalMode::Exact
         };
         Some(ComputedRelationship {
+            as_of: None,
             name: rule.name.clone(),
             source: rule.source.clone(),
             target: rule.target.clone(),

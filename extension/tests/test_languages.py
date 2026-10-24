@@ -64,6 +64,11 @@ class LanguageTests(unittest.TestCase):
         request = dict(version=1,dialect='duckdb',language='cypher',query='MATCH (p:Person) RETURN p.age',
                        tables=[{'name':'people','columns':[{'name':'wrong','data_type':'string'}]}],
                        nodes=[dict(label='Person',table='people',id='id',properties={'age':'age'})])
+        # Explicit metadata is validated without probing every remote source.
+        # Omitted metadata asks the host binder to infer the current schema.
+        with self.assertRaisesRegex(Exception, 'missing column'):
+            execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request))
+        request['tables'][0]['columns'] = []
         self.assertEqual(execute_query(self.db, 'SELECT * FROM orchid_query(?)', json.dumps(request)).fetchall(),[(30,),(40,),(None,)])
         request['dialect']='postgres'
         with self.assertRaisesRegex(Exception,'host DuckDB'):

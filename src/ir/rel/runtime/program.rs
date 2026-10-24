@@ -52,7 +52,7 @@ impl CompiledProgram {
                 id,
                 operation: StageOperation::Kernel(kernel.clone()),
                 inputs,
-                schema: transport::host_schema(),
+                schema: transport::host_schema_for(kernel.schema.as_arrow()),
             });
             seen.insert(kernel.id(), id);
             return Ok(id);
@@ -121,7 +121,7 @@ impl CompiledProgram {
                     "inputs":stage.inputs.iter().map(|id| json!({"node":id,"relation":format!("__orchid_input_{id}")})).collect::<Vec<_>>() }),
             }
         }).collect::<Vec<_>>();
-        json!({"root":self.root,"nodes":nodes})
+        json!({"root":self.root,"nodes":nodes,"rebind_nested":self.rule_context.lowering_policy == super::policy::LoweringPolicy::SqlRequired})
     }
     pub fn stage(&self, id: usize) -> std::result::Result<&CompiledStage, QueryExecutionError> {
         self.stages

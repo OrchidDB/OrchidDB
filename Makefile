@@ -123,6 +123,7 @@ conformance-report:
 trino-test:
 	$(PYTHON) tools/trino/setup.py
 	ORCHIDDB_TEST_TRINO=1 ORCHIDDB_TEST_TRINO_CONNECTORS=1 cargo test --locked --features prometheus,loki --test trino
+	ORCHIDDB_TEST_TRINO=1 ORCHIDDB_TEST_PYTHON="$(TEST_PYTHON)" cargo test --locked --test temporal_edges
 
 .PHONY: duckdb-observability-test
 duckdb-observability-test:

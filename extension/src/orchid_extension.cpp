@@ -266,6 +266,9 @@ Json Parameter(const Value &value, bool native = false) {
     if (native && (value.type().id()==LogicalTypeId::TINYINT || value.type().id()==LogicalTypeId::SMALLINT || value.type().id()==LogicalTypeId::INTEGER || value.type().id()==LogicalTypeId::BIGINT || value.type().id()==LogicalTypeId::HUGEINT || value.type().id()==LogicalTypeId::DECIMAL || value.type().id()==LogicalTypeId::FLOAT || value.type().id()==LogicalTypeId::DOUBLE)) {
         return {{"__orchiddb_number",Json::array({value.type().ToString(),value.ToString()})}};
     }
+    if (native && value.type().id() == LogicalTypeId::DATE) {
+        return {{"__orchiddb_temporal", Json::array({"date", value.ToString()})}};
+    }
     if (native) {
         int64_t ticks;
         int64_t ticks_per_second = 1000000;
@@ -668,7 +671,7 @@ unique_ptr<TableRef> GremlinBind(ClientContext &context, TableFunctionBindInput 
 }
 
 // Advanced mappings use the existing compiler protocol. The host binder is the
-// authority for schemas; caller-supplied column types are never trusted.
+// authority for omitted schemas; explicit metadata avoids probing remote sources.
 Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
     Json request;

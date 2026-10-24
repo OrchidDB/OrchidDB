@@ -154,7 +154,7 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 if self.language == Language::Cypher
-                    && path.is_some() && (!self.options.native_values || length.is_variable_length())
+                    && path.is_some() && !self.options.native_values
                 {
                     return Err(RelError::Unsupported(
                         "Cypher paths require typed SQL IR residual values".into(),
@@ -344,6 +344,7 @@ impl LoweringContext<'_> {
                             && has_binding_shape(&input.plan, binding).is_some()
                         {
                             for column in binding_column_names(&input.plan, binding)? {
+                                if column == *binding { continue; }
                                 let suffix = column.strip_prefix(binding).expect("binding prefix");
                                 representatives.push(datafusion::functions_aggregate::first_last::first_value(
                                     col_exact(&column), vec![],
@@ -419,10 +420,10 @@ impl LoweringContext<'_> {
                     .map(|agg| {
                         if let Some(expr) = compact_collections.get(&agg.alias) { return Ok(expr.clone().alias(&agg.alias)); }
                         if !sql_native_aggregates && self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
-                            && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction|AggKind::StDev|AggKind::StDevP|AggKind::PercentileCont|AggKind::PercentileDisc)
+                            && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction)
                             && let Some(arg)=&agg.arg {
                             let lowered=self.lower_expr(&input.plan,arg)?;
-                            if self.language==Language::Gremlin || agg.kind==AggKind::CollectNonNull || matches!(&lowered,Expr::Literal(v,_) if v.is_null()) || native_values::is_value(&lowered.get_type(input.plan.schema())?) {
+                            if self.language==Language::Gremlin || matches!(agg.kind, AggKind::CollectNonNull | AggKind::PercentileCont | AggKind::PercentileDisc) || matches!(&lowered,Expr::Literal(v,_) if v.is_null()) || native_values::is_value(&lowered.get_type(input.plan.schema())?) {
                                 return Ok(native_values::aggregate_expr(agg,lowered,self.language==Language::Cypher)?.alias(&agg.alias));
                             }
                         }
@@ -446,7 +447,10 @@ impl LoweringContext<'_> {
                                 };
                                 let operand = self.lower_distinct_count_operand(&input.plan, arg)?;
                                 datafusion::functions_aggregate::count::count_distinct(
-                                    if cypher_keys { language_functions::key(operand, &input.plan)? } else { operand },
+                                    if cypher_keys && self.options.native_values {
+                                        super::varlen::case_when(operand.clone().is_null(), lit(ScalarValue::Utf8(None)), native_values::key_expr(operand, true))
+                                    }
+                                    else if cypher_keys { language_functions::key(operand, &input.plan)? } else { operand },
                                 )
                             }
                             AggKind::CountIf => {
@@ -684,6 +688,27 @@ impl LoweringContext<'_> {
                     let skip=offset.as_ref().map(|e|lower("SKIP",e)).transpose()?;
                     let take=fetch.as_ref().map(|e|lower("LIMIT",e)).transpose()?;
                     let plan=LogicalPlanBuilder::from(input.plan.clone()).limit_by_expr(skip,take)?.build()?;
+                    return Ok(input.with_plan(plan));
+                }
+                // Invalid parameter bounds must still raise their language error
+                // from a host SQL scalar, rather than selecting a native slicer.
+                if self.options.native_values && offset.iter().chain(fetch.iter()).any(|expr|
+                    crate::ir::runtime::ops::slice::evaluate_slice_bound("LIMIT", expr, self.graph).is_err()) {
+                    let input = self.lower_node(input)?;
+                    let lower = |name: &str, expr: &IrExpr| -> RelResult<Expr> {
+                        match crate::ir::runtime::ops::slice::evaluate_slice_bound(name, expr, self.graph) {
+                            Ok(n) => Ok(lit(n)),
+                            Err(_) => {
+                                let validate = IrExpr::Binary { op: BinaryOp::Eq,
+                                    lhs: Box::new(expr.clone()), rhs: Box::new(IrExpr::Lit(Lit::Int(0))) };
+                                Ok(Expr::Cast(Cast::new(Box::new(native_values::predicate(
+                                    self.native_expr(&input.plan, &validate)?)), DataType::Int64)))
+                            }
+                        }
+                    };
+                    let skip = offset.as_ref().map(|e| lower("SKIP", e)).transpose()?;
+                    let take = fetch.as_ref().map(|e| lower("LIMIT", e)).transpose()?;
+                    let plan = LogicalPlanBuilder::from(input.plan.clone()).limit_by_expr(skip, take)?.build()?;
                     return Ok(input.with_plan(plan));
                 }
                 // A deterministic bound can use the ordinary LIMIT lowering.

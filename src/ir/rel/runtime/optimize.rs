@@ -23,7 +23,7 @@ pub(super) struct Contract {
 
 /// None means the expression may inspect implicit traverser state. Never infer
 /// dependencies from arguments alone for an opaque language function.
-fn references(expr: &IrExpr) -> Option<Names> {
+pub(super) fn references(expr: &IrExpr) -> Option<Names> {
     let mut names = Names::new();
     match expr {
         IrExpr::Lit(_) => {}

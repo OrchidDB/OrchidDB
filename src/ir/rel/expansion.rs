@@ -8,6 +8,7 @@ impl<'a> LoweringContext<'a> {
     /// a union of candidate tables; SQL execution must never open unrelated
     /// sources just to discard their labels in a join.
     pub(super) fn mapped_endpoint_labels(&self, labels: &LabelExpr, types: &LabelExpr, dir: Direction) -> RelResult<LabelExpr> {
+        if self.options.mapping.as_ref().is_some_and(|m| m.managed_table.is_some()) { return Ok(labels.clone()); }
         let Some(mapping) = &self.options.mapping else { return Ok(labels.clone()); };
         // Dynamic logical labels are not physical endpoint identity names.
         if mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|node| node.labels_column.is_some())) {

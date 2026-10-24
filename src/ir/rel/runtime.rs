@@ -57,8 +57,11 @@ fn failure(e: impl ToString) -> DataFusionError {
 }
 mod transport;
 mod execution;
+mod reentry;
 use execution::{Source, source_kernel};
-use transport::{schema, encode_rows, decode_rows};
+use transport::{schema, decode_rows};
+#[cfg(test)]
+use transport::encode_rows;
 
 #[derive(Clone)]
 pub struct RowKernel {
@@ -69,6 +72,7 @@ pub struct RowKernel {
     schema: DFSchemaRef,
     kernel: Arc<Kernel>,
     relational_input: Option<Vec<String>>,
+    relational_output: Option<reentry::SqlOutput>,
     /// Adjacent unary kernels may retain rows in memory without reordering evaluation.
     fuse_unary: bool,
     contract: Option<optimize::Contract>,
@@ -159,6 +163,7 @@ fn kernel(
             ),
             kernel: Arc::new(operation),
             relational_input: None,
+            relational_output: None,
             contract: None,
             streaming: name == "DecodeTraversers",
             source: None,
@@ -249,7 +254,7 @@ impl ExtensionPlanner for KernelPlanner {
             }
         }).collect::<Result<Vec<_>>>()?;
         let properties = Arc::new(PlanProperties::new(
-            EquivalenceProperties::new(schema()),
+            EquivalenceProperties::new(Arc::new(kernel.schema.as_arrow().clone())),
             Partitioning::UnknownPartitioning(1),
             if kernel.streaming { EmissionType::Incremental } else { EmissionType::Final },
             Boundedness::Bounded,
@@ -464,6 +469,8 @@ impl Compiler<'_> {
         Ok(None)
     }
     fn lower_native(&self, node: &Node) -> Result<LogicalPlan> {
+        if self.rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired
+            && let Some(plan) = self.lower_after_boundary(node)? { return Ok(plan); }
         if matches!(node, Node::GraphAggregate { .. }) && self.policy.language == crate::ir::policy::Language::Cypher
             && self.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative {
             return Err(failure("SQL-native aggregate semantics require SQL lowering; native conformant aggregation is not an equivalent fallback"));

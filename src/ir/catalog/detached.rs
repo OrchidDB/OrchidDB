@@ -3,6 +3,15 @@
 use super::*;
 
 impl PropertyGraph {
+    pub(crate) fn mark_detached_deleted(&self, value: &Value) {
+        let mut overlay = self.overlay.borrow_mut();
+        match value {
+            Value::Node { label, id } => { overlay.deleted_nodes.insert((label.clone(), id.clone())); }
+            Value::Edge { rel_type, id, .. } => { overlay.deleted_edges.insert((rel_type.clone(), id.clone())); }
+            _ => {}
+        }
+    }
+
     pub(crate) fn detached_node_state(&self, label: &str, id: &ElementId) -> Value {
         self.hydrate_native_state(false, label, id);
         self.overlay.borrow().native_node_state(&(label.to_owned(), id.clone()))
@@ -22,6 +31,7 @@ impl PropertyGraph {
             let mut overlay = self.overlay.borrow_mut();
             match element {
                 Value::Node { label, id } => {
+                    overlay.deleted_nodes.remove(&(label.clone(), id.clone()));
                     overlay
                         .public_ids
                         .insert((false, label.clone(), id.clone()), public_id.clone());
@@ -45,6 +55,7 @@ impl PropertyGraph {
                     dst_id,
                     ..
                 } => {
+                    overlay.deleted_edges.remove(&(rel_type.clone(), id.clone()));
                     overlay
                         .public_ids
                         .insert((true, rel_type.clone(), id.clone()), public_id.clone());

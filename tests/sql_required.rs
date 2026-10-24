@@ -12,6 +12,8 @@ async fn cypher_sql_required() {
         "RETURN 1 AS n",
         "UNWIND [1,2,3] AS n RETURN sum(n) AS n",
         "MATCH (p:Person) WHERE p.age > 20 RETURN p.name AS name",
+        "MATCH (p:Person) WITH p WHERE p.age = 30 RETURN count(*) AS n",
+        "MATCH (p:Person) RETURN p LIMIT 0",
         "MATCH (p:Person), (q:Person) WHERE p.age < q.age RETURN p.name, q.name",
         "UNWIND [1,1,2] AS n RETURN n, count(*) AS c ORDER BY n",
         "RETURN duration.between(date('2000-01-01'),date('2001-01-01')) AS d",
@@ -39,7 +41,7 @@ async fn cypher_sql_required() {
             rows(&expected.returned.batch),
             "{query}"
         );
-        assert!(result.stats.islands > 0, "{query}: {:?}", result.stats);
+        assert!(result.stats.islands > 0 || query.ends_with("LIMIT 0"), "{query}: {:?}", result.stats);
     }
 }
 
@@ -71,12 +73,9 @@ async fn boundary_override_preserves_default_execution() {
         ExecutableSet::default().with(BoundaryKind::Barrier, Arc::new(Observe(calls.clone()))),
     );
     engine.set_lowering_policy(LoweringPolicy::SqlRequired);
-    // A failed relational lowering must not reset the policy or overrides.
-    let error = engine
-        .gremlin("g.inject(1,2).barrier().count()")
-        .await
-        .unwrap_err();
-    assert!(error.contains("SQL-required"), "{error}");
+    let count = engine.gremlin("g.inject(1,2).barrier().count()").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(count.returned.batch.column(0), 0).unwrap(), "2");
+    assert_eq!(count.stats.islands, 2);
     let result = engine.gremlin("g.inject(1,2).barrier()").await.unwrap();
     assert_eq!(result.returned.batch.num_rows(), 2);
     assert!(calls.load(Ordering::Relaxed) > 0);
@@ -133,4 +132,14 @@ fn sql_required_rejects_relational_kernels_at_compile_time() {
             .contains("rejected native relational kernel"),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn effect_barrier_preserves_writes_when_sql_returns_no_rows() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.set_lowering_policy(LoweringPolicy::SqlRequired);
+    let empty = engine.cypher("CREATE (n:N {x:42}) RETURN n LIMIT 0").await.unwrap();
+    assert_eq!(empty.returned.batch.num_rows(), 0);
+    let count = engine.cypher("MATCH (n:N) RETURN count(*) AS c").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(count.returned.batch.column(0), 0).unwrap(), "1");
 }

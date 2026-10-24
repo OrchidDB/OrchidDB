@@ -93,6 +93,12 @@ fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, 
                 _ => return Err("Invalid native float".into()),
             })
         }
+        serde_json::Value::Object(map) if map.len() == 1 && map.contains_key("__orchiddb_temporal") => {
+            let temporal = &map["__orchiddb_temporal"];
+            Value::Temporal(crate::ir::temporal::parse(
+                temporal[0].as_str().ok_or("Missing temporal kind")?,
+                temporal[1].as_str().ok_or("Missing temporal value")?)?)
+        }
         serde_json::Value::Object(map) if map.len() == 1 && map.contains_key("__orchiddb_timestamp") => {
             let timestamp = &map["__orchiddb_timestamp"];
             let ticks = timestamp[0].as_i64().ok_or("Invalid timestamp ticks")?;
@@ -282,7 +288,10 @@ pub(super) fn list(expr: Expr) -> Expr {
 }
 pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool) -> RelResult<Expr> {
     let mut spec = agg.clone();
-    spec.arg = Some(IrExpr::binding("value"));
+    spec.arg = Some(if matches!(agg.kind, AggKind::PercentileCont | AggKind::PercentileDisc) {
+        IrExpr::List((0..2).map(|index| IrExpr::Call { name: "cypher_subscript".into(),
+            args: vec![IrExpr::binding("value"), IrExpr::Lit(Lit::Int(index))] }).collect())
+    } else { IrExpr::binding("value") });
     Ok(function(
         AGGREGATE,
         value_type(),
@@ -293,7 +302,7 @@ pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool) -> RelResul
         ],
     ))
 }
-fn function(name: &str, result: DataType, args: Vec<Expr>) -> Expr {
+pub(super) fn function(name: &str, result: DataType, args: Vec<Expr>) -> Expr {
     ScalarUDF::from(NativeFunction {
         name: name.into(),
         result,

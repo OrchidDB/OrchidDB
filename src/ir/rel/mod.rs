@@ -18,6 +18,7 @@ mod island_planner;
 mod optimizer;
 mod rules;
 mod scans;
+mod managed_scan;
 use scans::*;
 
 mod expression;

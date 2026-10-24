@@ -28,6 +28,19 @@ pub struct ComputedRelationship {
     /// Optional explicit candidate stage before final scoring/ranking.
     #[serde(default)]
     pub candidates: Option<RelationshipStage>,
+    /// Match the latest target at or before each source timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_of: Option<AsOfRelationship>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsOfRelationship {
+    pub source_time: String,
+    pub target_time: String,
+    /// Source property -> target property equality constraints.
+    #[serde(default)]
+    pub partition_by: BTreeMap<String, String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +150,15 @@ impl GraphMapping {
             || matches!(target.source, MappedSource::Computed(_))
         {
             return Err(error("computed relationships require node sources"));
+        }
+        if let Some(as_of) = &rule.as_of {
+            if !rule.order_by.is_empty() || rule.limit_per_source.is_some() || rule.candidates.is_some() {
+                return Err(error("as_of owns ordering and per-source selection; order_by, limit_per_source and candidates must be omitted"));
+            }
+            if !source.properties.contains_key(&as_of.source_time) || !target.properties.contains_key(&as_of.target_time)
+                || as_of.partition_by.iter().any(|(left,right)| !source.properties.contains_key(left) || !target.properties.contains_key(right)) {
+                return Err(error("as_of timestamps and partition keys must name mapped endpoint properties"));
+            }
         }
         if let Some(candidate) = &rule.candidates {
             if candidate
@@ -596,6 +618,38 @@ impl Expressions<'_> {
     }
 }
 pub(crate) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelResult<LogicalPlan> {
+    if let Some(as_of) = &rule.as_of {
+        let source = mapping.nodes.get(&rule.source).ok_or_else(|| error("missing source node"))?;
+        let target = mapping.nodes.get(&rule.target).ok_or_else(|| error("missing target node"))?;
+        let mut rule = rule.clone();
+        rule.as_of = None;
+        let time_type = |node: &NodeMapping, side: &str, property: &str| -> RelResult<DataType> {
+            let plan = endpoint(mapping, node, side)?;
+            Ok(plan.schema().field_with_unqualified_name(&prop(side, property))?.data_type().clone())
+        };
+        let source_type = time_type(source, "source", &as_of.source_time)?;
+        let target_type = time_type(target, "target", &as_of.target_time)?;
+        if !matches!(source_type, DataType::Timestamp(..) | DataType::Date32 | DataType::Date64)
+            || source_type != target_type {
+            return Err(error("as_of requires source and target timestamps with matching declared types"));
+        }
+        let column = |side: &str, name: &str| format!("{side}.\"{}\"", name.replace('"', "\"\""));
+        let mut predicates = vec![format!("{} >= {}", column("source", &as_of.source_time), column("target", &as_of.target_time))];
+        for (left, right) in &as_of.partition_by {
+            if !source.properties.contains_key(left) || !target.properties.contains_key(right) {
+                return Err(error("as_of partition keys must name mapped endpoint properties"));
+            }
+            predicates.push(format!("{} = {}", column("source", left), column("target", right)));
+        }
+        if let Some(predicate) = rule.predicate.take() { predicates.push(format!("({predicate})")); }
+        rule.predicate = Some(predicates.join(" AND "));
+        rule.order_by = vec![RelationshipOrder { expression: column("target", &as_of.target_time), direction: SortDirection::Desc, nulls: NullOrder::Last }];
+        rule.limit_per_source = Some(1);
+        rule.retrieval = RetrievalMode::Exact;
+
+        return plan(mapping, &rule);
+    }
+
     let src = mapping
         .nodes
         .get(&rule.source)

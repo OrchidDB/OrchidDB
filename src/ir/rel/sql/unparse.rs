@@ -72,8 +72,54 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;
+    // DF's unparser renders an EmptyRelation as a SELECT of typed NULLs,
+    // irrespective of produce_one_row. Preserve zero cardinality explicitly.
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::EmptyRelation(empty) = node else { return Ok(Transformed::no(node)); };
+        if empty.produce_one_row { return Ok(Transformed::no(LogicalPlan::EmptyRelation(empty))); }
+        let columns = empty.schema.iter().map(|(qualifier, field)| {
+            Expr::Cast(datafusion::logical_expr::Cast::new(
+                Box::new(lit(ScalarValue::Null)), field.data_type().clone()))
+                .alias_qualified(qualifier.cloned(), field.name())
+        }).collect::<Vec<_>>();
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::empty(true)
+            .project(columns)?.limit(0, Some(0))?.build()?;
+        Ok(Transformed::yes(plan))
+    })?.data;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = normalize_projection_names(plan)?;
+    // A final naming projection must not bury ORDER BY in a derived table:
+    // Trino correctly discards ordering that belongs only to a subquery.
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Projection(projection) = &node else { return Ok(Transformed::no(node)); };
+        let LogicalPlan::Sort(sort) = projection.input.as_ref() else { return Ok(Transformed::no(node)); };
+        let mut columns = std::collections::BTreeMap::new();
+        for (expr, output) in projection.expr.iter().zip(projection.schema.columns()) {
+            let expr = if let Expr::Alias(a) = expr { a.expr.as_ref() } else { expr };
+            let Expr::Column(column) = expr else { return Ok(Transformed::no(node)); };
+            columns.insert(sort.input.schema().index_of_column(column)?, output);
+        }
+        let mut keys = Vec::new();
+        for key in &sort.expr {
+            let mut complete = true;
+            let expr = key.expr.clone().transform_up(|expr| {
+                if let Expr::Column(column) = &expr {
+                    let index = sort.input.schema().index_of_column(column)?;
+                    if let Some(output) = columns.get(&index) { return Ok(Transformed::yes(Expr::Column(output.clone()))); }
+                    complete = false;
+                }
+                Ok(Transformed::no(expr))
+            })?.data;
+            if !complete { return Ok(Transformed::no(node)); }
+            keys.push(expr.sort(key.asc, key.nulls_first));
+        }
+        let mut projection = projection.clone();
+        projection.input = sort.input.clone();
+        let mut sort = sort.clone();
+        sort.input = Arc::new(LogicalPlan::Projection(projection));
+        sort.expr = keys;
+        Ok(Transformed::yes(LogicalPlan::Sort(sort)))
+    })?.data;
     let plan = preserve_limit_output(plan)?;
     let plan = if !dialect.requires_scope_repair() && !has_rdf_source(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?

@@ -47,9 +47,19 @@ impl<'a> LoweringContext<'a> {
         if let Some(value) = self.lower_graph_scalar(plan, expr)? {
             return Ok(value);
         }
+        // Aggregate rewrites represent known entity properties as subscripts.
+        // Preserve their declared SQL type before the generic value evaluator.
+        if self.language == Language::Cypher
+            && let IrExpr::Call { name, args } = expr
+            && name == "cypher_subscript"
+            && let [IrExpr::Binding(binding), IrExpr::Lit(Lit::String(_))] = args.as_slice()
+            && has_binding_shape(plan, binding).is_some()
+        {
+            return self.lower_cypher_subscript(plan, &args[0], &args[1]);
+        }
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
             // Map literals must retain their typed runtime value across collect/UNWIND.
-            if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if name == "map") {
+            if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(), "map" | "cypher_subscript")) {
                 return self.native_expr(plan, expr);
             }
             // These functions return predicates, although the generic scalar

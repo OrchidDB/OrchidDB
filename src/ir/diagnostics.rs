@@ -21,6 +21,12 @@ pub enum RuntimeDiagnosis {
 }
 
 impl RuntimeDiagnosis {
+    pub fn from_classification(kind: &str, detail: &str, phase: &str) -> Option<Self> {
+        [Self::ArgumentType, Self::NumberOutOfRange, Self::InvalidType, Self::MapKeyType,
+         Self::InvalidValue, Self::DeleteConnectedNode, Self::MergeReadOwnWrites,
+         Self::NegativeIntegerArgument, Self::InvalidSliceArgument, Self::DeletedEntityAccess,
+         Self::InvalidPropertyType].into_iter().find(|code| code.classification() == (kind, detail, phase))
+    }
     pub fn classification(self) -> (&'static str, &'static str, &'static str) {
         match self {
             Self::DeletedEntityAccess => return ("EntityNotFound", "DeletedEntityAccess", "runtime"),

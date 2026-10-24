@@ -210,6 +210,10 @@ pub(super) fn duplicate_binding_projection_only(
         col_exact(id_col(from)).alias(id_col(to)),
         col_exact(label_col(from)).alias(label_col(to)),
     ];
+    // Encoded elements retain properties not present as separate SQL columns.
+    if has_exact_col(plan, from) {
+        projections.push(col_exact(from).alias(to));
+    }
     if has_exact_col(plan, &node_labels_col(from)) {
         projections.push(col_exact(node_labels_col(from)).alias(node_labels_col(to)));
     }

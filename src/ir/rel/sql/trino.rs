@@ -61,12 +61,12 @@ impl DialectAdapter for TrinoAdapter {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
         for window in significant.windows(3) {
-            if matches!(&tokens[window[0]],Token::Word(w) if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("VERSION"))
+            if matches!(&tokens[window[0]],Token::Word(w) if w.quote_style.is_none() && (w.value.eq_ignore_ascii_case("VERSION") || w.value.eq_ignore_ascii_case("TIMESTAMP")))
                 && matches!(&tokens[window[1]],Token::Word(w) if w.keyword==datafusion::sql::sqlparser::keywords::Keyword::AS)
                 && matches!(&tokens[window[2]],Token::Word(w) if w.keyword==datafusion::sql::sqlparser::keywords::Keyword::OF)
             {
                 if let Token::Word(w) = &mut tokens[window[0]] {
-                    w.value = "FOR VERSION".into();
+                    w.value = format!("FOR {}", w.value);
                 }
             }
         }

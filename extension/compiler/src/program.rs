@@ -173,6 +173,17 @@ impl SubplanRunner for Services {
                     "DuckDB nested execution scope has expired or belongs to another thread".into(),
                 )
             })?;
+        // A SQL island following an effect must observe the writes through the
+        // caller's transaction, including independent scans in MERGE bodies.
+        if self.rule_context.lowering_policy == orchiddb::ir::rel::runtime::policy::LoweringPolicy::SqlRequired
+            && state.graph.has_mutations() {
+            match &self.prepared.managed_table {
+                Some(table) => orchiddb::ir::rel::host::managed::ManagedStore::new(table)
+                    .persist(self.host.as_ref(), &state.graph).map_err(RuntimeError::Runtime)?,
+                None => mapped_storage::persist(self.host.as_ref(), &state.graph, &self.prepared.mapping)
+                    .map_err(RuntimeError::Runtime)?,
+            }
+        }
         // Cache immutable descriptors within this statement, as the legacy
         // runner caches its prepared subplans. Never cache frontier or rows.
         let cached = self.programs.lock().map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))?
@@ -219,11 +230,17 @@ fn nested_error(message: String) -> RuntimeError {
         error: String,
         #[serde(default)]
         diagnosis: Option<orchiddb::ir::diagnostics::RuntimeDiagnosis>,
+        #[serde(default)]
+        classification: Option<Value>,
     }
     match serde_json::from_str::<Failure>(&message) {
         Ok(error) => runtime_error(QueryExecutionError {
             message: error.error,
-            diagnosis: error.diagnosis,
+            diagnosis: error.diagnosis.or_else(|| {
+                let c = error.classification?;
+                orchiddb::ir::diagnostics::RuntimeDiagnosis::from_classification(
+                    c["type"].as_str()?, c["detail"].as_str()?, c["phase"].as_str()?)
+            }),
         }),
         Err(_) => RuntimeError::Runtime(message),
     }
@@ -573,8 +590,8 @@ pub unsafe extern "C" fn orchid_program_invoke(
         let mut rows = Vec::with_capacity(count);
         for index in 0..count {
             let batch = unsafe { import(*inputs.add(index)) }?;
-            rows.push(if let Some(fields) = kernel.relational_fields() {
-                native_values::decode_rows(&batch, fields, &state.graph)?
+            rows.push(if kernel.relational_fields().is_some() {
+                kernel.decode_relational_input(&batch, &state.graph)?
             } else {
                 kernel_host::decode_rows(&batch)?
             });
@@ -583,7 +600,7 @@ pub unsafe extern "C" fn orchid_program_invoke(
             kernel.invoke(rows, state)
         })?;
         unsafe {
-            std::ptr::write(output, export(kernel_host::encode_rows(rows)?));
+            std::ptr::write(output, export(kernel.encode_host_output(rows, state)?));
         }
         Ok(())
     })

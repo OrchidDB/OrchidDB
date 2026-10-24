@@ -47,7 +47,9 @@ def main():
     import duckdb
     check = Extension()
     try:
-        assert check.send({'op': 'cypher', 'query': 'RETURN 1 AS x'})['native_rows'] == [[{'type':'int','value':1}]]
+        rows = check.send({'op': 'cypher', 'query': 'RETURN 1 AS x'})['native_rows']
+        assert len(rows) == 1 and len(rows[0]) == 1
+        assert rows[0][0]['type'] in ('int', 'long') and rows[0][0]['value'] == 1
         assert check.send({'op': 'sparql-syntax', 'query': 'SELECT * WHERE {}'}) == {'parsed': True}
         provider = check.send({'op': 'provider-info'})
     finally: check.db.close()

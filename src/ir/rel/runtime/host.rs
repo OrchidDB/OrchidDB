@@ -114,7 +114,7 @@ pub fn compile_for_host(
             graph,
             policy: plan.policy.clone(),
             sql: options.sql_islands
-                && !has_mutating_branches(&plan.root)
+                && (!has_mutating_branches(&plan.root) || rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired)
                 && !(graph.mapping.is_some() && graph.has_mutations()),
             language_functions: options.language_functions,
             native_values: options.native_values,
@@ -151,6 +151,16 @@ impl RowKernel {
     pub fn invoke_default(&self, inputs: Vec<Vec<Row>>, state: &mut KernelState) -> std::result::Result<Vec<Row>, QueryExecutionError> {
         execution::run_default(self, inputs, state).map_err(QueryExecutionError::from_error)
     }
+    /// Encode a compiled boundary output for its next SQL island or kernel.
+    pub fn encode_output(&self, rows: Vec<Row>, state: &KernelState) -> std::result::Result<RecordBatch, QueryExecutionError> {
+        if let Some(output) = &self.relational_output {
+            output.encode(&rows, &state.graph)
+        } else { transport::encode_rows(rows).map_err(QueryExecutionError::from_error) }
+    }
+    pub fn encode_host_output(&self, rows: Vec<Row>, state: &KernelState) -> std::result::Result<RecordBatch, QueryExecutionError> {
+        if self.relational_output.is_some() { self.encode_output(rows, state) }
+        else { transport::encode_host_rows(rows).map_err(QueryExecutionError::from_error) }
+    }
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -168,6 +178,27 @@ impl RowKernel {
     }
     pub fn relational_fields(&self) -> Option<&[String]> {
         self.relational_input.as_deref()
+    }
+    /// Restore the declared SQL types before decoding host Arrow values.
+    pub fn decode_relational_input(&self, batch: &RecordBatch, graph: &PropertyGraph) -> std::result::Result<Vec<Row>, QueryExecutionError> {
+        let fields = self.relational_fields().ok_or("Kernel has no relational input")?;
+        let schema = Arc::new(self.inputs[0].schema().as_arrow().clone());
+        // SQL must emit a cardinality column for a zero-column relation.
+        // Its value is transport scaffolding; only the row count is logical.
+        if schema.fields().is_empty() {
+            let empty = RecordBatch::try_new_with_options(schema, vec![],
+                &arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())))
+                .map_err(|e| e.to_string())?;
+            return super::super::native_values::decode_rows(&empty, fields, graph);
+        }
+        if schema.fields().len() != batch.num_columns() { return Err("SQL boundary column count changed".into()); }
+        let columns = batch.columns().iter().zip(schema.fields())
+            .map(|(array, field)| super::super::dag::coerce_sql_array(array, field.data_type()))
+            .collect::<std::result::Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let batch = RecordBatch::try_new_with_options(schema, columns,
+            &arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())))
+            .map_err(|e| e.to_string())?;
+        super::super::native_values::decode_rows(&batch, fields, graph)
     }
     /// Unknown means the operator may inspect implicit traverser state.
     pub fn required_bindings(&self) -> Option<&BTreeSet<String>> {

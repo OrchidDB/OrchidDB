@@ -82,3 +82,8 @@ mod schema;
 pub use extensions::*;
 pub use conversion::{from_logical_plan, from_logical_plan_with_policy, to_logical_plan};
 use schema::build_schema_for_node;
+
+/// Binding names at a graph operator boundary, before physical encoding.
+pub(crate) fn boundary_fields(node: &Node) -> DFResult<Vec<String>> {
+    Ok(schema::build_schema_for_node(node)?.fields().iter().map(|f| f.name().clone()).collect())
+}

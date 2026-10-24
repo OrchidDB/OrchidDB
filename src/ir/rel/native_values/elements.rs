@@ -97,6 +97,9 @@ impl Context {
                 self.graph.set_node_labels(&value, labels).map_err(|e| e.to_string())?;
             }
         }
+        if fields.get("deleted") == Some(&Value::Bool(true)) {
+            self.graph.mark_detached_deleted(&value);
+        }
         let key = (edge, label, id);
         let mut descriptor = descriptor;
         // Multiple projected references may carry different property subsets.
@@ -117,13 +120,8 @@ impl Context {
         Ok(value)
     }
     pub fn capture(&mut self, value: &Value, graph: &PropertyGraph) -> Result<(), String> {
-        for (edge, label, id) in referenced_elements(value) {
+        for ((edge, label, id), owner) in element_owners(value) {
             if self.elements.contains_key(&(edge, label.clone(), id.clone())) { continue; }
-            let owner = if edge {
-                let (src_label, src_id, dst_label, dst_id) = graph.live_edge_endpoints(&label, id.clone())
-                    .ok_or_else(|| format!("Missing detached edge {label}"))?;
-                Value::Edge {rel_type:label.clone(),id:id.clone(),src_label,src_id,dst_label,dst_id,projected_properties:None}
-            } else {Value::Node {label:label.clone(),id:id.clone()}};
             let properties = graph.jvm_properties(&owner, &[]);
             // Cypher user properties may be named `id` without being Gremlin
             // property records. Use the existing graph output accessors, then
@@ -143,6 +141,9 @@ impl Context {
                 ("identity".into(), Value::Scalar(id.scalar().clone())),
                 ("id".into(), graph.element_public_id(&owner)),
                 ("present_nulls".into(), Value::Bool(true)),
+                ("deleted".into(), Value::Bool(if edge {
+                    graph.live_edge_endpoints(&label, id.clone()).is_none()
+                } else { !graph.node_is_live(&label, id.clone()) })),
                 ("properties".into(), Value::Map(values)),
             ]);
             if let Value::Edge {src_label,src_id,dst_label,dst_id,..} = &owner {
@@ -198,12 +199,15 @@ impl Context {
     }
 }
 fn referenced_elements(value: &Value) -> BTreeSet<(bool,String,ElementId)> {
-        let mut keys = BTreeSet::new();
+    element_owners(value).into_keys().collect()
+}
+fn element_owners(value: &Value) -> BTreeMap<(bool,String,ElementId), Value> {
+        let mut keys = BTreeMap::new();
         let mut pending = vec![value];
         while let Some(value) = pending.pop() {
             match value {
                 Value::Node { label, id } => {
-                    keys.insert((false, label.clone(), id.clone()));
+                    keys.insert((false, label.clone(), id.clone()), value.clone());
                 }
                 Value::Edge {
                     rel_type,
@@ -214,9 +218,9 @@ fn referenced_elements(value: &Value) -> BTreeSet<(bool,String,ElementId)> {
                     dst_id,
                     ..
                 } => {
-                    keys.insert((true, rel_type.clone(), id.clone()));
-                    keys.insert((false, src_label.clone(), src_id.clone()));
-                    keys.insert((false, dst_label.clone(), dst_id.clone()));
+                    keys.insert((true, rel_type.clone(), id.clone()), value.clone());
+                    keys.insert((false, src_label.clone(), src_id.clone()), Value::Node { label:src_label.clone(), id:src_id.clone() });
+                    keys.insert((false, dst_label.clone(), dst_id.clone()), Value::Node { label:dst_label.clone(), id:dst_id.clone() });
                 }
                 Value::Path(items)
                 | Value::List(items)

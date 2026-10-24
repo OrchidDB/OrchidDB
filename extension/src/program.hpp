@@ -468,12 +468,15 @@ unique_ptr<LogicalOperator> BindProgramNode(ClientContext &context, TableFunctio
     auto child_sql=[&](uint64_t child) {return "SELECT * FROM __orchid_kernel("+std::to_string(program_id)+"::UBIGINT,"+std::to_string(child)+"::UBIGINT)";};
     if (description.at("kind")=="sql") {
         auto statement=Select(context,description.at("sql").get<string>());
+        auto generated_ctes=std::move(statement->node->cte_map.map);
+        statement->node->cte_map.map=decltype(generated_ctes)();
         for (const auto &dependency:description.value("inputs",Json::array())) {
             auto cte=make_uniq<CommonTableExpressionInfo>();
             cte->materialized=CTEMaterialize::CTE_MATERIALIZE_ALWAYS;
             cte->query=Select(context,child_sql(dependency.at("node").get<uint64_t>()));
             statement->node->cte_map.map.insert(dependency.at("relation").get<string>(),std::move(cte));
         }
+        for (auto &cte:generated_ctes) { statement->node->cte_map.map.insert(cte.first,std::move(cte.second)); }
         auto binder=Binder::CreateBinder(context,input.binder);
         auto bound=binder->Bind(static_cast<SQLStatement &>(*statement));
         names=bound.names;
@@ -550,7 +553,7 @@ char *ExecuteNested(void *context_p, const void *program_p, void *state, ArrowAr
         auto execution=cached->execution;
         execution->kernel_state=state;
         ProgramBindScope scope(execution);
-        auto result=HostExecute(context,Select(context,scope.SQL(execution->program->manifest.at("root").get<uint64_t>())),{},&cached->prepared);
+        auto result=HostExecute(context,Select(context,scope.SQL(execution->program->manifest.at("root").get<uint64_t>())),{},execution->program->manifest.value("rebind_nested",false) ? nullptr : &cached->prepared);
         execution->kernel_state=nullptr;
         parent.nested[program_p]=cached;
         auto stream=make_uniq<ResultArrowArrayStreamWrapper>(std::move(result),STANDARD_VECTOR_SIZE);

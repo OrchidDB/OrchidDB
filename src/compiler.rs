@@ -494,7 +494,10 @@ fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Resu
             if let Some(metadata) = request.source_metadata.iter().find(|m| m.table == table.name) {
                 let bound = match dialect {
                     SqlDialect::Custom(adapter) => adapter.source_provider(metadata, schema.clone()),
-                    SqlDialect::DuckDb => crate::ir::rel::sql::duckdb_observability::provider(metadata, schema.clone()),
+                    SqlDialect::DuckDb => match crate::ir::rel::sql::duckdb_iceberg::provider(metadata, schema.clone()).map_err(|e| e.to_string())? {
+                        Some(provider) => Ok(Some(provider)),
+                        None => crate::ir::rel::sql::duckdb_observability::provider(metadata, schema.clone()),
+                    },
                     _ => Ok(None),
                 }.map_err(|e| e.to_string())?;
                 if let Some(bound) = bound { provider = bound; }
@@ -661,6 +664,7 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
     let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     crate::federation::validate(&request)?;
     let mut mapping = GraphMapping::new();
+    mapping.managed_table = request.managed_table.clone();
     let mut schemas = register_tables(&request, &mut mapping)?;
     for source in &request.logical_sources {
         if schemas.contains_key(&source.name) {

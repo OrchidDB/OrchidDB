@@ -232,7 +232,12 @@ impl Cursor {
                 let rows = self.output.by_ref().take(self.size).collect();
                 // Encoding can include language containers; keep CPU work off
                 // the async scheduler, just like scalar kernel evaluation.
-                let batch = tokio::task::spawn_blocking(move || encode_rows(rows))
+                let kernel = self.kernel.clone();
+                let state = self.state.clone();
+                let batch = tokio::task::spawn_blocking(move || {
+                    let state = state.lock().map_err(|_| failure("Query state poisoned"))?;
+                    kernel.encode_output(rows, &state).map_err(|e| failure(e.to_string()))
+                })
                     .await
                     .map_err(failure)??;
                 return Ok(Some((batch, self)));
@@ -349,7 +354,7 @@ pub(super) fn execute(
         finished: false,
     };
     Ok(Box::pin(RecordBatchStreamAdapter::new(
-        schema(),
+        Arc::new(exec.kernel.schema.as_arrow().clone()),
         stream::try_unfold(cursor, Cursor::next),
     )))
 }

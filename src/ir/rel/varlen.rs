@@ -120,7 +120,11 @@ impl LoweringContext<'_> {
         let effective_upper = length.max;
         // The accumulator holds intermediate nodes only; the endpoints are
         // already bound and are added when the full path is rendered.
-        let seed_nodes = lit("");
+        let native_path = self.options.native_values && self.language == Language::Cypher;
+        let prior_path = rel_binding.filter(|name| has_exact_col(&input.plan, name));
+        let seed_nodes = if native_path {
+            match prior_path { Some(name) => col_exact(name), None => native_values::literal(&Value::Path(vec![]))? }
+        } else { lit("") };
 
         let edge_scan = self.lower_rel_scan(&edge_binding, rel_types)?;
         // The cursor id crosses the recursive union: the seed (source node)
@@ -265,11 +269,15 @@ impl LoweringContext<'_> {
                 .join_on(node_scan.plan, JoinType::Inner, node_join)?
                 .build()?;
             islands.merge(node_scan.islands);
-            Some(self.cypher_element_display_expr(
-                &recursive_joined,
-                &node_binding,
-                BindingShape::Node,
-            )?)
+            Some(if native_path {
+                let first = IrExpr::Call { name: "path_extend_after".into(), args: vec![
+                    IrExpr::binding(WORK_NODES), IrExpr::binding(&node_binding), IrExpr::binding(&edge_binding)] };
+                let next = IrExpr::Call { name: "path_append".into(), args: vec![
+                    IrExpr::Call { name: "path_append".into(), args: vec![IrExpr::binding(WORK_NODES), IrExpr::binding(&node_binding)] },
+                    IrExpr::binding(&edge_binding)] };
+                if prior_path.is_some() { case_when(col_exact(WORK_DEPTH).eq(lit(0_i64)), self.native_expr(&recursive_joined, &first)?, self.native_expr(&recursive_joined, &next)?) }
+                else { self.native_expr(&recursive_joined, &next)? }
+            } else { self.cypher_element_display_expr(&recursive_joined, &node_binding, BindingShape::Node)? })
         } else {
             None
         };
@@ -296,7 +304,7 @@ impl LoweringContext<'_> {
                 ),
             ),
         };
-        let next_rels = if rel_binding.is_some() {
+        let next_rels = if native_path { col_exact(WORK_RELS) } else if rel_binding.is_some() {
             let edge_display = if self.language == Language::Gremlin {
                 gremlin_element_display_expr(&recursive_joined, &edge_binding)?
             } else {
@@ -311,6 +319,7 @@ impl LoweringContext<'_> {
             col_exact(WORK_RELS)
         };
         let next_nodes = match current_node_display {
+            Some(display) if native_path => display,
             Some(display) => case_when(
                 binary(col_exact(WORK_DEPTH), BinaryOp::Eq, lit(0_i64)),
                 col_exact(WORK_NODES),
@@ -430,6 +439,7 @@ impl LoweringContext<'_> {
         }
         let mut final_projection = projection_names
             .into_iter()
+            .filter(|name| !rel_binding.is_some_and(|rel| name == rel || name == &path_inner_col(rel) || name == &path_len_col(rel)))
             .filter(|name| has_exact_col(&consumed, name) && history != Some(name.as_str()))
             .map(|name| col_exact(&name).alias(name))
             .collect::<Vec<_>>();
@@ -437,6 +447,18 @@ impl LoweringContext<'_> {
             final_projection.push(col_exact(WORK_TRAIL).alias(history));
         }
         if let Some(rel) = rel_binding {
+            if native_path {
+                let full = IrExpr::Call { name: "path_append".into(), args: vec![IrExpr::binding(WORK_NODES), IrExpr::binding(target)] };
+                let rendered = self.native_expr(&consumed, &full)?;
+                let rendered = if prior_path.is_some() { case_when(col_exact(WORK_DEPTH).eq(lit(0_i64)), col_exact(WORK_NODES), rendered) } else { rendered };
+                final_projection.push(rendered.alias(rel));
+                // The user relationship variable omits the endpoint nodes.
+                let inner = IrExpr::Call { name: "recursive_relationship_path".into(), args: vec![
+                    full, IrExpr::Lit(Lit::String(source.to_owned())), IrExpr::binding(source),
+                ] };
+                final_projection.push(self.native_expr(&consumed, &inner)?.alias(path_inner_col(rel)));
+                final_projection.push(col_exact(WORK_DEPTH).alias(path_len_col(rel)));
+            } else {
             let source_display =
                 self.cypher_element_display_expr(&consumed, source, BindingShape::Node)?;
             let target_display =
@@ -458,6 +480,7 @@ impl LoweringContext<'_> {
                     .alias(path_inner_col(rel)),
             );
             final_projection.push(col_exact(WORK_DEPTH).alias(path_len_col(rel)));
+            }
         }
         let plan = LogicalPlanBuilder::from(consumed)
             .project(final_projection)?
