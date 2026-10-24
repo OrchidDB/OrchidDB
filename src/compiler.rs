@@ -486,14 +486,26 @@ fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Resu
             })
             .collect::<Result<Vec<_>, String>>()?;
         let schema = Arc::new(Schema::new(fields));
-        mapping.register_table_schema(&table.name, schema.clone());
+        let mut provider = crate::ir::rel::mapping::schema_only_provider(schema.clone());
+        let owner = table.engine.as_ref()
+            .and_then(|name| request.engines.get(name))
+            .map(|e| e.dialect.as_str()).unwrap_or(&request.dialect);
+        if let Ok(SqlDialect::Custom(adapter)) = SqlDialect::resolve(owner) {
+            if let Some(metadata) = request.source_metadata.iter().find(|m| m.table == table.name) {
+                if let Some(bound) = adapter.source_provider(metadata, schema.clone())
+                    .map_err(|e| e.to_string())? {
+                    provider = bound;
+                }
+            }
+        }
+        mapping.register_table(&table.name, provider.clone());
         // Java source mappings carry dialect-quoted identifiers so they can safely
         // address arbitrary catalogs/schemas. SQL inside a mapped query parses those
         // identifiers to their unquoted TableReference spelling; register that alias
         // as well so the nested query resolves to the same schema-only provider.
         if let Some(normalized) = unquote_table_reference(&table.name) {
             if normalized != table.name {
-                mapping.register_table_schema(normalized, schema.clone());
+                mapping.register_table(normalized, provider.clone());
             }
         }
         schemas.insert(table.name.clone(), schema);

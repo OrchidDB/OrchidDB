@@ -5,6 +5,8 @@ public record SqlDialect(String id) {
   public static final SqlDialect DUCKDB = new SqlDialect("duckdb");
   public static final SqlDialect POSTGRES = new SqlDialect("postgres");
 
+  public static final SqlDialect TRINO = new SqlDialect("trino");
+
   public static final SqlDialect STARROCKS = new SqlDialect("starrocks");
 
   public SqlDialect {

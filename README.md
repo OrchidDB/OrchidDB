@@ -550,6 +550,109 @@ The map binds the two declared parameters before the edge body is lowered.
 threshold. A further `WHERE r.score ...` condition filters the expanded results.
 
 
+## Trino
+
+Select the `trino` SQL dialect. The shared adapter targets Trino **484** and
+supports typed projections, joins, filters, aggregation, ordering, pagination,
+arrays, and explicit scalar-function mappings. Python's `TrinoEngine` borrows a
+`trino.dbapi` connection and returns Arrow batches; install `trino` and `pyarrow`
+separately. Java exposes `SqlDialect.TRINO`; other clients select `trino` through
+their engine interface. The CLI remains a DuckDB host.
+
+For the local fixture created by `make trino-test`:
+
+```python
+from trino.dbapi import connect
+from orchiddb import Connection, TrinoEngine
+
+schema = {
+    "tables": [{"name": "documents", "columns": [
+        {"name": "id", "data_type": "int64"},
+        {"name": "title", "data_type": "string"},
+        {"name": "embedding", "data_type": "list:float64"},
+    ]}],
+    "nodes": [{"label": "Document", "table": "documents", "id": "id",
+               "properties": {"title": "title", "embedding": "embedding"}}],
+    "source_metadata": [{"table": "documents", "format": "trino", "options": {
+        "connector": "iceberg", "catalog": "iceberg",
+        "schema": "orchid", "table": "documents",
+    }}],
+}
+database = connect(host="localhost", port=18080, user="orchid")
+try:
+    with Connection(TrinoEngine(database), schema) as graph:
+        with graph.query("""
+            MATCH (d:Document)
+            WITH d, vector.cosine_similarity($embedding, d.embedding) AS score
+            RETURN d.title AS title, score ORDER BY score DESC LIMIT 10
+        """, parameters={"embedding": [1.0, 0.0]}) as result:
+            print(result.read_all().to_pylist())
+finally:
+    database.close()
+```
+
+Vector scoring uses Trino arrays and functions: `vector.dot`,
+`vector.cosine_similarity`, `vector.l2_distance`, and `vector.maxsim`. It is
+exact scoring, not an ANN index. Invalid dimensions, null components, non-finite
+components, and score overflow fail. A zero-norm cosine input returns null.
+The application supplies embeddings. BM25 and the full Cypher/Gremlin/SPARQL
+conformance catalogs have not been validated on this target; unsupported
+functions fail during lowering rather than inheriting DuckDB implementations.
+
+Connector sources use the existing `source_metadata` schema registration. Set
+`format` to `trino` and supply one of these `options` objects. Identifiers and
+native query strings are escaped separately. Register the returned columns and
+stable keys in the ordinary table/node schema.
+
+| `connector` | Required options | Lowering |
+| --- | --- | --- |
+| `iceberg` | `catalog`, `schema`, `table` | Qualified table; optional `snapshot` emits `FOR VERSION AS OF`; optional `metadata` selects `$snapshots`, `$files`, `$history`, etc. |
+| `iceberg_changes` | `catalog`, `schema`, `table`, `start_snapshot`, `end_snapshot` | `TABLE(catalog.system.table_changes(...))`; start exclusive, end inclusive |
+| `delta` | `catalog`, `schema`, `table` | Qualified table; optional `version` for time travel |
+| `delta_changes` | `catalog`, `schema`, `table`, `since_version` | Delta change-data-feed table function; requires CDF enabled |
+| `loki` | `catalog`, `query`, `start`, `end` | `TABLE(catalog.system.query_range(LogQL, start, end))` |
+| `prometheus` | `catalog`, `metric`, `start`, `end` | Bounded scan of `catalog.default.metric` |
+| `elasticsearch`, `open_search` | `catalog`, `schema`, `index`, `query` (JSON object) | Native query DSL via `system.raw_query`; one `result` string containing JSON |
+| `mongo_db` | `catalog`, `database`, `collection`, `filter` (JSON object) | Native MongoDB filter via `system.query` |
+
+Telemetry bounds must be RFC3339 timestamps and are normalized to UTC. `timestamp`
+is a timestamp column; `value` is the sample or log value; Loki also accepts `line`
+as an alias for its log value. `labels` exposes JSON text, and other string columns
+extract labels with `element_at`, preserving missing labels as null. Use complete
+source keys; a label alone is generally not a unique sample identity. Graph filters,
+joins, and aggregates remain in Trino SQL above the connector relation.
+
+Trino's [Prometheus connector](https://trino.io/docs/current/connector/prometheus.html)
+reads raw metric samples and translates timestamp bounds to Prometheus requests.
+It has no arbitrary PromQL passthrough function. For PromQL selector/value
+pushdown on the epoch-aligned evaluation grid, use OrchidDB's direct `prometheus`
+engine from the integrated observability branch. The
+[Loki connector](https://trino.io/docs/current/connector/loki.html) accepts explicit
+LogQL, including metric expressions. These are distinct source semantics.
+
+[Iceberg](https://trino.io/docs/current/connector/iceberg.html),
+[Delta Lake](https://trino.io/docs/current/connector/delta-lake.html),
+[Elasticsearch](https://trino.io/docs/current/connector/elasticsearch.html),
+[OpenSearch](https://trino.io/docs/current/connector/opensearch.html), and
+[MongoDB](https://trino.io/docs/current/connector/mongodb.html) have the special
+syntax covered above. Hive, Hudi, Kafka, and ordinary JDBC connector tables can
+use ordinary qualified table mappings; Trino owns their connector pushdown.
+
+Custom functions use existing schema `functions` declarations with `name`,
+`target`, `parameters`, and `returns`. The target is the installed Trino function's
+qualified name; the application installs SQL UDFs or Java plugins and owns their
+lifecycle. Rust integrations can also attach `trino` SQL expression templates to
+`LogicalFunction`. Unknown functions are rejected. No helper plugin is required
+for the vector functions or tested scalar queries.
+
+`make trino-test` starts reusable local Trino, PostgreSQL (Iceberg metadata), Loki,
+and Prometheus containers and runs compiler-to-server checks. It covers scalar
+and graph queries, vector edge cases, Iceberg scans/snapshots/change feeds, and
+actual LogQL and Prometheus connector reads. Other connector bindings have SQL
+lowering tests, not live backend conformance certification. Run Python transport
+checks separately with `ORCHIDDB_TEST_TRINO=1 pytest clients/python/tests/test_trino.py`.
+These fixtures stay local and do not dispatch CI or modify cloud catalogs.
+
 ## StarRocks
 
 StarRocks uses the `starrocks` dialect and a caller-owned MySQL-compatible

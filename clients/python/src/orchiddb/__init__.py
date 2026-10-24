@@ -5,7 +5,8 @@ from ._runtime import CompilationError as QueryError
 from .permissions import Authorization, PermissionRelation, PermissionScope
 from .remote import RemoteEngine
 from .starrocks import StarRocksEngine
-__all__ = ["Catalog", "CatalogAuth", "Credential", "CypherEdge", "Connection", "StarRocksEngine", "DuckDBEngine", "PostgresEngine", "ArrowEngine", "QueryError",
+from .trino import TrinoEngine
+__all__ = ["Catalog", "CatalogAuth", "Credential", "CypherEdge", "Connection", "StarRocksEngine", "TrinoEngine", "DuckDBEngine", "PostgresEngine", "ArrowEngine", "QueryError",
            "RemoteEngine", "Authorization", "PermissionRelation", "PermissionScope"]
 
 from .streaming import StreamConnection

@@ -65,7 +65,7 @@ func New(session Session, schema json.RawMessage, config Config) (*Connection, e
 		return nil, errors.New("orchiddb: session is required")
 	}
 	switch config.Dialect {
-	case "duckdb", "postgres", "starrocks":
+	case "duckdb", "postgres", "starrocks", "trino":
 	default:
 		return nil, fmt.Errorf("orchiddb: unsupported dialect %q", config.Dialect)
 	}

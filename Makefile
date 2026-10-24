@@ -118,3 +118,8 @@ REPORT_OUTPUT ?= target/conformance/report
 .PHONY: conformance-report
 conformance-report:
 	$(PYTHON) conformance/report/build.py --results "$(REPORT_RESULTS)" --output "$(REPORT_OUTPUT)"
+
+.PHONY: trino-test
+trino-test:
+	$(PYTHON) tools/trino/setup.py
+	ORCHIDDB_TEST_TRINO=1 ORCHIDDB_TEST_TRINO_CONNECTORS=1 cargo test --locked --features prometheus,loki --test trino

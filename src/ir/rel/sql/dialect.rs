@@ -36,6 +36,14 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
             None => ast::Ident::new(ident).to_string(),
         }
     }
+    /// Optional engine-owned source binding. Keeps connector SQL out of shared planning.
+    fn source_provider(
+        &self,
+        _metadata: &crate::ir::rel::source_metadata::SourceMetadata,
+        _schema: arrow::datatypes::SchemaRef,
+    ) -> SqlResult<Option<std::sync::Arc<dyn datafusion::catalog::TableProvider>>> {
+        Ok(None)
+    }
     fn requires_scope_repair(&self) -> bool { false }
     fn create_table_keyword(&self) -> &'static str {
         "CREATE TEMPORARY TABLE"
@@ -196,7 +204,7 @@ impl SqlDialect {
     /// Re-registering the same instance is idempotent; replacement is rejected.
     pub fn register(adapter: &'static dyn DialectAdapter) -> SqlResult<Self> {
         let name = adapter.name();
-        if name.is_empty() || matches!(name, "postgres" | "duckdb" | "starrocks") {
+        if name.is_empty() || matches!(name, "postgres" | "duckdb" | "starrocks" | "trino") {
             return Err(SqlError::Setup(format!(
                 "reserved or empty engine dialect name {name:?}"
             )));
@@ -222,6 +230,7 @@ impl SqlDialect {
             "duckdb" => Ok(Self::DuckDb),
             "postgres" => Ok(Self::Postgres),
             "starrocks" => Ok(Self::Custom(&super::starrocks::STARROCKS)),
+            "trino" => Ok(Self::Custom(&super::trino::TRINO)),
             _ => registry()
                 .read()
                 .map_err(|_| SqlError::Setup("dialect registry poisoned".into()))?
