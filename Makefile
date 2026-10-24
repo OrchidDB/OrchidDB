@@ -70,7 +70,7 @@ go-test:
 extension:
 	python3 extension/scripts/build.py
 extension-release:
-	$(PYTHON) extension/scripts/build.py --release --extension-version "$(VERSION)"
+	$(PYTHON) extension/scripts/build.py --release --extension-version "$(VERSION)" $(EXTENSION_BUILD_ARGS)
 extension-test: release-tools-test
 	CARGO_TARGET_DIR="$(CURDIR)/target" cargo test --locked --manifest-path extension/compiler/Cargo.toml --lib
 	ORCHID_EXTERNAL_TESTS=1 $(TEST_PYTHON) -m unittest discover -s extension/tests -p 'test_*.py'

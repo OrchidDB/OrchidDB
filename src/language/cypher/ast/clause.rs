@@ -5,6 +5,7 @@ pub enum Clause {
     Match(MatchClause),
     Unwind(UnwindClause),
     Call(ProcedureCallClause),
+    Subquery(CallSubquery),
     Create(CreateClause),
     Merge(MergeClause),
     Set(SetClause),
@@ -129,4 +130,11 @@ pub struct SortItem {
 pub enum SortDirection {
     Asc,
     Desc,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallSubquery {
+    pub query: Box<super::Query>,
+    pub imports: Vec<String>,
+    pub outputs: Vec<String>,
 }

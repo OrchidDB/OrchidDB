@@ -163,6 +163,7 @@ pub(super) fn query_contains_aggregate(query: &Query) -> bool {
         Clause::Return(clause) => projection_contains_aggregate(&clause.projection),
         Clause::Match(clause) => clause.predicate.as_ref().is_some_and(contains_aggregate),
         Clause::Unwind(clause) => contains_aggregate(&clause.expr),
+        Clause::Subquery(_) => false,
         Clause::Call(clause) => {
             clause.args.iter().any(contains_aggregate)
                 || clause.predicate.as_ref().is_some_and(contains_aggregate)

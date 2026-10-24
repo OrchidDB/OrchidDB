@@ -421,8 +421,25 @@ pub(in crate::ir::rel) fn lower(
     {
         return constructor(context, plan, name, args);
     }
+    if let IrExpr::Call { name, args } = expr
+        && args.len() == 2
+    {
+        let op = match name.as_str() {
+            "cypher_eq" => Some(BinaryOp::Eq),
+            "cypher_neq" => Some(BinaryOp::Neq),
+            "cypher_lt" => Some(BinaryOp::Lt),
+            "cypher_lte" => Some(BinaryOp::Lte),
+            "cypher_gt" => Some(BinaryOp::Gt),
+            "cypher_gte" => Some(BinaryOp::Gte),
+            _ => None,
+        };
+        if let Some(op) = op {
+            return native_timestamp_comparison(context, plan, op, &args[0], &args[1]);
+        }
+    }
     if let IrExpr::Binary { op, lhs, rhs } = expr {
-        return arithmetic(context, plan, *op, lhs, rhs);
+        return native_timestamp_comparison(context, plan, *op, lhs, rhs)
+            .or_else(|| arithmetic(context, plan, *op, lhs, rhs));
     }
     let (binding, name) = match expr {
         IrExpr::Property { binding, name, .. } => (binding, name),
@@ -487,6 +504,103 @@ pub(in crate::ir::rel) fn lower(
             }
         },
     ))
+}
+
+// Bridge a native timestamp column and a constant Cypher temporal value without
+// converting the column to text or rounding the bound to the wrong side. Native
+// zoned timestamps represent instants; unzoned timestamps represent local time.
+fn native_timestamp_comparison(
+    context: &LoweringContext<'_>,
+    plan: &LogicalPlan,
+    mut op: BinaryOp,
+    lhs: &IrExpr,
+    rhs: &IrExpr,
+) -> Option<Expr> {
+    use arrow::datatypes::TimeUnit;
+    if !matches!(
+        op,
+        BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte
+    ) {
+        return None;
+    }
+    let mut column = operand(context, plan, lhs)?;
+    let mut constant = operand(context, plan, rhs)?;
+    if !matches!(
+        column.get_type(plan.schema()).ok()?,
+        DataType::Timestamp(..)
+    ) {
+        std::mem::swap(&mut column, &mut constant);
+        op = match op {
+            BinaryOp::Lt => BinaryOp::Gt,
+            BinaryOp::Lte => BinaryOp::Gte,
+            BinaryOp::Gt => BinaryOp::Lt,
+            BinaryOp::Gte => BinaryOp::Lte,
+            other => other,
+        };
+    }
+    let DataType::Timestamp(unit, zone) = column.get_type(plan.schema()).ok()? else {
+        return None;
+    };
+    let temporal = if let Some(Value::Temporal(value)) = native_values::literal_value(&constant) {
+        value
+    } else {
+        let value = match constant {
+            Expr::Literal(value, _) => value,
+            Expr::Column(c) => match temporal_constant_bindings(plan).get(&c.name)? {
+                Value::Temporal(value) => transport::scalar(value).ok()?,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if !transport::is_type(&value.data_type()) { return None; }
+        if value.is_null() { return Some(lit(ScalarValue::Boolean(None))); }
+        transport::decode(&value).ok()?
+    };
+    let value = match temporal {
+        TemporalValue::DateTime(value, _) if zone.is_some() => value.naive_utc(),
+        TemporalValue::LocalDateTime(value) if zone.is_none() => value,
+        _ => return None,
+    }
+    .and_utc();
+    let ns =
+        i128::from(value.timestamp()) * 1_000_000_000 + i128::from(value.timestamp_subsec_nanos());
+    let tick = match unit {
+        TimeUnit::Second => 1_000_000_000,
+        TimeUnit::Millisecond => 1_000_000,
+        TimeUnit::Microsecond => 1000,
+        TimeUnit::Nanosecond => 1,
+    };
+    let floor = ns.div_euclid(tick);
+    let remainder = ns.rem_euclid(tick);
+    if remainder != 0 && matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+        // Preserve SQL NULL while rejecting equality to an unrepresentable time.
+        return Some(if op == BinaryOp::Eq {
+            column.clone().not_eq(column)
+        } else {
+            column.clone().eq(column)
+        });
+    }
+    let bound = if matches!(op, BinaryOp::Gte | BinaryOp::Lt) && remainder != 0 {
+        floor + 1
+    } else {
+        floor
+    };
+    let bound = i64::try_from(bound).ok()?;
+    let literal = lit(match unit {
+        TimeUnit::Second => ScalarValue::TimestampSecond(Some(bound), zone),
+        TimeUnit::Millisecond => ScalarValue::TimestampMillisecond(Some(bound), zone),
+        TimeUnit::Microsecond => ScalarValue::TimestampMicrosecond(Some(bound), zone),
+        TimeUnit::Nanosecond => ScalarValue::TimestampNanosecond(Some(bound), zone),
+    });
+    Some(match op {
+        BinaryOp::Eq => column.eq(literal),
+        BinaryOp::Neq => column.not_eq(literal),
+        BinaryOp::Lt => column.lt(literal),
+        BinaryOp::Lte => column.lt_eq(literal),
+        BinaryOp::Gt => column.gt(literal),
+        BinaryOp::Gte => column.gt_eq(literal),
+        _ => return None,
+    })
 }
 
 fn expression_kind(plan: &LogicalPlan, expr: &Expr) -> Option<String> {

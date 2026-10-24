@@ -110,9 +110,13 @@ impl<'a> LoweringContext<'a> {
         if let Some(joined) = self.try_simple_expand_apply(kind, &left, right, outputs)? {
             return Ok(joined);
         }
+        // CALL returns only its exports, so it must rejoin the outer row by
+        // occurrence identity even when its body is a streaming projection.
+        let returning_subquery = self.language == Language::Cypher
+            && matches!(right, Node::GraphReturn { .. });
         let (left_plan, mut key_cols, mut cleanup) =
             if self.language == Language::Cypher && kind == ApplyKind::Inner
-                && !gremlin::has_per_input_barrier(right)
+                && !gremlin::has_per_input_barrier(right) && !returning_subquery
             {
                 // Ordinary MATCH absorbs its input directly. Redundant
                 // correlation aliases introduce projection boundaries that
@@ -128,7 +132,7 @@ impl<'a> LoweringContext<'a> {
         // join would test existence globally rather than per input row.
         let per_row_identity = match kind {
             ApplyKind::Scalar | ApplyKind::Optional => true,
-            ApplyKind::Inner => gremlin::has_per_input_barrier(right)
+            ApplyKind::Inner => returning_subquery || gremlin::has_per_input_barrier(right)
                 || (self.language == Language::Gremlin && !outputs.iter().any(|name| name == "current")),
             ApplyKind::Semi | ApplyKind::Anti => key_cols.is_empty() || self.language == Language::Gremlin,
         };

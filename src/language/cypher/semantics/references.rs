@@ -200,6 +200,10 @@ pub(super) fn collect_query_references(
                 collect_free_variables(&clause.expr, &mut query_bound, out);
                 query_bound.insert(clause.alias.clone());
             }
+            Clause::Subquery(call) => {
+                out.extend(call.imports.iter().filter(|n| !query_bound.contains(*n)).cloned());
+                query_bound.extend(call.outputs.iter().cloned());
+            }
             Clause::Call(clause) => {
                 for arg in &clause.args {
                     collect_free_variables(arg, &mut query_bound, out);
@@ -408,6 +412,7 @@ pub(super) fn remove_query_outputs(query: &Query, refs: &mut BTreeSet<String>) {
             Clause::Unwind(clause) => {
                 refs.remove(&clause.alias);
             }
+            Clause::Subquery(call) => { for name in &call.outputs { refs.remove(name); } }
             Clause::Call(clause) => {
                 for item in &clause.yields {
                     refs.remove(&item.alias);

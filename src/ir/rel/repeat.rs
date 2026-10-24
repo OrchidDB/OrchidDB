@@ -232,6 +232,7 @@ impl LoweringContext<'_> {
             plan,
             &outer_keys,
             aggs,
+            self.language,
         )?;
         Ok(Some(lowered.with_plan(plan)))
     }

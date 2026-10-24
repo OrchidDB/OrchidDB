@@ -268,6 +268,7 @@ impl SqlDialect {
             DataType::Date32 => "DATE",
             DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, None) => "TIMESTAMP",
             DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None) if self == Self::DuckDb => "TIMESTAMP_NS",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, Some(_)) => "TIMESTAMP WITH TIME ZONE",
             DataType::Time32(_) | DataType::Time64(arrow::datatypes::TimeUnit::Microsecond) => "TIME",
             DataType::Binary | DataType::LargeBinary | DataType::BinaryView => if self == Self::Postgres { "BYTEA" } else { "BLOB" },
 

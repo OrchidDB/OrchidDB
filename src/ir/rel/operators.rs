@@ -574,6 +574,7 @@ impl LoweringContext<'_> {
                         plan,
                         &apply_correlation_key_columns(&input.plan),
                         agg_calls,
+                        self.language,
                     )?
                 } else {
                     plan

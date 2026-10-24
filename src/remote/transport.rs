@@ -69,6 +69,8 @@ enum Engine {
     Quickwit,
     Elasticsearch,
     Weaviate,
+    Prometheus,
+    Loki,
 }
 impl Engine {
     fn name(self) -> &'static str {
@@ -76,6 +78,8 @@ impl Engine {
             Self::Quickwit => "quickwit",
             Self::Elasticsearch => "elasticsearch",
             Self::Weaviate => "weaviate",
+            Self::Prometheus => "prometheus",
+            Self::Loki => "loki",
         }
     }
 }
@@ -322,6 +326,10 @@ impl HttpSession {
         if self.engine == Engine::Weaviate {
             return self.execute_weaviate_many(std::slice::from_ref(request), columns)
                 .await.map(|mut results| results.remove(0));
+        }
+        #[cfg(any(feature = "prometheus", feature = "loki"))]
+        if matches!(self.engine, Engine::Prometheus | Engine::Loki) {
+            return self.execute_observability(request, columns).await;
         }
         let request = request
             .as_object()
@@ -1079,6 +1087,10 @@ macro_rules! session {
 session!(QuickwitSession, Quickwit, "quickwit");
 session!(ElasticsearchSession, Elasticsearch, "elasticsearch");
 
+#[cfg(any(feature = "prometheus", feature = "loki"))]
+mod observability;
+session!(PrometheusSession, Prometheus, "prometheus");
+session!(LokiSession, Loki, "loki");
 mod batch;
 mod metadata;
 mod protocol;

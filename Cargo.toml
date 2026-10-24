@@ -1,6 +1,6 @@
 [package]
 name = "orchiddb"
-version = "0.4.2"
+version = "0.4.3-foundry.3"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
@@ -32,6 +32,8 @@ duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 weaviate = ["dep:reqwest"]
 quickwit = ["dep:reqwest"]
+prometheus = ["dep:reqwest"]
+loki = ["dep:reqwest"]
 elasticsearch = ["dep:reqwest"]
 orchid-catalog = ["dep:reqwest"]
 kafka = ["dep:rdkafka"]

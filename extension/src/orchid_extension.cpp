@@ -1,5 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 #include "duckdb.hpp"
+#include "duckdb/common/types/blob.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
@@ -146,6 +147,7 @@ string CompilerType(const LogicalType &type) {
     case LogicalTypeId::DATE: return "date";
     case LogicalTypeId::TIME: return "time";
     case LogicalTypeId::TIMESTAMP: return "timestamp";
+    case LogicalTypeId::TIMESTAMP_TZ: return "timestamptz";
     case LogicalTypeId::INTERVAL: return "interval";
     case LogicalTypeId::DECIMAL:
         return "decimal:" + std::to_string(DecimalType::GetWidth(type)) + ":" + std::to_string(DecimalType::GetScale(type));
@@ -260,8 +262,24 @@ unique_ptr<TableRef> DefinitionBind(ClientContext &context, TableFunctionBindInp
 
 Json Parameter(const Value &value, bool native = false) {
     if (value.IsNull()) { return nullptr; }
-    if (native && (value.type().id()==LogicalTypeId::TINYINT || value.type().id()==LogicalTypeId::SMALLINT || value.type().id()==LogicalTypeId::INTEGER || value.type().id()==LogicalTypeId::BIGINT || value.type().id()==LogicalTypeId::HUGEINT || value.type().id()==LogicalTypeId::FLOAT || value.type().id()==LogicalTypeId::DOUBLE)) {
+    if (value.type().IsJSONType()) { return Json::parse(value.GetValue<string>()); }
+    if (native && (value.type().id()==LogicalTypeId::TINYINT || value.type().id()==LogicalTypeId::SMALLINT || value.type().id()==LogicalTypeId::INTEGER || value.type().id()==LogicalTypeId::BIGINT || value.type().id()==LogicalTypeId::HUGEINT || value.type().id()==LogicalTypeId::DECIMAL || value.type().id()==LogicalTypeId::FLOAT || value.type().id()==LogicalTypeId::DOUBLE)) {
         return {{"__orchiddb_number",Json::array({value.type().ToString(),value.ToString()})}};
+    }
+    if (native) {
+        int64_t ticks;
+        int64_t ticks_per_second = 1000000;
+        bool zoned = false;
+        bool timestamp = true;
+        switch (value.type().id()) {
+        case LogicalTypeId::TIMESTAMP: ticks = value.GetValue<timestamp_t>().value; break;
+        case LogicalTypeId::TIMESTAMP_TZ: ticks = value.GetValue<timestamp_tz_t>().value; zoned = true; break;
+        case LogicalTypeId::TIMESTAMP_SEC: ticks = value.GetValue<timestamp_sec_t>().value; ticks_per_second = 1; break;
+        case LogicalTypeId::TIMESTAMP_MS: ticks = value.GetValue<timestamp_ms_t>().value; ticks_per_second = 1000; break;
+        case LogicalTypeId::TIMESTAMP_NS: ticks = value.GetValue<timestamp_ns_t>().value; ticks_per_second = 1000000000; break;
+        default: timestamp = false;
+        }
+        if (timestamp) { return {{"__orchiddb_timestamp", Json::array({ticks, ticks_per_second, zoned})}}; }
     }
     switch (value.type().id()) {
     case LogicalTypeId::BOOLEAN: return value.GetValue<bool>();
@@ -677,6 +695,11 @@ Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     }
     request["dialect"] = "duckdb";
     for (auto &table : request.at("tables")) {
+        // Explicit schema types belong to the caller (e.g. Iceberg metadata).
+        // Infer only omitted types: probing every remote table on every query
+        // defeats registration and makes unrelated sources block execution.
+        // DuckDB still binds the generated query against the selected sources.
+        if (table.contains("columns") && !table.at("columns").empty()) { continue; }
         auto name = QualifiedName::Parse(table.at("name").get<string>());
         string source;
         if (!name.catalog.empty()) { source += Quote(name.catalog) + "."; }
@@ -751,6 +774,21 @@ void NativeKey(DataChunk &args, ExpressionState &, Vector &result) {
     auto values=Bridge({{"op","native_key"},{"rows",rows}}).at("values");
     result.SetVectorType(VectorType::FLAT_VECTOR);
     for (idx_t row=0;row<args.size();row++) { result.SetValue(row,Value(values[row].get<string>())); }
+}
+
+// SQL grouping keys use the same Cypher equivalence kernel as native values.
+// Keep SQL NULL as NULL so COUNT(DISTINCT ...) excludes it.
+void CypherKey(DataChunk &args, ExpressionState &, Vector &result) {
+    auto rows = Json::array();
+    for (idx_t row = 0; row < args.size(); row++) {
+        rows.push_back({Parameter(args.GetValue(0, row), true), true});
+    }
+    auto values = Bridge({{"op", "native_key"}, {"rows", rows}}).at("values");
+    result.SetVectorType(VectorType::FLAT_VECTOR);
+    for (idx_t row = 0; row < args.size(); row++) {
+        if (args.GetValue(0, row).IsNull()) { result.SetValue(row, Value(LogicalType::BLOB)); }
+        else { result.SetValue(row, Value::BLOB_RAW(Blob::FromBase64(string_t(values[row].get<string>())))); }
+    }
 }
 
 void NativeCollection(DataChunk &args, ExpressionState &state, Vector &result, bool aggregate, bool procedure = false, bool project = false) {
@@ -946,6 +984,10 @@ void LoadOrchid(ExtensionLoader &loader) {
     ScalarFunction native_sort("__orchiddb_value_sort",{LogicalType::VARCHAR,LogicalType::ANY},LogicalType::ANY,NativeSort,NativeSortBind);
     native_sort.null_handling=FunctionNullHandling::SPECIAL_HANDLING;
     loader.RegisterFunction(native_sort);
+    ScalarFunction cypher_key("__orchiddb_lang_cypher_key", {LogicalType::ANY}, LogicalType::BLOB, CypherKey);
+    cypher_key.null_handling = FunctionNullHandling::SPECIAL_HANDLING;
+    cypher_key.SetStability(FunctionStability::CONSISTENT);
+    loader.RegisterFunction(cypher_key);
     ScalarFunction cypher_float("__orchiddb_cypher_to_float_v1", {LogicalType::VARCHAR}, LogicalType::DOUBLE, CypherToFloat);
     cypher_float.null_handling = FunctionNullHandling::SPECIAL_HANDLING;
     cypher_float.SetStability(FunctionStability::CONSISTENT);

@@ -89,6 +89,10 @@ fn bind_clause(clause: Clause, parameters: &BTreeMap<String, Value>) -> Result<C
             expr: bind_expr(clause.expr, parameters)?,
             alias: clause.alias,
         }),
+        Clause::Subquery(mut clause) => {
+            clause.query = Box::new(bind_query(*clause.query, parameters)?);
+            Clause::Subquery(clause)
+        },
         Clause::Call(clause) => Clause::Call(ProcedureCallClause {
             implicit_arguments: clause.implicit_arguments,
             signature: clause.signature,

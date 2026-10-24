@@ -115,7 +115,7 @@ impl FederatedConnection {
         orchiddb::federation::execute(&work, &mut self.sessions).await
     }
 }
-#[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate"))]
+#[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
 pub mod engines {
     pub use orchiddb::remote::transport::HttpSession;
 }

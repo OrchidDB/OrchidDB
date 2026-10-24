@@ -1,6 +1,6 @@
 [package]
 name = "orchiddb-java-native"
-version = "0.4.2"
+version = "0.4.3-foundry.3"
 edition = "2024"
 publish = false
 
@@ -14,9 +14,11 @@ jni = "0.21.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
+prometheus = ["orchiddb/prometheus"]
+loki = ["orchiddb/loki"]
 kafka = ["orchiddb/kafka"]
 weaviate = ["orchiddb/weaviate"]
 orchid-catalog = ["orchiddb/orchid-catalog"]
-default = ["kafka", "quickwit", "elasticsearch", "weaviate", "orchid-catalog"]
+default = ["prometheus", "loki", "kafka", "quickwit", "elasticsearch", "weaviate", "orchid-catalog"]
 quickwit = ["orchiddb/quickwit"]
 elasticsearch = ["orchiddb/elasticsearch"]

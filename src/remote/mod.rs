@@ -1,6 +1,8 @@
 //! Optional HTTP engines. Logical expressions remain engine independent; this
 //! module produces typed prepared requests instead of inventing a SQL dialect.
 pub mod transport;
+#[cfg(any(feature = "prometheus", feature = "loki"))]
+mod observability;
 #[cfg(feature = "weaviate")]
 mod weaviate;
 #[cfg(feature = "elasticsearch")]
@@ -9,6 +11,10 @@ pub use transport::ElasticsearchSession;
 pub use transport::QuickwitSession;
 #[cfg(feature = "weaviate")]
 pub use transport::WeaviateSession;
+#[cfg(feature = "prometheus")]
+pub use transport::PrometheusSession;
+#[cfg(feature = "loki")]
+pub use transport::LokiSession;
 pub use transport::{Authentication, HttpOptions, HttpSession};
 
 use crate::ir::rel::{
@@ -43,6 +49,10 @@ pub fn adapters() -> Vec<Arc<dyn RequestAdapter>> {
     result.push(Arc::new(ElasticsearchAdapter));
     #[cfg(feature = "weaviate")]
     result.push(Arc::new(WeaviateAdapter));
+    #[cfg(feature = "prometheus")]
+    result.push(Arc::new(observability::ObservabilityAdapter("prometheus")));
+    #[cfg(feature = "loki")]
+    result.push(Arc::new(observability::ObservabilityAdapter("loki")));
     result
 }
 macro_rules! adapter {

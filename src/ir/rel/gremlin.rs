@@ -146,14 +146,15 @@ pub(super) fn has_per_input_barrier(node: &Node) -> bool {
 /// occurrence and must emit its empty-input result for inputs whose child
 /// stream is empty (`local(outE().count())` is `0`, not a dropped traverser).
 /// Grouping by the correlation keys alone loses those inputs, so restore them
-/// from the correlated input's key set with a left join. Only count-shaped
-/// aggregates have a defined empty value here; any other aggregate keeps the
-/// grouped result unchanged.
+/// from the correlated input's key set with a left join. Cypher also defines
+/// empty SUM/collect results; extrema and averages retain NULL. Gremlin keeps
+/// its existing count-only contract.
 pub(super) fn with_empty_count_defaults(
     correlate_plan: Option<&LogicalPlan>,
     aggregated: LogicalPlan,
     key_cols: &[String],
     aggs: &[AggCall],
+    language: Language,
 ) -> RelResult<LogicalPlan> {
     let Some(correlate_plan) = correlate_plan else {
         return Ok(aggregated);
@@ -164,7 +165,10 @@ pub(super) fn with_empty_count_defaults(
             matches!(
                 agg.kind,
                 AggKind::CountRows | AggKind::CountBulk | AggKind::CountDistinct | AggKind::CountIf
-            )
+            ) || (language == Language::Cypher && matches!(agg.kind,
+                AggKind::SumOrZero | AggKind::MinOrNull | AggKind::MaxOrNull | AggKind::AvgOrNull
+                | AggKind::StDev | AggKind::StDevP | AggKind::PercentileCont | AggKind::PercentileDisc
+                | AggKind::CollectNonNull))
         })
         || !key_cols
             .iter()
@@ -203,7 +207,20 @@ pub(super) fn with_empty_count_defaults(
         .build()?;
     let mut out = key_cols.iter().map(col_exact).collect::<Vec<_>>();
     for agg in aggs {
-        out.push(df_core::coalesce(vec![col_exact(&agg.alias), lit(0_i64)]).alias(&agg.alias));
+        let value = col_exact(&agg.alias);
+        let value = match agg.kind {
+            AggKind::MinOrNull | AggKind::MaxOrNull | AggKind::AvgOrNull
+            | AggKind::PercentileCont | AggKind::PercentileDisc => value,
+            AggKind::CollectNonNull => {
+                let DataType::List(field) = value.get_type(joined.schema())? else {
+                    return Err(RelError::Unsupported("empty correlated collection requires a typed list".into()));
+                };
+                let empty = lit(ScalarValue::List(ScalarValue::new_list_nullable(&[], field.data_type())));
+                df_core::coalesce(vec![value, empty])
+            }
+            _ => df_core::coalesce(vec![value, lit(0_i64)]),
+        };
+        out.push(value.alias(&agg.alias));
     }
     Ok(LogicalPlanBuilder::from(joined).project(out)?.build()?)
 }

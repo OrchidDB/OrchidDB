@@ -40,6 +40,16 @@ pub(super) fn literal(value: &Value) -> RelResult<Expr> {
     }
     Ok(df_core::named_struct(vec![lit(FIELD), lit(encode(value))]))
 }
+// Recognize only the literal constructor emitted above, never runtime expressions.
+pub(super) fn literal_value(expr: &Expr) -> Option<Value> {
+    let Expr::ScalarFunction(function) = expr else { return None; };
+    if function.func.name() != "named_struct" { return None; }
+    match function.args.as_slice() {
+        [Expr::Literal(ScalarValue::Utf8(Some(field)), _), Expr::Literal(ScalarValue::Utf8(Some(encoded)), _)]
+            if field == FIELD => decode(encoded).ok(),
+        _ => None,
+    }
+}
 fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, String> {
     Ok(match value {
         serde_json::Value::Object(map) if map.len() == 1 && map.contains_key(elements::FIELD) => {
@@ -66,6 +76,7 @@ fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, 
                     Ok(value) => Value::Long(value),
                     Err(_) => Value::BigInt(text.parse().map_err(|_| "Invalid huge integer")?),
                 },
+                kind if kind.starts_with("DECIMAL(") => Value::BigDecimal(text.parse().map_err(|_| "Invalid decimal")?),
                 "FLOAT" => Value::Float32(text.parse().map_err(|_| "Invalid float")?),
                 "DOUBLE" => Value::Float(text.parse().map_err(|_| "Invalid double")?),
                 _ => return Err("Unsupported numeric type".into()),
@@ -79,6 +90,21 @@ fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, 
                 Some("Infinity") => f64::INFINITY,
                 Some("-Infinity") => f64::NEG_INFINITY,
                 _ => return Err("Invalid native float".into()),
+            })
+        }
+        serde_json::Value::Object(map) if map.len() == 1 && map.contains_key("__orchiddb_timestamp") => {
+            let timestamp = &map["__orchiddb_timestamp"];
+            let ticks = timestamp[0].as_i64().ok_or("Invalid timestamp ticks")?;
+            let scale = timestamp[1].as_i64().filter(|s| matches!(s, 1 | 1000 | 1_000_000 | 1_000_000_000))
+                .ok_or("Invalid timestamp scale")?;
+            let zoned = timestamp[2].as_bool().ok_or("Invalid timestamp zone")?;
+            let instant = chrono::DateTime::from_timestamp(ticks.div_euclid(scale),
+                (ticks.rem_euclid(scale) * (1_000_000_000 / scale)) as u32)
+                .ok_or("Timestamp exceeds Cypher temporal range")?;
+            Value::Temporal(if zoned {
+                crate::ir::temporal::TemporalValue::DateTime(instant.fixed_offset(), None)
+            } else {
+                crate::ir::temporal::TemporalValue::LocalDateTime(instant.naive_utc())
             })
         }
         serde_json::Value::Object(map) if map.len() == 1 && map.contains_key(FIELD) => {

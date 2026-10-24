@@ -302,6 +302,17 @@ pub(super) fn encode_expression_literals(
                     lit(storage), value.data_type(), dialect.name(),
                 )?));
             }
+            if matches!(value.data_type(), DataType::Timestamp(_, Some(_)))
+                && matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
+                // DF53 renders zoned timestamp literals as plain TIMESTAMP,
+                // which silently reinterprets the instant in the session zone.
+                let text = if value.is_null() { None } else {
+                    Some(arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?)
+                };
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    lit(ScalarValue::Utf8(text)), value.data_type(), dialect.name(),
+                )?));
+            }
             if dialect == SqlDialect::Postgres && value.is_null() && value.data_type() != DataType::Null {
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(ScalarValue::Null), value.data_type(), dialect.name(),
