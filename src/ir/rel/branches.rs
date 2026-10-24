@@ -239,10 +239,10 @@ impl<'a> LoweringContext<'a> {
         match selector {
             ChooseSelector::Predicates(conditions) => conditions
                 .iter()
-                .map(|condition| self.lower_expr(plan, condition))
+                .map(|condition| self.lower_case_condition(plan, condition))
                 .collect(),
             ChooseSelector::Boolean(condition) => {
-                let condition = self.lower_expr(plan, condition)?;
+                let condition = self.lower_case_condition(plan, condition)?;
                 let mut out = Vec::with_capacity(arms.len());
                 if !arms.is_empty() {
                     out.push(condition.clone());

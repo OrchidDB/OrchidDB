@@ -88,3 +88,32 @@ pub(crate) fn decode_boundary_rows(batch: &RecordBatch, fields: &[String]) -> Qu
     // inserted graph entities (which would alter subsequent source scans).
     Ok(rows)
 }
+
+// Called only by a compiler-declared Gremlin transport boundary. User aliases
+// never opt a regular SQL result into interpreting private transport fields.
+pub(crate) fn restore_traverser_state(rows: &mut [Row]) -> QueryResult<()> {
+    for row in rows {
+        let transported_state = matches!(row.bindings.get("__orchid_absent_state"), Some(Value::List(_)));
+        if transported_state && let Some(Value::List(absent)) = row.bindings.remove("__orchid_absent_state") {
+            for name in absent {
+                if let Value::String(name) = name {
+                    if matches!(row.bindings.get(&name), Some(Value::Null)) {
+                        row.bindings.remove(&name);
+                    }
+                }
+            }
+        }
+        if transported_state && let Some(Value::Map(extra)) = row.bindings.remove("__orchid_extra_bindings") {
+            for (name, value) in extra {
+                row.bindings.entry(name).or_insert(value);
+            }
+        }
+        if transported_state && let Some(value) = row.bindings.remove("__orchid_traverser_bulk") {
+            row.bulk = match value {
+                Value::UInt64(bulk) => bulk,
+                _ => return Err("Invalid SQL traverser multiplicity".into()),
+            };
+        }
+    }
+    Ok(())
+}

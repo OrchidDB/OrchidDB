@@ -354,6 +354,7 @@ impl PropertyGraph {
         else {
             return Err(CatalogError::Schema("Invalid vertex property owner".into()));
         };
+        self.hydrate_native_state(false, label, vertex_id);
         let address = (label.clone(), vertex_id.clone());
         let allow_null = self.supports_null_property_values();
         let mut ov = self.overlay.borrow_mut();
@@ -377,6 +378,7 @@ impl PropertyGraph {
             Value::Property { owner, key, .. } => {
                 if let Value::VertexProperty { id, owner: vertex, key: property_key, .. } = owner.as_ref() {
                     if let Value::Node { label, id: vertex_id } = vertex.as_ref() {
+                        self.hydrate_native_state(false, label, vertex_id);
                         let address = (label.clone(), vertex_id.clone());
                         if let Some(record) = self.overlay.borrow_mut().vertex_properties
                             .get_mut(&address).and_then(|m| m.get_mut(property_key))
@@ -398,6 +400,9 @@ impl PropertyGraph {
                 else {
                     return Ok(());
                 };
+                // A property returned by SQL is a reference; the mutation
+                // context may not have loaded its owner's metadata yet.
+                self.hydrate_native_state(false, label, vertex_id);
                 let address = (label.clone(), vertex_id.clone());
                 let mut ov = self.overlay.borrow_mut();
                 let scalar = if let Some(records) = ov

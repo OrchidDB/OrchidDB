@@ -84,7 +84,8 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         let materialized = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres)
             && (cte.name.starts_with("__w_sql_cte_weighted_repeat_")
             || cte.name.starts_with("__w_sql_cte_apply_row_")
-            || cte.name.starts_with("__w_sql_cte_quantifier_base_")) {
+            || cte.name.starts_with("__w_sql_cte_quantifier_base_")
+            || cte.name.starts_with("__w_sql_cte_sparql_blank_namespace_")) {
             " MATERIALIZED"
         } else { "" };
         pending.push((
@@ -375,22 +376,32 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
         LogicalPlan::Join(mut join) if matches!(join.join_type,
             datafusion::logical_expr::JoinType::LeftSemi | datafusion::logical_expr::JoinType::LeftAnti) => {
             let mut changed = false;
-            if !repair_scopes && matches!(join.left.as_ref(), LogicalPlan::Filter(_)) {
+            if !repair_scopes && (matches!(join.left.as_ref(), LogicalPlan::Filter(_))
+                || aggregate_scope(&join.left)) {
                 // DF's EXISTS conversion replaces the SELECT's WHERE rather
                 // than combining it with the preserved-side predicate.
                 join.left = Arc::new(hoist_operator(join.left.as_ref().clone(),
                     "existence_left_filter", &mut plain_ctes, &mut seen)?.data);
                 changed = true;
             }
-            if join.right.schema().fields().is_empty()
+            if (!repair_scopes || join.right.schema().fields().is_empty())
                 && !matches!(join.right.as_ref(), LogicalPlan::TableScan(_) | LogicalPlan::SubqueryAlias(_)) {
-                // A zero-column RHS can otherwise leak its filter into the
-                // outer WHERE instead of evaluating it inside EXISTS.
+                // A complex RHS can leak its joins/filters into the outer
+                // SELECT during EXISTS conversion. Give it its own SQL scope.
                 join.right = Arc::new(hoist_operator(join.right.as_ref().clone(),
                     "existence_input", &mut plain_ctes, &mut seen)?.data);
                 changed = true;
             }
-            Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
+            if changed {
+                // EXISTS conversion needs an explicit SELECT list even inside
+                // UNION arms; a bare semi join otherwise emits the dummy row.
+                let columns = join.schema.columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
+                let plan = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Join(join))
+                    .project(columns)?.build()?;
+                Ok(Transformed::yes(plan))
+            } else {
+                Ok(Transformed::no(LogicalPlan::Join(join)))
+            }
         }
         LogicalPlan::Unnest(mut unnest) => {
             // Optimizers can push scalar consumers into the named alias that

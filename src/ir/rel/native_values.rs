@@ -11,7 +11,7 @@ use std::any::Any;
 mod elements;
 mod rows;
 pub use rows::{decode_rows, result_batch, result_schema};
-pub(crate) use rows::decode_boundary_rows;
+pub(crate) use rows::{decode_boundary_rows, restore_traverser_state};
 use elements::Context;
 pub const FIELD: &str = "__orchiddb_value_v1";
 pub const VALUE: &str = "__orchiddb_value";
@@ -584,6 +584,21 @@ impl LoweringContext<'_> {
     /// Route an expression as a scalar kernel only when every captured binding
     /// is an ordinary SQL column. Graph access remains in the relational plan.
     pub(super) fn native_bindings(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if self.language == Language::Gremlin
+            && self.options.rule_context.lowering_policy == runtime::policy::LoweringPolicy::Hybrid {
+            // Dynamic label/history selection is already fused with native
+            // control flow in hybrid execution. Keep that placement: making
+            // a SQL island for each lookup repeatedly plans small correlated
+            // queries. SQL-required execution uses the pure helper below.
+            let mut selection = false;
+            crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |expr, _| {
+                selection |= matches!(expr, IrExpr::Call { name, .. }
+                    if matches!(name.as_str(), "select_key_or_binding" | "select_key_or_binding_pop"));
+            });
+            if selection {
+                return Err(RelError::Unsupported("Hybrid dynamic selection remains in the native traversal".into()));
+            }
+        }
         fn captures(
             expr: &IrExpr,
             bound: &BTreeSet<String>,
@@ -637,6 +652,8 @@ impl LoweringContext<'_> {
                                 | "requested_property_values"
                                 | "gremlin_cast_string"
                                 | "gremlin_id"
+                                | "select_key_or_binding"
+                                | "select_key_or_binding_pop"
                         ))
                         && args.iter().all(|e| captures(e, bound, free))
                 }

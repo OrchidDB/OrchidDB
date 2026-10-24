@@ -85,6 +85,17 @@ impl Context {
         self.graph
             .attach_element(&value, public_id, properties)
             .map_err(|e| e.to_string())?;
+        if let Some(Value::String(record)) = fields.get("native_record") {
+            // Managed SQL scans select the existing complete entity record.
+            // Decode it inside this scalar context so multi-properties, meta-
+            // properties and public identities survive the SQL boundary.
+            let payload = STANDARD.decode(record).map_err(|error| error.to_string())?;
+            self.graph.apply_incremental_records(&[
+                crate::ir::catalog::incremental::IncrementalRecord {
+                    kind: if edge { 2 } else { 1 }, name: label.clone(), id: id.clone(), payload,
+                },
+            ])?;
+        }
         if !edge {
             if let Some(state) = fields.get("native_node") {
                 self.graph.restore_detached_node_state(&label, &id, state)?;
@@ -100,8 +111,18 @@ impl Context {
         if fields.get("deleted") == Some(&Value::Bool(true)) {
             self.graph.mark_detached_deleted(&value);
         }
-        let key = (edge, label, id);
         let mut descriptor = descriptor;
+        if let Value::Map(fields) = &mut descriptor
+            && fields.remove("native_record").is_some() {
+            // The storage record is needed only to hydrate this context.
+            // Emit the canonical detached state, not another full copy of the
+            // record alongside its already-decoded properties on every hop.
+            fields.insert("id".into(), self.graph.element_public_id(&value));
+            if !edge {
+                fields.insert("native_node".into(), self.graph.detached_node_state(&label, &id));
+            }
+        }
+        let key = (edge, label, id);
         // Multiple projected references may carry different property subsets.
         // Keep the hydrated union instead of replacing it with the last cell.
         if let Some(Value::Map(previous)) = self.elements.get(&key)

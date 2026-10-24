@@ -273,7 +273,7 @@ fn node_exprs(node: &mut Node, scope: &Scope, visit: &mut impl FnMut(&mut IrExpr
         | GraphExtension { .. } => {}
     }
 }
-fn node_exprs_ref(node: &Node, scope: &Scope, visit: &mut impl FnMut(&IrExpr, &Scope)) {
+pub(crate) fn node_exprs_ref(node: &Node, scope: &Scope, visit: &mut impl FnMut(&IrExpr, &Scope)) {
     use Node::*;
     let mut expr = |value: &IrExpr| visit_expr(value, scope, visit);
     match node {

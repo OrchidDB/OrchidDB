@@ -1066,7 +1066,12 @@ async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spar
     let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
     lowered.plan = plan;
     crate::ir::rules::RuleSession::new(lowered.rule_context.clone()).invalidate();
-    let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
+    let sql = unparse(&lowered, dialect).map_err(|e| {
+        if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
+            eprintln!("Failed SQL emission: {e}\n{}", lowered.plan.display_indent());
+        }
+        e.to_string()
+    })?;
     Ok(CompiledSql {
         rule_trace: lowered.rule_context.trace(),
         execution_engine: request.execution_engine,

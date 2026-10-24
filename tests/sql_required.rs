@@ -110,6 +110,19 @@ async fn sql_native_aggregate_semantics_are_independent_of_placement() {
     }
 }
 
+#[tokio::test]
+async fn sql_union_resumes_after_branch_barriers() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.set_lowering_policy(LoweringPolicy::SqlRequired);
+    let result = engine.gremlin(
+        "g.union(__.inject(1).barrier(), __.inject(2).barrier()).sum()",
+    ).await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(
+        result.returned.batch.column(0), 0,
+    ).unwrap(), "3");
+    assert!(result.stats.sql_queries.iter().any(|sql| sql.contains("UNION ALL")));
+}
+
 #[test]
 fn sql_required_rejects_relational_kernels_at_compile_time() {
     use orchiddb::ir::{

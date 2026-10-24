@@ -113,6 +113,11 @@ def main():
                 results.append(record)
                 journal.write(json.dumps(record) + '\n'); journal.flush()
                 if (i + 1) % 50 == 0: print(args.suite, i + 1, '/', len(cases), flush=True)
+                if result['status'] == 'timeout':
+                    # The transport terminates the adapter on a deadline. Do
+                    # not misreport the remaining cases as compiler failures.
+                    print('Stopped after adapter timeout:', case['id'], flush=True)
+                    break
     finally: adapter.close()
     counts = dict(Counter(r['status'] for r in results))
     report = dict(schema_version=3, engine='duckdb-extension', suite=args.suite, source=catalog['sources'][args.suite],
@@ -120,7 +125,8 @@ def main():
                   execution_profile={'executor': 'Host DuckDB only', 'datafusion_execution': False, 'graphengine_execution': False,
                                      'assertions': 'Existing pinned upstream assertions, unchanged'},
                   coverage={'catalog_cases': sum(c['suite'] == args.suite for c in catalog['cases']), 'recorded_cases': len(results),
-                            'filtered': bool(args.limit or args.filter or args.case)}, counts=counts, results=results)
+                            'filtered': bool(args.limit or args.filter or args.case),
+                            'unattempted_selected_cases': len(cases) - len(results)}, counts=counts, results=results)
     if args.suite == 'tinkerpop':
         instances = {r['engine_instance'] for r in results if r.get('engine_instance')}
         report['execution_profile']['engine_instances'] = sorted(instances)

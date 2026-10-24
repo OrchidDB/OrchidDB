@@ -77,11 +77,14 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     let plan = plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::EmptyRelation(empty) = node else { return Ok(Transformed::no(node)); };
         if empty.produce_one_row { return Ok(Transformed::no(LogicalPlan::EmptyRelation(empty))); }
-        let columns = empty.schema.iter().map(|(qualifier, field)| {
+        let mut columns = empty.schema.iter().map(|(qualifier, field)| {
             Expr::Cast(datafusion::logical_expr::Cast::new(
                 Box::new(lit(ScalarValue::Null)), field.data_type().clone()))
                 .alias_qualified(qualifier.cloned(), field.name())
         }).collect::<Vec<_>>();
+        if columns.is_empty() {
+            columns.push(lit(1_i64).alias("__orchid_void"));
+        }
         let plan = datafusion::logical_expr::LogicalPlanBuilder::empty(true)
             .project(columns)?.limit(0, Some(0))?.build()?;
         Ok(Transformed::yes(plan))
@@ -332,6 +335,12 @@ pub(super) fn encode_expression_literals(
             }
             if dialect==SqlDialect::DuckDb && value.is_null() && matches!(value.data_type(),DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(lit(ScalarValue::Null),value.data_type(),dialect.name())?));
+            }
+            if dialect == SqlDialect::DuckDb && value.is_null()
+                && matches!(value.data_type(), DataType::Struct(_)) {
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    lit(ScalarValue::Null), value.data_type(), dialect.name(),
+                )?));
             }
             if super::structured::is_structured(&value.data_type()) && matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect).map_err(|e| DataFusionError::Plan(e.to_string()))?));

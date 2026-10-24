@@ -168,6 +168,9 @@ fn compile(input: Value, inspect: bool) -> Result<Value, String> {
             return Err(error);
         },
     };
+    if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
+        eprintln!("Compiled host SQL:\n{}\nLogical plan:\n{}", compiled.sql, compiled.logical_plan);
+    }
     if !compiled.transfers.is_empty() {
         return Err("query requires dependent execution, which is not supported by the DuckDB extension yet".into());
     }

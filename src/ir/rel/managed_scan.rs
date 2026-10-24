@@ -27,6 +27,7 @@ impl LoweringContext<'_> {
                 true,
             ),
             Field::new("properties", DataType::Utf8, true),
+            Field::new("payload", DataType::Binary, false),
         ];
         let provider = mapping::schema_only_provider(Arc::new(Schema::new(fields)));
         let plan = LogicalPlanBuilder::scan(
@@ -71,6 +72,10 @@ impl LoweringContext<'_> {
             col_exact("labels"),
             lit("properties"),
             df_core::named_struct(vec![lit(native_values::FIELD), col_exact("properties")]),
+            lit("native_record"),
+            crate::ir::functions::portable::function("fn.encode")
+                .expect("portable binary encoding")
+                .call(vec![col_exact("payload"), lit("base64pad")]),
         ];
         if edge {
             for (key, column) in [

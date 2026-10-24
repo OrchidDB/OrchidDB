@@ -461,12 +461,94 @@ unique_ptr<QueryResult> ExecuteProgramInput(ClientContext &context, shared_ptr<N
     ProgramBindScope binding(execution);
     return HostExecute(context,Select(context,binding.SQL(node)),{});
 }
+// Prepare executable inputs before scheduling SQL. A shared input can be
+// referenced by multiple optimized branches; their pipelines must not enter
+// the same mutable kernel state concurrently. SQL owns all relational work.
+class PhysicalOrchidSql : public PhysicalOperator {
+public:
+    shared_ptr<NativeExecution> execution;
+    uint64_t node;
+    PhysicalOrchidSql(PhysicalPlan &plan, vector<LogicalType> types,
+                     shared_ptr<NativeExecution> execution, uint64_t node)
+        : PhysicalOperator(plan, PhysicalOperatorType::EXTENSION, std::move(types), 1000),
+          execution(std::move(execution)), node(node) {}
+    string GetName() const override { return "ORCHID_SQL"; }
+    bool IsSource() const override { return true; }
+    unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &) const override {
+        return make_uniq<KernelSourceState>();
+    }
+    SourceResultType GetDataInternal(ExecutionContext &context, DataChunk &output, OperatorSourceInput &input) const override {
+        auto &state = input.global_state.Cast<KernelSourceState>();
+        if (!state.done) {
+            state.done = true;
+            NativeScope native(context.client, *execution);
+            const auto &description = execution->program->Node(node);
+            auto statement = Select(context.client, description.at("sql").get<string>());
+            auto generated = std::move(statement->node->cte_map.map);
+            statement->node->cte_map.map = decltype(generated)();
+            HostRelationScope scope;
+            for (const auto &dependency : description.at("inputs")) {
+                auto result = ExecuteProgramInput(context.client, execution, dependency.at("node").get<uint64_t>());
+                ResultArrowArrayStreamWrapper stream(std::move(result), STANDARD_VECTOR_SIZE);
+                auto id = scope.Add(ImportHostRelation(context.client, stream.stream));
+                auto cte = make_uniq<CommonTableExpressionInfo>();
+                cte->query = Select(context.client, "SELECT * FROM __orchid_host_relation(" + std::to_string(id) + "::UBIGINT)");
+                statement->node->cte_map.map.insert(dependency.at("relation").get<string>(), std::move(cte));
+            }
+            for (auto &cte : generated) { statement->node->cte_map.map.insert(cte.first, std::move(cte.second)); }
+            auto result = HostExecute(context.client, std::move(statement), {});
+            ResultArrowArrayStreamWrapper stream(std::move(result), STANDARD_VECTOR_SIZE);
+            state.output.Set(context.client, stream.stream);
+        }
+        if (!state.output.relation) { return SourceResultType::FINISHED; }
+        DataChunk chunk;
+        chunk.Initialize(Allocator::Get(context.client), state.output.relation->data->Types());
+        if (!state.output.Next(chunk)) { return SourceResultType::FINISHED; }
+        if (chunk.ColumnCount() != types.size()) { throw InternalException("SQL stage column count changed"); }
+        output.SetCardinality(chunk.size());
+        for (idx_t i = 0; i < types.size(); i++) {
+            // SQL literals can have narrower host types than their declared
+            // Arrow type. Never reference their buffers as a different type.
+            if (chunk.data[i].GetType() == types[i]) { output.data[i].Reference(chunk.data[i]); }
+            else { VectorOperations::Cast(context.client, chunk.data[i], output.data[i], chunk.size()); }
+        }
+        return SourceResultType::HAVE_MORE_OUTPUT;
+    }
+};
+class LogicalOrchidSql : public LogicalExtensionOperator {
+public:
+    shared_ptr<NativeExecution> execution;
+    uint64_t node;
+    idx_t table_index;
+    vector<LogicalType> result_types;
+    LogicalOrchidSql(shared_ptr<NativeExecution> execution, uint64_t node, idx_t index, vector<LogicalType> types)
+        : execution(std::move(execution)), node(node), table_index(index), result_types(std::move(types)) {}
+    string GetName() const override { return "ORCHID_SQL"; }
+    string GetExtensionName() const override { return "orchid"; }
+    bool SupportSerialization() const override { return false; }
+    vector<ColumnBinding> GetColumnBindings() override { return GenerateColumnBindings(table_index, result_types.size()); }
+    vector<idx_t> GetTableIndex() const override { return {table_index}; }
+    void ResolveTypes() override { types = result_types; }
+    PhysicalOperator &CreatePlan(ClientContext &, PhysicalPlanGenerator &planner) override {
+        return planner.Make<PhysicalOrchidSql>(result_types, execution, node);
+    }
+};
+
 unique_ptr<LogicalOperator> BindProgramNode(ClientContext &context, TableFunctionBindInput &input,
                                           shared_ptr<NativeExecution> execution, uint64_t node,
                                           idx_t index, vector<string> &names, uint64_t program_id) {
     const auto &description=execution->program->Node(node);
     auto child_sql=[&](uint64_t child) {return "SELECT * FROM __orchid_kernel("+std::to_string(program_id)+"::UBIGINT,"+std::to_string(child)+"::UBIGINT)";};
     if (description.at("kind")=="sql") {
+        if (!description.value("inputs", Json::array()).empty()) {
+            auto schema = execution->program->Schema(context, node);
+            // Zero-column logical relations use the existing SQL cardinality
+            // projection, since SQL table functions need a physical column.
+            if (!schema.GetTypes().empty()) {
+                names = schema.GetNames();
+                return make_uniq<LogicalOrchidSql>(execution, node, index, schema.GetTypes());
+            }
+        }
         auto statement=Select(context,description.at("sql").get<string>());
         auto generated_ctes=std::move(statement->node->cte_map.map);
         statement->node->cte_map.map=decltype(generated_ctes)();

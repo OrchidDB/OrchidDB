@@ -72,6 +72,7 @@ pub struct RowKernel {
     schema: DFSchemaRef,
     kernel: Arc<Kernel>,
     relational_input: Option<Vec<String>>,
+    relational_input_state: bool,
     relational_output: Option<reentry::SqlOutput>,
     /// Adjacent unary kernels may retain rows in memory without reordering evaluation.
     fuse_unary: bool,
@@ -163,6 +164,7 @@ fn kernel(
             ),
             kernel: Arc::new(operation),
             relational_input: None,
+            relational_input_state: false,
             relational_output: None,
             contract: None,
             streaming: name == "DecodeTraversers",

@@ -9,13 +9,11 @@ impl Lowerer<'_, '_> {
     pub(super) fn join(&mut self, left: Sol, right: Sol, optional: bool) -> RelResult<Sol> {
         let prefix = self.fresh("r:");
         let right_names = right.column_names();
-        let renamed = self.project(
-            right.plan.clone(),
-            right_names
-                .iter()
-                .map(|name| col_exact(name).alias(format!("{prefix}{name}")))
-                .collect(),
-        )?;
+        let columns = right_names.iter()
+            .map(|name| col_exact(name).alias(format!("{prefix}{name}")))
+            .collect();
+        let columns = self.nonempty(columns);
+        let renamed = self.project(right.plan.clone(), columns)?;
         let right_term = |var: &str| {
             let [kind, dt, lang] = binding_identity_columns(var);
             Term {

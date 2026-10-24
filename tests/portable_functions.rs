@@ -731,6 +731,10 @@ async fn expanded_catalog_matches_native_columns() {
     ));
     for format in ["hex", "base64", "base64pad"] {
         cases.push(("encode", vec![col("s"), lit(format)]));
+        cases.push(("encode", vec![
+            call("decode", vec![call("encode", vec![col("s"), lit("hex")]), lit("hex")]),
+            lit(format),
+        ]));
     }
     for format in ["hex", "base64", "base64pad"] {
         cases.push((

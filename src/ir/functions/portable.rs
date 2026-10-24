@@ -77,6 +77,9 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
         let mut definition = LogicalFunction::new(&name, native.clone(), sql);
         definition.portable_builtin = true;
         for dialect in ["duckdb", "postgres", "starrocks"] {
+            // Encoding has a literal format and a known Arrow input type.
+            // Specialize it instead of emitting correlated runtime type tests.
+            if native.name() == "encode" && matches!(dialect, "duckdb" | "postgres") { continue; }
             for arity in 0..=5 {
                 if let Some(value) = overload(native.name(), dialect, arity) {
                     definition.sql_overloads.insert(

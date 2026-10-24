@@ -765,6 +765,11 @@ impl Lowerer<'_, '_> {
     }
 
     fn result_rows(&mut self, sol: Sol, fields: &[String]) -> RelResult<LogicalPlan> {
+        // SQL needs a physical column even for the single empty solution.
+        // Keep it private instead of letting an empty projection expose input columns.
+        if fields.is_empty() {
+            return self.project(sol.plan, vec![lit(1_i64).alias("__orchid_void")]);
+        }
         let mut values = Vec::new();
         let mut identity = Vec::new();
         for field in fields {
@@ -1150,10 +1155,15 @@ impl Lowerer<'_, '_> {
         let blank_key = self.fresh("template_blank");
         if template.iter().any(|triple| [&triple.subject, &triple.predicate, &triple.object]
             .iter().any(|term| matches!(term, RdfTerm::BlankNode(_)))) {
-            let mut columns = sol.columns();
-            columns.push(cast(duck_str("uuid", vec![]), DataType::Utf8).alias(&blank_key));
-            sol.plan = self.project(sol.plan, columns)?;
-            sol.plan = self.cte(sol.plan)?;
+            // Share one volatile namespace across every template branch. A UUID
+            // projected over the solution relation can be evaluated independently
+            // when consumers specialize that relation into different CTEs.
+            let namespace = LogicalPlanBuilder::empty(true)
+                .project(vec![cast(duck_str("uuid", vec![]), DataType::Utf8).alias(&blank_key)])?
+                .alias(format!("__w_sql_cte_sparql_blank_namespace_{}", self.next))?
+                .build()?;
+            self.next += 1;
+            sol.plan = LogicalPlanBuilder::from(sol.plan).cross_join(namespace)?.build()?;
         }
         let mut branches = Vec::new();
         for triple in template {

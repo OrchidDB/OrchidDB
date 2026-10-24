@@ -97,6 +97,9 @@ impl CompiledProgram {
         };
         let sql = super::super::sql::unparse(&lowered, super::super::sql::SqlDialect::DuckDb)
             .map_err(|error| failure(error.to_string()))?;
+        if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
+            eprintln!("Program SQL: {sql}\n{}", lowered.plan.display_indent());
+        }
         let id = self.stages.len();
         self.stages.push(CompiledStage {
             id,

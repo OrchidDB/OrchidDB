@@ -453,7 +453,31 @@ impl<'a> LoweringContext<'a> {
             input.with_plan(plan)
         } else { input };
 
+        // Materialize a dynamic operand once before inspecting its type and
+        // expanding it; a volatile expression must not be evaluated twice.
+        let operand = self.lower_expr(&input.plan, input_expr)?;
+        let carrier = self.options.native_values && native_values::is_value(&operand.get_type(input.plan.schema())?);
+        let operand_binding = format!("__w_quantifier_operand_{suffix}");
+        let input = if carrier {
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(operand.alias(&operand_binding));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            input.with_plan(collections::unnest_scope(plan, format!("__w_sql_cte_quantifier_operand_{suffix}"))?)
+        } else { input };
+        let materialized_expr = IrExpr::Binding(operand_binding);
+        let input_expr = if carrier { &materialized_expr } else { input_expr };
         let list = self.lower_list_operand(&input.plan, input_expr)?;
+        // UNWIND accepts scalar singletons, but quantifiers accept only lists.
+        // Keep that distinction when the host sees an opaque value carrier.
+        let list = if carrier {
+            let is_list = self.lower_case_condition(&input.plan, &IrExpr::Binary {
+                op: BinaryOp::Eq,
+                lhs: Box::new(IrExpr::Call { name: "typeof".into(), args: vec![input_expr.clone()] }),
+                rhs: Box::new(IrExpr::Lit(Lit::String("LIST".into()))),
+            })?;
+            let null_list = lit(ScalarValue::try_from(&list.get_type(input.plan.schema())?)?);
+            Expr::Case(Case::new(None, vec![(Box::new(is_list), Box::new(list))], Some(Box::new(null_list))))
+        } else { list };
         let list_type = list
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("quantifier input type: {err}")))?;

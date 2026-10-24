@@ -14,6 +14,7 @@ pub fn handles(name: &str) -> bool {
             | "arrow_typeof"
             | "arrow_metadata"
             | "digest"
+            | "encode"
             | "struct"
             | "named_struct"
             | "get_field"
@@ -116,7 +117,7 @@ pub fn mapping(name: &str, args: &[Expr], schema: &DFSchema, pg: bool) -> Result
     let arity_ok = match name {
         "version" => args.is_empty(),
         "arrow_typeof" | "map_keys" | "map_values" | "map_entries" | "union_tag" => args.len() == 1,
-        "arrow_cast" | "digest" | "map" | "map_extract" | "union_extract" => args.len() == 2,
+        "arrow_cast" | "digest" | "encode" | "map" | "map_extract" | "union_extract" => args.len() == 2,
         "arrow_metadata" => matches!(args.len(), 1 | 2),
         "named_struct" => !args.is_empty() && args.len() % 2 == 0,
         "struct" => !args.is_empty(),
@@ -231,6 +232,24 @@ pub fn mapping(name: &str, args: &[Expr], schema: &DFSchema, pg: bool) -> Result
                             .join(",")
                     )
                 }
+            }
+        }
+        "encode" => {
+            let bytes = match &types[0] {
+                DataType::Binary | DataType::LargeBinary | DataType::BinaryView => "__arg0".to_owned(),
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View if pg => "convert_to(__arg0, 'UTF8')".to_owned(),
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => "encode(__arg0)".to_owned(),
+                DataType::Null => if pg { "CAST(NULL AS BYTEA)" } else { "CAST(NULL AS BLOB)" }.to_owned(),
+                _ => return Err(error("encoding requires binary or UTF-8 input")),
+            };
+            let base64 = if pg { format!("replace(encode({bytes}, 'base64'), chr(10), '')") }
+                else { format!("to_base64({bytes})") };
+            match text(&args[1])? {
+                "hex" if pg => format!("encode({bytes}, 'hex')"),
+                "hex" => format!("lower(hex({bytes}))"),
+                "base64" => format!("rtrim({base64}, '=')"),
+                "base64pad" => base64,
+                _ => return Err(error("unsupported encoding format")),
             }
         }
         "digest" => {

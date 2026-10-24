@@ -130,7 +130,11 @@ pub(super) fn source_kernel(name: &str, source: Source) -> LogicalPlan {
 
 pub(super) fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
     if let Some(fields) = &kernel.relational_input {
-        super::super::native_values::decode_boundary_rows(&batch, fields).map_err(|e| failure(e.to_string()))
+        let mut rows = super::super::native_values::decode_boundary_rows(&batch, fields).map_err(|e| failure(e.to_string()))?;
+        if kernel.relational_input_state {
+            super::super::native_values::restore_traverser_state(&mut rows).map_err(|e| failure(e.to_string()))?;
+        }
+        Ok(rows)
     } else {
         decode_rows(&batch)
     }

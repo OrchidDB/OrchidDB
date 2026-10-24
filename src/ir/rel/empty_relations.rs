@@ -27,7 +27,9 @@ pub(super) fn simplify(plan: LogicalPlan) -> RelResult<LogicalPlan> {
         let erase = match &node {
             LogicalPlan::Projection(p) => empty(&p.input),
             LogicalPlan::SubqueryAlias(p) => empty(&p.input),
-            LogicalPlan::Filter(p) => empty(&p.input),
+            LogicalPlan::Filter(p) => empty(&p.input)
+                || (discardable(&p.input) && matches!(p.predicate,
+                    Expr::Literal(ScalarValue::Boolean(Some(false) | None), _))),
             LogicalPlan::Join(j) if j.join_type == JoinType::Inner =>
                 (empty(&j.left) && discardable(&j.right)) || (empty(&j.right) && discardable(&j.left)),
             _ => false,

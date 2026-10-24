@@ -198,7 +198,11 @@ impl RowKernel {
         let batch = RecordBatch::try_new_with_options(schema, columns,
             &arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())))
             .map_err(|e| e.to_string())?;
-        super::super::native_values::decode_rows(&batch, fields, graph)
+        let mut rows = super::super::native_values::decode_rows(&batch, fields, graph)?;
+        if self.relational_input_state {
+            super::super::native_values::restore_traverser_state(&mut rows)?;
+        }
+        Ok(rows)
     }
     /// Unknown means the operator may inspect implicit traverser state.
     pub fn required_bindings(&self) -> Option<&BTreeSet<String>> {
