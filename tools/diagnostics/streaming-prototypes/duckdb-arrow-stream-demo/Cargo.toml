@@ -1,0 +1,15 @@
+[package]
+name = "duckdb-arrow-stream-demo"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["bundled"]
+bundled = ["libduckdb-sys/bundled"]
+
+[dependencies]
+arrow-array = { version = "=58.4.0", features = ["ffi"] }
+arrow-schema = "=58.4.0"
+arrow-ipc = "=58.4.0"
+libduckdb-sys = "=1.10505.0"
+

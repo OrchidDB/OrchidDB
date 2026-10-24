@@ -1,0 +1,8 @@
+[package]
+name = "trino-arrow-fixture"
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+arrow-array = "=58.4.0"
+arrow-schema = "=58.4.0"
+arrow-ipc = "=58.4.0"

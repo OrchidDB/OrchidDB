@@ -1,0 +1,10 @@
+services:
+  trino:
+    image: trinodb/trino:484
+    ports:
+      - "127.0.0.1:18081:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./etc:/etc/trino:ro
+      - ./connector/target/plugin:/usr/lib/trino/plugin/arrow-demo:ro
