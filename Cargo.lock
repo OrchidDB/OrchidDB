@@ -2129,7 +2129,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb"
-version = "0.4.3-foundry.3"
+version = "0.4.3"
 dependencies = [
  "antlr4rust",
  "arrow",
@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb-client"
-version = "0.4.3-foundry.3"
+version = "0.4.3"
 dependencies = [
  "arrow",
  "async-trait",
@@ -2183,7 +2183,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb-compiler-native"
-version = "0.4.3-foundry.3"
+version = "0.4.3"
 dependencies = [
  "arrow",
  "orchiddb",
@@ -2193,7 +2193,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb-java-native"
-version = "0.4.3-foundry.3"
+version = "0.4.3"
 dependencies = [
  "jni",
  "orchiddb",

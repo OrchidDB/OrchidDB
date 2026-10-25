@@ -4,7 +4,7 @@ defmodule OrchidDB.MixProject do
   def project do
     [
       app: :orchiddb,
-      version: "0.4.3-foundry.3",
+      version: "0.4.3",
       elixir: "~> 1.15",
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_clean: ["clean"],
