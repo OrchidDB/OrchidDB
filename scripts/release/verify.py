@@ -68,7 +68,7 @@ def verify(assets):
     env.pop('PYTHONPATH', None)
     python = work / 'python/bin/python'
     if not python.exists(): run([sys.executable, '-m', 'venv', python.parent.parent])
-    run([python, '-m', 'pip', 'install', 'duckdb==1.5.6', 'pyarrow==25.0.0', 'pytest', 'pytest-subtests'])
+    run([python, '-m', 'pip', 'install', 'duckdb==1.5.6', 'pyarrow==25.0.0', 'pytest', 'pytest-subtests', 'numpy'])
     spec = importlib.util.spec_from_file_location('extension_build', ROOT / 'extension/scripts/build.py')
     build = importlib.util.module_from_spec(spec); spec.loader.exec_module(build)
     for platform in manifest['platforms']:
