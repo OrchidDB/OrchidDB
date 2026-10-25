@@ -17,8 +17,8 @@ impl Compiler<'_> {
             }
         }
         let output = SqlOutput {
-            implicit_fields: fields.clone(), fields, nodes: Vec::new(),
-            policy: self.policy.clone(), preserve_bulk: true,
+            implicit_fields: fields.clone(), fields, nodes: Vec::new(), edges: Vec::new(),
+            policy: self.policy.clone(), preserve_bulk: true, transport_state: true, identity_type: source_identity_type(self.graph),
         };
         let mut encoded = Vec::new();
         for input in inputs {
@@ -127,11 +127,18 @@ impl Compiler<'_> {
         *crate::ir::analysis::children_mut(&mut rewritten)[0] = Node::GraphCorrelate {
             bindings: fields.clone(),
         };
-        if crate::ir::analysis::contains_source_mutation(child) {
+        let child_may_error = matches!(child, Node::GraphProject {
+            error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError, items, ..
+        } if items.iter().any(|item| !optimize::total(&item.expr)));
+        if crate::ir::analysis::contains_source_mutation(child) || child_may_error {
             let barrier = self.eager_sql_boundary(&rewritten, input)?;
             self.lowered.borrow_mut().remove(&key);
             return Ok(Some(barrier));
         }
+        let (input, reference_fields) = super::references::lift(&mut rewritten, input, &mut fields);
+        *crate::ir::analysis::children_mut(&mut rewritten)[0] = Node::GraphCorrelate {
+            bindings: fields.clone(),
+        };
         let mut bridge = match kernel("EncodeSqlBindings", vec![input], |mut rows, _| {
             Ok(rows.remove(0))
         }) {
@@ -160,15 +167,20 @@ impl Compiler<'_> {
         let output = SqlOutput {
             fields: fields.clone(),
             nodes,
+            edges: Vec::new(),
             policy: self.policy.clone(),
+            transport_state: true,
+            identity_type: source_identity_type(self.graph),
             implicit_fields,
             preserve_bulk: self.policy.language == crate::ir::policy::Language::Gremlin
                 && matches!(node, Node::GraphFilter { .. } | Node::GraphBind { .. }
                     | Node::GraphExpand { .. } | Node::GraphUnwind { .. }
                     | Node::GraphDistinct { bulk: crate::ir::plan::DistinctBulk::ResetToOne, .. }
                     | Node::GraphSort { .. }
-                    | Node::GraphProject { mode: crate::ir::plan::ProjectMode::PreserveVisible
-                        | crate::ir::plan::ProjectMode::ReplaceCurrent, .. }),
+                    | Node::GraphProject { .. })
+                || self.policy.language == crate::ir::policy::Language::Gremlin
+                    && matches!(node, Node::GraphAggregate { aggs, .. }
+                        if aggs.iter().all(|agg| agg.kind == crate::ir::expr::AggKind::CountBulk)),
         };
         bridge.schema = Arc::new(output.schema().as_ref().clone().try_into()?);
         bridge.relational_output = Some(output);
@@ -182,6 +194,7 @@ impl Compiler<'_> {
                 mapping: self.graph.mapping.clone(),
                 language_functions: self.language_functions,
                 native_values: true,
+                live_graph_reads: self.live_graph_reads,
                 tolerate_internal_path_state: true,
                 ..Default::default()
             },
@@ -214,6 +227,16 @@ impl Compiler<'_> {
                 .project(columns)?.build()?;
             lowered.fields = None;
         }
+        if !reference_fields.is_empty() {
+            let columns = lowered.plan.schema().columns().into_iter()
+                .filter(|column| !reference_fields.contains(&column.name))
+                .map(datafusion::logical_expr::Expr::Column).collect::<Vec<_>>();
+            lowered.plan = datafusion::logical_expr::LogicalPlanBuilder::from(lowered.plan)
+                .project(columns)?.build()?;
+            if let Some(fields) = &mut lowered.fields {
+                fields.retain(|field| !reference_fields.contains(field));
+            }
+        }
         let fields = lowered
             .fields
             .unwrap_or_else(|| super::super::output_fields(&lowered.plan));
@@ -236,17 +259,20 @@ impl Compiler<'_> {
 
 #[derive(Clone)]
 pub(super) struct SqlOutput {
-    fields: Vec<String>,
-    nodes: Vec<String>,
-    policy: crate::ir::policy::GraphPlanPolicy,
-    preserve_bulk: bool,
-    implicit_fields: Vec<String>,
+    pub(super) fields: Vec<String>,
+    pub(super) nodes: Vec<String>,
+    pub(super) edges: Vec<String>,
+    pub(super) policy: crate::ir::policy::GraphPlanPolicy,
+    pub(super) preserve_bulk: bool,
+    pub(super) transport_state: bool,
+    pub(super) identity_type: arrow::datatypes::DataType,
+    pub(super) implicit_fields: Vec<String>,
 }
 impl SqlOutput {
-    fn schema(&self) -> arrow::datatypes::SchemaRef {
+    pub(super) fn schema(&self) -> arrow::datatypes::SchemaRef {
         use arrow::datatypes::{DataType, Field, Schema};
         let mut names = self.fields.clone();
-        if self.policy.language == crate::ir::policy::Language::Gremlin {
+        if self.transport_state && self.policy.language == crate::ir::policy::Language::Gremlin {
             names.push("__orchid_absent_state".into());
             names.push("__orchid_extra_bindings".into());
         }
@@ -264,7 +290,7 @@ impl SqlOutput {
         for node in &self.nodes {
             fields.push(Arc::new(Field::new(
                 super::super::id_col(node),
-                DataType::Int64,
+                self.identity_type.clone(),
                 true,
             )));
             fields.push(Arc::new(Field::new(
@@ -272,6 +298,14 @@ impl SqlOutput {
                 DataType::Utf8,
                 true,
             )));
+        }
+        for edge in &self.edges {
+            for suffix in ["__src_id", "__dst_id", "__id"] {
+                fields.push(Arc::new(Field::new(format!("{edge}{suffix}"), self.identity_type.clone(), false)));
+            }
+            for suffix in ["__src_label", "__dst_label", "__label"] {
+                fields.push(Arc::new(Field::new(format!("{edge}{suffix}"), DataType::Utf8, false)));
+            }
         }
         Arc::new(Schema::new(fields))
     }
@@ -283,7 +317,7 @@ impl SqlOutput {
         use datafusion::common::ScalarValue;
         let mut names = self.fields.clone();
         let encoded_rows;
-        let rows = if self.policy.language != crate::ir::policy::Language::Gremlin { rows } else {
+        let rows = if !self.transport_state || self.policy.language != crate::ir::policy::Language::Gremlin { rows } else {
             names.push("__orchid_absent_state".into());
             names.push("__orchid_extra_bindings".into());
             encoded_rows = rows.iter().map(|row| {
@@ -324,17 +358,9 @@ impl SqlOutput {
             for row in rows {
                 let (id, label) = match row.get(node) {
                     Value::Node { id, label } => {
-                        let value =
-                            match id.scalar() {
-                                ScalarValue::Int64(Some(id)) => *id,
-                                _ => return Err(
-                                    "SQL boundary node identity requires a compatible typed key"
-                                        .into(),
-                                ),
-                            };
-                        (Some(value), Some(label))
+                        (identity_scalar(Some(&id), &self.identity_type)?, Some(label))
                     }
-                    Value::Null => (None, None),
+                    Value::Null => (identity_scalar(None, &self.identity_type)?, None),
                     _ => return Err("Expansion source is not a node".into()),
                 };
                 let count = if !self.preserve_bulk && self.policy.language == crate::ir::policy::Language::Gremlin {
@@ -345,8 +371,28 @@ impl SqlOutput {
                 ids.extend(std::iter::repeat_n(id, count));
                 labels.extend(std::iter::repeat_n(label, count));
             }
-            columns.push(Arc::new(arrow::array::Int64Array::from(ids)));
+            columns.push(identity_array(ids, &self.identity_type)?);
             columns.push(Arc::new(arrow::array::StringArray::from(labels)));
+        }
+        for edge in &self.edges {
+            let mut source_ids = Vec::new();
+            let mut target_ids = Vec::new();
+            let mut ids = Vec::new();
+            let mut source_labels = Vec::new();
+            let mut target_labels = Vec::new();
+            let mut labels = Vec::new();
+            let scalar = |id: &crate::ir::ElementId| identity_scalar(Some(id), &self.identity_type);
+            for row in rows {
+                let Value::Edge { src_id, dst_id, id, src_label, dst_label, rel_type, .. } = row.get(edge) else {
+                    return Err("Graph relationship source emitted a non-edge".into());
+                };
+                source_ids.push(scalar(&src_id)?); target_ids.push(scalar(&dst_id)?); ids.push(scalar(&id)?);
+                source_labels.push(src_label); target_labels.push(dst_label); labels.push(rel_type);
+            }
+            columns.extend([identity_array(source_ids, &self.identity_type)?,
+                identity_array(target_ids, &self.identity_type)?, identity_array(ids, &self.identity_type)?,
+                Arc::new(arrow::array::StringArray::from(source_labels)), Arc::new(arrow::array::StringArray::from(target_labels)),
+                Arc::new(arrow::array::StringArray::from(labels))]);
         }
         RecordBatch::try_new_with_options(
             self.schema(),
@@ -355,4 +401,52 @@ impl SqlOutput {
         )
         .map_err(|e| e.to_string().into())
     }
+}
+
+/// A typed source descriptor reads the live overlay when polled. SQL owns
+/// expansion joins and predicates above this source; this is not a graph plan
+/// evaluator or an alternative relational execution engine.
+pub(crate) fn live_graph_scan(graph: &PropertyGraph, binding: &str, labels: &crate::ir::plan::LabelExpr, edge: bool, policy: &crate::ir::policy::GraphPlanPolicy) -> Result<LogicalPlan> {
+    let source = if edge { Source::Edges { binding: binding.into(), types: labels.clone() } }
+        else { Source::Nodes { binding: binding.into(), labels: labels.clone() } };
+    let LogicalPlan::Extension(extension) = source_kernel("GraphSource", source) else { unreachable!() };
+    let mut kernel = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+    let output = SqlOutput { fields: vec![binding.into()], implicit_fields: Vec::new(),
+        nodes: if edge { Vec::new() } else { vec![binding.into()] },
+        edges: if edge { vec![binding.into()] } else { Vec::new() },
+        policy: policy.clone(), preserve_bulk: false, transport_state: false, identity_type: source_identity_type(graph) };
+    kernel.schema = Arc::new(output.schema().as_ref().clone().try_into()?);
+    kernel.relational_output = Some(output);
+    kernel.boundary = Some(policy::BoundaryKind::GraphSource);
+    Ok(LogicalPlan::Extension(Extension { node: Arc::new(kernel) }))
+}
+
+fn source_identity_type(graph: &PropertyGraph) -> arrow::datatypes::DataType {
+    let mut types = Vec::new();
+    for kind in graph.key_types.values() { if !types.contains(kind) { types.push(kind.clone()); } }
+    match types.len() {
+        0 => arrow::datatypes::DataType::Int64,
+        1 => types.remove(0),
+        _ => crate::ir::identity::identity_union_type(types),
+    }
+}
+fn identity_scalar(id: Option<&crate::ir::ElementId>, kind: &arrow::datatypes::DataType) -> std::result::Result<datafusion::common::ScalarValue, QueryExecutionError> {
+    use datafusion::common::ScalarValue;
+    let Some(id) = id else { return ScalarValue::try_from(kind).map_err(|e|e.to_string().into()); };
+    if crate::ir::identity::is_identity_union(kind) {
+        let arrow::datatypes::DataType::Struct(fields) = kind else { unreachable!() };
+        let variant = crate::ir::identity::identity_variant(&id.scalar().data_type());
+        if !fields.iter().any(|field| field.name() == &variant) { return Err("Graph source identity type is absent from its declared schema".into()); }
+        let columns = fields.iter().map(|field| {
+            let scalar = if field.name() == &variant {id.scalar().clone()} else {ScalarValue::try_from(field.data_type())?};
+            scalar.to_array()
+        }).collect::<datafusion::common::Result<Vec<_>>>().map_err(|e|e.to_string())?;
+        return Ok(ScalarValue::Struct(Arc::new(arrow::array::StructArray::new(fields.clone(), columns, None))));
+    }
+    id.scalar().cast_to(kind).map_err(|e|e.to_string().into())
+}
+
+fn identity_array(values: Vec<datafusion::common::ScalarValue>, kind: &arrow::datatypes::DataType) -> std::result::Result<arrow::array::ArrayRef, QueryExecutionError> {
+    if values.is_empty() { Ok(arrow::array::new_empty_array(kind)) }
+    else { datafusion::common::ScalarValue::iter_to_array(values).map_err(|e|e.to_string().into()) }
 }

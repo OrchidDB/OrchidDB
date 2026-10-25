@@ -287,7 +287,7 @@ async fn compiler_pushes_a_closed_relationship_to_its_owning_engine() {
     use serde_json::json;
     let request = json!({"version":1,"dialect":"duckdb","language":"cypher",
         "query":"MATCH (s:Document)-[e:SIMILAR_TO]->(t:Document) RETURN s.id, t.id, e.score",
-        "engines":{"local":{"dialect":"duckdb"},"remote":{"dialect":"postgres"}},"execution_engine":"local",
+        "engines":{"local":{"dialect":"duckdb"},"remote":{"dialect":"trino"}},"execution_engine":"local",
         "tables":[{"name":"documents","engine":"remote","columns":[{"name":"id","data_type":"int64"},{"name":"embedding","data_type":"list:float64"}]}],
         "nodes":[{"label":"Document","table":"documents","id":"id","properties":{"id":"id","embedding":"embedding"}}],
         "computed_relationships":[{"name":"SIMILAR_TO","source":"Document","target":"Document","predicate":"source.id <> target.id","properties":{"score":"vector.cosine_similarity(source.embedding,target.embedding)"},"order_by":[{"expression":"score","direction":"desc"}],"limit_per_source":1}]
@@ -296,82 +296,12 @@ async fn compiler_pushes_a_closed_relationship_to_its_owning_engine() {
     let result = orchiddb::compiler::compile(request).await.unwrap();
     assert_eq!(result.transfers.len(), 1, "{result:?}");
     assert!(
-        result.transfers[0].sql.contains("<=>"),
+        result.transfers[0].sql.contains("dot_product"),
         "{:?}",
         result.transfers
     );
     assert!(result.transfers[0].sql.contains("PARTITION BY"));
     assert!(!result.sql.contains("documents"));
-}
-
-#[cfg(feature = "postgres")]
-#[test]
-fn postgres_executes_vector_text_and_maxsim_relationships() {
-    let Ok(url) = std::env::var("GRAPH_PG_URL") else {
-        return;
-    };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    for function in [
-        "vector.cosine_similarity(source.embedding, target.embedding)",
-        "vector.dot(source.embedding, target.embedding)",
-        "vector.l2_distance(source.embedding, target.embedding)",
-        "vector.maxsim(source.tokens, target.tokens)",
-        "text.bm25(source.body, target.body)",
-    ] {
-        let rule = COSINE.replace(
-            "vector.cosine_similarity(source.embedding, target.embedding)",
-            function,
-        );
-        let (native,prepared)=runtime.block_on(async {
-            let lowered=lower(mapping(&rule),"MATCH (s:Document)-[e:SIMILAR_TO]->(t:Document) RETURN s.id, t.id, e.score ORDER BY s.id");
-            let native=execute_lowered(lowered.clone()).await.unwrap();
-            (native,sql::prepare(&lowered,SqlDialect::Postgres).await.unwrap())
-        });
-        let mut executor = sql::PostgresExecutor::connect(&url).unwrap();
-        let actual = sql::execute_prepared(&mut executor, &prepared)
-            .unwrap_or_else(|e| panic!("{function}: {e}\n{}", prepared.query));
-        assert_eq!(actual.batch.num_rows(), native.batch.num_rows());
-        for i in 0..actual.batch.num_rows() {
-            for col in 0..2 {
-                assert_eq!(
-                    actual
-                        .batch
-                        .column(col)
-                        .as_any()
-                        .downcast_ref::<Int64Array>()
-                        .unwrap()
-                        .value(i),
-                    native
-                        .batch
-                        .column(col)
-                        .as_any()
-                        .downcast_ref::<Int64Array>()
-                        .unwrap()
-                        .value(i),
-                    "{function}"
-                );
-            }
-            assert!(
-                (actual
-                    .batch
-                    .column(2)
-                    .as_any()
-                    .downcast_ref::<Float64Array>()
-                    .unwrap()
-                    .value(i)
-                    - native
-                        .batch
-                        .column(2)
-                        .as_any()
-                        .downcast_ref::<Float64Array>()
-                        .unwrap()
-                        .value(i))
-                .abs()
-                    < 1e-6,
-                "{function}"
-            );
-        }
-    }
 }
 
 #[tokio::test]
@@ -402,7 +332,7 @@ score = "vector.maxsim(source.tokens,target.tokens)"
 
 #[cfg(feature = "duckdb")]
 #[tokio::test]
-async fn mapped_engine_composes_stored_edges_and_native_only_functions() {
+async fn mapped_engine_composes_stored_edges_and_sql_functions() {
     use orchiddb::{
         engine::GraphEngine,
         ir::{functions::logical::LogicalFunction, rel::mapping::EdgeMapping},
@@ -416,7 +346,9 @@ async fn mapped_engine_composes_stored_edges_and_native_only_functions() {
     map.register_logical_function(LogicalFunction::new(
         "custom.absolute",
         datafusion::functions::math::abs(),
-        Default::default(),
+        [("duckdb".into(), orchiddb::ir::functions::logical::SqlFunctionMapping {
+            value: "abs(__arg0)".into(), ordering: None,
+        })].into(),
     ))
     .unwrap();
     map.map_edge(
@@ -425,7 +357,7 @@ async fn mapped_engine_composes_stored_edges_and_native_only_functions() {
     let mut engine = GraphEngine::mapped(db, Arc::new(map)).unwrap();
     let result=engine.cypher("MATCH (s:Document {id:1})-[e:SIMILAR_TO]->(t:Document)-[:LINK]->(u:Document) RETURN t.id,u.id,e.score").await.unwrap();
     assert_eq!(rows(&result.returned.batch), vec!["3|2|2"]);
-    assert!(result.stats.datafusion_ops > 0);
+    assert_eq!(result.stats.datafusion_ops, 0);
     for (query, expected) in [
         (
             "g.V().has('Document','id',1).out('SIMILAR_TO').values('body')",
@@ -572,71 +504,6 @@ score = "abs(source.x - target.x)"
     }
 }
 
-#[cfg(feature = "postgres")]
-#[test]
-fn postgres_ranked_search_uses_hnsw_index() {
-    let Ok(url) = std::env::var("GRAPH_PG_URL") else {
-        return;
-    };
-    let lowered = lower(
-        mapping(COSINE),
-        "MATCH (s:Document)-[e:SIMILAR_TO]->(t:Document) WHERE s.id=1 RETURN t.id,e.score",
-    );
-    let sql = sql::unparse(&lowered, SqlDialect::Postgres).unwrap();
-    assert!(sql.contains("CROSS JOIN LATERAL"), "{sql}");
-    let mut client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-    client.batch_execute("BEGIN; CREATE TEMP TABLE documents (id BIGINT, embedding vector(2), body TEXT, tokens JSONB[]); INSERT INTO documents SELECT i, ARRAY[i::real,1::real]::vector, 'cat', ARRAY['[1,0]'::jsonb] FROM generate_series(1,1000) i; CREATE INDEX documents_cosine_hnsw ON documents USING hnsw (embedding vector_cosine_ops); ANALYZE documents; SET LOCAL enable_seqscan=off;").unwrap();
-    let explain = client
-        .query(&format!("EXPLAIN {sql}"), &[])
-        .unwrap_or_else(|e| panic!("{e}: {:?}\n{sql}", e.as_db_error()));
-    let plan = explain
-        .iter()
-        .map(|r| r.get::<_, String>(0))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        plan.contains("Index Scan using documents_cosine_hnsw"),
-        "{plan}\n{sql}"
-    );
-    let rows = client.query(&sql, &[]).unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].get::<_, i64>(0), 2);
-    let rerank = COSINE.replace(
-        "vector.cosine_similarity(source.embedding, target.embedding)",
-        "vector.maxsim(source.tokens,target.tokens)",
-    ) + r#"
-[edge.SIMILAR_TO.candidates]
-predicate = "source.id <> target.id"
-order_by = [{expression="candidate",direction="desc"}]
-limit_per_source = 3
-[edge.SIMILAR_TO.candidates.properties]
-candidate = "vector.cosine_similarity(source.embedding,target.embedding)"
-"#;
-    let ranked = lower(
-        mapping(&rerank),
-        "MATCH (s:Document)-[e:SIMILAR_TO]->(t:Document) WHERE s.id=1 RETURN t.id,e.score",
-    );
-    let ranked = sql::unparse(&ranked, SqlDialect::Postgres).unwrap();
-    let explain = client
-        .query(&format!("EXPLAIN {ranked}"), &[])
-        .unwrap_or_else(|e| panic!("{e}: {:?}\n{ranked}", e.as_db_error()))
-        .iter()
-        .map(|r| r.get::<_, String>(0))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        explain.contains("Index Scan using documents_cosine_hnsw"),
-        "{explain}\n{ranked}"
-    );
-    let hits = client
-        .query(&ranked, &[])
-        .unwrap_or_else(|e| panic!("{e}: {:?}", e.as_db_error()));
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].get::<_, i64>(0), 2);
-    assert_eq!(hits[0].get::<_, f64>(1), 1.0);
-    client.batch_execute("ROLLBACK").unwrap();
-}
-
 fn lance_request(uri: &str, text_search: bool) -> serde_json::Value {
     use serde_json::json;
     let (function, metric, column) = if text_search {
@@ -665,7 +532,11 @@ async fn compiler_emits_bound_lance_search_and_no_corpus_scan() {
         )
         .await
         .unwrap();
-        let search = plan.transfers.iter().find(|t| t.operation.is_some()).unwrap();
+        let search = plan
+            .transfers
+            .iter()
+            .find(|t| t.operation.is_some())
+            .unwrap();
         let template = &search.operation.as_ref().unwrap().template;
         assert!(
             template.sql.contains(if text_search {
@@ -935,7 +806,7 @@ async fn cross_engine_search_stays_on_the_target_owner() {
     use serde_json::json;
     for text_search in [false, true] {
         let mut request = lance_request("/data/docs.lance", text_search);
-        request["engines"]["source"] = json!({"dialect":"postgres"});
+        request["engines"]["source"] = json!({"dialect":"trino"});
         request["tables"].as_array_mut().unwrap().push(json!({"name":"queries","engine":"source","columns":[{"name":"id","data_type":"int64"},{"name":"embedding","data_type":"list:float32"},{"name":"body","data_type":"string"}]}));
         request["nodes"].as_array_mut().unwrap().push(json!({"label":"Question","table":"queries","id":"id","properties":{"id":"id","embedding":"embedding","body":"body"}}));
         request["computed_relationships"][0]["source"] = "Question".into();
@@ -961,18 +832,8 @@ async fn cross_engine_search_stays_on_the_target_owner() {
             request["engines"]["vectors"] = json!({"dialect":"postgres"});
             request["tables"][0]["engine"] = "vectors".into();
             request["search_indexes"][0]["backend"] = json!({"kind":"pgvector"});
-            let plan = orchiddb::compiler::compile(serde_json::from_value(request).unwrap())
-                .await
-                .unwrap();
-            let search = plan
-                .transfers
-                .iter()
-                .find_map(|t| t.operation.as_ref())
-                .unwrap();
-            assert_eq!(search.engine, "vectors");
-            assert_eq!(search.template.dialect, "postgres");
-            assert!(search.template.sql.contains("<=>"));
-            assert!(!search.template.sql.contains("queries"));
+            let error = orchiddb::compiler::compile(serde_json::from_value(request).unwrap()).await.unwrap_err();
+            assert!(error.contains("unsupported executable engine"), "{error}");
         }
     }
 }
@@ -1006,75 +867,6 @@ async fn direct_rank_expressions_and_property_dependencies_use_search_access() {
             .unwrap()
             .contains("CROSS JOIN LATERAL")
     );
-}
-
-#[cfg(feature = "postgres")]
-#[test]
-fn cross_engine_pgvector_search_executes_on_its_index() {
-    use datafusion::common::ScalarValue;
-    use serde_json::json;
-    let Ok(url) = std::env::var("GRAPH_PG_URL") else {
-        return;
-    };
-    let mut request = lance_request("unused", false);
-    request["engines"]["vectors"] = json!({"dialect":"postgres"});
-    request["tables"][0]["engine"] = "vectors".into();
-    request["tables"].as_array_mut().unwrap().push(json!({"name":"queries","columns":[{"name":"id","data_type":"int64"},{"name":"embedding","data_type":"list:float32"},{"name":"body","data_type":"string"}]}));
-    request["nodes"].as_array_mut().unwrap().push(json!({"label":"Question","table":"queries","id":"id","properties":{"id":"id","embedding":"embedding","body":"body"}}));
-    request["computed_relationships"][0]["source"] = "Question".into();
-    request["query"] =
-        "MATCH (s:Question)-[e:SIMILAR_TO]->(t:Document) WHERE s.id=1 RETURN t.id,e.score".into();
-    request["search_indexes"][0]["backend"] = json!({"kind":"pgvector"});
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let plan = rt
-        .block_on(orchiddb::compiler::compile(
-            serde_json::from_value(request).unwrap(),
-        ))
-        .unwrap();
-    let search = plan
-        .transfers
-        .iter()
-        .find_map(|t| t.operation.as_ref())
-        .unwrap();
-    let values = search
-        .input_columns
-        .iter()
-        .map(|c| match c.data_type.as_str() {
-            "int64" => ScalarValue::Int64(Some(1)),
-            "string" => ScalarValue::Utf8(Some("cat's query".into())),
-            "list:float32" => ScalarValue::List(Arc::new(ListArray::from_iter_primitive::<
-                arrow::datatypes::Float32Type,
-                _,
-                _,
-            >([Some(vec![
-                Some(1.),
-                Some(1.),
-            ])]))),
-            other => panic!("unexpected source type {other}"),
-        })
-        .collect::<Vec<_>>();
-    let query = search.template.bind(&values).unwrap();
-    let mut client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-    client.batch_execute("BEGIN; CREATE TEMP TABLE documents(id BIGINT,embedding vector(2),body TEXT,tokens JSONB[]); INSERT INTO documents SELECT i,ARRAY[i::REAL,1::REAL]::vector,'cat',ARRAY['[1,1]'::jsonb] FROM generate_series(1,1000) i; CREATE INDEX docs_search_hnsw ON documents USING hnsw(embedding vector_cosine_ops); ANALYZE documents; SET LOCAL enable_seqscan=off;").unwrap();
-    let explain = client
-        .query(&format!("EXPLAIN {query}"), &[])
-        .unwrap_or_else(|e| panic!("{e}: {:?}\n{query}", e.as_db_error()))
-        .iter()
-        .map(|r| r.get::<_, String>(0))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        explain.contains("Index Scan using docs_search_hnsw"),
-        "{explain}"
-    );
-    let hits = client.query(&query, &[]).unwrap();
-    assert_eq!(
-        hits.iter()
-            .map(|r| r.get::<_, i64>(search.input_columns.len()))
-            .collect::<Vec<_>>(),
-        vec![2, 3, 4]
-    );
-    client.batch_execute("ROLLBACK").unwrap();
 }
 
 #[cfg(feature = "duckdb")]

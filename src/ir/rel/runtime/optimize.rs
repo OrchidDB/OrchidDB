@@ -67,7 +67,7 @@ pub(super) fn references(expr: &IrExpr) -> Option<Names> {
     }
     Some(names)
 }
-fn total(expr: &IrExpr) -> bool {
+pub(super) fn total(expr: &IrExpr) -> bool {
     match expr {
         IrExpr::Lit(_)
         | IrExpr::Binding(_)

@@ -10,8 +10,30 @@ impl<'a> LoweringContext<'a> {
         left: &Node,
         right: &Node,
     ) -> RelResult<LoweredNode> {
-        let left = self.lower_node(left)?;
-        let right = self.lower_node(right)?;
+        let mut left = self.lower_node(left)?;
+        let mut right = self.lower_node(right)?;
+        if self.language == Language::Gremlin && self.options.native_values {
+            // A union can combine a plain scalar with an already boxed value
+            // (e.g. mid-traversal inject(list) next to a string). Normalize only
+            // those shared value columns to the lossless carrier before SQL
+            // type coercion; never stringify the structured arm.
+            let mut boxed = BTreeSet::new();
+            for field in left.plan.schema().fields() {
+                if let Ok(other) = right.plan.schema().field_with_unqualified_name(field.name())
+                    && field.data_type() != other.data_type()
+                    && (native_values::is_value(field.data_type()) || native_values::is_value(other.data_type()))
+                { boxed.insert(field.name().clone()); }
+            }
+            for input in [&mut left, &mut right] {
+                if boxed.is_empty() { break; }
+                let columns = input.plan.schema().fields().iter().map(|field| {
+                    if boxed.contains(field.name()) && !native_values::is_value(field.data_type()) {
+                        Ok(self.native_expr(&input.plan, &IrExpr::binding(field.name()))?.alias(field.name()))
+                    } else { Ok(col_exact(field.name())) }
+                }).collect::<RelResult<Vec<_>>>()?;
+                input.plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            }
+        }
         if self.language == Language::Cypher {
             let graph_fields = |node: &LoweredNode| node.fields.as_ref().is_some_and(|fields|
                 fields.iter().any(|field| has_binding_shape(&node.plan, field).is_some()));

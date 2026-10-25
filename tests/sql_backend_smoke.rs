@@ -216,9 +216,14 @@ async fn duckdb_and_datafusion(
 /// residual operators and must still return the complete, typed answer.
 async fn residual_rows(plan: &GraphPlan, graph: &PropertyGraph, reason: &str) -> Vec<String> {
     let error = RelBackend::new().lower(plan, graph).unwrap_err();
-    assert!(matches!(error, orchiddb::ir::rel::RelError::Unsupported(_)), "{error}");
+    assert!(
+        matches!(error, orchiddb::ir::rel::RelError::Unsupported(_)),
+        "{error}"
+    );
     assert!(error.to_string().contains(reason), "{error}");
-    let (returned, _) = orchiddb::ir::rel::runtime::execute(plan, graph, None).await.unwrap();
+    let (returned, _) = orchiddb::ir::rel::runtime::execute(plan, graph, None)
+        .await
+        .unwrap();
     batch_lines(&returned.batch)
 }
 
@@ -348,11 +353,21 @@ async fn cypher_varlen_relationship_list_and_undirected_size_with_residuals() {
          WHERE p.name = 'alice' \
          RETURN f.name, size(e), e ORDER BY f.name",
     );
-    let rows = residual_rows(&plan, &fixture_graph(), "Cypher paths require typed SQL IR residual values").await;
+    let rows = residual_rows(
+        &plan,
+        &fixture_graph(),
+        "Cypher paths require typed SQL IR residual values",
+    )
+    .await;
     assert_eq!(rows.len(), 2);
     assert!(rows[0].starts_with("bob|2|["), "{:?}", rows);
     assert!(rows[1].starts_with("carol|2|["), "{:?}", rows);
-    assert!(rows.iter().all(|row| row.matches("_LABEL: KNOWS").count() == 2), "{:?}", rows);
+    assert!(
+        rows.iter()
+            .all(|row| row.matches("_LABEL: KNOWS").count() == 2),
+        "{:?}",
+        rows
+    );
 }
 
 #[tokio::test]
@@ -361,7 +376,12 @@ async fn cypher_count_distinct_varlen_paths_with_residuals() {
         "MATCH (p:Person)-[e:KNOWS*1..]->(f) \
          WHERE p.name = 'alice' RETURN count(DISTINCT e)",
     );
-    let rows = residual_rows(&plan, &fixture_graph(), "Cypher paths require typed SQL IR residual values").await;
+    let rows = residual_rows(
+        &plan,
+        &fixture_graph(),
+        "Cypher paths require typed SQL IR residual values",
+    )
+    .await;
     assert_eq!(rows, vec!["3"]);
 }
 
@@ -371,7 +391,12 @@ async fn cypher_named_path_spans_varlen_and_fixed_segments_with_residuals() {
         "MATCH p = (a:Person)-[:KNOWS*1..1]->(:Person)-[:LIVES_IN]->(:City) \
          WHERE a.name = 'alice' RETURN p",
     );
-    let rows = residual_rows(&plan, &mixed_path_graph(), "Cypher paths require typed SQL IR residual values").await;
+    let rows = residual_rows(
+        &plan,
+        &mixed_path_graph(),
+        "Cypher paths require typed SQL IR residual values",
+    )
+    .await;
     assert_eq!(rows.len(), 1);
     let path = &rows[0];
     assert_eq!(path.matches("_LABEL: Person").count(), 2, "{path}");
@@ -434,7 +459,12 @@ async fn gremlin_local_length_preserves_null_with_residuals() {
     let plan = AstGremlinPlanner::new()
         .plan(&traversal)
         .expect("plan Gremlin");
-    let rows = residual_rows(&plan, &PropertyGraph::new(), "Gremlin scalar semantics require native values").await;
+    let rows = residual_rows(
+        &plan,
+        &PropertyGraph::new(),
+        "Gremlin scalar semantics require native values",
+    )
+    .await;
     assert_eq!(rows, vec!["7", "4", "null"]);
 }
 
@@ -503,28 +533,6 @@ fn duckdb_replaces_changed_materialization_blocks() {
     );
 }
 
-#[cfg(feature = "postgres")]
-#[test]
-#[ignore = "needs a live Postgres server via GRAPH_PG_URL"]
-fn cypher_match_filter_expand_order_on_postgres() {
-    let Some(mut executor) = sql::PostgresExecutor::from_env().expect("postgres connect") else {
-        eprintln!("GRAPH_PG_URL unset; skipping postgres smoke test");
-        return;
-    };
-    let graph = fixture_graph();
-    let plan = cypher_plan(
-        "MATCH (p:Person)-[:KNOWS]->(f) WHERE p.name = 'alice' RETURN f.name ORDER BY f.name",
-    );
-    let lowered = RelBackend::new().lower(&plan, &graph).expect("lower");
-    // The synchronous PostgreSQL driver owns its runtime. Only SQL preparation
-    // runs inside Tokio; connection use and destruction stay outside it.
-    let prepared = tokio::runtime::Runtime::new().unwrap()
-        .block_on(sql::prepare(&lowered, SqlDialect::Postgres)).unwrap();
-    let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
-        .expect("postgres execute");
-    assert_eq!(rows, vec![vec![sql::SqlValue::Text("bob".into())], vec![sql::SqlValue::Text("carol".into())]]);
-}
-
 #[tokio::test]
 async fn scan_preparation_retains_full_source_and_shares_arrow_buffers() {
     use datafusion::datasource::{MemTable, provider_as_source};
@@ -534,22 +542,40 @@ async fn scan_preparation_retains_full_source_and_shares_arrow_buffers() {
         Field::new("id", DataType::Int64, false),
         Field::new("name", DataType::Utf8, false),
     ]));
-    let batch = |ids, names| RecordBatch::try_new(schema.clone(), vec![
-        Arc::new(Int64Array::from(ids)) as ArrayRef,
-        Arc::new(StringArray::from(names)) as ArrayRef,
-    ]).unwrap();
+    let batch = |ids, names| {
+        RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(ids)) as ArrayRef,
+                Arc::new(StringArray::from(names)) as ArrayRef,
+            ],
+        )
+        .unwrap()
+    };
     let first = batch(vec![1_i64, 2], vec!["a", "b"]);
     let second = batch(vec![3_i64, 4], vec!["c", "d"]);
-    let source = Arc::new(MemTable::try_new(schema.clone(), vec![
-        vec![first.clone()], vec![second.clone()],
-    ]).unwrap());
+    let source = Arc::new(
+        MemTable::try_new(
+            schema.clone(),
+            vec![vec![first.clone()], vec![second.clone()]],
+        )
+        .unwrap(),
+    );
     let plan = LogicalPlanBuilder::scan("input", provider_as_source(source), Some(vec![0]))
-        .unwrap().filter(col("id").gt(lit(2_i64))).unwrap().build().unwrap();
+        .unwrap()
+        .filter(col("id").gt(lit(2_i64)))
+        .unwrap()
+        .build()
+        .unwrap();
     let tables = sql::plan_tables(&plan).await.unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].schema, schema);
     assert_eq!(tables[0].batches, vec![first.clone(), second.clone()]);
     assert!(Arc::ptr_eq(tables[0].batches[0].column(0), first.column(0)));
-    assert!(sql::plan_tables_excluding(&plan, &std::collections::BTreeSet::from(["input".into()]))
-        .await.unwrap().is_empty());
+    assert!(
+        sql::plan_tables_excluding(&plan, &std::collections::BTreeSet::from(["input".into()]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

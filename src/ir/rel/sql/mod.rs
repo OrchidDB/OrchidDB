@@ -16,8 +16,8 @@
 //!   generation; anything the unparser cannot express surfaces as a typed
 //!   [`SqlError::Unsupported`], never as wrong SQL.
 //! * [`SqlExecutor`] — the engine abstraction. [`DuckDbExecutor`] (feature
-//!   `duckdb`) embeds DuckDB; `PostgresExecutor` (feature `postgres`) connects
-//!   to PostgreSQL. Applications can also supply their own SQL sessions.
+//!   `duckdb`) embeds DuckDB. TrinoSession executes remotely through Trino.
+//!   Applications can supply caller-owned DuckDB and Trino streaming sessions.
 
 #[cfg(feature = "duckdb")]
 pub mod language_functions;
@@ -46,6 +46,7 @@ mod functions;
 mod postgres_functions;
 mod postgres_lists;
 pub mod region;
+pub use region::RegionSession;
 pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDialect) -> SqlResult<String> {
     if let SqlDialect::Custom(adapter) = dialect {
         return adapter.exchange_literal(&value, &ty);
@@ -105,15 +106,16 @@ mod database;
 #[cfg(feature = "duckdb")]
 mod duckdb_exec;
 #[cfg(feature = "duckdb")]
+mod duckdb_stream;
+#[cfg(feature = "duckdb")]
+pub use duckdb_stream::DuckDbSession;
+#[cfg(feature = "duckdb")]
 pub mod program;
 pub mod mutation;
 #[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
 
-#[cfg(feature = "postgres")]
-mod postgres_exec;
-#[cfg(feature = "postgres")]
-pub use postgres_exec::PostgresExecutor;
+
 
 mod recursive;
 mod compact_unwind;
@@ -140,8 +142,7 @@ use datafusion::common::{Column, ScalarValue};
 use datafusion::error::DataFusionError;
 use datafusion::functions::string::expr_fn as df_string;
 use datafusion::logical_expr::Expr;
-use datafusion::logical_expr::{LogicalPlan, TableScan};
-use datafusion::prelude::SessionContext;
+use datafusion::logical_expr::LogicalPlan;
 use datafusion::prelude::lit;
 use datafusion::sql::unparser::Unparser;
 use datafusion::sql::unparser::dialect::{
@@ -447,7 +448,6 @@ pub struct PreparedSql {
     schema: SchemaRef,
 }
 
-#[cfg(feature = "duckdb")]
 impl PreparedSql {
     pub(crate) fn output_schema(&self) -> SchemaRef { self.schema.clone() }
     pub(crate) fn query_only(query: String, schema: SchemaRef) -> Self {
@@ -642,7 +642,6 @@ pub async fn plan_tables_excluding(
     })?;
 
     let mut out = Vec::with_capacity(sources.len());
-    let mut fallback_context = None;
     for (name, source) in sources {
         let schema = source.schema();
         // Lowered graph scans already own immutable Arrow batches. Reading
@@ -661,9 +660,7 @@ pub async fn plan_tables_excluding(
             }
             batches
         } else {
-            let scan = TableScan::try_new(name.clone(), source, None, Vec::new(), None)?;
-            let ctx = fallback_context.get_or_insert_with(SessionContext::new);
-            ctx.execute_logical_plan(LogicalPlan::TableScan(scan)).await?.collect().await?
+            return Err(SqlError::Unsupported(format!("source `{name}` requires an engine/source adapter; compiler table providers cannot execute scans")));
         };
         out.push(TableData {
             name,
@@ -835,6 +832,10 @@ pub fn execute_prepared(
             prepared.dialect.name(),
             executor.dialect().name()
         )));
+    }
+    let dialect = executor.dialect();
+    if dialect != SqlDialect::DuckDb && dialect != SqlDialect::Custom(&trino::TRINO) {
+        return Err(SqlError::Unsupported(format!("{} is not an executable engine", dialect.name())));
     }
     if let Some(required) = &prepared.float_helper { executor.validate_float_helper(required)?; }
     let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)?;

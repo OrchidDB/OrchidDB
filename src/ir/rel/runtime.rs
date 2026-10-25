@@ -1,4 +1,4 @@
-//! Relational extension kernels executed by DataFusion. Graph IR is consumed
+//! Compiled language boundaries scheduled by Orchid between SQL engines. Graph IR is consumed
 //! during compilation only; physical operators contain scalar metadata and
 //! Arrow inputs, never an executable Graph IR subtree.
 use crate::ir::diagnostics::QueryExecutionError;
@@ -11,26 +11,12 @@ use crate::ir::{
     value::Value,
 };
 use arrow::array::RecordBatch;
-use async_trait::async_trait;
 use datafusion::{
     common::{DFSchemaRef, DataFusionError, Result, tree_node::{TreeNode, Transformed}},
-    execution::{TaskContext, context::SessionState},
-    logical_expr::{
-        Expr, Extension, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
-    },
-    physical_expr::{EquivalenceProperties, OrderingRequirements},
-    physical_optimizer::{PhysicalOptimizerRule, output_requirements::OutputRequirements},
-    physical_plan::{
-        DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, ExecutionPlanProperties, Partitioning, PlanProperties,
-        SendableRecordBatchStream,
-        execution_plan::{Boundedness, EmissionType},
-        stream::RecordBatchStreamAdapter,
-        limit::{GlobalLimitExec, LocalLimitExec},
-        sorts::sort::SortExec,
-    },
-    physical_planner::{ExtensionPlanner, PhysicalPlanner},
+    logical_expr::{Expr, Extension, LogicalPlan, UserDefinedLogicalNodeCore},
 };
 use futures::stream;
+use super::engine_exec::{ExecutionPlan, TaskContext, PlanProperties, SendableRecordBatchStream, RecordBatchStreamAdapter};
 use std::{
     any::Any,
     fmt,
@@ -58,6 +44,8 @@ fn failure(e: impl ToString) -> DataFusionError {
 mod transport;
 mod execution;
 mod reentry;
+mod references;
+pub(crate) use reentry::live_graph_scan;
 use execution::{Source, source_kernel};
 use transport::{schema, decode_rows};
 #[cfg(test)]
@@ -208,132 +196,39 @@ fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
 }
 
 #[derive(Debug)]
-pub(crate) struct KernelPlanner {
-    pub state: Arc<Mutex<State>>,
-}
-#[async_trait]
-impl ExtensionPlanner for KernelPlanner {
-    async fn plan_extension(
-        &self,
-        _planner: &dyn PhysicalPlanner,
-        node: &dyn UserDefinedLogicalNode,
-        _logical_inputs: &[&LogicalPlan],
-        physical_inputs: &[Arc<dyn ExecutionPlan>],
-        session: &SessionState,
-    ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-        let Some(kernel) = node.as_any().downcast_ref::<RowKernel>() else {
-            return Ok(None);
-        };
-        policy::validate_kernel(kernel, self.state.lock().map_err(|_| failure("Query state poisoned"))?.context.rule_context.lowering_policy)
-            .map_err(|e| failure(e.to_string()))?;
-        // SQL islands may project away ORDER BY keys before decoding. Their
-        // output ordering then cannot be named in the boundary schema. Give
-        // each island its own output requirement while the physical sort is
-        // still present, including when another row kernel consumes it.
-        let physical_inputs = physical_inputs.iter().map(|input| {
-            if kernel.relational_input.is_some() {
-                // DataFusion 53's sort pushdown can discard a TopK fetch when
-                // a window/filter already supplies the requested ordering.
-                // Preserve a real limit while it rewrites sorts. The later
-                // LimitPushdown rule can fold it back into a remaining sort.
-                let input = input.clone().transform_up(|plan| {
-                    if let Some(sort) = plan.as_any().downcast_ref::<SortExec>()
-                        && let Some(fetch) = sort.fetch()
-                    {
-                        let input = Arc::new(sort.with_fetch(None));
-                        let limit: Arc<dyn ExecutionPlan> = if sort.preserve_partitioning() {
-                            Arc::new(LocalLimitExec::new(input, fetch))
-                        } else {
-                            Arc::new(GlobalLimitExec::new(input, 0, Some(fetch)))
-                        };
-                        return Ok(Transformed::yes(limit));
-                    }
-                    Ok(Transformed::no(plan))
-                })?.data;
-                OutputRequirements::new_add_mode().optimize(input, session.config_options())
-            } else {
-                Ok(input.clone())
-            }
-        }).collect::<Result<Vec<_>>>()?;
-        let properties = Arc::new(PlanProperties::new(
-            EquivalenceProperties::new(Arc::new(kernel.schema.as_arrow().clone())),
-            Partitioning::UnknownPartitioning(1),
-            if kernel.streaming { EmissionType::Incremental } else { EmissionType::Final },
-            Boundedness::Bounded,
-        ));
-        Ok(Some(Arc::new(KernelExec {
-            kernel: kernel.clone(),
-            inputs: physical_inputs.to_vec(),
-            // Row kernels consume ordered rows, including when relational
-            // values are decoded into opaque traverser bindings. Snapshot
-            // each input requirement before physical optimization: otherwise
-            // DataFusion can remove a user ORDER BY below this boundary.
-            input_ordering: physical_inputs.iter().map(|input| {
-                input.output_ordering().cloned().map(OrderingRequirements::from)
-            }).collect(),
-            state: self.state.clone(),
-            properties,
-        })))
+pub(crate) struct KernelPlanner { pub state: Arc<Mutex<State>> }
+impl KernelPlanner {
+    pub(crate) fn plan(&self, kernel: &RowKernel, inputs: Vec<Arc<dyn ExecutionPlan>>) -> Result<Arc<dyn ExecutionPlan>> {
+        policy::validate_kernel(kernel, policy::LoweringPolicy::SqlRequired).map_err(|e| failure(e.to_string()))?;
+        Ok(Arc::new(KernelExec {
+            kernel: kernel.clone(), inputs, state: self.state.clone(),
+            properties: Arc::new(PlanProperties::new(Arc::new(kernel.schema.as_arrow().clone()))),
+        }))
     }
 }
 #[derive(Debug)]
 struct KernelExec {
     kernel: RowKernel,
     inputs: Vec<Arc<dyn ExecutionPlan>>,
-    input_ordering: Vec<Option<OrderingRequirements>>,
     state: Arc<Mutex<State>>,
     properties: Arc<PlanProperties>,
 }
-impl DisplayAs for KernelExec {
-    fn fmt_as(&self, _format: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}Exec", self.kernel.name)
-    }
-}
 impl ExecutionPlan for KernelExec {
-    fn name(&self) -> &str {
-        &self.kernel.name
+    fn name(&self) -> &str { &self.kernel.name }
+    fn description(&self) -> String {
+        if self.kernel.streaming && self.inputs.len() == 1 && execution::needs_source_spool(&self.kernel, &self.state, &self.inputs[0]).unwrap_or(false) {
+            format!("{} [source reentry: bounded Arrow IPC spool]", self.kernel.name)
+        } else { self.kernel.name.clone() }
     }
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn as_any(&self) -> &dyn Any { self }
+    fn properties(&self) -> &Arc<PlanProperties> { &self.properties }
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> { self.inputs.iter().collect() }
+    fn with_new_children(self: Arc<Self>, inputs: Vec<Arc<dyn ExecutionPlan>>) -> Result<Arc<dyn ExecutionPlan>> {
+        if inputs.len() != self.inputs.len() { return Err(failure("Invalid boundary dependency rewrite")); }
+        Ok(Arc::new(Self { kernel:self.kernel.clone(),inputs,state:self.state.clone(),properties:self.properties.clone() }))
     }
-    fn properties(&self) -> &Arc<PlanProperties> {
-        &self.properties
-    }
-    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        self.inputs.iter().collect()
-    }
-    fn required_input_ordering(&self) -> Vec<Option<OrderingRequirements>> {
-        self.input_ordering.clone()
-    }
-    fn maintains_input_order(&self) -> Vec<bool> {
-        vec![self.kernel.relational_input.is_some(); self.inputs.len()]
-    }
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        vec![Distribution::SinglePartition; self.inputs.len()]
-    }
-    fn with_new_children(
-        self: Arc<Self>,
-        inputs: Vec<Arc<dyn ExecutionPlan>>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        if inputs.len() != self.inputs.len() {
-            return Err(failure("Invalid kernel physical rewrite"));
-        }
-        Ok(Arc::new(Self {
-            kernel: self.kernel.clone(),
-            inputs,
-            input_ordering: self.input_ordering.clone(),
-            state: self.state.clone(),
-            properties: self.properties.clone(),
-        }))
-    }
-    fn execute(
-        &self,
-        partition: usize,
-        context: Arc<TaskContext>,
-    ) -> Result<SendableRecordBatchStream> {
-        if partition != 0 {
-            return Err(failure("Stateful kernel has one partition"));
-        }
+    fn execute(&self, partition: usize, context: Arc<TaskContext>) -> Result<SendableRecordBatchStream> {
+        if partition != 0 { return Err(failure("Stateful boundary has one partition")); }
         execution::execute(self, context)
     }
 }
@@ -345,6 +240,9 @@ struct Compiler<'a> {
     sql: bool,
     language_functions: bool,
     native_values: bool,
+    live_graph_reads: bool,
+    /// Gremlin repeat bodies share deduplication history across iterations.
+    stateful_distinct: bool,
     islands: super::island_planner::SharedMemo,
     lowered: std::cell::RefCell<std::collections::HashMap<usize, LogicalPlan>>,
 }
@@ -357,7 +255,7 @@ impl Compiler<'_> {
         // Rewritten subplans can own temporary IR nodes. Keep their pointer
         // identities local to this lowering call, including on failure.
         let outer = self.lowered.take();
-        let result = stacker::maybe_grow(128 * 1024, 2 * 1024 * 1024, || self.lower_worklist(node));
+        let result = stacker::maybe_grow(1024 * 1024, 8 * 1024 * 1024, || self.lower_worklist(node));
         self.lowered.replace(outer);
         result
     }
@@ -404,6 +302,22 @@ impl Compiler<'_> {
         self.lowered.borrow_mut().remove(&key).ok_or_else(|| failure("Missing compiled query root"))
     }
     fn lower_sql(&self, node: &Node) -> Result<Option<LogicalPlan>> {
+        if self.stateful_distinct {
+            let mut pending = vec![node];
+            while let Some(part) = pending.pop() {
+                if matches!(part, Node::GraphDistinct { .. }) { return Ok(None); }
+                pending.extend(crate::ir::analysis::children(part));
+            }
+        }
+        if self.live_graph_reads {
+            let mut pending = vec![node];
+            while let Some(part) = pending.pop() {
+                if matches!(part, Node::GraphNodeScan { .. } | Node::GraphRelScan { .. }) {
+                    return Ok(None);
+                }
+                pending.extend(crate::ir::analysis::children(part));
+            }
+        }
         let can_lower_sql = self.sql && {
             let islands = self.islands.lock().unwrap();
             islands.safe(node)
@@ -425,7 +339,7 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             ))
         {
-            let backend = RelBackend::with_options(super::RelBackendOptions { rule_context: self.rule_context.clone(), mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, ..Default::default() });
+            let backend = RelBackend::with_options(super::RelBackendOptions { rule_context: self.rule_context.clone(), mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, live_graph_reads: self.live_graph_reads, ..Default::default() });
             // A complete terminal traversal needs only its returned values.
             // Partial islands must retain state for downstream graph operators.
             let backend = if terminal_gremlin { backend } else { backend.preserving_traverser_state() };
@@ -471,7 +385,17 @@ impl Compiler<'_> {
         Ok(None)
     }
     fn lower_native(&self, node: &Node) -> Result<LogicalPlan> {
+        // A lazy side effect upstream of LIMIT is a traversal demand
+        // boundary: SQL batch prefetch must not invoke unconsumed effects.
+        if let Node::GraphSlice { input, slice } = node
+            && let Some(plan) = self.lower_bounded(input, slice)? {
+                let LogicalPlan::Extension(extension) = plan else { unreachable!() };
+                let mut boundary = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+                boundary.boundary = Some(policy::BoundaryKind::Barrier);
+                return Ok(LogicalPlan::Extension(Extension { node: Arc::new(boundary) }));
+        }
         if self.rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired
+            && !(self.stateful_distinct && matches!(node, Node::GraphDistinct { .. }))
             && let Some(plan) = self.lower_after_boundary(node)? { return Ok(plan); }
         if matches!(node, Node::GraphAggregate { .. }) && self.policy.language == crate::ir::policy::Language::Cypher
             && self.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative {
@@ -487,6 +411,12 @@ impl Compiler<'_> {
             if let Some(kernel) = e.node.as_any().downcast_ref::<RowKernel>() {
                 let mut kernel = kernel.clone();
                 kernel.boundary = kernel.boundary.or_else(|| policy::boundary(node));
+                if self.stateful_distinct && matches!(node, Node::GraphDistinct { .. }) {
+                    kernel.boundary = Some(policy::BoundaryKind::TraversalState);
+                }
+                if self.live_graph_reads && matches!(node, Node::GraphNodeScan { .. } | Node::GraphRelScan { .. }) {
+                    kernel.boundary = Some(policy::BoundaryKind::GraphSource);
+                }
                 policy::validate_kernel(&kernel, self.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
                 LogicalPlan::Extension(Extension { node: Arc::new(kernel) })
             } else { plan }
@@ -531,8 +461,8 @@ impl Compiler<'_> {
 
             Node::GraphOneRow => Ok(kernel("OneRow", vec![], |_, _| Ok(vec![Row::new()]))),
             Node::GraphEmpty => Ok(kernel("Empty", vec![], |_, _| Ok(vec![]))),
-            // Scalar kernels retain language semantics; DataFusion schedules
-            // their inputs and owns the physical pipeline.
+            // Explicit language boundaries retain their semantics; Orchid
+            // schedules their inputs and SQL engines own relational work.
             _ => self.lower_scalar_kernel(node),
         }
     }
@@ -600,6 +530,7 @@ async fn execute_rows_inner(
     })?;
     let mut context = ExecutionContext::default();
     context.rule_context = rule_context.clone();
+    context.region_session = resources.and_then(|r|r.region_session.clone());
     context.jvm = jvm;
     context.sql_timeout = timeout;
     let state = Arc::new(Mutex::new(State {

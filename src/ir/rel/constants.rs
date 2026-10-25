@@ -128,6 +128,7 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
         "nextval",
         "currval",
         "tinker_search",
+        "tinker_degree_centrality",
         "gremlin_cast_string",
         "requested_property_values",
         "properties_list",
@@ -136,6 +137,7 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
         "value_map_tokens",
         "element_map",
         "gremlin_id",
+        "gremlin_merge_matches",
     ];
     if DENY.contains(&normalized.as_str()) {
         return false;
@@ -893,6 +895,7 @@ mod folding_tests {
             "value_map_tokens",
             "element_map",
             "gremlin_id",
+        "gremlin_merge_matches",
         ] {
             let call = IrExpr::Call {
                 name: name.into(),

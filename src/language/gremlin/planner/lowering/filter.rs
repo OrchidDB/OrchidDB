@@ -365,11 +365,11 @@ pub(super) fn lower_where_traversal(
 /// rebindings. Rewrite them to `WhereAnchor` so the lowering emits the
 /// equality filter; the leading `as` (start anchor) is handled by
 /// `prefer_existing_label_as_current`.
-fn anchor_where_labels(sub: &[Step]) -> Vec<Step> {
+pub(super) fn anchor_where_labels(sub: &[Step]) -> Vec<Step> {
     sub.iter()
         .enumerate()
         .map(|(idx, step)| match step {
-            Step::As(label) if idx > 0 => Step::WhereAnchor(label.clone()),
+            Step::As(label) if idx > 0 && !matches!(sub[idx - 1], Step::InfixAnd | Step::InfixOr) => Step::WhereAnchor(label.clone()),
             other => other.clone(),
         })
         .collect()

@@ -125,3 +125,17 @@ async fn unobserved_recursive_paths_omit_display_payload_and_keep_trail_multipli
     let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered).await.unwrap();
     assert_eq!(arrow::util::display::array_value_to_string(result.batch.column(0), 0).unwrap(), "7");
 }
+
+#[test]
+fn materialized_multihop_paths_allocate_distinct_anonymous_relationship_bindings() {
+    let graph = graph();
+    let plan = CypherPlanner::new()
+        .plan(&parse_query("MATCH p=(a)-[:R]->(b)-[:R]->(c) RETURN p").unwrap())
+        .unwrap();
+    let lowered = RelBackend::with_options(orchiddb::ir::rel::RelBackendOptions {
+        native_values: true,
+        language_functions: true,
+        ..Default::default()
+    }).lower(&plan, &graph).unwrap();
+    assert!(lowered.islands.is_complete());
+}

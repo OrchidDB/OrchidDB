@@ -31,7 +31,11 @@ import io.cucumber.datatable.DataTable;
 
 /** Calls the unmodified gremlin-test 3.7.4 step definitions and assertions. */
 public class UpstreamGremlin {
- static ObjectMapper json=new ObjectMapper();
+ // Captured SQL plans can exceed Jackson's default 20 MB string limit.
+ // Keep evidence intact while retaining a finite parser bound.
+ static ObjectMapper json=new ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
+     .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder()
+         .maxStringLength(128 * 1024 * 1024).build()).build());
  static String backend;
  static boolean allowRelationshipExpansion=true;
  /** Inspect input traversals only. Unknown Java assertions can create edges. */

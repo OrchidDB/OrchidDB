@@ -7,6 +7,37 @@ pub(super) struct Context {
     pub graph: PropertyGraph,
     elements: BTreeMap<(bool, String, ElementId), Value>,
 }
+// JSON itself cannot distinguish SQL INTEGER from BIGINT. Retain the declared
+// widths inside element descriptors so nested graph values preserve public IDs.
+fn restore_identity_type(value: Value, kind: &DataType) -> Result<Value, String> {
+    if value == Value::Null { return Ok(value); }
+    match (value, kind) {
+        (Value::Map(mut values), DataType::Struct(fields)) => {
+            for field in fields {
+                if let Some(value) = values.remove(field.name()) {
+                    values.insert(field.name().clone(), restore_identity_type(value, field.data_type())?);
+                }
+            }
+            Ok(Value::Map(values))
+        }
+        (Value::List(values), DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _)) =>
+            Ok(Value::List(values.into_iter().map(|value| restore_identity_type(value, field.data_type())).collect::<Result<_, _>>()?)),
+        (value, kind) if matches!(kind, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Float32 | DataType::Float64) => {
+            let text = match value {
+                Value::Byte(n) => n.to_string(), Value::Short(n) => n.to_string(),
+                Value::Int(n) | Value::Long(n) => n.to_string(),
+                Value::UInt8(n) => n.to_string(), Value::UInt16(n) => n.to_string(),
+                Value::UInt32(n) => n.to_string(), Value::UInt64(n) => n.to_string(),
+                Value::Float(n) => n.to_string(), Value::Float32(n) => n.to_string(),
+                Value::Scalar(value) => return Ok(Value::Scalar(value.cast_to(kind).map_err(|error| error.to_string())?)),
+                _ => return Err("Invalid numeric element identity".into()),
+            };
+            let scalar = ScalarValue::Utf8(Some(text)).cast_to(kind).map_err(|error| error.to_string())?;
+            Ok(Value::Scalar(scalar))
+        }
+        (value, _) => Ok(value),
+    }
+}
 impl Context {
     pub fn attach(&mut self, descriptor: Value) -> Result<Value, String> {
         let Value::Map(fields) = &descriptor else {
@@ -23,7 +54,12 @@ impl Context {
             _ => Err(format!("Invalid element {key}")),
         };
         let key = |key: &str| -> Result<Value, String> {
-            Ok(match get(key)? {
+            let mut value = get(key)?;
+            if let Some(Value::String(encoded)) = fields.get(&format!("{key}_type")) {
+                let kind: DataType = encoded.parse().map_err(|error: arrow::error::ArrowError| error.to_string())?;
+                value = restore_identity_type(value, &kind)?;
+            }
+            Ok(match value {
                 Value::Map(map) => Value::List(
                     (0..map.len())
                         .map(|i| {
@@ -83,7 +119,7 @@ impl Context {
             properties.retain(|_, v| *v != Value::Null);
         }
         self.graph
-            .attach_element(&value, public_id, properties)
+            .attach_element(&value, public_id.clone(), properties)
             .map_err(|e| e.to_string())?;
         if let Some(Value::String(record)) = fields.get("native_record") {
             // Managed SQL scans select the existing complete entity record.
@@ -98,7 +134,13 @@ impl Context {
         }
         if !edge {
             if let Some(state) = fields.get("native_node") {
+                let public_identity = self.graph.element_public_id(&value);
                 self.graph.restore_detached_node_state(&label, &id, state)?;
+                // Source keys are public identities even when the source has
+                // no overlay public-id entry. Restoring its property-record
+                // state must not replace that explicit descriptor ID with a
+                // synthetic label#offset identity.
+                self.graph.attach_element(&value, public_identity, BTreeMap::new()).map_err(|e| e.to_string())?;
             }
             if let Some(Value::List(labels)) = fields.get("labels") {
                 let labels = labels.iter().map(|label| match label {
@@ -108,12 +150,16 @@ impl Context {
                 self.graph.set_node_labels(&value, labels).map_err(|e| e.to_string())?;
             }
         }
+        if fields.get("source_keys") == Some(&Value::Bool(true)) {
+            self.graph.stabilize_mapped_property_ids(&value);
+        }
         if fields.get("deleted") == Some(&Value::Bool(true)) {
             self.graph.mark_detached_deleted(&value);
         }
         let mut descriptor = descriptor;
         if let Value::Map(fields) = &mut descriptor
-            && fields.remove("native_record").is_some() {
+            && (fields.remove("native_record").is_some()
+                || fields.get("source_keys") == Some(&Value::Bool(true))) {
             // The storage record is needed only to hydrate this context.
             // Emit the canonical detached state, not another full copy of the
             // record alongside its already-decoded properties on every hop.
@@ -158,6 +204,7 @@ impl Context {
             }));
             let mut fields = BTreeMap::from([
                 ("kind".into(), Value::String(if edge {"edge"} else {"node"}.into())),
+                ("source_keys".into(), Value::Bool(graph.source_keys)),
                 ("label".into(), Value::String(label.clone())),
                 ("identity".into(), Value::Scalar(id.scalar().clone())),
                 ("id".into(), graph.element_public_id(&owner)),
@@ -296,6 +343,8 @@ impl LoweringContext<'_> {
             col_exact(label_col(binding)),
             lit("properties"),
             df_core::named_struct(props),
+            lit("source_keys"),
+            lit(self.graph.source_keys || self.options.mapping.is_some()),
         ];
         if shape == BindingShape::Edge {
             fields.extend([
@@ -309,6 +358,11 @@ impl LoweringContext<'_> {
                 col_exact(dst_label_col(binding)),
             ]);
         }
+        for key in if shape == BindingShape::Edge { vec!["id", "src_id", "dst_id"] } else { vec!["id"] } {
+            let column = match key { "src_id" => src_id_col(binding), "dst_id" => dst_id_col(binding), _ => id_col(binding) };
+            let kind = col_exact(column).get_type(plan.schema())?;
+            fields.extend([lit(format!("{key}_type")), lit(kind.to_string())]);
+        }
         Ok(function(
             VALUE,
             value_type(),
@@ -320,5 +374,29 @@ impl LoweringContext<'_> {
                 ]),
             ],
         ))
+    }
+}
+
+#[cfg(test)]
+mod identity_type_tests {
+    use super::*;
+    #[test]
+    fn declared_identity_width_survives_nested_json_descriptors() {
+        let mut context = Context::default();
+        let node = context.attach(Value::Map(BTreeMap::from([
+            ("kind".into(), Value::String("node".into())),
+            ("label".into(), Value::String("software".into())),
+            ("id".into(), Value::Long(3)),
+            ("id_type".into(), Value::String(DataType::Int32.to_string())),
+            ("properties".into(), Value::Map(BTreeMap::new())),
+        ]))).unwrap();
+        assert!(matches!(context.graph.element_public_id(&node), Value::Scalar(ScalarValue::Int32(Some(3)))));
+        let Value::Node { id, .. } = node else { panic!("node") };
+        assert_eq!(id.scalar().data_type(), DataType::Int32);
+        let input = Value::Map(BTreeMap::from([("k0".into(), Value::Long(2)), ("k1".into(), Value::Long(3))]));
+        let ty = DataType::Struct(vec![Field::new("k0", DataType::Int16, false), Field::new("k1", DataType::Int64, false)].into());
+        let Value::Map(result) = restore_identity_type(input, &ty).unwrap() else { panic!("composite key") };
+        assert!(matches!(result["k0"], Value::Scalar(ScalarValue::Int16(Some(2)))));
+        assert!(matches!(result["k1"], Value::Scalar(ScalarValue::Int64(Some(3)))));
     }
 }

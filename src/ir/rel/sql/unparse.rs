@@ -69,6 +69,15 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.shared_partition_scans", false, super::shared_scans::rewrite)?;
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Projection(projection) = &node else { return Ok(Transformed::no(node)); };
+        if !projection.expr.is_empty() { return Ok(Transformed::no(node)); }
+        // SQL has no zero-column rows. A constant preserves row multiplicity,
+        // including DISTINCT's one-row result for a nonempty zero-column bag.
+        Ok(Transformed::yes(datafusion::logical_expr::LogicalPlanBuilder::from(
+            projection.input.as_ref().clone())
+            .project(vec![lit(1_i64).alias("__orchid_cardinality")])?.build()?))
+    })?.data;
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;

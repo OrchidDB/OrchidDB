@@ -8,6 +8,9 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         labels: &LabelExpr,
     ) -> RelResult<LoweredNode> {
+        if self.options.live_graph_reads {
+            return Ok(LoweredNode::new(runtime::live_graph_scan(self.graph, binding, labels, false, &self.policy)?));
+        }
         if let Some(table) = self.options.mapping.as_ref().and_then(|m| m.managed_table.clone()) {
             return self.lower_managed_scan(&table, binding, labels, false);
         }
@@ -102,6 +105,10 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         types: &LabelExpr,
     ) -> RelResult<LoweredNode> {
+        if self.options.live_graph_reads {
+            return Ok(LoweredNode::new(runtime::live_graph_scan(self.graph, binding, types, true, &self.policy)?));
+        }
+
         if self.options.mapping.is_none() && (self.graph.mapping.is_some() || self.graph.source_keys) {
             return Err(RelError::Unsupported("source-key graph scans require the shared typed graph kernel".into()));
         }
@@ -208,13 +215,21 @@ impl<'a> LoweringContext<'a> {
             && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()
                 && (self.language != Language::Cypher
                     || collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none())) {
-            let mut plans = rows.iter().map(|row| {
-                let expressions = row.iter().zip(bindings).map(|(v,b)| native_values::literal(v).map(|e|e.alias(b)))
+            let mut ordinal = "__orchid_values_ordinal".to_owned();
+            while bindings.contains(&ordinal) { ordinal.push('_'); }
+            let mut plans = rows.iter().enumerate().map(|(index, row)| {
+                let mut expressions = row.iter().zip(bindings).map(|(v,b)| native_values::literal(v).map(|e|e.alias(b)))
                     .collect::<RelResult<Vec<_>>>()?;
+                expressions.push(lit(index as i64).alias(&ordinal));
                 Ok(LogicalPlanBuilder::empty(true).project(expressions)?.build()?)
             }).collect::<RelResult<Vec<_>>>()?.into_iter();
             let first=plans.next().expect("nonempty rows");
             let plan=plans.try_fold(first,|left,right|LogicalPlanBuilder::from(left).union(right)?.build())?;
+            // UNION execution order is unspecified. Injected traversers have
+            // source order, observable by fold, range, and other ordered steps.
+            let plan = LogicalPlanBuilder::from(plan)
+                .sort(vec![col_exact(&ordinal).sort(true, false)])?
+                .project(bindings.iter().map(|name| col_exact(name)))?.build()?;
             return Ok(LoweredNode::new(plan));
         }
         if matches!(self.language, Language::Gremlin | Language::Cypher) {

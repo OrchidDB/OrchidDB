@@ -45,7 +45,7 @@ impl HttpSession {
             return Ok(());
         }
         if !self.metadata.contains_key(index) {
-            let url = if self.engine == Engine::Quickwit {
+            let url = if self.engine == SourceKind::Quickwit {
                 self.url(&["api", "v1", "indexes", index])?
             } else {
                 self.elastic_url(&[index, "_mapping"])?
@@ -53,7 +53,7 @@ impl HttpSession {
             let metadata = self.send(Method::GET, url, None).await?;
             self.metadata.insert(index.into(), metadata);
         }
-        if self.engine == Engine::Elasticsearch
+        if self.engine == SourceKind::Elasticsearch
             && requirements
                 .iter()
                 .any(|r| r.get("usage").and_then(Value::as_str) == Some("match"))
@@ -78,7 +78,7 @@ impl HttpSession {
                 .get("type")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            if self.engine == Engine::Quickwit {
+            if self.engine == SourceKind::Quickwit {
                 let mappings = metadata
                     .pointer("/index_config/doc_mapping/field_mappings")
                     .and_then(Value::as_array)

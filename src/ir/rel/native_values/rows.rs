@@ -42,6 +42,10 @@ pub fn result_batch(
             let text = wire.get(FIELD).and_then(serde_json::Value::as_str).map(str::to_owned);
             encoded.extend(std::iter::repeat_n(text, count(row)?));
         }
+        let byte_count = encoded.iter().filter_map(Option::as_ref).try_fold(0usize, |bytes, value| bytes.checked_add(value.len()));
+        if byte_count.is_none_or(|bytes| bytes > i32::MAX as usize) {
+            return Err("Native value batch exceeds Arrow UTF-8 offset capacity".into());
+        }
         let validity = NullBuffer::from(encoded.iter().map(Option::is_some).collect::<Vec<_>>());
         let strings: ArrayRef = Arc::new(StringArray::from(encoded));
         let DataType::Struct(carrier_fields) = value_type() else {unreachable!()};
@@ -68,7 +72,8 @@ fn decode_value(value: Value, context: &mut Context) -> Result<Value, String> {
 }
 
 pub fn decode_rows(batch: &RecordBatch, fields: &[String], graph: &PropertyGraph) -> QueryResult<Vec<Row>> {
-    let rows = decode_boundary_rows(batch, fields)?;
+    let mut rows = decode_boundary_rows(batch, fields)?;
+    graph.normalize_source_rows(&mut rows)?;
     graph.prefetch_source(&rows);
     graph.check_source()?;
     Ok(rows)
@@ -108,7 +113,7 @@ pub(crate) fn restore_traverser_state(rows: &mut [Row]) -> QueryResult<()> {
                 row.bindings.entry(name).or_insert(value);
             }
         }
-        if transported_state && let Some(value) = row.bindings.remove("__orchid_traverser_bulk") {
+        if let Some(value) = row.bindings.remove("__orchid_traverser_bulk") {
             row.bulk = match value {
                 Value::UInt64(bulk) => bulk,
                 _ => return Err("Invalid SQL traverser multiplicity".into()),

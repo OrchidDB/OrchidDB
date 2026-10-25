@@ -355,12 +355,18 @@ mod tests {
             &graph,
             CompileOptions {
                 sql_islands: false,
+                rule_context: crate::ir::rel::runtime::host::tests::reference_context(),
+                language_functions: true,
                 ..Default::default()
             },
         )
         .map_err(|e| e.message)?;
         let runner = Arc::new(HostRunner::default());
-        let mut state = KernelState::for_host(graph, runner.clone(), &Default::default());
+        let mut state = KernelState::for_host(
+            graph,
+            runner.clone(),
+            &crate::ir::rel::runtime::host::tests::reference_context(),
+        );
         host.execute(HostRequest::new("BEGIN TRANSACTION"))?;
         let result = runner
             .run(&compiled, &mut state)
@@ -453,19 +459,39 @@ mod tests {
         let fixture = import_graph(&serde_json::json!({"nodes":[{"id":42,"label":"person","properties":{"name":"alice","_partition":"a"}}],"edges":[]})).unwrap();
         store.persist(host.as_ref(), &fixture).unwrap();
         let parent = store.attach(host.clone()).unwrap();
-        let node = Value::Node { label: "person".into(), id: parent.node_ids("person").unwrap()[0].clone() };
+        let node = Value::Node {
+            label: "person".into(),
+            id: parent.node_ids("person").unwrap()[0].clone(),
+        };
         // A correlated body is the first operation to hydrate this entity.
         let child = parent.clone();
-        child.set_vertex_property(&node, "name", Value::String("bob".into()), Cardinality::Single, BTreeMap::new()).unwrap();
+        child
+            .set_vertex_property(
+                &node,
+                "name",
+                Value::String("bob".into()),
+                Cardinality::Single,
+                BTreeMap::new(),
+            )
+            .unwrap();
         parent.restore_execution_overlay(&child);
         let properties = parent.properties(&node, &["name".into()]);
-        assert!(matches!(&properties[0], Value::VertexProperty { value, .. } if **value == Value::String("bob".into())));
+        assert!(
+            matches!(&properties[0], Value::VertexProperty { value, .. } if **value == Value::String("bob".into()))
+        );
         store.persist(host.as_ref(), &parent).unwrap();
         let reopened = store.attach(host).unwrap();
         let properties = reopened.properties(&node, &["name".into()]);
-        assert!(matches!(&properties[0], Value::VertexProperty { value, .. } if **value == Value::String("bob".into())));
-        let Value::Node { label, id } = node else { unreachable!() };
-        assert_eq!(reopened.node_property(&label, id, "_partition"), Value::String("a".into()));
+        assert!(
+            matches!(&properties[0], Value::VertexProperty { value, .. } if **value == Value::String("bob".into()))
+        );
+        let Value::Node { label, id } = node else {
+            unreachable!()
+        };
+        assert_eq!(
+            reopened.node_property(&label, id, "_partition"),
+            Value::String("a".into())
+        );
     }
 
     #[test]

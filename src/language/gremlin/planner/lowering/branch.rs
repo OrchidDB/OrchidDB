@@ -48,10 +48,16 @@ pub(super) fn lower_mid_traversal_union(
 ) -> GremlinPlanResult<Node> {
     let mut arms = Vec::new();
     for steps in branches {
-        arms.push((
-            IrExpr::lit_bool(true),
-            lower_arm_continuation(stream_input(), steps, lo, ctx)?,
-        ));
+        let body = if matches!(ctx.scope(), super::context::TraversalScopeKind::Child(ChildTraversalKind::WherePredicate)) {
+            // or() is represented as a union inside a predicate. Its arms
+            // resolve leading labels against the parent match environment;
+            // subsequent labels constrain equality rather than rebinding.
+            let anchored = super::filter::anchor_where_labels(steps);
+            lower_child_traversal(&anchored, lo, ctx, ChildTraversalKind::WherePredicate)?
+        } else {
+            lower_arm_continuation(stream_input(), steps, lo, ctx)?
+        };
+        arms.push((IrExpr::lit_bool(true), body));
     }
     Ok(stream_choose(input, arms))
 }

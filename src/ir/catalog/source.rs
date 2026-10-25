@@ -183,7 +183,36 @@ impl PropertyGraph {
                     key(graph, false, src_label, src_id)?;
                     key(graph, false, dst_label, dst_id)?;
                 }
-                Value::List(v) | Value::Path(v) => {
+                Value::VertexProperty { id, owner, key: property_key, value: property_value } => {
+                    value(graph, owner)?;
+                    value(graph, property_value)?;
+                    // SQL scalar contexts use local record slots. Rebind that
+                    // implementation handle to this source view; public identity
+                    // remains the canonical typed owner/key address.
+                    if let Value::Node { label, id: owner_id } = owner.as_ref()
+                        && let Some(source) = graph.source.as_ref().filter(|s| !s.supports_dynamic_schema()) {
+                        let handle = source.property_handle(label, owner_id, property_key);
+                        let mut overlay = graph.overlay.borrow_mut();
+                        // Cache the already-selected SQL property payload, not a
+                        // new graph entity or write. Keep existing records and
+                        // tombstones authoritative across later mutations.
+                        let records = overlay.vertex_properties
+                            .entry((label.clone(), owner_id.clone())).or_default()
+                            .entry(property_key.clone()).or_insert_with(|| vec![super::properties::VertexPropertyRecord {
+                                id: handle, value: property_value.as_ref().clone(), public_id: None, meta: BTreeMap::new(),
+                            }]);
+                        if let [record] = records.as_slice() { *id = record.id; }
+                    }
+                }
+                Value::Property { owner, value: property_value, .. } => {
+                    value(graph, owner)?;
+                    value(graph, property_value)?;
+                }
+                Value::TypedMap(entries) => {
+                    for (k, v) in entries { value(graph, k)?; value(graph, v)?; }
+                }
+                Value::MapEntry(pair) => { value(graph, &mut pair.0)?; value(graph, &mut pair.1)?; }
+                Value::List(v) | Value::Path(v) | Value::Set(v) | Value::BulkSet(v) => {
                     for v in v {
                         value(graph, v)?;
                     }

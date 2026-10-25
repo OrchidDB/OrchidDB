@@ -468,11 +468,6 @@ pub(crate) fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde
         Value::Scalar(v) => {
             use arrow::array::Array;
             use datafusion::common::ScalarValue;
-            let primitive = match v {
-                ScalarValue::Int64(Some(value)) => Some(Value::Long(*value)),
-                _ => crate::ir::value::scalar_semantic_value(v),
-            };
-            if let Some(value) = primitive { return gremlin_typed_value(&value, graph); }
             let items = match v {
                 ScalarValue::List(array) => Some(array.value(0)),
                 ScalarValue::LargeList(array) => Some(array.value(0)),
@@ -486,6 +481,11 @@ pub(crate) fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde
                     gremlin_typed_value(&Value::Scalar(scalar), graph)
                 }).collect::<Vec<_>>()));
             }
+            let primitive = match v {
+                ScalarValue::Int64(Some(value)) => Some(Value::Long(*value)),
+                _ => crate::ir::value::scalar_semantic_value(v),
+            };
+            if let Some(value) = primitive { return gremlin_typed_value(&value, graph); }
             tagged("scalar", json!({"scalar_key": crate::ir::identity::encode_scalar(v)}))
         },
         Value::Null => tagged("null", json!(null)),

@@ -10,6 +10,39 @@ impl<'a> LoweringContext<'a> {
         outer: bool,
         input: &Node,
     ) -> RelResult<LoweredNode> {
+        if !outer && self.language == Language::Gremlin
+            && matches!(input_expr, IrExpr::Binding(name) if name == bind)
+            && let Node::GraphCurrentProject { expr: IrExpr::Call { name, args }, fields, input: edge_input } = input
+            && name == "edge_both"
+            && fields.first().is_some_and(|field| field == bind)
+            && let [IrExpr::Binding(edge)] = args.as_slice()
+        {
+            let input = self.lower_node(edge_input)?;
+            if has_binding_shape(&input.plan, edge) == Some(BindingShape::Edge) {
+                // Expand a single edge row to its two endpoints without hiding
+                // the vertex identity/properties in an opaque scalar list.
+                // The two-row discriminator preserves self-loop multiplicity
+                // and evaluates the upstream relation only once.
+                let ordinal = self.scan_counter;
+                self.scan_counter += 1;
+                let side = format!("__gremlin_endpoint_side_{ordinal}");
+                let vertex = format!("__gremlin_both_vertex_{ordinal}");
+                let direction = |value| LogicalPlanBuilder::empty(true).project(vec![lit(value).alias(&side)])?.build();
+                let directions = LogicalPlanBuilder::from(direction(0_i64)?).union(direction(1_i64)?)?.build()?;
+                let frontier = LogicalPlanBuilder::from(input.plan.clone()).cross_join(directions)?.build()?;
+                let vertices = self.lower_node_scan(&vertex, &LabelExpr::Any)?;
+                let plans = [&frontier, &vertices.plan];
+                let outgoing = col_exact(&side).eq(lit(0_i64)).and(binding_pair_eq(&plans, &vertex, &src_id_col(edge), &src_label_col(edge)));
+                let incoming = col_exact(&side).eq(lit(1_i64)).and(binding_pair_eq(&plans, &vertex, &dst_id_col(edge), &dst_label_col(edge)));
+                let mut columns = existing_columns_excluding_binding(&input.plan, bind, &BTreeSet::from([bind.to_owned()]));
+                columns.extend(duplicate_binding_projection_only(&vertices.plan, &vertex, bind)?);
+                let plan = LogicalPlanBuilder::from(frontier).join_on(vertices.plan.clone(), JoinType::Inner, vec![outgoing.or(incoming)])?
+                    .project(columns)?.build()?;
+                let mut result = input.with_plan(plan);
+                result.islands.merge(vertices.islands);
+                return Ok(result);
+            }
+        }
         let input = self
             .lower_node(input)
             .map_err(|err| match err {
@@ -102,8 +135,9 @@ impl<'a> LoweringContext<'a> {
         let value_alias = "__gm_value";
         let mut collected_value = false;
         let native_aggregate=|agg:&AggCall| -> RelResult<Expr> {
+            if agg.kind == AggKind::CountBulk { return Ok(super::aggregates::count_input_bulk(&input.plan, agg.arg.as_ref().map(|arg| self.lower_count_operand(&input.plan, arg)).transpose()?)); }
             let arg=match &agg.arg {Some(arg)=>self.lower_expr(&input.plan,arg)?,None=>lit(1_i64)};
-            native_values::aggregate_expr(agg,arg,false)
+            native_values::aggregate_expr(agg,arg,false,None)
         };
         let value_agg = match value {
             GroupValue::Aggregate(agg) if self.options.native_values => native_aggregate(agg)?,
@@ -113,7 +147,7 @@ impl<'a> LoweringContext<'a> {
                     if group.is_empty() && aggs.len() == 1
                         && matches!(body.as_ref(), Node::GraphCorrelate { .. })
                         && matches!(aggs[0].kind, AggKind::CountRows | AggKind::CountBulk)
-                        && aggs[0].arg.is_none() => count_all(),
+                        && aggs[0].arg.is_none() => if aggs[0].kind == AggKind::CountBulk { super::aggregates::count_input_bulk(&input.plan, None) } else { count_all() },
                 Node::GraphProject { items, input: body, .. }
                     if matches!(body.as_ref(), Node::GraphCorrelate { .. }) => {
                     let current = items.iter().find(|item| item.alias == "current")
@@ -125,9 +159,10 @@ impl<'a> LoweringContext<'a> {
                 }
                 _ => return Err(RelError::Unsupported("correlated group traversal requires native execution".into())),
             },
-            GroupValue::CountBulk => count_all(),
+            GroupValue::CountBulk => super::aggregates::count_input_bulk(&input.plan, None),
             GroupValue::Aggregate(agg) => match agg.kind {
-                AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
+                AggKind::CountBulk => super::aggregates::count_input_bulk(&input.plan, agg.arg.as_ref().map(|arg| self.lower_count_operand(&input.plan, arg)).transpose()?),
+                AggKind::CountRows => match &agg.arg {
                     Some(arg) => df_count(self.lower_expr(&input.plan, arg)?),
                     None => count_all(),
                 },

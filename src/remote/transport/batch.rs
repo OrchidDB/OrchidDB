@@ -9,7 +9,7 @@ impl HttpSession {
             return Ok(vec![]);
         }
         #[cfg(feature = "weaviate")]
-        if self.engine == Engine::Weaviate {
+        if self.engine == SourceKind::Weaviate {
             return self.execute_weaviate_many(requests, columns).await;
         }
         let bounded_elastic = requests.iter().all(|request| {
@@ -96,7 +96,7 @@ impl HttpSession {
                     body["size"] = json!(limit);
                     body["from"] = json!(offset);
                 }
-                let header = if self.engine == Engine::Quickwit {
+                let header = if self.engine == SourceKind::Quickwit {
                     json!({"index":index})
                 } else {
                     json!({"index":index,"allow_partial_search_results":false})

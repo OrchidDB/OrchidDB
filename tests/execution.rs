@@ -79,7 +79,7 @@ async fn rejects_incompatible_plans_before_driver_execution() {
         Err(ExecutionError::Version(2))
     ));
     q.version = 1;
-    q.dialect = "postgres".into();
+    q.dialect = "trino".into();
     assert!(matches!(
         execute(&mut session, &q).await,
         Err(ExecutionError::Dialect { .. })

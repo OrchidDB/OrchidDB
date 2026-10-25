@@ -371,23 +371,24 @@ mod tests {
         assert!(error.to_string().contains("owning DuckDB"), "{error}");
     }
     #[tokio::test]
-    async fn native_host_route_rejected_even_for_empty_input() {
-        for query in [
-            "RETURN toFloat('NaN')",
-            "UNWIND [] AS x RETURN toFloat('NaN')",
+    async fn native_conversion_uses_default_duckdb_even_for_empty_input() {
+        for (query, expected_rows) in [
+            ("RETURN toFloat('NaN')", 1),
+            ("UNWIND [] AS x RETURN toFloat('NaN')", 0),
         ] {
             let graph =
                 crate::language::cypher::preparation::prepare(query, &BTreeMap::new(), None)
                     .unwrap();
-            let error = RelBackend::with_options(native_options())
+            let result = RelBackend::with_options(native_options())
                 .execute(&graph, &PropertyGraph::new())
                 .await
-                .err()
-                .expect("native conversion cannot use host execution");
-            assert!(
-                error.to_string().contains("owning DuckDB"),
-                "{query}: {error}"
-            );
+                .unwrap();
+            assert_eq!(result.batch.num_rows(), expected_rows, "{query}");
+            if expected_rows == 1 {
+                let value = result.batch.column(0).as_any()
+                    .downcast_ref::<arrow::array::Float64Array>().unwrap().value(0);
+                assert!(value.is_nan(), "{query}");
+            }
         }
     }
 }

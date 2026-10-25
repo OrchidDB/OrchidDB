@@ -425,7 +425,7 @@ async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor(
         .gremlin_with_bindings("g.V().filter(f).map(m)", &bindings)
         .await
         .unwrap();
-    assert_eq!(output.backend, ExecutionBackend::DataFusion);
+    assert_eq!(output.backend, ExecutionBackend::Boundaries);
     assert_eq!(output.returned.batch.num_rows(), 1);
     let metadata = output.returned.batch.schema();
     assert!(metadata.metadata()["orchiddb.gremlin.typed_rows.v1"].contains("BOB"));
@@ -570,7 +570,7 @@ async fn sack_supplier_split_and_update_are_relational_jvm_operators() {
         ("update".into(),GremlinBinding::Lambda("sack, vertex -> sack + vertex.label().length()".into())),
     ]);
     let result=engine.gremlin_with_bindings("g.withSack(config).V().hasLabel('a').out().sack(update).sack()",&bindings).await.unwrap();
-    assert_eq!(result.backend,ExecutionBackend::Hybrid);
+    assert_eq!(result.backend,ExecutionBackend::Mixed);
     assert_eq!(result.returned.batch.num_rows(),1);
     assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0),0).unwrap(),"18");
     let failed=HashMap::from([("update".into(),GremlinBinding::Lambda("sack, vertex -> vertex.property('lost',true); throw new IllegalStateException('sack callback failed')".into()))]);

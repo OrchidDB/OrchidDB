@@ -1,8 +1,8 @@
 //! Durable managed graphs with transactional writes and observable execution.
 //!
 //! DuckDB owns the committed checkpoint and incremental overlay records.
-//! Queries lower to a relational DAG. DataFusion executes residual operators
-//! and schedules explicit DuckDB regions.
+//! DataFusion compiles logical plans; Orchid schedules DuckDB or Trino SQL
+//! regions and explicit graph boundaries. No DataFusion executor runs queries.
 
 mod mapped_storage;
 mod rdf;
@@ -44,6 +44,10 @@ pub enum ReadMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionBackend {
+    Sql,
+    Boundaries,
+    Mixed,
+    /// Legacy reporting variant retained for source compatibility.
     DuckDb,
     Hybrid,
     GraphRuntime,
@@ -368,7 +372,7 @@ impl GraphEngine {
     }
 
     /// Bound each DuckDB query and its setup. This does not impose a runtime
-    /// deadline on residual DataFusion operators or snapshot serialization.
+    /// deadline on graph boundary executables or snapshot serialization.
     pub fn set_sql_timeout(&mut self, timeout: Duration) {
         self.sql_timeout = Some(timeout);
         self.strict_executor = sql::DuckDbExecutor::with_timeout(timeout);
@@ -754,7 +758,7 @@ impl GraphEngine {
             if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
             if result.is_ok() && contains_mutation(&plan.root) { self.invalidate_statistics(); }
-            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
+            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions > 0 {ExecutionBackend::Mixed} else {ExecutionBackend::Boundaries}, stats: stats.into()}).map_err(Into::into);
         }
         if contains_mutation(&plan.root) {
             let automatic = !self.in_transaction;
@@ -772,9 +776,9 @@ impl GraphEngine {
             return Ok(QueryResult {
                 returned,
                 backend: if dag_stats.duckdb_regions + dag_stats.postgres_regions + dag_stats.other_sql_regions > 0 {
-                    ExecutionBackend::Hybrid
+                    ExecutionBackend::Mixed
                 } else {
-                    ExecutionBackend::DataFusion
+                    ExecutionBackend::Boundaries
                 },
                 stats: dag_stats.into(),
             });
@@ -816,13 +820,9 @@ impl GraphEngine {
                 (returned, stats)
             }
         };
-        let backend = if stats.datafusion_ops == 0 {
-            ExecutionBackend::DuckDb
-        } else if stats.islands > 0 {
-            ExecutionBackend::Hybrid
-        } else {
-            ExecutionBackend::DataFusion
-        };
+        let backend = if stats.islands > 0 {
+            if stats.boundary_ops > 0 { ExecutionBackend::Mixed } else { ExecutionBackend::Sql }
+        } else { ExecutionBackend::Boundaries };
         Ok(QueryResult {
             returned,
             backend,

@@ -206,6 +206,14 @@ impl<'a> LoweringContext<'a> {
             has_binding_shape(plan, name).map(|shape| (name.clone(), shape))
         };
         match expr {
+            // Extracting an identity does not evaluate temporal semantics even
+            // when the mapped primary key itself is DATE/TIME/TIMESTAMP.
+            IrExpr::Call { name, args } if name == "cypher_id" && self.options.mapping.is_some() => {
+                return match args.as_slice() {
+                    [IrExpr::Binding(binding)] => self.lower_expr(plan, &IrExpr::Id(binding.clone())).map(Some),
+                    _ => Err(RelError::Unsupported("Mapped identity requires an element binding".into())),
+                };
+            }
             // Constructor scalarization can expose a graph reference beneath
             // the generic property call used for non-variable AST targets.
             IrExpr::Call { name, args } if name == "property" => {

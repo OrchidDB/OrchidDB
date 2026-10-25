@@ -17,7 +17,38 @@ pub(super) struct VertexPropertyRecord {
     pub meta: BTreeMap<String, Value>,
 }
 
+/// An ordinary mapped column has identity (typed owner, property key), not the
+/// invocation-local handle allocated while hydrating it. Preserve that complete
+/// address across SQL scalar contexts without hashing or encounter-order IDs.
+fn mapped_property_public_id(label: &str, owner: &ElementId, key: &str) -> Value {
+    use base64::Engine;
+    let components = owner.components().into_iter().map(|component| {
+        let kind = component.data_type().to_string();
+        let value = ElementId::new(component).expect("validated identity component").to_value();
+        Value::List(vec![Value::String(kind), value])
+    }).collect();
+    let address = Value::List(vec![Value::String(label.into()), Value::List(components), Value::String(key.into())]);
+    let bytes = super::snapshot::binary::encode_value_bytes(&address);
+    Value::String(format!("orchid:property:v1:{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)))
+}
+
 impl PropertyGraph {
+    /// Preserve mapped property identity on one detached owner without changing
+    /// the identity policy of other native elements in the same scalar context.
+    pub(crate) fn stabilize_mapped_property_ids(&self, owner: &Value) {
+        let Value::Node { label, id } = owner else { return; };
+        self.properties(owner, &[]);
+        let mut overlay = self.overlay.borrow_mut();
+        if let Some(properties) = overlay.vertex_properties.get_mut(&(label.clone(), id.clone())) {
+            for (key, records) in properties {
+                if let [record] = records.as_mut_slice()
+                    && record.public_id.is_none() {
+                    record.public_id = Some(mapped_property_public_id(label, id, key));
+                }
+            }
+        }
+    }
+
     /// Select Gremlin's null-valued-property feature. Disabled by default for
     /// compatibility with providers that interpret null assignments as removal.
     /// Stored records keep their presence independently of this write policy.
@@ -448,6 +479,14 @@ impl PropertyGraph {
                     {
                         return public_id;
                     }
+                    if self.source_identity(owner).is_some()
+                        && self.overlay.borrow().vertex_properties
+                            .get(&(label.clone(), vertex_id.clone()))
+                            .and_then(|properties| properties.get(key))
+                            .is_some_and(|records| records.len() == 1 && records[0].id == *id)
+                    {
+                        return mapped_property_public_id(label, vertex_id, key);
+                    }
                 }
                 return Value::Long(id.clone());
             }
@@ -773,6 +812,43 @@ impl GraphOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mapped_property_ids_preserve_typed_addresses_without_local_handles() {
+        use datafusion::common::ScalarValue;
+        let integer = ElementId::new(ScalarValue::Int32(Some(1))).unwrap();
+        let long = ElementId::new(ScalarValue::Int64(Some(1))).unwrap();
+        let string = ElementId::new(ScalarValue::Utf8(Some("1".into()))).unwrap();
+        let expected = mapped_property_public_id("person", &integer, "name");
+        for other in [mapped_property_public_id("person", &long, "name"),
+            mapped_property_public_id("person", &string, "name"),
+            mapped_property_public_id("other", &integer, "name"),
+            mapped_property_public_id("person", &integer, "age")] {
+            assert_ne!(expected, other);
+        }
+        let owner = Value::Node { label: "person".into(), id: integer };
+        for first_key in ["name", "age"] {
+            let mut graph = PropertyGraph::new();
+            graph.source_keys = true;
+            graph.attach_element(&owner, Value::Int(1), BTreeMap::from([
+                ("name".into(), Value::String("marko".into())), ("age".into(), Value::Int(29)),
+            ])).unwrap();
+            graph.properties(&owner, &[first_key.into()]);
+            let property = graph.properties(&owner, &["name".into()]).remove(0);
+            assert_eq!(graph.element_public_id(&property), expected);
+            graph.set_vertex_property_public_id(&property, Value::Long(77)).unwrap();
+            assert_eq!(graph.element_public_id(&property), Value::Long(77));
+        }
+        let graph = PropertyGraph::new();
+        let native = graph.insert_node("native", BTreeMap::from([("name".into(), Value::String("native".into()))]));
+        graph.set_element_public_id(&native, Value::String("custom-native-id".into())).unwrap();
+        let native_property = graph.properties(&native, &["name".into()]).remove(0);
+        let native_property_id = graph.element_public_id(&native_property);
+        graph.attach_element(&owner, Value::Int(1), BTreeMap::from([("name".into(), Value::String("marko".into()))])).unwrap();
+        graph.stabilize_mapped_property_ids(&owner);
+        assert_eq!(graph.element_public_id(&graph.properties(&owner, &["name".into()])[0]), expected);
+        assert_eq!(graph.element_public_id(&native), Value::String("custom-native-id".into()));
+        assert_eq!(graph.element_public_id(&native_property), native_property_id);
+    }
     #[test]
     fn null_presence_incremental_replay_and_removal() {
         let graph = PropertyGraph::new();

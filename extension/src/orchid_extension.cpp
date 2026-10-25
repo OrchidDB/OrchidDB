@@ -16,8 +16,11 @@
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/parser_extension.hpp"
 #include "duckdb/parser/query_node/select_node.hpp"
+#include "duckdb/parser/query_node/recursive_cte_node.hpp"
+#include "duckdb/parser/query_node/set_operation_node.hpp"
 #include "duckdb/parser/statement/select_statement.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/tableref/table_function_ref.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
@@ -30,6 +33,7 @@
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/secret/secret_storage.hpp"
 #include <map>
+#include <deque>
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/execution/executor.hpp"
@@ -379,6 +383,8 @@ unique_ptr<QueryResult> HostExecute(ClientContext &context, unique_ptr<SQLStatem
     return result;
 }
 
+#include "host_executor.hpp"
+
 Json HostQuery(ClientContext &context, const Json &request) {
     Parser parser(context.GetParserOptions());
     parser.ParseQuery(request.at("sql").get<string>());
@@ -486,6 +492,7 @@ struct ProgramBindData : FunctionData {
 };
 struct ProgramState : GlobalTableFunctionState { bool done = false; };
 struct RegisteredSchemas : ClientContextState { std::map<string, Json> schemas; };
+#include "federation.hpp"
 unique_ptr<FunctionData> RegisterSchemaBind(ClientContext &, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
     types = {LogicalType::BOOLEAN}; names = {"registered"};
     if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) { throw BinderException("Schema name and configuration cannot be NULL"); }
@@ -496,9 +503,7 @@ unique_ptr<FunctionData> RegisterSchemaBind(ClientContext &, TableFunctionBindIn
         for (auto &table : schema["tables"]) { if (table.is_object() && !table.contains("columns")) { table["columns"] = Json::array(); } }
     }
     schema = Bridge({{"op", "validate_schema"}, {"schema", schema}});
-    if (!schema.value("engines", Json::object()).empty() || !schema.value("execution_engine", Json()).is_null()) {
-        throw BinderException("Orchid extension queries must execute in the host DuckDB");
-    }
+    ValidateHostEngines(schema);
     return make_uniq<ProgramBindData>(Json({{"name", name}, {"schema", schema}}).dump());
 }
 unique_ptr<FunctionData> RegisterCatalogBind(ClientContext &, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
@@ -660,7 +665,8 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
     auto compiled = Bridge(context, {{"op", "compile"}, {"graph", graph.definition}, {"tables", graph.tables},
                             {"query", input.inputs[1].GetValue<string>()}, {"parameters", parameters}, {"language", language}});
     if (compiled.contains("program_request")) {Authorization(context)->authorized_programs.insert(compiled.at("program_request").dump());}
-    return Subquery(context, compiled.at("sql").get<string>());
+    if (compiled.contains("transfers") && !compiled.at("transfers").empty()) {Authorization(context)->authorized_programs.insert(compiled.dump());}
+    return CompiledSubquery(context, compiled);
 }
 
 unique_ptr<TableRef> CypherBind(ClientContext &context, TableFunctionBindInput &input) {
@@ -697,8 +703,8 @@ Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     if (!auth->subject.empty() && !(input.table_function.name=="__orchid_program" && auth->authorized_programs.count(request.dump()))) {
         throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled");
     }
-    if (request.value("dialect", "duckdb") != "duckdb" ||
-        !request.value("engines", Json::object()).empty() || !request.value("execution_engine", Json()).is_null()) {
+    ValidateHostEngines(request);
+    if (request.value("dialect", "duckdb") != "duckdb") {
         throw BinderException("Orchid extension queries must execute in the host DuckDB");
     }
     request["dialect"] = "duckdb";
@@ -734,7 +740,7 @@ unique_ptr<TableRef> QueryBind(ClientContext &context, TableFunctionBindInput &i
         if (work.contains("classification") && !work.at("classification").is_null()) { metadata["orchid_classification"] = work.at("classification").dump(); }
         throw BinderException(metadata, work.at("error").get<string>());
     }
-    return Subquery(context, work.at("sql").get<string>());
+    return CompiledSubquery(context, work);
 }
 unique_ptr<TableRef> SparqlSyntaxBind(ClientContext &context, TableFunctionBindInput &input) {
     Bridge({{"op", "sparql_syntax"}, {"query", input.inputs[0].GetValue<string>()},
@@ -961,7 +967,24 @@ void LoadOrchid(ExtensionLoader &loader) {
     TableFunction native_program("__orchid_program", {LogicalType::VARCHAR}, nullptr, nullptr);
     native_program.bind_operator=NativeProgramBind;
     loader.RegisterFunction(native_program);
-    loader.RegisterFunction(TableFunction("__orchid_host_relation", {LogicalType::UBIGINT}, HostRelationScan, HostRelationBind, HostRelationInit));
+    TableFunction host_relation("__orchid_host_relation", {LogicalType::UBIGINT}, HostRelationScan, HostRelationBind, HostRelationInit);
+    // This bridge consumes its declared schema; the SQL engine owns projection
+    // and filtering. Never advertise pushdowns which the Arrow reader ignores.
+    host_relation.projection_pushdown = false;
+    host_relation.filter_pushdown = false;
+    loader.RegisterFunction(host_relation);
+    TableFunction federated("__orchid_federated",{LogicalType::VARCHAR},FederationScan,FederationBind,FederationInit);
+    federated.projection_pushdown=false;federated.filter_pushdown=false;
+    loader.RegisterFunction(federated);
+    loader.RegisterFunction(TableFunction("orchid_register_source",{LogicalType::VARCHAR,LogicalType::VARCHAR,LogicalType::VARCHAR},RegisterSourceExecute,RegisterSourceBind,ProgramInit));
+#ifdef ORCHID_TEST_ARROW_STREAM
+    for (auto diagnostic : {
+        ScalarFunction("__orchid_stream_self_test", {}, LogicalType::VARCHAR, HostStreamSelfTest),
+        ScalarFunction("__orchid_stream_case", {LogicalType::VARCHAR}, LogicalType::VARCHAR, HostStreamSelfTest)}) {
+        diagnostic.SetStability(FunctionStability::VOLATILE);
+        loader.RegisterFunction(diagnostic);
+    }
+#endif
     TableFunction catalog("orchid_register_catalog", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, RegisterSchemaExecute, RegisterCatalogBind, ProgramInit);
     catalog.named_parameters["token_env"] = LogicalType::VARCHAR;
     catalog.named_parameters["revision"] = LogicalType::BIGINT;
@@ -1029,7 +1052,7 @@ void LoadOrchid(ExtensionLoader &loader) {
     ParserExtension parser;
     parser.parser_override = Rewrite;
     auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-    config.AddExtensionOption("orchid_lowering_policy", "Relational execution: hybrid or sql_required", LogicalType::VARCHAR, Value("hybrid"));
+    config.AddExtensionOption("orchid_lowering_policy", "Relational execution: sql_required (host SQL islands)", LogicalType::VARCHAR, Value("sql_required"));
     config.AddExtensionOption("orchid_cypher_aggregates", "Cypher aggregate semantics: conformant or sql_native", LogicalType::VARCHAR, Value("conformant"));
     ParserExtension::Register(config, std::move(parser));
     config.SetOptionByName("allow_parser_override_extension", Value("fallback"));

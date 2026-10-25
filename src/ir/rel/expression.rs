@@ -2,6 +2,34 @@
 
 use super::*;
 
+fn prune_literal_conditional_branches(expr: &IrExpr) -> Option<IrExpr> {
+    let IrExpr::Call { name, args } = expr else { return None; };
+    let is_null = |expr: &IrExpr| match expr {
+        IrExpr::Lit(Lit::Null) => Some(true),
+        IrExpr::Lit(Lit::Scalar(value)) => Some(value.is_null()),
+        IrExpr::Lit(_) => Some(false),
+        _ => None,
+    };
+    let mut pruned = args.clone();
+    let dead = match name.to_ascii_lowercase().as_str() {
+        "fn.nvl2" if args.len() == 3 => vec![if is_null(&args[0])? { 1 } else { 2 }],
+        "fn.coalesce" if !args.is_empty() => {
+            let selected = args.iter().position(|arg| is_null(arg) == Some(false))?;
+            (selected + 1..args.len()).collect()
+        }
+        "fn.nvl" | "fn.ifnull" if args.len() == 2 && is_null(&args[0]) == Some(false) => vec![1],
+        _ => return None,
+    };
+    let mut changed = false;
+    for index in dead {
+        if !matches!(pruned[index], IrExpr::Lit(Lit::Null)) {
+            pruned[index] = IrExpr::Lit(Lit::Null);
+            changed = true;
+        }
+    }
+    changed.then(|| IrExpr::Call { name: name.clone(), args: pruned })
+}
+
 impl<'a> LoweringContext<'a> {
     /// A folded null has no intrinsic type. CASE predicates require BOOLEAN;
     /// retaining the generic string-null representation emits invalid SQL on
@@ -87,6 +115,13 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_sql_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        // A provably unreachable portable conditional branch must not influence
+        // SQL coercion (a throwing host macro can have a placeholder return type).
+        // Match scalar boundary semantics: retain arity, replace only dead
+        // branches with NULL, and never evaluate a function to prove nullability.
+        if let Some(pruned) = prune_literal_conditional_branches(expr) {
+            return self.lower_sql_expr(plan, &pruned);
+        }
         let unsafe_union_function = match expr {
             IrExpr::Call { name, args } if !matches!(name.as_str(), "cypher_eq" | "cypher_neq" | "cypher_lt" | "cypher_lte" | "cypher_gt" | "cypher_gte") =>
                 args.iter().any(|arg| scalar_union::direct_operand(plan, arg)),
@@ -148,6 +183,13 @@ impl<'a> LoweringContext<'a> {
             }
         }
         if let Some(value) = self.run_temporal_rules(plan, expr)? {
+            return Ok(value);
+        }
+        // Comparison lowering binds each operand once, then selects native
+        // timestamp semantics before applying the generic temporal fence.
+        if matches!(expr, IrExpr::Call { name, args } if args.len() == 2 && matches!(name.as_str(),
+            "cypher_eq" | "cypher_neq" | "cypher_lt" | "cypher_lte" | "cypher_gt" | "cypher_gte"))
+            && let Some(value) = self.run_collection_comparison_rules(plan, expr)? {
             return Ok(value);
         }
         // The temporal envelope transports exact values; SQL string/struct

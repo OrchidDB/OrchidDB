@@ -1,4 +1,4 @@
-//! Optional HTTP engines. Logical expressions remain engine independent; this
+//! Optional HTTP sources. Logical expressions remain engine independent; this
 //! module produces typed prepared requests instead of inventing a SQL dialect.
 pub mod transport;
 #[cfg(any(feature = "prometheus", feature = "loki"))]
@@ -86,8 +86,8 @@ macro_rules! adapter {
                 Ok(search
                     .index
                     .as_ref()
-                    .and_then(|i| i.options.get("engine"))
-                    .or_else(|| metadata.options.get("engine"))
+                    .and_then(|i| i.options.get("source").or_else(||i.options.get("engine")))
+                    .or_else(|| metadata.options.get("source").or_else(||metadata.options.get("engine")))
                     .and_then(Value::as_str)
                     .map(str::to_owned))
             }
@@ -125,12 +125,12 @@ impl RequestAdapter for WeaviateAdapter {
                 search
                     .index
                     .as_ref()
-                    .and_then(|index| index.options.get("engine"))
+                    .and_then(|index| index.options.get("source").or_else(||index.options.get("engine")))
                     .or_else(|| {
                         search
                             .source_metadata
                             .as_ref()
-                            .and_then(|metadata| metadata.options.get("engine"))
+                            .and_then(|metadata| metadata.options.get("source").or_else(||metadata.options.get("engine")))
                     })
             })
             .and_then(Value::as_str)

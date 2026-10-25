@@ -209,6 +209,27 @@ pub(super) fn take_range(rows: Vec<Row>, slice: &mut crate::ir::plan::Slice) -> 
     out
 }
 
+// Arrow batches are bounded by emitted rows, including multiplicity expanded
+// at a SQL boundary. One compact traverser can represent millions of rows.
+pub(super) fn take_output_rows(output: &mut std::vec::IntoIter<Row>, size: usize, expands_bulk: bool) -> Vec<Row> {
+    if !expands_bulk { return output.by_ref().take(size).collect(); }
+    let mut remaining = size.max(1) as u64;
+    let mut rows = Vec::new();
+    while remaining > 0 {
+        let Some(next) = output.as_mut_slice().first_mut() else { break; };
+        if next.bulk > remaining {
+            let mut part = next.clone();
+            part.bulk = remaining;
+            next.bulk -= remaining;
+            rows.push(part);
+            break;
+        }
+        remaining -= next.bulk;
+        rows.push(output.next().unwrap());
+    }
+    rows
+}
+
 struct Cursor {
     kernel: RowKernel,
     state: Arc<Mutex<State>>,
@@ -233,7 +254,9 @@ impl Cursor {
                     .jvm
                     .check()
                     .map_err(failure)?;
-                let rows = self.output.by_ref().take(self.size).collect();
+                let expands_bulk = self.kernel.relational_output.as_ref().is_some_and(|output|
+                    !output.preserve_bulk && output.policy.language == crate::ir::policy::Language::Gremlin);
+                let rows = take_output_rows(&mut self.output, self.size, expands_bulk);
                 // Encoding can include language containers; keep CPU work off
                 // the async scheduler, just like scalar kernel evaluation.
                 let kernel = self.kernel.clone();
@@ -275,7 +298,17 @@ impl Cursor {
                 }
             } else if self.kernel.streaming && self.inputs.len() == 1 {
                 if self.input.is_none() {
-                    self.input = Some(self.inputs[0].execute(0, self.task.clone())?);
+                    let input = self.inputs[0].execute(0, self.task.clone())?;
+                    self.input = Some(if needs_source_spool(&self.kernel, &self.state, &self.inputs[0])? {
+                        // Hydration/callbacks can query the same caller connection
+                        // that the upstream SQL producer owns. Drain to bounded
+                        // IPC storage before invoking them, releasing that lease.
+                        let schema = input.schema();
+                        let stream = crate::execution::stream::BatchStream::new(schema.clone(), input.map_err(|e|e.to_string()));
+                        let replay = crate::execution::stream::BatchSource::spool(stream, &std::env::temp_dir()).await.map_err(failure)?;
+                        let stream = replay.open().map_err(failure)?;
+                        Box::pin(RecordBatchStreamAdapter::new(schema, stream.map_err(failure))) as SendableRecordBatchStream
+                    } else { input });
                 }
                 if self.batch.is_none() {
                     match self.input.as_mut().unwrap().try_next().await? {
@@ -353,7 +386,7 @@ pub(super) fn execute(
         input: None,
         batch: None,
         output: vec![].into_iter(),
-        size: task.session_config().batch_size().max(1),
+        size: task.batch_size(),
         task,
         finished: false,
     };
@@ -373,11 +406,6 @@ mod tests {
         batches: Vec<RecordBatch>,
         polls: Arc<AtomicUsize>,
         properties: Arc<PlanProperties>,
-    }
-    impl DisplayAs for Feed {
-        fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "Feed")
-        }
     }
     impl ExecutionPlan for Feed {
         fn name(&self) -> &str {
@@ -410,31 +438,21 @@ mod tests {
             )))
         }
     }
-    fn properties() -> Arc<PlanProperties> {
-        Arc::new(PlanProperties::new(
-            EquivalenceProperties::new(schema()),
-            Partitioning::UnknownPartitioning(1),
-            EmissionType::Incremental,
-            Boundedness::Bounded,
-        ))
-    }
+    fn properties() -> Arc<PlanProperties> { Arc::new(PlanProperties::new(schema())) }
     fn physical(plan: LogicalPlan, inputs: Vec<Arc<dyn ExecutionPlan>>) -> KernelExec {
         let LogicalPlan::Extension(e) = plan else {
             panic!()
         };
+        let mut kernel=e.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+        kernel.boundary=Some(policy::BoundaryKind::ResultTransport);
         KernelExec {
-            kernel: e.node.as_any().downcast_ref::<RowKernel>().unwrap().clone(),
-            input_ordering: vec![None; inputs.len()],
+            kernel,
             inputs,
             state: Default::default(),
             properties: properties(),
         }
     }
-    fn task(size: usize) -> Arc<TaskContext> {
-        Arc::new(TaskContext::default().with_session_config(
-            datafusion::execution::config::SessionConfig::new().with_batch_size(size),
-        ))
-    }
+    fn task(size: usize) -> Arc<TaskContext> { Arc::new(TaskContext::default().with_batch_size(size)) }
     fn rows(range: std::ops::Range<i64>) -> Vec<Row> {
         range
             .map(|i| Row {
@@ -443,6 +461,25 @@ mod tests {
             })
             .collect()
     }
+    #[tokio::test]
+    async fn expanding_bulk_keeps_arrow_batches_bounded() {
+        let output = super::super::reentry::SqlOutput {
+            fields: vec!["current".into()], nodes: vec![], edges: vec![],
+            policy: crate::ir::policy::GraphPlanPolicy::gremlin(),
+            preserve_bulk: false, transport_state: false,
+            identity_type: arrow::datatypes::DataType::Int64,
+            implicit_fields: vec![],
+        };
+        let mut exec = physical(kernel("BulkInput", vec![], |_, _| Ok(vec![Row {
+            bindings: [("current".into(), Value::Int(7))].into(), bulk: 33,
+        }])), vec![]);
+        exec.kernel.schema = Arc::new(output.schema().as_ref().clone().try_into().unwrap());
+        exec.properties = Arc::new(PlanProperties::new(output.schema()));
+        exec.kernel.relational_output = Some(output);
+        let batches = exec.execute(0, task(4)).unwrap().try_collect::<Vec<_>>().await.unwrap();
+        assert_eq!(batches.iter().map(RecordBatch::num_rows).collect::<Vec<_>>(), vec![4,4,4,4,4,4,4,4,1]);
+    }
+
     #[tokio::test]
     async fn streaming_reads_only_the_requested_batch_and_preserves_bulk() {
         let polls = Arc::new(AtomicUsize::new(0));
@@ -618,4 +655,13 @@ mod tests {
                 .contains("cancelled")
         );
     }
+}
+
+fn has_sql_source(plan: &Arc<dyn ExecutionPlan>) -> bool {
+    matches!(plan.name(), "DuckDbExec" | "TrinoExec") || plan.children().iter().any(|child| has_sql_source(child))
+}
+pub(super) fn needs_source_spool(kernel: &RowKernel, state: &Arc<Mutex<State>>, input: &Arc<dyn ExecutionPlan>) -> Result<bool> {
+    Ok(kernel.relational_input.is_none()
+        && state.lock().map_err(|_|failure("Query state poisoned"))?.graph.source.is_some()
+        && has_sql_source(input))
 }

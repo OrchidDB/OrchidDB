@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-orchiddb = { path = "../..", features = ["duckdb", "postgres"] }
-postgres = "0.19"
-arrow = "58.2.0"
+orchiddb = { path = "../..", features = ["duckdb", "trino", "weaviate", "quickwit", "prometheus", "loki", "elasticsearch", "orchid-catalog"] }
+arrow = { version = "58.2.0", default-features = false, features = ["ipc"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-datafusion = "53.1.0"
+datafusion = { version = "53.1.0", default-features = false, features = ["nested_expressions", "crypto_expressions", "datetime_expressions", "encoding_expressions", "regex_expressions", "string_expressions", "unicode_expressions", "recursive_protection", "sql"] }
 duckdb = { version = "1.10502.0", features = ["chrono", "vtab-arrow"] }
 
 [[bin]]
@@ -18,3 +17,6 @@ path = "../../src/bin/orchiddb-jvm-store.rs"
 
 [workspace]
 resolver = "2"
+
+[patch.crates-io]
+duckdb = { path = "../../vendor/duckdb" }

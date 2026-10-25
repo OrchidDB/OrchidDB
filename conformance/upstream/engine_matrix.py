@@ -2,9 +2,8 @@
 """Run all three original language suites independently on each SQL backend.
 
 Uses the standard run.py adapters, fixtures, catalog and assertions. Configure
-the native/JVM binaries as documented in the root README. PostgreSQL
-connections are supplied in ORCHIDDB_TEST_PG_URL; no database objects are created
-on that connection by the SQL region executor.
+the native/JVM binaries as documented in the root README. Trino uses the Orchid
+Arrow connector and ORCHIDDB_TEST_TRINO_URL / ORCHIDDB_EXCHANGE_TOKEN.
 """
 import argparse
 from collections import Counter
@@ -21,7 +20,7 @@ SUITES = ("opencypher", "tinkerpop", "rdf")
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", choices=("duckdb", "postgres", "starrocks"), action="append")
+    parser.add_argument("--engine", choices=("duckdb", "trino"), action="append")
     parser.add_argument("--suite", choices=SUITES, action="append")
     parser.add_argument("--jobs", type=int, default=4, help="Cypher/RDF workers per backend (Gremlin always uses one)")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "target/conformance/sql-engines")
@@ -38,10 +37,13 @@ def main():
                  if row['status'] in ('skipped', 'not-applicable')}
     summaries = []
     failed = False
-    for engine in args.engine or ("duckdb", "postgres"):
+    for engine in args.engine or ("duckdb", "trino"):
         config = {"dialect": engine}
-        if engine == "postgres":
-            config["connection"] = os.environ["ORCHIDDB_TEST_PG_URL"]
+        if engine == "trino":
+            config.update(endpoint=os.environ["ORCHIDDB_TEST_TRINO_URL"],
+                          exchange_token=os.environ["ORCHIDDB_EXCHANGE_TOKEN"],
+                          exchange_bind=os.environ.get("ORCHIDDB_EXCHANGE_BIND", "0.0.0.0:18883"),
+                          exchange_catalog=os.environ.get("ORCHIDDB_EXCHANGE_CATALOG", "orchid"))
         env = {**os.environ, "ORCHIDDB_SQL_ENGINE_JSON": json.dumps(config)}
         binary = Path(env.get('CONFORMANCE_ORCHIDDB_BINARY', ROOT / 'target/debug/upstream'))
         library_path = 'DYLD_LIBRARY_PATH' if sys.platform == 'darwin' else 'LD_LIBRARY_PATH'
@@ -50,7 +52,7 @@ def main():
             output = (args.output_dir / f"{engine}-{suite}.json").resolve()
             subprocess.run([sys.executable, str(Path(__file__).with_name("run.py")),
                             "--engine", "orchiddb", "--suite", suite,
-                            "--jobs", str(1 if suite == "tinkerpop" else args.jobs),
+                            "--jobs", str(1 if suite == "tinkerpop" or engine == "trino" else args.jobs),
                             "--output", str(output)], cwd=ROOT, env=env, check=True)
             report = json.loads(output.read_text())
             counts = Counter(row["status"] for row in report["results"])

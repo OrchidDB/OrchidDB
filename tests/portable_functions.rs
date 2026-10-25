@@ -164,7 +164,7 @@ async fn arity_mappings_coexist_and_variadic_arguments_remain_expressions() {
         .unwrap()
         .into_unoptimized_plan();
     let lowered = LoweredPlan {
-            rule_context: Default::default(),
+        rule_context: Default::default(),
         plan,
         fields: vec!["one".into(), "two".into(), "many".into()],
         result_form: ResultForm::RowSet,
@@ -201,6 +201,49 @@ async fn portable_functions_are_available_in_cypher_without_an_engine_catalog() 
         array_value_to_string(result.batch.column(1), 0).unwrap(),
         "HELLO"
     );
+}
+
+#[tokio::test]
+async fn sql_constant_projection_preserves_source_cardinality() {
+    use arrow::datatypes::{DataType, Field, Schema};
+    use orchiddb::ir::rel::execute_lowered;
+
+    // Removing unused input columns must not turn an empty or multi-row table
+    // into the singleton used by a FROM-less SELECT.
+    for rows in [0, 1, 3] {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("unused", DataType::Float64, false)])),
+            vec![Arc::new(Float64Array::from(vec![1.0; rows]))],
+        ).unwrap();
+        let plan = SessionContext::new().read_batch(batch).unwrap()
+            .select(vec![lit(7_i64).alias("constant")]).unwrap()
+            .into_unoptimized_plan();
+        let result = execute_lowered(LoweredPlan {
+            rule_context: Default::default(), plan,
+            fields: vec!["constant".into()], result_form: ResultForm::RowSet,
+            islands: Default::default(),
+        }).await.unwrap();
+        assert_eq!(result.batch.num_rows(), rows);
+        for row in 0..rows {
+            assert_eq!(array_value_to_string(result.batch.column(0), row).unwrap(), "7");
+        }
+        for distinct in [false, true] {
+            let batch = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![Field::new("unused", DataType::Float64, false)])),
+                vec![Arc::new(Float64Array::from(vec![1.0; rows]))],
+            ).unwrap();
+            let mut plan = SessionContext::new().read_batch(batch).unwrap()
+                .select(Vec::<Expr>::new()).unwrap();
+            if distinct { plan = plan.distinct().unwrap(); }
+            let result = execute_lowered(LoweredPlan {
+                rule_context: Default::default(), plan: plan.into_unoptimized_plan(),
+                fields: vec![], result_form: ResultForm::RowSet,
+                islands: Default::default(),
+            }).await.unwrap();
+            assert_eq!(result.batch.num_columns(), 0);
+            assert_eq!(result.batch.num_rows(), if distinct { rows.min(1) } else { rows });
+        }
+    }
 }
 
 // These execute emitted SQL against actual engines, on column inputs so
@@ -428,7 +471,7 @@ async fn portable_calls_place_sql_and_native_residuals_by_capability() {
         .build()
         .unwrap();
     let (_, stats) = orchiddb::ir::rel::dag::execute(LoweredPlan {
-            rule_context: Default::default(),
+        rule_context: Default::default(),
         plan,
         fields: vec!["value".into()],
         result_form: ResultForm::RowSet,
@@ -731,10 +774,16 @@ async fn expanded_catalog_matches_native_columns() {
     ));
     for format in ["hex", "base64", "base64pad"] {
         cases.push(("encode", vec![col("s"), lit(format)]));
-        cases.push(("encode", vec![
-            call("decode", vec![call("encode", vec![col("s"), lit("hex")]), lit("hex")]),
-            lit(format),
-        ]));
+        cases.push((
+            "encode",
+            vec![
+                call(
+                    "decode",
+                    vec![call("encode", vec![col("s"), lit("hex")]), lit("hex")],
+                ),
+                lit(format),
+            ],
+        ));
     }
     for format in ["hex", "base64", "base64pad"] {
         cases.push((
@@ -1005,17 +1054,15 @@ async fn unsupported_shapes_report_the_reviewed_reason() {
 
 #[cfg(feature = "duckdb")]
 #[tokio::test]
-async fn a_mapped_function_with_an_unsupported_pattern_stays_native() {
+async fn an_unsupported_pattern_cannot_fall_back_to_datafusion() {
     let (_, plan) = fixture("regexp_like", true, vec![lit(r"\w+")]).await;
-    let (_, stats) = orchiddb::ir::rel::dag::execute(plan).await.unwrap();
-    assert!(stats.datafusion_operators > 0, "{stats:?}");
-    assert_eq!(stats.duckdb_regions, 1);
+    let error = orchiddb::ir::rel::dag::execute(plan).await.unwrap_err().to_string();
+    assert!(error.contains("SQL") || error.contains("sql"), "{error}");
 }
 
-#[cfg(all(feature = "duckdb", feature = "postgres"))]
+#[cfg(feature = "duckdb")]
 #[test]
-#[ignore = "requires a local PostgreSQL server (GRAPH_PG_URL overrides connection)"]
-fn portable_results_round_trip_through_both_executors() {
+fn portable_results_round_trip_through_duckdb() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     use arrow::{
         array::{BinaryArray, Int64Array, ListArray},
@@ -1230,18 +1277,7 @@ fn portable_results_round_trip_through_both_executors() {
             vec![col("i") + lit(4_i64), lit(2_i64), lit(3_i64)],
         ),
     ];
-    let mut executors: Vec<Box<dyn sql::SqlExecutor>> = vec![
-        Box::new(sql::DuckDbExecutor::new()),
-        Box::new(
-            sql::PostgresExecutor::connect(&std::env::var("GRAPH_PG_URL").unwrap_or_else(|_| {
-                format!(
-                    "host=/tmp dbname=postgres user={}",
-                    std::env::var("USER").unwrap_or_else(|_| "postgres".into())
-                )
-            }))
-            .unwrap(),
-        ),
-    ];
+    let mut executors: Vec<Box<dyn sql::SqlExecutor>> = vec![Box::new(sql::DuckDbExecutor::new())];
     for expr in cases {
         let label = format!("{expr}");
         let (expected, plan) = runtime.block_on(async {
@@ -1268,7 +1304,7 @@ fn portable_results_round_trip_through_both_executors() {
                 .await
                 .unwrap();
             let plan = LoweredPlan {
-            rule_context: Default::default(),
+                rule_context: Default::default(),
                 plan,
                 fields: vec!["value".into()],
                 result_form: ResultForm::RowSet,

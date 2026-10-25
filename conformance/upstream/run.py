@@ -44,7 +44,7 @@ def execution_profile(engine):
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'null removes property; stored-null fixtures reported as adapter limitations' if engine=='orchiddb' else 'provider default',
-         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+sql_engine+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
+         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+sql_engine+' with explicit graph, traversal, and JVM boundaries' if engine=='orchiddb' else engine,
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph','arcadedb')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('ORCHIDDB_JVM_STORE',str(REPO/'target/debug/orchiddb-jvm-store')))
@@ -65,6 +65,7 @@ class Process:
   self.log=open(log,'a');self.p=subprocess.Popen(command,cwd=REPO,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.log,text=True,bufsize=1,start_new_session=True,env={**os.environ,'CONFORMANCE_PYTHON':os.environ.get('CONFORMANCE_PYTHON',os.sys.executable)})
   if ready:self.read(90)
  def read(self,timeout=40):
+  timeout=max(timeout,float(os.environ.get('CONFORMANCE_ORCHIDDB_TIMEOUT_SECONDS','40'))+5) if 'CONFORMANCE_ORCHIDDB_TIMEOUT_SECONDS' in os.environ else timeout
   if not select.select([self.p.stdout],[],[],timeout)[0]:self.close();raise TimeoutError('scenario deadline; adapter process group terminated')
   line=self.p.stdout.readline()
   if not line:raise RuntimeError('adapter process exited')
@@ -226,6 +227,9 @@ def main():
   if args.engine=='orchiddb-jvm':content['execution_profile']['placeholder_assertions']='Pinned original Apache JUnit counterparts; per-case source and execution evidence recorded'
   content['coverage']['excluded_capabilities']=capability_summary(results)
  if args.engine=='orchiddb' and args.suite=='tinkerpop':
+  content['execution_profile']['adapter_timeout_seconds']=float(os.environ.get('CONFORMANCE_ORCHIDDB_TIMEOUT_SECONDS','40'))
+  content['execution_profile']['sql_timeout_seconds']=int(os.environ.get('CONFORMANCE_SQL_TIMEOUT_SECONDS','8'))
+  content['execution_profile']['jvm_timeout_seconds']=int(os.environ.get('ORCHIDDB_JVM_TIMEOUT_SECONDS','30'))
   instances=sorted({r['engine_instance'] for r in results if r.get('engine_instance')})
   content['execution_profile']['engine_instances']=instances
   content['execution_profile']['single_instance_verified']=len(instances)==1 and all(r.get('engine_instance')==instances[0] for r in results)

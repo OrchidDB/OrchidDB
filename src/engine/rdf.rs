@@ -119,7 +119,7 @@ impl GraphEngine {
             context.sparql(query).await.map(|returned| {
                 Some(QueryResult {
                     returned,
-                    backend: ExecutionBackend::Hybrid,
+                    backend: ExecutionBackend::Mixed,
                     stats: context.last_query_stats.take().unwrap_or_default(),
                 })
             })

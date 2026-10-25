@@ -199,12 +199,9 @@ impl<'a> LoweringContext<'a> {
                 "Gremlin label history requires traverser state".into(),
             ));
         }
-        if self.language == Language::Gremlin
-            && alias.starts_with("select_source_")
-            && matches!(expr, IrExpr::Binding(binding) if binding == "current")
-        {
-            return Ok(Vec::new());
-        }
+        // Multi-select saves the original current map while evaluating each
+        // selected key. This alias is observable across successive current
+        // replacements and must remain a real SQL column.
         if self.language == Language::Gremlin && matches!(expr, IrExpr::Case { .. }) {
             if let Some(columns) = self.conditional_element_projection(plan, alias, expr)? {
                 return Ok(columns);
@@ -439,10 +436,13 @@ impl LoweringContext<'_> {
         }
         let mut projections = match mode {
             ProjectMode::PreserveVisible => existing_columns(&input.plan, &aliases),
-            ProjectMode::ReplaceScope => apply_correlation_key_columns(&input.plan)
-                .iter()
-                .map(col_exact)
-                .collect(),
+            ProjectMode::ReplaceScope => {
+                let mut columns = apply_correlation_key_columns(&input.plan).iter().map(col_exact).collect::<Vec<_>>();
+                if self.language == Language::Gremlin && has_exact_col(&input.plan, "__orchid_traverser_bulk") {
+                    columns.push(col_exact("__orchid_traverser_bulk"));
+                }
+                columns
+            },
             ProjectMode::ReplaceCurrent => {
                 let mut excluded = aliases;
                 excluded.insert("current".to_string());

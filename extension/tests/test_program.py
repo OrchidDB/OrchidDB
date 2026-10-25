@@ -86,6 +86,25 @@ class ProgramTests(unittest.TestCase):
         self.db.execute('EXECUTE create_run').fetchall()
         self.assertEqual(self.cypher('MATCH (n:Run) RETURN count(n) AS n')[0]['n']['value'], 2)
 
+    def test_relationship_delete_source_keeps_declared_arrow_schema(self):
+        self.cypher('CREATE (:Node)-[:LINK]->(:Node)')
+        self.db.execute('BEGIN')
+        self.cypher('MATCH ()-[r]-() DELETE r')
+        self.assertEqual(self.cypher('MATCH ()-[r]->() RETURN count(r) AS n')[0]['n']['value'], 0)
+        self.db.execute('ROLLBACK')
+        self.assertEqual(self.cypher('MATCH ()-[r]->() RETURN count(r) AS n')[0]['n']['value'], 1)
+
+    def test_lazy_boundary_output_hydrates_properties_after_first_batch(self):
+        fixture = dict(op='fixture', name='many-properties', nodes=[
+            dict(id=i, id_type='Integer', label='Person',
+                 properties={'name': f'name-{i:05d}'}, property_types={'name': 'String'})
+            for i in range(5000)
+        ], edges=[], allow_null_property_values=False)
+        self.db.execute('CALL orchid_graph_import(?, ?)', [self.graph, json.dumps(fixture)])
+        result = self.gremlin("g.V().barrier().values('name').order().tail(2)")
+        self.assertEqual(result, [dict(type='string', value='name-04998'),
+                                  dict(type='string', value='name-04999')])
+
     def test_failed_statement_is_atomic_and_connection_recovers(self):
         before = self.snapshot()
         failing = 'CREATE (n:Attempt {zero:0}) WITH n RETURN 1/n.zero AS invalid'

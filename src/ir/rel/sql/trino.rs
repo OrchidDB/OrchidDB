@@ -22,6 +22,9 @@ pub struct TrinoAdapter;
 pub static TRINO: TrinoAdapter = TrinoAdapter;
 
 impl DialectAdapter for TrinoAdapter {
+    fn supports_scalar_function(&self, name: &str) -> bool {
+        name == "random"
+    }
     fn name(&self) -> &'static str {
         "trino"
     }
@@ -118,6 +121,13 @@ impl DialectAdapter for TrinoAdapter {
             DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) => {
                 format!("ARRAY({})", self.sql_type(f.data_type())?)
             }
+            DataType::Map(entries, _) => {
+                let DataType::Struct(fields) = entries.data_type() else {
+                    return Err(SqlError::Unsupported("Trino map entries must be a struct".into()));
+                };
+                if fields.len() != 2 { return Err(SqlError::Unsupported("Trino map requires key and value fields".into())); }
+                format!("MAP({}, {})", self.sql_type(fields[0].data_type())?, self.sql_type(fields[1].data_type())?)
+            },
             DataType::Struct(fields) => format!(
                 "ROW({})",
                 fields
@@ -200,6 +210,8 @@ impl DialectAdapter for TrinoAdapter {
             "fn.array_length" | "fn.cardinality" => "cardinality(__arg0)".into(),
             "fn.array_has" => "contains(__arg0, __arg1)".into(),
             "fn.array_concat" => "concat(__args)".into(),
+            "fn.array_append" => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])".into(),
+            "fn.array_prepend" => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))".into(),
             "fn.array_element" => "element_at(__arg0, nullif(__arg1, 0))".into(),
             "fn.array_to_string" => "array_join(__args)".into(),
             "fn.isfinite" => "is_finite(__arg0)".into(),
@@ -256,6 +268,8 @@ impl DialectAdapter for TrinoAdapter {
         args: &[ast::Expr],
     ) -> SqlResult<Option<ast::Expr>> {
         let template = match (name, args.len()) {
+            ("array_append", 2) => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])",
+            ("array_prepend", 2) => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))",
             ("contains", 2) => "strpos(__arg0, __arg1) > 0",
             ("array_position", 2) => "nullif(array_position(__arg0, __arg1), 0)",
             ("array_position", 3) if args[2].to_string() == "1" => {
@@ -490,21 +504,6 @@ impl TrinoAdapter {
 }
 fn normalize_type(ty: &mut ast::DataType) {
     match ty {
-        ast::DataType::Custom(name, fields) if name.to_string().eq_ignore_ascii_case("ROW") => {
-            // sqlparser treats ROW as a custom type and separates field names
-            // from their scalar types. Restore the named-row field syntax.
-            let mut named: Vec<String> = Vec::new();
-            for field in std::mem::take(fields) {
-                if field.starts_with('"') || named.is_empty() {
-                    named.push(field);
-                } else {
-                    let previous = named.last_mut().unwrap();
-                    previous.push(' ');
-                    previous.push_str(&field);
-                }
-            }
-            *fields = named;
-        }
         ast::DataType::Bool => *ty = ast::DataType::Boolean,
         ast::DataType::BigIntUnsigned(_)
         | ast::DataType::Int8Unsigned(_)
@@ -580,9 +579,65 @@ impl UnparserDialect for TrinoUnparser {
     }
 }
 
+// sqlparser's custom ROW type grammar does not parse nested field types.
+// Parse Trino CAST type syntax structurally so nested arrays/maps/rows retain
+// their field names and type boundaries through every SQL lowering pass.
+fn trino_cast_type(
+    parser: &mut datafusion::sql::sqlparser::parser::Parser,
+    depth: usize,
+) -> Result<ast::DataType, datafusion::sql::sqlparser::parser::ParserError> {
+    use datafusion::sql::sqlparser::{keywords::Keyword, tokenizer::Token, parser::ParserError};
+    if depth > 64 { return Err(ParserError::ParserError("Trino type nesting exceeds 64".into())); }
+    if parser.parse_keyword(Keyword::ARRAY) {
+        parser.expect_token(&Token::LParen)?;
+        let element = trino_cast_type(parser, depth + 1)?;
+        parser.expect_token(&Token::RParen)?;
+        return Ok(ast::DataType::Array(ast::ArrayElemTypeDef::Parenthesis(Box::new(element))));
+    }
+    if parser.parse_keyword(Keyword::MAP) {
+        parser.expect_token(&Token::LParen)?;
+        let key = trino_cast_type(parser, depth + 1)?;
+        parser.expect_token(&Token::Comma)?;
+        let value = trino_cast_type(parser, depth + 1)?;
+        parser.expect_token(&Token::RParen)?;
+        return Ok(ast::DataType::Map(Box::new(key), Box::new(value)));
+    }
+    if parser.parse_keyword(Keyword::ROW) {
+        parser.expect_token(&Token::LParen)?;
+        let fields = parser.parse_comma_separated(|parser| {
+            let name = parser.parse_identifier()?;
+            let ty = trino_cast_type(parser, depth + 1)?;
+            Ok(format!("{name} {ty}"))
+        })?;
+        parser.expect_token(&Token::RParen)?;
+        return Ok(ast::DataType::Custom(ast::ObjectName::from(vec![ast::Ident::new("ROW")]), fields));
+    }
+    parser.parse_data_type()
+}
+
 #[derive(Debug)]
 struct TrinoParser;
 impl ParserDialect for TrinoParser {
+    fn parse_prefix(&self, parser: &mut datafusion::sql::sqlparser::parser::Parser) -> Option<Result<ast::Expr, datafusion::sql::sqlparser::parser::ParserError>> {
+        use datafusion::sql::sqlparser::{keywords::Keyword, tokenizer::Token};
+        let kind = if parser.parse_keyword(Keyword::CAST) { ast::CastKind::Cast }
+            else if parser.parse_keyword(Keyword::TRY_CAST) { ast::CastKind::TryCast }
+            else { return None; };
+        Some((|| {
+            parser.expect_token(&Token::LParen)?;
+            let expr = parser.parse_expr()?;
+            parser.expect_keyword_is(Keyword::AS)?;
+            let data_type = trino_cast_type(parser, 0)?;
+            parser.expect_token(&Token::RParen)?;
+            Ok(ast::Expr::Cast { kind, expr: Box::new(expr), data_type, array: false, format: None })
+        })())
+    }
+    // sqlparser currently exposes parenthesized ARRAY/MAP types through its
+    // ClickHouse grammar. Trino uses the same type delimiters; keep the
+    // explicit Trino capability overrides below for expressions and tables.
+    fn dialect(&self) -> std::any::TypeId {
+        std::any::TypeId::of::<datafusion::sql::sqlparser::dialect::ClickHouseDialect>()
+    }
     fn is_identifier_start(&self, c: char) -> bool {
         GenericDialect {}.is_identifier_start(c)
     }
@@ -600,5 +655,31 @@ impl ParserDialect for TrinoParser {
     }
     fn supports_values_as_table_factor(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::*;
+
+    #[test]
+    fn nested_trino_cast_types_survive_template_and_final_sql_parsing() {
+        for ty in [
+            "ARRAY(VARCHAR)",
+            "MAP(VARCHAR, ARRAY(BIGINT))",
+            "ROW(a VARCHAR, b ARRAY(BIGINT))",
+            "ROW(\"a\" VARCHAR, \"b\" ARRAY(ROW(\"value\" DECIMAL(20,2))))",
+        ] {
+            let expr = super::super::functions::portable_template(
+                &format!("CAST(__arg0 AS {ty})"),
+                &[ast::Expr::Value(ast::Value::Null.into())],
+                SqlDialect::Custom(&TRINO),
+            ).unwrap();
+            let sql = TRINO.finalize_sql(format!("SELECT {expr}")).unwrap();
+            let statements = datafusion::sql::sqlparser::parser::Parser::parse_sql(&TrinoParser, &sql).unwrap();
+            assert_eq!(statements.len(), 1);
+            assert!(!sql.contains("ARRAY<"), "{sql}");
+            if ty.contains("\"value\"") { assert!(sql.contains("\"value\" DECIMAL("), "{sql}"); }
+        }
     }
 }

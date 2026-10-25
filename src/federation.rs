@@ -17,6 +17,42 @@ pub struct Engine {
     pub dialect: String,
 }
 
+/// A remote request adapter. It cannot execute relational SQL islands.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Source {
+    pub adapter: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointKind {
+    Engine(crate::execution::ExecutableEngine),
+    Source(String),
+}
+impl Engine {
+    /// Legacy registry entries may name request sources, but never gain SQL
+    /// execution capability. New schemas register these under `sources`.
+    pub fn kind(&self) -> Result<EndpointKind, String> {
+        if let Ok(engine) = crate::execution::ExecutableEngine::parse(&self.dialect) {
+            return Ok(EndpointKind::Engine(engine));
+        }
+        if crate::operations::resolve(&self.dialect)?.is_some() {
+            return Ok(EndpointKind::Source(self.dialect.clone()));
+        }
+        Err(format!(
+            "unsupported executable engine {:?}; expected duckdb or trino",
+            self.dialect
+        ))
+    }
+}
+pub(crate) fn endpoint_adapter<'a>(request: &'a CompileRequest, name: &str) -> Option<&'a str> {
+    request
+        .engines
+        .get(name)
+        .map(|e| e.dialect.as_str())
+        .or_else(|| request.sources.get(name).map(|s| s.adapter.as_str()))
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Transfer {
     pub source_engine: String,
@@ -51,16 +87,33 @@ pub struct TransferColumn {
 }
 
 pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
+    crate::execution::ExecutableEngine::parse(&request.dialect)?;
+    for (name, source) in &request.sources {
+        if name.is_empty() || request.engines.contains_key(name) {
+            return Err(format!("duplicate or empty source name `{name}`"));
+        }
+        if crate::operations::resolve(&source.adapter)?.is_none() {
+            return Err(format!(
+                "unknown remote source adapter `{}`",
+                source.adapter
+            ));
+        }
+    }
     let metadata_owners = request
         .source_metadata
         .iter()
         .flat_map(|source| {
-            source.options.get("engine").into_iter().chain(
-                source
-                    .indexes
-                    .iter()
-                    .filter_map(|index| index.options.get("engine")),
-            )
+            source
+                .options
+                .get("source")
+                .or_else(|| source.options.get("engine"))
+                .into_iter()
+                .chain(source.indexes.iter().filter_map(|index| {
+                    index
+                        .options
+                        .get("source")
+                        .or_else(|| index.options.get("engine"))
+                }))
         })
         .map(|owner| {
             owner
@@ -68,7 +121,7 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
                 .ok_or("source metadata engine must be a string")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if request.engines.is_empty() {
+    if request.engines.is_empty() && request.sources.is_empty() {
         if request.execution_engine.is_some()
             || request.tables.iter().any(|t| t.engine.is_some())
             || !metadata_owners.is_empty()
@@ -78,20 +131,15 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
         return Ok(());
     }
     for owner in metadata_owners {
-        if !request.engines.contains_key(owner) {
+        if endpoint_adapter(request, owner).is_none() {
             return Err(format!("unknown source metadata engine `{owner}`"));
         }
     }
     for (name, engine) in &request.engines {
-        if name.is_empty()
-            || (crate::execution::SqlDialect::resolve(&engine.dialect).is_err()
-                && crate::operations::resolve(&engine.dialect)?.is_none())
-        {
-            return Err(format!(
-                "invalid engine `{name}` or dialect `{}`",
-                engine.dialect
-            ));
+        if name.is_empty() {
+            return Err("empty engine name".into());
         }
+        engine.kind()?;
     }
     let target = request
         .execution_engine
@@ -118,7 +166,7 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
             return Err(format!("duplicate SQL table identity `{}`", table.name));
         }
         let engine = table.engine.as_ref().unwrap_or(target);
-        if !request.engines.contains_key(engine) {
+        if endpoint_adapter(request, engine).is_none() {
             return Err(format!(
                 "unknown engine `{engine}` for table `{}`",
                 table.name
@@ -200,11 +248,9 @@ pub(crate) fn route(
                 sql::SqlDialect::resolve(&request.dialect).map_err(|e| fail(e.to_string()))?;
             let explicit_owner = crate::operations::owner(&node).map_err(fail)?;
             if let Some(engine) = &explicit_owner {
-                let entry = request
-                    .engines
-                    .get(engine)
-                    .ok_or_else(|| fail(format!("unknown operation engine `{engine}`")))?;
-                if let Some(adapter) = crate::operations::resolve(&entry.dialect).map_err(fail)? {
+                let adapter_name = endpoint_adapter(request, engine)
+                    .ok_or_else(|| fail(format!("unknown operation source `{engine}`")))?;
+                if let Some(adapter) = crate::operations::resolve(adapter_name).map_err(fail)? {
                     let prepared = adapter.lower(&node).map_err(fail)?.ok_or_else(|| {
                         fail(format!("engine {engine} cannot lower relational operation"))
                     })?;
@@ -258,11 +304,9 @@ pub(crate) fn route(
                 .as_ref()
                 .or_else(|| target_owners.first())
                 .unwrap_or(target);
-            let entry = request
-                .engines
-                .get(engine)
-                .ok_or_else(|| fail(format!("unknown operation engine `{engine}`")))?;
-            if let Some(adapter) = crate::operations::resolve(&entry.dialect).map_err(fail)? {
+            let adapter_name = endpoint_adapter(request, engine)
+                .ok_or_else(|| fail(format!("unknown operation source `{engine}`")))?;
+            if let Some(adapter) = crate::operations::resolve(adapter_name).map_err(fail)? {
                 let prepared = adapter.lower(&node).map_err(fail)?.ok_or_else(|| {
                     fail(format!("engine {engine} cannot lower relational operation"))
                 })?;
@@ -278,8 +322,10 @@ pub(crate) fn route(
                 .map_err(fail)?;
                 return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
             }
-            let dialect = sql::SqlDialect::resolve(&request.engines[engine].dialect)
-                .map_err(|e| fail(e.to_string()))?;
+            let dialect = sql::SqlDialect::resolve(
+                endpoint_adapter(request, engine).ok_or_else(|| fail("unknown endpoint".into()))?,
+            )
+            .map_err(|e| fail(e.to_string()))?;
             let source_owners = placement
                 .source
                 .as_ref()
@@ -431,7 +477,10 @@ pub(crate) fn route(
             })?;
             if closed && sources.len() == 1 && !sources.contains(target) {
                 let source = sources.first().unwrap();
-                if let Some(adapter) = crate::operations::resolve(&request.engines[source].dialect)
+                if let Some(adapter) =
+                    crate::operations::resolve(endpoint_adapter(request, source).ok_or_else(
+                        || datafusion::common::DataFusionError::Plan("unknown endpoint".into()),
+                    )?)
                     .map_err(datafusion::common::DataFusionError::Plan)?
                 {
                     if let Some(prepared) = adapter
@@ -452,9 +501,12 @@ pub(crate) fn route(
                     }
                     return Ok(Transformed::no(node));
                 }
-                let dialect =
-                    crate::execution::SqlDialect::resolve(&request.engines[source].dialect)
-                        .map_err(|e| datafusion::common::DataFusionError::Plan(e.to_string()))?;
+                let dialect = crate::execution::SqlDialect::resolve(
+                    endpoint_adapter(request, source).ok_or_else(|| {
+                        datafusion::common::DataFusionError::Plan("unknown endpoint".into())
+                    })?,
+                )
+                .map_err(|e| datafusion::common::DataFusionError::Plan(e.to_string()))?;
                 let columns = node
                     .schema()
                     .fields()
@@ -614,7 +666,7 @@ fn route_request(
             return Err("request continuation must contain exactly one result leaf".into());
         }
     }
-    if prepared.template.adapter != request.engines[engine].dialect {
+    if prepared.template.adapter != endpoint_adapter(request, engine).ok_or("unknown source")? {
         return Err("request operation changed its owning adapter".into());
     }
     prepared.template.validate()?;
@@ -804,33 +856,74 @@ pub(crate) fn bind_region_batches(
     let parser_dialect = dialect.parser_dialect();
     let mut statements = Parser::new(parser_dialect.as_ref())
         .with_recursion_limit(1024)
-        .try_with_sql(sql).map_err(|e| e.to_string())?
-        .parse_statements().map_err(|e| e.to_string())?;
-    if statements.len() != 1 { return Err("binding requires exactly one query".into()); }
+        .try_with_sql(sql)
+        .map_err(|e| e.to_string())?
+        .parse_statements()
+        .map_err(|e| e.to_string())?;
+    if statements.len() != 1 {
+        return Err("binding requires exactly one query".into());
+    }
     let ast::Statement::Query(query) = &mut statements[0] else {
         return Err("binding requires a read query".into());
     };
-    let mut names = query.with.as_ref().map(|with| with.cte_tables.iter().map(|cte| cte.alias.name.value.clone()).collect::<std::collections::BTreeSet<_>>()).unwrap_or_default();
+    let mut names = query
+        .with
+        .as_ref()
+        .map(|with| {
+            with.cte_tables
+                .iter()
+                .map(|cte| cte.alias.name.value.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+        })
+        .unwrap_or_default();
     let mut bindings = Vec::with_capacity(inputs.len());
     for (index, (transfer, batches)) in inputs.iter().enumerate() {
-        if !names.insert(transfer.target_relation.clone()) { return Err("duplicate exchange binding".into()); }
+        if !names.insert(transfer.target_relation.clone()) {
+            return Err("duplicate exchange binding".into());
+        }
         let shared = inputs[..index].iter().find(|(previous, values)| {
             previous.columns.len() == transfer.columns.len()
-                && previous.columns.iter().zip(&transfer.columns).all(|(a, b)| a.data_type == b.data_type)
+                && previous
+                    .columns
+                    .iter()
+                    .zip(&transfer.columns)
+                    .all(|(a, b)| a.data_type == b.data_type)
                 && values.len() == batches.len()
-                && values.iter().zip(*batches).all(|(a, b)| a.num_rows() == b.num_rows() && a.columns() == b.columns())
+                && values
+                    .iter()
+                    .zip(*batches)
+                    .all(|(a, b)| a.num_rows() == b.num_rows() && a.columns() == b.columns())
         });
         if let Some((previous, _)) = shared {
             for batch in *batches {
                 for (column, field) in batch.columns().iter().zip(&transfer.columns) {
-                    if !field.nullable && column.null_count() != 0 { return Err("NULL in non-nullable exchange column".into()); }
+                    if !field.nullable && column.null_count() != 0 {
+                        return Err("NULL in non-nullable exchange column".into());
+                    }
                 }
             }
-            let columns = transfer.columns.iter().map(|column| dialect.quote_ident(&column.name)).collect::<Vec<_>>().join(", ");
-            let source = previous.columns.iter().map(|column| dialect.quote_ident(&column.name)).collect::<Vec<_>>().join(", ");
-            let sql = format!("WITH {} ({columns}) AS (SELECT {source} FROM {}) SELECT 1", dialect.quote_ident(&transfer.target_relation), dialect.quote_ident(&previous.target_relation));
-            let mut statements = Parser::parse_sql(parser_dialect.as_ref(), &sql).map_err(|error| error.to_string())?;
-            let ast::Statement::Query(query) = statements.remove(0) else { unreachable!() };
+            let columns = transfer
+                .columns
+                .iter()
+                .map(|column| dialect.quote_ident(&column.name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let source = previous
+                .columns
+                .iter()
+                .map(|column| dialect.quote_ident(&column.name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "WITH {} ({columns}) AS (SELECT {source} FROM {}) SELECT 1",
+                dialect.quote_ident(&transfer.target_relation),
+                dialect.quote_ident(&previous.target_relation)
+            );
+            let mut statements = Parser::parse_sql(parser_dialect.as_ref(), &sql)
+                .map_err(|error| error.to_string())?;
+            let ast::Statement::Query(query) = statements.remove(0) else {
+                unreachable!()
+            };
             bindings.push(query.with.unwrap().cte_tables.remove(0));
         } else {
             bindings.push(input_binding(dialect, transfer, batches)?);
@@ -840,7 +933,11 @@ pub(crate) fn bind_region_batches(
         bindings.append(&mut existing.cte_tables);
         existing.cte_tables = bindings;
     } else if !bindings.is_empty() {
-        query.with = Some(ast::With { with_token: ast::helpers::attached_token::AttachedToken::empty(), recursive: false, cte_tables: bindings });
+        query.with = Some(ast::With {
+            with_token: ast::helpers::attached_token::AttachedToken::empty(),
+            recursive: false,
+            cte_tables: bindings,
+        });
     }
     Ok(statements.remove(0).to_string())
 }
@@ -905,10 +1002,15 @@ fn input_binding(
         dialect.quote_ident(&transfer.target_relation)
     );
     let parser_dialect = dialect.parser_dialect();
-    let mut binding = Parser::parse_sql(parser_dialect.as_ref(), &prefix).map_err(|e| e.to_string())?;
-    let ast::Statement::Query(binding) = binding.remove(0) else { unreachable!() };
+    let mut binding =
+        Parser::parse_sql(parser_dialect.as_ref(), &prefix).map_err(|e| e.to_string())?;
+    let ast::Statement::Query(binding) = binding.remove(0) else {
+        unreachable!()
+    };
     let mut cte = binding.with.unwrap().cte_tables.remove(0);
-    dialect.rewrite_input_binding(&mut cte).map_err(|e| e.to_string())?;
+    dialect
+        .rewrite_input_binding(&mut cte)
+        .map_err(|e| e.to_string())?;
     Ok(cte)
 }
 
@@ -1170,9 +1272,47 @@ pub(crate) fn json_scalar(
 /// never imports data into database objects or changes the caller's transaction.
 #[async_trait::async_trait(?Send)]
 pub trait Session {
+    /// Shared connection identity across aliases/clones in a session registry.
+    /// Returning None treats this registry entry as independently owned.
+    fn concurrency_key(&self) -> Option<String> { None }
+
+    /// Whether another statement can run before this session’s stream finishes.
+    fn supports_concurrent_statements(&self) -> bool {
+        false
+    }
+
+    /// Stream a SQL island with typed input relations. Implementations must not
+    /// collect inputs or substitute rows into SQL text. Only DuckDB and Trino
+    /// may implement this executable-engine operation.
+    async fn query_stream(
+        &mut self,
+        _sql: &str,
+        _inputs: Vec<crate::execution::stream::InputRelation>,
+    ) -> Result<crate::execution::stream::BatchStream, String> {
+        Err("session does not implement streaming SQL execution".into())
+    }
+    /// Consume bounded batches of bound requests lazily. Remote sources implement
+    /// this operation; they are not SQL executable engines.
+    async fn execute_requests_stream(
+        &mut self,
+        _requests: RequestStream,
+        _columns: Vec<TransferColumn>,
+    ) -> Result<crate::execution::stream::BatchStream, String> {
+        Err("source does not implement streaming batched requests".into())
+    }
+    async fn query_requests_stream(
+        &mut self,
+        _queries: QueryStream,
+        _columns: Vec<TransferColumn>,
+    ) -> Result<crate::execution::stream::BatchStream, String> {
+        Err("engine does not implement streaming dependent SQL requests".into())
+    }
     fn dialect(&self) -> &str;
-    async fn query(&mut self, _sql: &str) -> Result<Vec<RecordBatch>, String> {
-        Err("session does not support SQL queries".into())
+    async fn query(&mut self, sql: &str) -> Result<Vec<RecordBatch>, String> {
+        self.query_stream(sql, vec![])
+            .await?
+            .collect_batches()
+            .await
     }
     async fn execute_request(
         &mut self,
@@ -1195,13 +1335,60 @@ pub trait Session {
     }
 }
 
+/// Request batches preserve per-input correlation encoded by the bound template.
+pub type RequestStream = std::pin::Pin<
+    Box<dyn futures::Stream<Item = Result<Vec<serde_json::Value>, String>> + Send + 'static>,
+>;
+pub type QueryStream =
+    std::pin::Pin<Box<dyn futures::Stream<Item = Result<String, String>> + Send + 'static>>;
+
+/// Terminal compatibility API. Intermediate islands always remain streams.
 pub async fn execute(
     plan: &CompiledSql,
     sessions: &mut BTreeMap<String, Box<dyn Session>>,
 ) -> Result<Vec<RecordBatch>, String> {
+    execute_stream(plan, sessions)
+        .await?
+        .collect_batches()
+        .await
+}
+
+#[derive(Debug, Clone)]
+pub struct ExchangeOptions {
+    pub request_batch_size: usize,
+    /// Explicit replay and same-connection reentrancy boundaries use disk IPC.
+    /// Independent single-consumer edges remain single-pass.
+    pub replay_directory: std::path::PathBuf,
+}
+impl Default for ExchangeOptions {
+    fn default() -> Self {
+        Self {
+            request_batch_size: 64,
+            replay_directory: std::env::temp_dir().join("orchiddb-exchanges"),
+        }
+    }
+}
+
+pub async fn execute_stream(
+    plan: &CompiledSql,
+    sessions: &mut BTreeMap<String, Box<dyn Session>>,
+) -> Result<crate::execution::stream::BatchStream, String> {
+    execute_stream_with_options(plan, sessions, &ExchangeOptions::default()).await
+}
+
+pub async fn execute_stream_with_options(
+    plan: &CompiledSql,
+    sessions: &mut BTreeMap<String, Box<dyn Session>>,
+    options: &ExchangeOptions,
+) -> Result<crate::execution::stream::BatchStream, String> {
+    use crate::execution::{ExecutableEngine, stream::BatchSource};
     if plan.version != 1 {
         return Err("unsupported compiled SQL version".into());
     }
+    if options.request_batch_size == 0 {
+        return Err("request batch size must be positive".into());
+    }
+    ExecutableEngine::parse(&plan.dialect)?;
     let target = plan
         .execution_engine
         .as_ref()
@@ -1211,133 +1398,326 @@ pub async fn execute(
             .iter()
             .map(|t| (&t.source_engine, &t.source_dialect)),
     ) {
-        let session = sessions
-            .get(id)
-            .ok_or_else(|| format!("missing engine `{id}`"))?;
-        if session.dialect() != dialect {
-            return Err(format!("dialect mismatch for engine `{id}`"));
-        }
-    }
-    for search in plan.transfers.iter().filter_map(|t| t.operation.as_ref()) {
         if sessions
-            .get(&search.engine)
-            .ok_or_else(|| format!("missing search engine `{}`", search.engine))?
+            .get(id)
+            .ok_or_else(|| format!("missing engine or source `{id}`"))?
             .dialect()
-            != search.template.dialect
+            != dialect
         {
-            return Err("operation engine dialect mismatch".into());
+            return Err(format!("adapter mismatch for `{id}`"));
         }
     }
+    // Fail before executing any source when a dependent target is missing.
     for transfer in &plan.transfers {
-        if let Some(operation) = &transfer.request {
+        if let Some(request) = &transfer.request {
             if transfer.operation.is_some() {
-                return Err("transfer cannot contain both SQL and request operations".into());
+                return Err("transfer cannot contain SQL and request operations".into());
             }
+            request.template.validate()?;
+            if request.input_columns.len() != request.template.parameters {
+                return Err("request parameter schema mismatch".into());
+            }
+            if sessions
+                .get(&request.engine)
+                .ok_or_else(|| format!("missing source `{}`", request.engine))?
+                .dialect()
+                != request.template.adapter
+            {
+                return Err("request source adapter mismatch".into());
+            }
+        }
+        if let Some(operation) = &transfer.operation {
+            ExecutableEngine::parse(&operation.template.dialect)?;
             if sessions
                 .get(&operation.engine)
                 .ok_or_else(|| format!("missing engine `{}`", operation.engine))?
                 .dialect()
-                != operation.template.adapter
+                != operation.template.dialect
             {
-                return Err("request operation engine adapter mismatch".into());
+                return Err("dependent SQL engine mismatch".into());
             }
-            operation.template.validate()?;
-            if operation.input_columns.len() != operation.template.parameters {
-                return Err("request operation parameter schema mismatch".into());
-            }
+        }
+        if !transfer.sql.is_empty() {
+            ExecutableEngine::parse(&transfer.source_dialect)?;
         }
     }
-    let mut sql = plan.sql.clone();
-    let mut completed: Vec<(&Transfer, Vec<RecordBatch>)> = vec![];
-    for transfer in &plan.transfers {
-        let mut input_sql = transfer.sql.clone();
-        if !input_sql.is_empty() {
-            for (dependency, batches) in &completed {
-                input_sql =
-                    bind_batches(&input_sql, &transfer.source_dialect, dependency, batches)?;
-            }
+    let mut uses = BTreeMap::<String, usize>::new();
+    for (sql, dialect) in plan
+        .transfers
+        .iter()
+        .map(|t| (t.sql.as_str(), t.source_dialect.as_str()))
+        .chain(std::iter::once((plan.sql.as_str(), plan.dialect.as_str())))
+    {
+        for name in relation_names(sql, dialect)? {
+            *uses.entry(name).or_default() += 1;
         }
-        let mut batches =
-            if let Some(operation) = transfer.request.as_ref().filter(|_| input_sql.is_empty()) {
-                let request = operation.template.bind(&[])?;
+    }
+    let connection_keys = sessions.iter().map(|(name, session)| {
+        (name.clone(), session.concurrency_key().map(|key| (true,key)).unwrap_or_else(|| (false,name.clone())))
+    }).collect::<BTreeMap<_,_>>();
+    let same_connection = |a: &str, b: &str| connection_keys[a] == connection_keys[b];
+    let mut completed = BTreeMap::<String, BatchSource>::new();
+    for (index, transfer) in plan.transfers.iter().enumerate() {
+        let reused_later = |endpoint: &str| {
+            same_connection(endpoint, target)
+                || plan.transfers[index + 1..].iter().any(|next| {
+                    same_connection(&next.source_engine, endpoint)
+                        || next.operation.as_ref().is_some_and(|op| same_connection(&op.engine, endpoint))
+                        || next.request.as_ref().is_some_and(|op| same_connection(&op.engine, endpoint))
+                })
+        };
+        let stream = if let Some(request) = transfer
+            .request
+            .as_ref()
+            .filter(|_| transfer.sql.is_empty())
+        {
+            let requests: RequestStream = Box::pin(futures::stream::iter([Ok(vec![
+                request.template.bind(&[])?,
+            ])]));
+            sessions
+                .get_mut(&request.engine)
+                .unwrap()
+                .execute_requests_stream(requests, transfer.columns.clone())
+                .await?
+        } else {
+            let inputs = streaming_inputs(&transfer.sql, &transfer.source_dialect, &completed)?;
+            let input = sessions
+                .get_mut(&transfer.source_engine)
+                .unwrap()
+                .query_stream(&transfer.sql, inputs)
+                .await?;
+            // A caller-owned connection cannot have two active result cursors.
+            // Drain only this explicit reentrancy boundary to bounded disk IPC.
+            let same_dependent = transfer
+                .operation
+                .as_ref()
+                .is_some_and(|op| same_connection(&op.engine, &transfer.source_engine));
+            let input = if !sessions[&transfer.source_engine].supports_concurrent_statements()
+                && (same_dependent || reused_later(&transfer.source_engine))
+            {
+                BatchSource::spool(input, &options.replay_directory)
+                    .await?
+                    .open()?
+            } else {
+                input
+            };
+            if let Some(request) = &transfer.request {
+                let requests =
+                    bind_request_stream(input, request.clone(), options.request_batch_size)?;
+                sessions
+                    .get_mut(&request.engine)
+                    .unwrap()
+                    .execute_requests_stream(requests, transfer.columns.clone())
+                    .await?
+            } else if let Some(operation) = &transfer.operation {
+                let queries = bind_query_stream(input, operation.clone())?;
                 sessions
                     .get_mut(&operation.engine)
                     .unwrap()
-                    .execute_request(&request, &transfer.columns)
+                    .query_requests_stream(queries, transfer.columns.clone())
                     .await?
             } else {
-                sessions
-                    .get_mut(&transfer.source_engine)
-                    .unwrap()
-                    .query(&input_sql)
-                    .await?
+                input
+            }
+        };
+        let stream = normalize_transfer_stream(stream, &transfer.columns)?;
+        // Replay is explicit and disk backed; never silently repeat remote work.
+        let dependent_reentry = transfer.operation.as_ref().is_some_and(|op| {
+            !sessions[&op.engine].supports_concurrent_statements() && reused_later(&op.engine)
+        });
+        let source =
+            if dependent_reentry || uses.get(&transfer.target_relation).copied().unwrap_or(0) > 1 {
+                BatchSource::spool(stream, &options.replay_directory).await?
+            } else {
+                BatchSource::once(stream)
             };
-        if let Some(operation) = transfer.request.as_ref().filter(|_| !input_sql.is_empty()) {
-            let types = operation
-                .input_columns
-                .iter()
-                .map(|c| crate::compiler::data_type(&c.data_type))
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut requests = vec![];
-            for batch in batches {
-                if batch.num_columns() != types.len() {
-                    return Err("request source row width mismatch".into());
-                }
-                for row in 0..batch.num_rows() {
-                    let values = batch
-                        .columns()
-                        .iter()
-                        .zip(&types)
-                        .map(|(array, ty)| {
-                            let value = datafusion::common::ScalarValue::try_from_array(
-                                array.as_ref(),
-                                row,
-                            )
-                            .map_err(|e| e.to_string())?;
-                            exchange_scalar(value, ty)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    requests.push(operation.template.bind(&values)?);
-                }
-            }
-            let results = sessions
-                .get_mut(&operation.engine)
-                .unwrap()
-                .execute_requests(&requests, &transfer.columns)
-                .await?;
-            if results.len() != requests.len() {
-                return Err("request batch result count mismatch".into());
-            }
-            batches = results.into_iter().flatten().collect();
+        if completed
+            .insert(transfer.target_relation.clone(), source)
+            .is_some()
+        {
+            return Err("duplicate transfer relation".into());
         }
-        if let Some(search) = &transfer.operation {
-            let mut output = vec![];
-            for batch in batches {
-                for row in 0..batch.num_rows() {
-                    let values = batch
-                        .columns()
-                        .iter()
-                        .map(|a| {
-                            datafusion::common::ScalarValue::try_from_array(a.as_ref(), row)
-                                .map_err(|e| e.to_string())
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let query = search.template.bind(&values).map_err(|e| e.to_string())?;
-                    output.extend(
-                        sessions
-                            .get_mut(&search.engine)
-                            .unwrap()
-                            .query(&query)
-                            .await?,
-                    );
-                }
-            }
-            batches = output;
-        }
-        sql = bind_batches(&sql, &plan.dialect, transfer, &batches)?;
-        completed.push((transfer, batches));
     }
-    sessions.get_mut(target).unwrap().query(&sql).await
+    let inputs = streaming_inputs(&plan.sql, &plan.dialect, &completed)?;
+    sessions
+        .get_mut(target)
+        .unwrap()
+        .query_stream(&plan.sql, inputs)
+        .await
+}
+
+fn relation_names(sql: &str, dialect: &str) -> Result<Vec<String>, String> {
+    if sql.is_empty() {
+        return Ok(vec![]);
+    }
+    let dialect = crate::execution::SqlDialect::resolve(dialect).map_err(|e| e.to_string())?.parser_dialect();
+    let statements = Parser::new(dialect.as_ref())
+        .with_recursion_limit(1024)
+        .try_with_sql(sql)
+        .map_err(|e| e.to_string())?
+        .parse_statements()
+        .map_err(|e| e.to_string())?;
+    let mut names = Vec::new();
+    let _ = ast::visit_relations(&statements, |relation| {
+        if relation.0.len() == 1 {
+            if let Some(name) = relation.0[0].as_ident() {
+                names.push(name.value.clone());
+            }
+        }
+        std::ops::ControlFlow::<()>::Continue(())
+    });
+    Ok(names)
+}
+fn streaming_inputs(
+    sql: &str,
+    dialect: &str,
+    completed: &BTreeMap<String, crate::execution::stream::BatchSource>,
+) -> Result<Vec<crate::execution::stream::InputRelation>, String> {
+    let names = relation_names(sql, dialect)?.into_iter().collect::<BTreeSet<_>>();
+    Ok(names
+        .into_iter()
+        .filter_map(|name| {
+            completed
+                .get(&name)
+                .map(|source| crate::execution::stream::InputRelation {
+                    name,
+                    source: source.clone(),
+                })
+        })
+        .collect())
+}
+pub(crate) fn transfer_schema(
+    columns: &[TransferColumn],
+) -> Result<arrow::datatypes::SchemaRef, String> {
+    Ok(std::sync::Arc::new(arrow::datatypes::Schema::new(
+        columns
+            .iter()
+            .map(|c| {
+                Ok(arrow::datatypes::Field::new(
+                    &c.name,
+                    crate::compiler::data_type(&c.data_type)?,
+                    c.nullable,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+    )))
+}
+pub(crate) fn normalize_transfer_stream(
+    stream: crate::execution::stream::BatchStream,
+    columns: &[TransferColumn],
+) -> Result<crate::execution::stream::BatchStream, String> {
+    use futures::StreamExt;
+    let schema = transfer_schema(columns)?;
+    let output = schema.clone();
+    Ok(crate::execution::stream::BatchStream::new(
+        output,
+        stream.map(move |batch| {
+            let batch = batch?;
+            if batch.num_columns() != schema.fields().len() {
+                return Err("exchange column count mismatch".into());
+            }
+            let arrays = batch
+                .columns()
+                .iter()
+                .zip(schema.fields())
+                .map(|(a, f)| {
+                    if a.data_type() == f.data_type() {
+                        Ok(a.clone())
+                    } else {
+                        let cast =
+                            arrow::compute::cast(a, f.data_type()).map_err(|e| e.to_string())?;
+                        let restored = arrow::compute::cast(&cast, a.data_type())
+                            .map_err(|e| e.to_string())?;
+                        if restored.as_ref() != a.as_ref() {
+                            return Err(format!(
+                                "exchange conversion would lose information in column {}",
+                                f.name()
+                            ));
+                        }
+                        Ok(cast)
+                    }
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            RecordBatch::try_new_with_options(
+                schema.clone(),
+                arrays,
+                &arrow::record_batch::RecordBatchOptions::new()
+                    .with_row_count(Some(batch.num_rows())),
+            )
+            .map_err(|e| e.to_string())
+        }),
+    ))
+}
+fn bound_rows(
+    input: crate::execution::stream::BatchStream,
+    columns: Vec<TransferColumn>,
+) -> Result<
+    impl futures::Stream<Item = Result<Vec<datafusion::common::ScalarValue>, String>> + Send + 'static,
+    String,
+> {
+    use futures::StreamExt;
+    let types = columns
+        .iter()
+        .map(|c| crate::compiler::data_type(&c.data_type))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(futures::stream::try_unfold(
+        (input, None::<RecordBatch>, 0usize, types),
+        |(mut input, mut batch, mut row, types)| async move {
+            loop {
+                if let Some(current) = &batch {
+                    if row < current.num_rows() {
+                        if current.num_columns() != types.len() {
+                            return Err("request source row width mismatch".into());
+                        }
+                        let values = current
+                            .columns()
+                            .iter()
+                            .zip(&types)
+                            .map(|(a, t)| {
+                                exchange_scalar(
+                                    datafusion::common::ScalarValue::try_from_array(
+                                        a.as_ref(),
+                                        row,
+                                    )
+                                    .map_err(|e| e.to_string())?,
+                                    t,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        row += 1;
+                        return Ok(Some((values, (input, batch, row, types))));
+                    }
+                }
+                batch = match input.next().await {
+                    Some(batch) => Some(batch?),
+                    None => return Ok(None),
+                };
+                row = 0;
+            }
+        },
+    ))
+}
+fn bind_request_stream(
+    input: crate::execution::stream::BatchStream,
+    operation: RequestOperation,
+    batch_size: usize,
+) -> Result<RequestStream, String> {
+    use futures::StreamExt;
+    let rows = Box::pin(bound_rows(input, operation.input_columns)?);
+    Ok(Box::pin(
+        rows.map(move |values| operation.template.bind(&values?))
+            .chunks(batch_size)
+            .map(|batch| batch.into_iter().collect()),
+    ))
+}
+fn bind_query_stream(
+    input: crate::execution::stream::BatchStream,
+    operation: DependentOperation,
+) -> Result<QueryStream, String> {
+    use futures::StreamExt;
+    Ok(Box::pin(bound_rows(input, operation.input_columns)?.map(
+        move |values| operation.template.bind(&values?).map_err(|e| e.to_string()),
+    )))
 }
 
 /// Lossless JSON representation used inside PostgreSQL child-list cells.
@@ -1452,6 +1832,12 @@ fn exchange_scalar(
 
 #[cfg(test)]
 mod audit_regressions {
+    #[test]
+    fn exchange_discovery_preserves_trino_compound_casts() {
+        let sql = "SELECT CAST(xs AS ARRAY(ROW(k BIGINT, v MAP(VARCHAR, BIGINT)))) FROM incoming";
+        assert_eq!(super::relation_names(sql, "trino").unwrap(), vec!["incoming"]);
+    }
+
     use super::json_scalar;
     use arrow::datatypes::{DataType, Field};
     use datafusion::common::ScalarValue;
@@ -1498,53 +1884,7 @@ mod audit_regressions {
             assert_eq!(json_scalar(&encoded, &ty).unwrap(), value);
         }
     }
-    #[cfg(feature = "postgres")]
-    #[test]
-    fn postgres_nested_json_exchange_round_trips_document_and_sql_null() {
-        use crate::ir::{
-            functions::domain,
-            rel::sql::{
-                self,
-                region::{PostgresRegionSession, RegionSession},
-            },
-        };
-        let Ok(url) = std::env::var("GRAPH_PG_URL") else {
-            return;
-        };
-        let inner = ScalarValue::List(ScalarValue::new_list(
-            &[
-                domain::json_scalar("null").unwrap(),
-                ScalarValue::try_from(&domain::json_type()).unwrap(),
-                domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap(),
-            ],
-            &domain::json_type(),
-            true,
-        ));
-        let outer = ScalarValue::List(ScalarValue::new_list(
-            &[
-                inner.clone(),
-                ScalarValue::try_from(&inner.data_type()).unwrap(),
-            ],
-            &inner.data_type(),
-            true,
-        ));
-        let literal =
-            sql::exchange_literal(outer.clone(), outer.data_type(), sql::SqlDialect::Postgres)
-                .unwrap();
-        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new(
-            "value",
-            outer.data_type(),
-            true,
-        )]));
-        let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-        let output = PostgresRegionSession::new(client)
-            .query(&format!("SELECT {literal} AS value"), schema)
-            .unwrap();
-        assert_eq!(
-            ScalarValue::try_from_array(output.column(0), 0).unwrap(),
-            outer
-        );
-    }
+
     #[test]
     fn audit_large_binary_decodes_bytes() {
         for (input, expected) in [

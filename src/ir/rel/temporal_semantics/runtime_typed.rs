@@ -421,22 +421,6 @@ pub(in crate::ir::rel) fn lower(
     {
         return constructor(context, plan, name, args);
     }
-    if let IrExpr::Call { name, args } = expr
-        && args.len() == 2
-    {
-        let op = match name.as_str() {
-            "cypher_eq" => Some(BinaryOp::Eq),
-            "cypher_neq" => Some(BinaryOp::Neq),
-            "cypher_lt" => Some(BinaryOp::Lt),
-            "cypher_lte" => Some(BinaryOp::Lte),
-            "cypher_gt" => Some(BinaryOp::Gt),
-            "cypher_gte" => Some(BinaryOp::Gte),
-            _ => None,
-        };
-        if let Some(op) = op {
-            return native_timestamp_comparison(context, plan, op, &args[0], &args[1]);
-        }
-    }
     if let IrExpr::Binary { op, lhs, rhs } = expr {
         return native_timestamp_comparison(context, plan, *op, lhs, rhs)
             .or_else(|| arithmetic(context, plan, *op, lhs, rhs));
@@ -512,19 +496,22 @@ pub(in crate::ir::rel) fn lower(
 fn native_timestamp_comparison(
     context: &LoweringContext<'_>,
     plan: &LogicalPlan,
-    mut op: BinaryOp,
+    op: BinaryOp,
     lhs: &IrExpr,
     rhs: &IrExpr,
 ) -> Option<Expr> {
+    if !matches!(op, BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte) { return None; }
+    native_timestamp_comparison_bound(plan, op, operand(context, plan, lhs)?, operand(context, plan, rhs)?)
+}
+
+/// Compare already bound operands without repeating semantic implementation selection.
+pub(in crate::ir::rel) fn native_timestamp_comparison_bound(
+    plan: &LogicalPlan,
+    mut op: BinaryOp,
+    mut column: Expr,
+    mut constant: Expr,
+) -> Option<Expr> {
     use arrow::datatypes::TimeUnit;
-    if !matches!(
-        op,
-        BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte
-    ) {
-        return None;
-    }
-    let mut column = operand(context, plan, lhs)?;
-    let mut constant = operand(context, plan, rhs)?;
     if !matches!(
         column.get_type(plan.schema()).ok()?,
         DataType::Timestamp(..)

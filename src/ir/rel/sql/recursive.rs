@@ -59,6 +59,16 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         deps.extend(referenced_ctes(&cte.recursive_term, &names));
         deps.remove(&cte.name);
         let static_sql = unparse_one(&cte.static_term, &unparser, dialect, repair_scopes)?;
+        let static_sql = if dialect.name() == "trino" {
+            // Trino fixes recursive output types from the base term. Literals
+            // otherwise infer VARCHAR(n), INTEGER or narrow array elements,
+            // although the compiler's recursive schema is wider.
+            let columns = cte.static_term.schema().fields().iter().map(|field| {
+                let column = dialect.quote_ident(field.name());
+                Ok(format!("CAST({column} AS {}) AS {column}", dialect.sql_type(field.data_type())?))
+            }).collect::<SqlResult<Vec<_>>>()?;
+            format!("SELECT {} FROM ({static_sql}) AS __orchid_recursive_base", columns.join(", "))
+        } else { static_sql };
         let recursive_sql = unparse_one(&cte.recursive_term, &unparser, dialect, repair_scopes)?;
         let union = if cte.is_distinct {
             "UNION"
@@ -69,8 +79,9 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
             cte.name.clone(),
             deps,
             format!(
-                "{} AS (\n  {static_sql}\n  {union}\n  {recursive_sql}\n)",
-                dialect.quote_ident(&cte.name)
+                "{}{} AS (\n  {static_sql}\n  {union}\n  {recursive_sql}\n)",
+                dialect.quote_ident(&cte.name),
+                cte_columns(&cte.static_term, dialect, has_recursive)
             ),
         ));
     }
@@ -91,7 +102,7 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         pending.push((
             cte.name.clone(),
             deps,
-            format!("{} AS{materialized} (\n  {term_sql}\n)", dialect.quote_ident(&cte.name)),
+            format!("{}{} AS{materialized} (\n  {term_sql}\n)", dialect.quote_ident(&cte.name), cte_columns(&cte.term, dialect, has_recursive)),
         ));
     }
     let mut definitions = Vec::with_capacity(pending.len());
@@ -533,6 +544,14 @@ fn hoist_operator(
     Ok(Transformed::yes(LogicalPlan::TableScan(scan)))
 }
 
+/// Trino requires aliases on every CTE in a recursive WITH clause.
+fn cte_columns(plan: &LogicalPlan, dialect: SqlDialect, recursive: bool) -> String {
+    if dialect.name() != "trino" || !recursive { return String::new(); }
+    format!(" ({})", plan.schema().fields().iter()
+        .map(|field| dialect.quote_ident(field.name()).to_string())
+        .collect::<Vec<_>>().join(", "))
+}
+
 /// Replace only providers created by range lowering, never user table names.
 fn prepare_ranges(plan: &LogicalPlan, statement: &mut datafusion::sql::sqlparser::ast::Statement, dialect: SqlDialect) -> SqlResult<()> {
     use datafusion::sql::sqlparser::{ast, dialect::GenericDialect, parser::Parser};
@@ -542,7 +561,18 @@ fn prepare_ranges(plan: &LogicalPlan, statement: &mut datafusion::sql::sqlparser
         if let LogicalPlan::TableScan(scan) = node {
             if let Ok(provider) = datafusion::datasource::source_as_provider(&scan.source) {
                 if let Some(range) = provider.as_any().downcast_ref::<super::super::range::IntegerRange>() {
-                    let sql = format!("SELECT * FROM generate_series({}, {}, {}) AS {}({})", range.start, range.stop, range.step,
+                    let generator = if dialect.name() == "trino" {
+                        if (range.step > 0 && range.start > range.stop) || (range.step < 0 && range.start < range.stop) {
+                            "(SELECT CAST(NULL AS BIGINT) WHERE FALSE)".to_string()
+                        } else {
+                            // The table function streams partitions without the
+                            // scalar sequence() array length/memory restriction.
+                            format!("TABLE(sequence(start => {}, stop => {}, step => {}))", range.start, range.stop, range.step)
+                        }
+                    } else {
+                        format!("generate_series({}, {}, {})", range.start, range.stop, range.step)
+                    };
+                    let sql = format!("SELECT * FROM {generator} AS {}({})",
                         dialect.quote_ident(scan.table_name.table()), dialect.quote_ident(&range.column));
                     let mut parsed = Parser::parse_sql(&GenericDialect, &sql).map_err(|error| datafusion::common::DataFusionError::Plan(error.to_string()))?;
                     if let ast::Statement::Query(query) = parsed.remove(0) {
@@ -561,7 +591,7 @@ fn prepare_ranges(plan: &LogicalPlan, statement: &mut datafusion::sql::sqlparser
         fn post_visit_table_factor(&mut self, factor: &mut ast::TableFactor) -> ControlFlow<()> {
             if let ast::TableFactor::Table { name, alias, .. } = factor {
                 if let Some(mut replacement) = name.0.last().and_then(|part| part.as_ident()).and_then(|id| self.0.get(&id.value)).cloned() {
-                    if let (Some(alias), ast::TableFactor::Table { alias: target, .. }) = (alias, &mut replacement) {
+                    if let (Some(alias), ast::TableFactor::Table { alias: target, .. } | ast::TableFactor::UNNEST { alias: target, .. } | ast::TableFactor::TableFunction { alias: target, .. } | ast::TableFactor::Derived { alias: target, .. }) = (alias, &mut replacement) {
                         if let Some(target) = target { target.name = alias.name.clone(); }
                     }
                     *factor = replacement;

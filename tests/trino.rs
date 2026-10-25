@@ -222,6 +222,9 @@ async fn iceberg_vector_and_observability_execution() {
 #[tokio::test]
 async fn runtime_conformance() {
     let cases = [
+        ("UNWIND range(1, 100001) AS n RETURN count(*) AS result", json!([100001])),
+        ("UNWIND range(3, 1, -1) AS n RETURN n AS result ORDER BY result", json!([1, 2, 3])),
+        ("UNWIND range(3, 1, 1) AS n RETURN count(*) AS result", json!([0])),
         ("MATCH (p:Person) RETURN sum(p.age) AS result", json!([47])),
         (
             "MATCH (p:Person) RETURN avg(p.age) AS result",
@@ -474,5 +477,25 @@ async fn computed_retrieval_edge_execution() {
             execute(result["sql"].as_str().unwrap()),
             vec![json!({"title":"Gardening","score":0.0})]
         );
+    }
+}
+
+#[tokio::test]
+async fn recursive_paths_preserve_declared_base_types() {
+    let request = json!({"version":1,"dialect":"trino","language":"cypher",
+        "query":"MATCH (a:Person {name:'A'})-[:R*]->(b) RETURN b.name AS name ORDER BY name",
+        "tables":[
+            {"name":"nodes","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]},
+            {"name":"edges","columns":[{"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"}]}
+        ],
+        "nodes":[{"label":"Person","table":"nodes","id":"id","properties":{"name":"name"}}],
+        "edges":[{"label":"R","table":"edges","id":"id","source":"src","target":"dst","source_label":"Person","target_label":"Person"}]
+    });
+    let result: Value = serde_json::from_str(&compile_json(&request.to_string()).await.unwrap()).unwrap();
+    if std::env::var_os("ORCHIDDB_TEST_TRINO").is_some() {
+        let sql = result["sql"].as_str().unwrap();
+        let body = sql.strip_prefix("WITH RECURSIVE ").expect("recursive CTE");
+        let sql = format!("WITH RECURSIVE nodes(id,name) AS (VALUES (BIGINT '1','A'),(BIGINT '2','B'),(BIGINT '3','C')), edges(id,src,dst) AS (VALUES (BIGINT '1',BIGINT '1',BIGINT '2'),(BIGINT '2',BIGINT '2',BIGINT '3')), {body}");
+        assert_eq!(execute(&sql), vec![json!({"name":"B"}),json!({"name":"C"})]);
     }
 }

@@ -11,11 +11,16 @@ impl LoweringContext<'_> {
             return self.lower_node(&replacement);
         }
         use Node::*;
-        if self.options.language_functions && self.language == Language::Cypher {
+        if self.options.language_functions && self.language == Language::Cypher
+            && !self.options.native_values
+            && self.options.rule_context.profile.cypher_aggregates != crate::ir::rules::CypherAggregatePolicy::SqlNative
+        {
             // These need a lossless heterogeneous aggregate representation
-            // before the equality fence can be lifted.
+            // before the equality fence can be lifted. Native value aggregates
+            // already carry that representation. Engine functions explicitly
+            // use their host aggregate semantics, including SQL DISTINCT.
             if matches!(node,
-                GraphAggregate { aggs, .. } if aggs.iter().any(|a| a.distinct && !matches!(a.kind, AggKind::CountDistinct | AggKind::CollectNonNull))) {
+                GraphAggregate { aggs, .. } if aggs.iter().any(|a| a.distinct && !matches!(a.kind, AggKind::CountDistinct | AggKind::CollectNonNull | AggKind::EngineFunction))) {
                 return Err(RelError::Unsupported("Cypher distinct aggregate requires native values".into()));
             }
         }
@@ -263,11 +268,16 @@ impl LoweringContext<'_> {
                 // COLLECT observes incoming ORDER BY even when its sort keys
                 // are projected away. Record that ordering once, before the
                 // aggregate, and share it across all collected expressions.
-                let collect_ordinal = if self.language == Language::Cypher
+                // Floating sum/mean also observe traversal encounter order:
+                // the language helper folds values serially, so an unordered
+                // SQL array aggregate can change its last bits.
+                let native_ordered_collect = self.options.native_values && self.language == Language::Gremlin
+                    && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Sum | AggKind::Avg));
+                let collect_ordinal = if native_ordered_collect || (self.language == Language::Cypher
                     && self.options.rule_context.profile.cypher_aggregates != crate::ir::rules::CypherAggregatePolicy::SqlNative
                     && !self.options.native_values
                     && aggs.iter().any(|agg| !self.unordered_collects.contains(&(agg as *const AggCall as usize)) && !compact_collections.contains_key(&agg.alias) && crate::ir::rules::aggregate::CollectionContract::for_aggregate(agg)
-                        .is_some_and(|contract| contract.order == crate::ir::rules::aggregate::CollectionOrder::PreserveInput))
+                        .is_some_and(|contract| contract.order == crate::ir::rules::aggregate::CollectionOrder::PreserveInput)))
                 {
                     let ordinal = unique_internal_alias(&input.plan, &BTreeSet::new(), "__cypher_collect_ordinal");
                     let numbered = with_distinct_ordinal(input.plan.clone(), &ordinal)?;
@@ -424,7 +434,7 @@ impl LoweringContext<'_> {
                             && let Some(arg)=&agg.arg {
                             let lowered=self.lower_expr(&input.plan,arg)?;
                             if self.language==Language::Gremlin || matches!(agg.kind, AggKind::CollectNonNull | AggKind::PercentileCont | AggKind::PercentileDisc) || matches!(&lowered,Expr::Literal(v,_) if v.is_null()) || native_values::is_value(&lowered.get_type(input.plan.schema())?) {
-                                return Ok(native_values::aggregate_expr(agg,lowered,self.language==Language::Cypher)?.alias(&agg.alias));
+                                return Ok(native_values::aggregate_expr(agg,lowered,self.language==Language::Cypher,collect_ordinal.as_deref())?.alias(&agg.alias));
                             }
                         }
                         let expr = match agg.kind {
@@ -435,7 +445,8 @@ impl LoweringContext<'_> {
                             | AggKind::PercentileDisc => {
                                 self.lower_engine_aggregate(&input.plan, agg)?
                             }
-                            AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
+                            AggKind::CountBulk => super::aggregates::count_input_bulk(&input.plan, agg.arg.as_ref().map(|arg| self.lower_count_operand(&input.plan, arg)).transpose()?),
+                            AggKind::CountRows => match &agg.arg {
                                 Some(arg) => df_count(self.lower_count_operand(&input.plan, arg)?),
                                 None => count_input_rows(&input.plan),
                             },
@@ -661,7 +672,17 @@ impl LoweringContext<'_> {
                 }
                 let mut sorts = Vec::new();
                 for key in keys {
-                    sorts.extend(self.sort_exprs(&input.plan, key)?);
+                    match self.sort_exprs(&input.plan, key) {
+                        Ok(expressions) => sorts.extend(expressions),
+                        Err(_) if self.options.native_values
+                            && matches!(self.language, Language::Cypher | Language::Gremlin)
+                            && temporal_semantics::needs_temporal_semantics(&input.plan, &key.expr) => {
+                            // Mixed temporal domains need the language comparator;
+                            // schema-declared temporal kinds retain native SQL keys.
+                            return self.native_sort(input, keys);
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
                 let plan = LogicalPlanBuilder::from(input.plan.clone())
                     .sort(sorts)?
@@ -733,8 +754,10 @@ impl LoweringContext<'_> {
                     fetch,
                     tail,
                 } = slice;
-                if tail.is_some() {
-                    return Err(RelError::Unsupported("tail slice".into()));
+                if let Some(tail) = tail {
+                    let plan = tail_limit(input.plan.clone(), *tail, self.scan_counter)?;
+                    self.scan_counter += 1;
+                    return Ok(input.with_plan(plan));
                 }
                 let correlation_keys = apply_correlation_key_columns(&input.plan);
                 let plan = if pure && *fetch == Some(0) {

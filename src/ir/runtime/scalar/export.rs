@@ -32,6 +32,10 @@ fn float(value: f64) -> Json {
 }
 fn encode(value: &Value) -> IrResult<Json> {
     Ok(match value {
+        Value::Scalar(scalar) => {
+            let value = export_scalar(scalar).ok_or_else(|| error(format!("Unsupported GraphSON property value: {value:?}")))?;
+            encode(&value)?
+        }
         Value::Null => Json::Null,
         Value::Bool(v) => json!(v),
         Value::String(v) => json!(v),
@@ -91,6 +95,27 @@ fn encode(value: &Value) -> IrResult<Json> {
         }
     })
 }
+fn export_scalar(scalar: &datafusion::common::ScalarValue) -> Option<Value> {
+    // Identity columns retain their declared Arrow widths through SQL islands.
+    // GraphSON uses a distinct type tag for INTEGER and BIGINT.
+    use datafusion::common::ScalarValue;
+    if scalar.is_null() { return Some(Value::Null); }
+    let items = match scalar {
+        ScalarValue::List(array) => Some(array.value(0)),
+        ScalarValue::LargeList(array) => Some(array.value(0)),
+        ScalarValue::FixedSizeList(array) => Some(array.value(0)),
+        _ => None,
+    };
+    if let Some(items) = items {
+        return (0..items.len()).map(|row| export_scalar(&ScalarValue::try_from_array(items.as_ref(), row).ok()?))
+            .collect::<Option<Vec<_>>>().map(Value::List);
+    }
+    match scalar {
+        datafusion::common::ScalarValue::Int64(Some(value)) => Some(Value::Long(*value)),
+        datafusion::common::ScalarValue::Dictionary(_, value) => export_scalar(value),
+        scalar => crate::ir::value::scalar_semantic_value(scalar),
+    }
+}
 fn property_map(graph: &PropertyGraph, owner: &Value) -> IrResult<Json> {
     let mut properties = Map::new();
     for property in graph.properties(owner, &[]) {
@@ -124,7 +149,12 @@ fn validate_graphml(
             }
             _ => continue,
         };
-        let kind = std::mem::discriminant(value.as_ref());
+        let normalized;
+        let value = if let Value::Scalar(scalar) = value.as_ref() {
+            normalized = export_scalar(scalar).ok_or_else(|| error("Unsupported GraphML scalar"))?;
+            &normalized
+        } else { value.as_ref() };
+        let kind = std::mem::discriminant(value);
         if types
             .insert((matches!(owner, Value::Edge { .. }), key.clone()), kind)
             .is_some_and(|previous| previous != kind)
@@ -324,4 +354,19 @@ pub(crate) fn write(graph: &PropertyGraph, path: &str, writer: &str) -> IrResult
     std::fs::rename(&output.path, destination)
         .map_err(|e| error(format!("Cannot replace export destination: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod scalar_export_tests {
+    use super::*;
+    use datafusion::common::ScalarValue;
+
+    #[test]
+    fn mapped_scalar_identities_keep_graphson_numeric_widths() {
+        assert_eq!(encode(&Value::Scalar(ScalarValue::Int32(Some(1)))).unwrap(), typed("g:Int32", json!(1)));
+        assert_eq!(encode(&Value::Scalar(ScalarValue::Int64(Some(i64::MAX)))).unwrap(), typed("g:Int64", json!(i64::MAX)));
+        assert_eq!(encode(&Value::Scalar(ScalarValue::Utf8(Some("key".into())))).unwrap(), json!("key"));
+        let list = ScalarValue::List(ScalarValue::new_list(&[ScalarValue::Int64(Some(i64::MAX))], &arrow::datatypes::DataType::Int64, true));
+        assert_eq!(encode(&Value::Scalar(list)).unwrap(), typed("g:List", json!([typed("g:Int64", json!(i64::MAX))])));
+    }
 }

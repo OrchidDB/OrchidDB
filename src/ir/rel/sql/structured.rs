@@ -236,18 +236,11 @@ pub(super) fn literal_expr(value: &ScalarValue, dialect: SqlDialect) -> SqlResul
     sql.hash(&mut hash);
     value.data_type().hash(&mut hash);
     let name = format!("__portable_structured_literal_{:x}", hash.finish());
-    let captured = value.clone();
-    let native = datafusion::logical_expr::create_udf(
-        &name,
-        vec![],
-        value.data_type(),
-        datafusion::logical_expr::Volatility::Immutable,
-        Arc::new(move |_| {
-            Ok(datafusion::logical_expr::ColumnarValue::Scalar(
-                captured.clone(),
-            ))
-        }),
-    );
+    let native = datafusion::logical_expr::ScalarUDF::from(StructuredLiteral {
+        name: name.clone(),
+        value: value.clone(),
+        signature: datafusion::logical_expr::Signature::exact(vec![], datafusion::logical_expr::Volatility::Immutable),
+    });
     Ok(LogicalFunction::new(
         name,
         Arc::new(native),
@@ -261,4 +254,39 @@ pub(super) fn literal_expr(value: &ScalarValue, dialect: SqlDialect) -> SqlResul
     )
     .into_udf()
     .call(vec![]))
+}
+
+// Structural identity matters here: cloned SQL islands must share one
+// occurrence-numbering CTE. Closure-backed UDFs compare their allocation
+// addresses, making identical constant literals appear different to the
+// compiler and independently evaluating otherwise shared ROW_NUMBER inputs.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct StructuredLiteral {
+    name: String,
+    value: ScalarValue,
+    signature: datafusion::logical_expr::Signature,
+}
+impl datafusion::logical_expr::ScalarUDFImpl for StructuredLiteral {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn name(&self) -> &str { &self.name }
+    fn signature(&self) -> &datafusion::logical_expr::Signature { &self.signature }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> { Ok(self.value.data_type()) }
+    fn invoke_with_args(&self, _: datafusion::logical_expr::ScalarFunctionArgs) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        Ok(datafusion::logical_expr::ColumnarValue::Scalar(self.value.clone()))
+    }
+}
+
+#[cfg(test)]
+mod literal_identity_tests {
+    use super::*;
+    #[test]
+    fn separately_lowered_structured_constants_keep_semantic_function_identity() {
+        let value = ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(1))], &DataType::Int64);
+        let value = ScalarValue::List(value);
+        let first = literal_expr(&value, SqlDialect::DuckDb).unwrap();
+        let second = literal_expr(&value, SqlDialect::DuckDb).unwrap();
+        assert_eq!(first, second);
+        let different = ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(2))], &DataType::Int64));
+        assert_ne!(first, literal_expr(&different, SqlDialect::DuckDb).unwrap());
+    }
 }

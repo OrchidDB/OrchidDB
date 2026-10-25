@@ -170,7 +170,8 @@ impl SqlDialect {
     pub fn supports_scalar_function(self, name: &str) -> bool {
         match self {
             Self::Custom(adapter) => adapter.supports_scalar_function(name),
-            Self::DuckDb | Self::Postgres => name.starts_with("__orchiddb_json_"),
+            Self::DuckDb => name == "random" || name.starts_with("__orchiddb_json_"),
+            Self::Postgres => name.starts_with("__orchiddb_json_"),
         }
     }
     pub fn lower_function(self, function: &ast::Function) -> SqlResult<Option<ast::Expr>> {

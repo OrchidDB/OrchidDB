@@ -514,7 +514,7 @@ fn cyclic_view_replacement_is_rejected() {
 #[tokio::test]
 async fn compiler_accepts_supplied_constraints_without_database_discovery() {
     let catalog = fixture(Evidence::Enforced).constraints().clone();
-    let request = serde_json::json!({"version":1,"dialect":"postgres","language":"cypher","query":"MATCH (p:Person) RETURN DISTINCT p.id AS id", "tables":[{"name":"people","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]},{"name":"orders","columns":[{"name":"id","data_type":"int64"},{"name":"person","data_type":"int64"}]}],"nodes":[{"label":"Person","table":"people","id":"id","properties":{"id":"id"}}],"constraints":catalog});
+    let request = serde_json::json!({"version":1,"dialect":"trino","language":"cypher","query":"MATCH (p:Person) RETURN DISTINCT p.id AS id", "tables":[{"name":"people","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]},{"name":"orders","columns":[{"name":"id","data_type":"int64"},{"name":"person","data_type":"int64"}]}],"nodes":[{"label":"Person","table":"people","id":"id","properties":{"id":"id"}}],"constraints":catalog});
     let response = orchiddb::compiler::compile_json(&request.to_string())
         .await
         .unwrap();

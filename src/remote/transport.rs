@@ -1,5 +1,6 @@
 //! HTTP sessions for request islands. Requests are structured values, never SQL.
-//! Pagination uses a snapshot scroll; backend failures never return partial rows.
+//! Pagination uses a snapshot scroll. Streaming failures terminate with an error,
+//! never a successful EOF; consumers must discard a failed query result.
 use crate::federation::{Session, TransferColumn};
 use arrow::{
     array::{ArrayRef, StructArray},
@@ -65,14 +66,14 @@ impl HttpOptions {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Engine {
+enum SourceKind {
     Quickwit,
     Elasticsearch,
     Weaviate,
     Prometheus,
     Loki,
 }
-impl Engine {
+impl SourceKind {
     fn name(self) -> &'static str {
         match self {
             Self::Quickwit => "quickwit",
@@ -83,8 +84,9 @@ impl Engine {
         }
     }
 }
+#[derive(Clone)]
 pub struct HttpSession {
-    engine: Engine,
+    engine: SourceKind,
     options: HttpOptions,
     base: Url,
     client: Client,
@@ -100,15 +102,15 @@ impl HttpSession {
 
     #[cfg(feature = "quickwit")]
     pub fn quickwit(endpoint: &str) -> Result<Self, String> {
-        Self::new(Engine::Quickwit, HttpOptions::new(endpoint), None)
+        Self::new(SourceKind::Quickwit, HttpOptions::new(endpoint), None)
     }
     #[cfg(feature = "weaviate")]
     pub fn weaviate(endpoint: &str) -> Result<Self, String> {
-        Self::new(Engine::Weaviate, HttpOptions::new(endpoint), None)
+        Self::new(SourceKind::Weaviate, HttpOptions::new(endpoint), None)
     }
     #[cfg(feature = "elasticsearch")]
     pub fn elasticsearch(endpoint: &str) -> Result<Self, String> {
-        Self::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None)
+        Self::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None)
     }
     /// Execute an explicitly selected API. Path segments are encoded separately;
     /// paths cannot override the configured origin or authentication.
@@ -125,7 +127,7 @@ impl HttpSession {
         self.metadata.clear();
         self.settings.clear();
     }
-    fn new(engine: Engine, options: HttpOptions, client: Option<Client>) -> Result<Self, String> {
+    fn new(engine: SourceKind, options: HttpOptions, client: Option<Client>) -> Result<Self, String> {
         let base = Url::parse(&options.endpoint).map_err(|_| "invalid remote HTTP endpoint")?;
         if !matches!(base.scheme(), "http" | "https")
             || base.host_str().is_none()
@@ -136,7 +138,7 @@ impl HttpSession {
         {
             return Err("remote endpoint must be HTTP(S), with credentials supplied through Authentication and no query or fragment".into());
         }
-        if engine == Engine::Weaviate && base.scheme() != "https" {
+        if engine == SourceKind::Weaviate && base.scheme() != "https" {
             let host = base.host_str().unwrap_or("").trim_matches(['[', ']']);
             if host != "localhost"
                 && !host
@@ -193,7 +195,7 @@ impl HttpSession {
     }
     fn elastic_url(&self, segments: &[&str]) -> Result<Url, String> {
         let mut all = vec![];
-        if self.engine == Engine::Quickwit {
+        if self.engine == SourceKind::Quickwit {
             all.extend(["api", "v1", "_elastic"]);
         }
         all.extend_from_slice(segments);
@@ -247,7 +249,7 @@ impl HttpSession {
                 let mut headers = HeaderMap::new();
                 let mut value = HeaderValue::from_str(&format!(
                     "{} {key}",
-                    if self.engine == Engine::Weaviate {
+                    if self.engine == SourceKind::Weaviate {
                         "Bearer"
                     } else {
                         "ApiKey"
@@ -293,7 +295,7 @@ impl HttpSession {
             bytes.extend_from_slice(&chunk);
         }
         let decoded = serde_json::from_slice::<Value>(&bytes);
-        if !status.is_success() && self.engine == Engine::Weaviate {
+        if !status.is_success() && self.engine == SourceKind::Weaviate {
             return Err(format!("weaviate HTTP {}", status.as_u16()));
         }
         if !status.is_success() {
@@ -323,12 +325,12 @@ impl HttpSession {
         columns: &[TransferColumn],
     ) -> Result<Vec<RecordBatch>, String> {
         #[cfg(feature = "weaviate")]
-        if self.engine == Engine::Weaviate {
+        if self.engine == SourceKind::Weaviate {
             return self.execute_weaviate_many(std::slice::from_ref(request), columns)
                 .await.map(|mut results| results.remove(0));
         }
         #[cfg(any(feature = "prometheus", feature = "loki"))]
-        if matches!(self.engine, Engine::Prometheus | Engine::Loki) {
+        if matches!(self.engine, SourceKind::Prometheus | SourceKind::Loki) {
             return self.execute_observability(request, columns).await;
         }
         let request = request
@@ -399,7 +401,7 @@ impl HttpSession {
                 .unwrap_or("elastic");
             let mut url = match api {
                 "elastic" => self.elastic_url(&[index, "_search"])?,
-                "native" if self.engine == Engine::Quickwit => {
+                "native" if self.engine == SourceKind::Quickwit => {
                     self.url(&["api", "v1", index, "search"])?
                 }
                 _ => return Err("unknown explicit remote query API".into()),
@@ -425,7 +427,7 @@ impl HttpSession {
             .unwrap_or("elastic")
         {
             "native" => {
-                if self.engine != Engine::Quickwit {
+                if self.engine != SourceKind::Quickwit {
                     return Err("native Quickwit API requires a Quickwit session".into());
                 }
                 let limit=limit.ok_or("Quickwit native search requires a finite limit; snapshot scans use the elastic API")?;
@@ -490,7 +492,7 @@ impl HttpSession {
     // mistaken for relevance in explicitly supplied queries.
     fn score_projections(&self, projections: &[Value], body: &Value) -> Result<Vec<Value>, String> {
         let mut projections = projections.to_vec();
-        if self.engine == Engine::Quickwit {
+        if self.engine == SourceKind::Quickwit {
             for projection in &mut projections {
                 if projection.get("source").and_then(Value::as_str) == Some("score") {
                     let index = body
@@ -524,7 +526,7 @@ impl HttpSession {
         // until the entire snapshot has completed successfully.
         url.query_pairs_mut().append_pair(
             "allow_partial_search_results",
-            if self.engine == Engine::Quickwit && limit.is_none() {
+            if self.engine == SourceKind::Quickwit && limit.is_none() {
                 "true"
             } else {
                 "false"
@@ -596,7 +598,7 @@ impl HttpSession {
                 let next = json!({"scroll_id":id,"scroll":self.options.scroll_keep_alive});
                 response = self
                     .send_scroll(
-                        if self.engine == Engine::Quickwit {
+                        if self.engine == SourceKind::Quickwit {
                             Method::GET
                         } else {
                             Method::POST
@@ -614,7 +616,7 @@ impl HttpSession {
         .await;
         // Elasticsearch owns server-side scroll contexts. Quickwit uses an
         // expiring cursor and currently has no clear-scroll API.
-        if self.engine == Engine::Elasticsearch {
+        if self.engine == SourceKind::Elasticsearch {
             if let Some(id) = scroll {
                 let cleanup = self
                     .send(
@@ -1013,6 +1015,9 @@ impl Session for HttpSession {
     fn dialect(&self) -> &str {
         self.engine.name()
     }
+    async fn execute_requests_stream(&mut self, requests:crate::federation::RequestStream, columns:Vec<TransferColumn>)->Result<crate::execution::stream::BatchStream,String> {
+        streaming::request_stream(self.clone(),requests,columns)
+    }
     async fn execute_request(
         &mut self,
         request: &Value,
@@ -1038,7 +1043,7 @@ macro_rules! session {
                 Self::with_options(HttpOptions::new(endpoint))
             }
             pub fn with_options(options: HttpOptions) -> Result<Self, String> {
-                Ok(Self(HttpSession::new(Engine::$engine, options, None)?))
+                Ok(Self(HttpSession::new(SourceKind::$engine, options, None)?))
             }
             pub async fn request_json(
                 &self,
@@ -1055,7 +1060,7 @@ macro_rules! session {
             /// proxies. The caller must disable redirects on that client.
             pub fn with_client(options: HttpOptions, client: Client) -> Result<Self, String> {
                 Ok(Self(HttpSession::new(
-                    Engine::$engine,
+                    SourceKind::$engine,
                     options,
                     Some(client),
                 )?))
@@ -1066,6 +1071,9 @@ macro_rules! session {
         impl Session for $name {
             fn dialect(&self) -> &str {
                 self.0.engine.name()
+            }
+            async fn execute_requests_stream(&mut self, requests:crate::federation::RequestStream, columns:Vec<TransferColumn>)->Result<crate::execution::stream::BatchStream,String> {
+                streaming::request_stream(self.0.clone(),requests,columns)
             }
             async fn execute_request(
                 &mut self,
@@ -1092,6 +1100,7 @@ mod observability;
 session!(PrometheusSession, Prometheus, "prometheus");
 session!(LokiSession, Loki, "loki");
 mod batch;
+mod streaming;
 mod metadata;
 mod protocol;
 pub use protocol::command;

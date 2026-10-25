@@ -112,7 +112,7 @@ impl<'a> LoweringContext<'a> {
             return Err(RelError::Unsupported("Observed Gremlin paths require native traverser values".into()));
         }
         let input = self.lower_node(input)?;
-        let input = if target_mode == TargetMode::Existing {
+        let mut input = if target_mode == TargetMode::Existing {
             self.restrict_existing_target(input, target, target_labels)?
         } else { input };
         if has_binding_shape(&input.plan, source).is_none() {
@@ -121,9 +121,31 @@ impl<'a> LoweringContext<'a> {
             )));
         }
 
-        let rel = rel_binding
-            .cloned()
-            .unwrap_or_else(|| format!("__rel_{}", self.scan_counter));
+        let rel = if let Some(binding) = rel_binding {
+            binding.clone()
+        } else {
+            // A materialized path retains its anonymous edge columns. Allocate
+            // a fresh binding for every hop instead of reusing the same ID
+            // column when no intervening table scan advances the counter.
+            loop {
+                let candidate = format!("__rel_{}", self.scan_counter);
+                self.scan_counter += 1;
+                if !input.plan.schema().fields().iter().any(|field| is_binding_column(field.name(), &candidate)) {
+                    break candidate;
+                }
+            }
+        };
+        let encounter = if self.language == Language::Gremlin {
+            let name = unique_internal_alias(&input.plan, &BTreeSet::new(), "__orchid_expand_encounter");
+            let numbered = with_distinct_ordinal(input.plan, &name)?;
+            let guard = unique_internal_alias(&numbered, &BTreeSet::new(), "__orchid_expand_guard");
+            let mut columns = existing_columns(&numbered, &BTreeSet::new());
+            columns.push(lit(1_i64).alias(&guard));
+            input.plan = LogicalPlanBuilder::from(numbered).project(columns)?
+                .alias(format!("__w_sql_cte_expand_input_{}", self.scan_counter))?.build()?;
+            self.scan_counter += 1;
+            Some((name, guard))
+        } else { None };
         let mut expanded = match dir {
             Direction::Out | Direction::In => self.lower_expand_direction(
                 input,
@@ -145,6 +167,21 @@ impl<'a> LoweringContext<'a> {
                 rel_types,
             ),
         }?;
+        if let Some((encounter, guard)) = encounter {
+            // A hash join can interleave different parent traversers. Retain
+            // their encounter order and the provider's label/key scan order
+            // before downstream folds, slices, or floating-point reductions.
+            let joined_guard = unique_internal_alias(&expanded.plan, &BTreeSet::new(), "__orchid_expand_join_guard");
+            let mut joined_columns = existing_columns(&expanded.plan, &BTreeSet::new());
+            joined_columns.push(lit(1_i64).alias(&joined_guard));
+            expanded.plan = LogicalPlanBuilder::from(expanded.plan).project(joined_columns)?
+                .alias(format!("__w_sql_cte_expand_join_{}", self.scan_counter))?.build()?;
+            self.scan_counter += 1;
+            let order = vec![col_exact(&encounter).sort(true, false),
+                col_exact(label_col(&rel)).sort(true, false), col_exact(id_col(&rel)).sort(true, false)];
+            let columns = existing_columns(&expanded.plan, &BTreeSet::from([encounter, guard, joined_guard]));
+            expanded.plan = LogicalPlanBuilder::from(expanded.plan).sort(order)?.project(columns)?.build()?;
+        }
         if let Some(history) = history {
             expanded = self.track_relationship(expanded, history, &rel)?;
         }
@@ -198,7 +235,19 @@ impl<'a> LoweringContext<'a> {
     pub(super) fn track_relationship(&self, input: LoweredNode, history: &str, rel: &str) -> RelResult<LoweredNode> {
         use datafusion::functions_nested::expr_fn::{array_has, array_append};
         let has_previous = has_exact_col(&input.plan, history);
-        let key = Self::relationship_key(&input.plan, rel);
+        let mut key = Self::relationship_key(&input.plan, rel);
+        let mut trail_input = col_exact(history);
+        if has_previous {
+            let ty = trail_input.get_type(input.plan.schema())?;
+            if native_values::is_value(&ty) {
+                trail_input = native_values::list(trail_input);
+            }
+            if matches!(trail_input.get_type(input.plan.schema())?, DataType::List(field) if native_values::is_value(field.data_type())) {
+                key = native_values::function("__orchiddb_value", native_values::value_type(), vec![
+                    lit(r#"{"Binding":"value"}"#), df_core::named_struct(vec![lit("value"), key]),
+                ]);
+            }
+        }
         // Fixed hops retain typed edge identities under fresh names. The
         // string trail is still available to a later variable-length hop, but
         // fixed-hop uniqueness does not need to construct/search that trail.
@@ -224,7 +273,7 @@ impl<'a> LoweringContext<'a> {
                 previous.iter().map(|(old_id, old_label)|
                     id.clone().not_eq(col_exact(old_id)).or(label.clone().not_eq(col_exact(old_label))))
                     .reduce(|a, b| a.and(b)).expect("previous fixed identity")
-            } else { Expr::Not(Box::new(array_has(col_exact(history), key.clone()))) };
+            } else { Expr::Not(Box::new(array_has(trail_input.clone(), key.clone()))) };
             LogicalPlanBuilder::from(input.plan.clone()).filter(predicate)?.build()?
         } else { input.plan.clone() };
         let mut projection = existing_columns(&filtered, &BTreeSet::from([history.to_owned()]));
@@ -232,7 +281,7 @@ impl<'a> LoweringContext<'a> {
             projection.push(id.alias(format!("{prefix}{index}_id")));
             projection.push(label.alias(format!("{prefix}{index}_label")));
         }
-        let trail = if has_previous { array_append(col_exact(history), key) }
+        let trail = if has_previous { array_append(trail_input, key) }
             else { datafusion::functions_nested::expr_fn::make_array(vec![key]) };
         projection.push(trail.alias(history));
         let plan = LogicalPlanBuilder::from(filtered).project(projection)?.build()?;
@@ -344,9 +393,20 @@ impl<'a> LoweringContext<'a> {
         rel_binding: Option<&String>,
         rel_types: &LabelExpr,
     ) -> RelResult<LoweredNode> {
-        let rel = rel_binding
-            .cloned()
-            .unwrap_or_else(|| format!("__rel_{}", self.scan_counter));
+        let rel = if let Some(binding) = rel_binding {
+            binding.clone()
+        } else {
+            // A materialized path retains its anonymous edge columns. Allocate
+            // a fresh binding for every hop instead of reusing the same ID
+            // column when no intervening table scan advances the counter.
+            loop {
+                let candidate = format!("__rel_{}", self.scan_counter);
+                self.scan_counter += 1;
+                if !input.plan.schema().fields().iter().any(|field| is_binding_column(field.name(), &candidate)) {
+                    break candidate;
+                }
+            }
+        };
         let edge_scan = self.lower_rel_scan(&rel, rel_types)?;
 
         // Orient the edge relation, not the upstream rows. OR predicates on
@@ -489,9 +549,20 @@ impl<'a> LoweringContext<'a> {
         rel_types: &LabelExpr,
         dir: Direction,
     ) -> RelResult<LoweredNode> {
-        let rel = rel_binding
-            .cloned()
-            .unwrap_or_else(|| format!("__rel_{}", self.scan_counter));
+        let rel = if let Some(binding) = rel_binding {
+            binding.clone()
+        } else {
+            // A materialized path retains its anonymous edge columns. Allocate
+            // a fresh binding for every hop instead of reusing the same ID
+            // column when no intervening table scan advances the counter.
+            loop {
+                let candidate = format!("__rel_{}", self.scan_counter);
+                self.scan_counter += 1;
+                if !input.plan.schema().fields().iter().any(|field| is_binding_column(field.name(), &candidate)) {
+                    break candidate;
+                }
+            }
+        };
         let edge_scan = self.lower_rel_scan(&rel, rel_types)?;
 
         let (edge_source_id, edge_source_label, edge_target_id, edge_target_label) = match dir {

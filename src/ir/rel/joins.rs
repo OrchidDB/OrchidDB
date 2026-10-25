@@ -452,6 +452,37 @@ pub(super) fn keyed_distinct_partition(plan: LogicalPlan, partition: Vec<Expr>, 
         .build()?)
 }
 
+/// Select the last logical rows, then restore their original traversal order.
+pub(super) fn tail_limit(plan: LogicalPlan, count: u64, scope: usize) -> RelResult<LogicalPlan> {
+    let partition = apply_correlation_key_columns(&plan).iter().map(col_exact).collect();
+    let ordinal = unique_internal_alias(&plan, &BTreeSet::new(), "__tail_ordinal");
+    let mut cleanup = BTreeSet::from([ordinal.clone()]);
+    let rank = unique_internal_alias(&plan, &cleanup, "__tail_rank");
+    cleanup.insert(rank.clone());
+    let numbered = with_distinct_ordinal(plan, &ordinal)?;
+    // A projection guard keeps the two windows in independent SQL scopes.
+    let guard = unique_internal_alias(&numbered, &cleanup, "__tail_guard");
+    cleanup.insert(guard.clone());
+    let mut columns = existing_columns_by_name(&numbered, &BTreeSet::new());
+    columns.push(lit(1_i64).alias(guard));
+    let numbered = LogicalPlanBuilder::from(numbered)
+        .project(columns)?
+        .alias(format!("__w_sql_cte_tail_{scope}"))?
+        .build()?;
+    let window = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+        .partition_by(partition)
+        .order_by(vec![col_exact(&ordinal).sort(false, false)])
+        .build()?.alias(&rank);
+    let selected = LogicalPlanBuilder::from(numbered)
+        .window(vec![window])?
+        .filter(binary(col_exact(&rank), BinaryOp::Lte, lit(count)))?
+        .sort(vec![col_exact(&ordinal).sort(true, false)])?
+        .build()?;
+    let projection = existing_columns_by_name(&selected, &cleanup);
+    Ok(LogicalPlanBuilder::from(selected).project(projection)?.build()?)
+}
+
 pub(super) fn partitioned_limit(
     plan: LogicalPlan,
     partition_cols: &[String],

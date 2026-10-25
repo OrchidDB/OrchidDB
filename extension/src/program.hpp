@@ -73,7 +73,7 @@ void ProgramCheck(char *error) {
     std::unique_ptr<char, decltype(&orchid_bridge_free)> owned(error, orchid_bridge_free);
     auto detail=Json::parse(error,nullptr,false);
     if (!detail.is_discarded() && detail.contains("error")) {
-        unordered_map<string,string> metadata;
+        auto metadata=HostErrorMetadata(detail.at("error").get<string>());
         if (detail.contains("classification") && !detail.at("classification").is_null()) {metadata["orchid_classification"]=detail.at("classification").dump();}
         if (detail.contains("diagnosis") && !detail.at("diagnosis").is_null()) {metadata["orchid_diagnosis"]=detail.at("diagnosis").dump();}
         throw InvalidInputException(metadata,detail.at("error").get<string>());
@@ -207,7 +207,7 @@ unique_ptr<ArrowArrayStreamWrapper> ExportKernelInput(ClientContext &context,
         unique_ptr<ColumnDataCollection> collection, const vector<string> &names) {
     auto result = make_uniq<MaterializedQueryResult>(StatementType::SELECT_STATEMENT, StatementProperties(), names,
         std::move(collection), context.GetClientProperties());
-    auto owner = make_uniq<ResultArrowArrayStreamWrapper>(std::move(result), STANDARD_VECTOR_SIZE);
+    auto owner = HostResultArrowStream(std::move(result));
     auto output = make_uniq<ArrowArrayStreamWrapper>();
     output->arrow_array_stream = owner->stream;
     owner.release();
@@ -215,14 +215,24 @@ unique_ptr<ArrowArrayStreamWrapper> ExportKernelInput(ClientContext &context,
 }
 struct KernelOutput {
     shared_ptr<HostRelationData> relation;
-    ColumnDataScanState scan;
+    unique_ptr<HostRelationCursor> cursor;
+    ClientContext *context = nullptr;
     void Set(ClientContext &context, ArrowArrayStream &stream) {
+        cursor.reset();
         relation = ImportHostRelation(context, stream);
-        relation->data->InitializeScan(scan);
+        this->context = &context;
+        cursor = make_uniq<HostRelationCursor>(relation->source);
+    }
+    void Set(ClientContext &context, unique_ptr<QueryResult> result) {
+        cursor.reset();
+        relation = ImportHostResult(context, std::move(result));
+        this->context = &context;
+        cursor = make_uniq<HostRelationCursor>(relation->source);
     }
     bool Next(DataChunk &chunk) {
         if (!relation) { return false; }
-        if (relation->data->Scan(scan, chunk)) { return true; }
+        if (cursor->Next(*context, chunk)) { return true; }
+        cursor.reset();
         relation.reset();
         return false;
     }
@@ -288,6 +298,9 @@ public:
     }
     OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &output,
                                GlobalOperatorState &, OperatorState &state_p) const override {
+        // Output encoding can hydrate graph properties after Invoke returned.
+        // Re-enter caller callbacks on this scheduling thread for every pull.
+        NativeScope scope(context.client, *execution);
         auto &state = state_p.Cast<KernelOperatorState>();
         if (state.output.relation) {
             if (state.output.Next(output)) { return OperatorResultType::HAVE_MORE_OUTPUT; }
@@ -322,6 +335,7 @@ public:
         return SinkFinalizeType::READY;
     }
     SourceResultType GetDataInternal(ExecutionContext &context, DataChunk &output, OperatorSourceInput &input) const override {
+        NativeScope pull_scope(context.client, *execution);
         if (IsSink()) {
             return sink_state->Cast<KernelSinkState>().output.Next(output) ? SourceResultType::HAVE_MORE_OUTPUT : SourceResultType::FINISHED;
         }
@@ -376,8 +390,7 @@ public:
         while (state.input<inputs.size()) {
             if (!state.output.relation) {
                 auto result=ExecuteProgramInput(context.client,execution,inputs[state.input]);
-                ResultArrowArrayStreamWrapper stream(std::move(result),STANDARD_VECTOR_SIZE);
-                state.output.Set(context.client,stream.stream);
+                state.output.Set(context.client,std::move(result));
             }
             DataChunk chunk;
             auto input_types=types; input_types.pop_back();
@@ -479,9 +492,9 @@ public:
     }
     SourceResultType GetDataInternal(ExecutionContext &context, DataChunk &output, OperatorSourceInput &input) const override {
         auto &state = input.global_state.Cast<KernelSourceState>();
+        NativeScope native(context.client, *execution);
         if (!state.done) {
             state.done = true;
-            NativeScope native(context.client, *execution);
             const auto &description = execution->program->Node(node);
             auto statement = Select(context.client, description.at("sql").get<string>());
             auto generated = std::move(statement->node->cte_map.map);
@@ -489,20 +502,19 @@ public:
             HostRelationScope scope;
             for (const auto &dependency : description.at("inputs")) {
                 auto result = ExecuteProgramInput(context.client, execution, dependency.at("node").get<uint64_t>());
-                ResultArrowArrayStreamWrapper stream(std::move(result), STANDARD_VECTOR_SIZE);
-                auto id = scope.Add(ImportHostRelation(context.client, stream.stream));
+                auto id = scope.Add(ImportHostResult(context.client, std::move(result)));
                 auto cte = make_uniq<CommonTableExpressionInfo>();
                 cte->query = Select(context.client, "SELECT * FROM __orchid_host_relation(" + std::to_string(id) + "::UBIGINT)");
                 statement->node->cte_map.map.insert(dependency.at("relation").get<string>(), std::move(cte));
             }
             for (auto &cte : generated) { statement->node->cte_map.map.insert(cte.first, std::move(cte.second)); }
-            auto result = HostExecute(context.client, std::move(statement), {});
-            ResultArrowArrayStreamWrapper stream(std::move(result), STANDARD_VECTOR_SIZE);
-            state.output.Set(context.client, stream.stream);
+            ConfigureHostReplay(*statement);
+            auto result = HostExecuteStream(context.client, std::move(statement), {});
+            state.output.Set(context.client, std::move(result));
         }
         if (!state.output.relation) { return SourceResultType::FINISHED; }
         DataChunk chunk;
-        chunk.Initialize(Allocator::Get(context.client), state.output.relation->data->Types());
+        chunk.Initialize(Allocator::Get(context.client), state.output.relation->source->table.GetTypes());
         if (!state.output.Next(chunk)) { return SourceResultType::FINISHED; }
         if (chunk.ColumnCount() != types.size()) { throw InternalException("SQL stage column count changed"); }
         output.SetCardinality(chunk.size());
@@ -638,7 +650,7 @@ char *ExecuteNested(void *context_p, const void *program_p, void *state, ArrowAr
         auto result=HostExecute(context,Select(context,scope.SQL(execution->program->manifest.at("root").get<uint64_t>())),{},execution->program->manifest.value("rebind_nested",false) ? nullptr : &cached->prepared);
         execution->kernel_state=nullptr;
         parent.nested[program_p]=cached;
-        auto stream=make_uniq<ResultArrowArrayStreamWrapper>(std::move(result),STANDARD_VECTOR_SIZE);
+        auto stream=HostResultArrowStream(std::move(result));
         *output=stream->stream; stream.release(); return nullptr;
     } catch (std::exception &error) {
         ErrorData details(error);

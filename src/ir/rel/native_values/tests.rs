@@ -1,6 +1,19 @@
 use super::*;
 use serde_json::json;
 
+#[test]
+fn heterogeneous_property_carriers_decode_before_scalar_comparison() {
+    for (tag, field, payload, expected) in [
+        (1, "integer", json!({"__orchiddb_number":["BIGINT","29"]}), Value::Long(29)),
+        (2, "string", json!("Ada"), Value::String("Ada".into())),
+        (3, "boolean", json!(true), Value::Bool(true)),
+    ] {
+        let mut carrier = json!({"__cypher_scalar_tag":{"__orchiddb_number":["TINYINT",tag.to_string()]},"integer":null,"string":null,"boolean":null});
+        carrier[field] = payload;
+        assert_eq!(from_json(&carrier, &mut Context::default()).unwrap(), expected);
+    }
+}
+
 fn element(id: i64, properties: serde_json::Value) -> serde_json::Value {
     json!({elements::FIELD: {"kind":"node", "id":id,"label":"Person","properties":properties}})
 }
@@ -97,4 +110,49 @@ fn detached_output_keeps_user_id_properties_separate_from_identity() {
     context.capture(&Value::List(vec![node.clone(),edge.clone()]), &graph).unwrap();
     assert_eq!(json(&context.wire(&node)).unwrap()["properties"]["id"],json!({"type":"int","value":42}));
     assert_eq!(json(&context.wire(&edge)).unwrap()["properties"]["id"],json!({"type":"int","value":73}));
+}
+
+#[test]
+fn nested_graph_reference_domains_keep_relationship_identity() {
+    let fields = json!({"label":"Y","id":7,"src_label":"A","src_id":1,"dst_label":"B","dst_id":2});
+    let reference = json!({"__orchiddb_domain_graph_edge": fields});
+    let mut descriptor = fields.clone();
+    descriptor["kind"] = json!("edge");
+    descriptor["properties"] = json!({});
+    let attached = json!({elements::FIELD: descriptor});
+    assert_eq!(key(&json!([reference]), true).unwrap(), key(&json!([attached]), true).unwrap());
+    let mut context = Context::default();
+    let decoded = from_json(&reference, &mut context).unwrap();
+    assert!(matches!(decoded, Value::Edge { ref rel_type, ref src_label, ref dst_label, .. }
+        if rel_type == "Y" && src_label == "A" && dst_label == "B"));
+    assert_eq!(from_json(&json!({"__orchiddb_domain_graph_node":null}), &mut context).unwrap(), Value::Null);
+}
+
+#[test]
+fn temporal_domains_preserve_kinds_across_nested_sql_scalar_inputs() {
+    let mut context = Context::default();
+    for (kind, text) in [("date", "2020-01-02"), ("localtime", "12:31:14.645876123"), ("duration", "P1M2DT3S")] {
+        let value = crate::ir::temporal::parse(kind, text).unwrap();
+        let input = json!({"property": {"__orchiddb_domain_cypher_temporal": value.encode()}});
+        let Value::Map(decoded) = from_json(&input, &mut context).unwrap() else { panic!("map") };
+        assert_eq!(decoded["property"], Value::Temporal(value));
+    }
+    assert!(matches!(from_json(&json!({"__orchiddb_domain_cypher_temporal":null}), &mut context).unwrap(), Value::Null));
+    let date = from_json(&json!({"__orchiddb_domain_cypher_temporal":"2020-01-02"}), &mut context).unwrap();
+    assert_eq!(date, Value::Temporal(crate::ir::temporal::parse("date", "2020-01-02").unwrap()));
+}
+
+#[test]
+fn detached_source_identity_survives_empty_native_property_state() {
+    let mut graph = PropertyGraph::default();
+    let node = graph.insert_node("Person", BTreeMap::new());
+    graph.source_keys = true;
+    let expected = graph.element_public_id(&node);
+    let mut captured = Context::default();
+    captured.capture(&node, &graph).unwrap();
+    assert_eq!(captured.graph.element_public_id(&node), expected);
+    let text = captured.wire(&node)[FIELD].as_str().unwrap().to_string();
+    let mut decoded = Context::default();
+    let value = decoded.decode(&text).unwrap();
+    assert_eq!(decoded.graph.element_public_id(&value), expected);
 }

@@ -1,6 +1,6 @@
 //! Managed execution statistics and relational Arrow result decoding.
 //!
-//! Query execution is scheduled by the DataFusion relational DAG.
+//! SQL engines execute the compiler DAG; this module decodes Arrow boundaries.
 use crate::ir::catalog::array_value;
 use crate::ir::plan::Node;
 use crate::ir::runtime::ReturnedBatches;
@@ -21,8 +21,9 @@ pub struct ExecStats {
     pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
     pub plan_estimates: Vec<crate::ir::rel::statistics::PlanEstimate>,
     pub optimizer_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
-    /// Operators scheduled by the DataFusion relational DAG.
+    /// Legacy reporting counter; relational execution belongs to SQL engines.
     pub datafusion_ops: usize,
+    pub boundary_ops: usize,
     pub duckdb_regions: usize,
     pub postgres_regions: usize,
     pub other_sql_regions: usize,
@@ -43,7 +44,7 @@ pub struct ExecStats {
 impl ExecStats {
     /// Whether all query operators were delegated to SQL.
     pub fn fully_pushed_down(&self) -> bool {
-        self.islands >= 1 && self.datafusion_ops == 0
+        self.islands >= 1 && self.boundary_ops == 0 && self.datafusion_ops == 0
     }
 }
 
@@ -72,9 +73,9 @@ pub(crate) fn batch_to_bindings(
 
     enum Source {
         /// `(id column, label column)`
-        NodeCols(usize, usize),
+        NodeCols(usize, usize, Option<usize>),
         /// `(src id, src label, dst id, dst label, edge id, edge label)`
-        EdgeCols(usize, usize, usize, usize, Option<usize>, Option<usize>),
+        EdgeCols(usize, usize, usize, usize, Option<usize>, Option<usize>, Option<usize>),
         /// A `x.*` projection: `(property name, column)` in projection order.
         StarCols(Vec<(String, usize)>),
         Scalar(usize),
@@ -155,15 +156,21 @@ pub(crate) fn batch_to_bindings(
                         dst_label,
                         find(ID_SUFFIX, &binding),
                         find(LABEL_SUFFIX, &binding),
+                        names.iter().position(|name| name == &binding),
                     ));
                 } else {
                     let id = find(ID_SUFFIX, &binding)?;
                     let label = find(LABEL_SUFFIX, &binding)?;
                     bindings.push(binding.clone());
-                    sources.push(Source::NodeCols(id, label));
+                    sources.push(Source::NodeCols(id, label, names.iter().position(|name| name == &binding)));
                 }
             }
             None => {
+                // A union may carry a scalar arm beside an element arm.
+                // Decode one binding using the element's scalar fallback.
+                if find(ID_SUFFIX, name).is_some() && find(LABEL_SUFFIX, name).is_some() {
+                    continue;
+                }
                 bindings.push(name.clone());
                 sources.push(Source::Scalar(index));
             }
@@ -205,7 +212,7 @@ pub(crate) fn batch_to_bindings(
                     );
                     Value::Map(map)
                 }
-                Source::NodeCols(id, label) => {
+                Source::NodeCols(id, label, scalar) => {
                     let id_is_null = batch.column(*id).is_null(row);
                     let label_value = column_value(*label, row)?;
                     match (key(*id,row), as_label(&label_value)) {
@@ -214,13 +221,13 @@ pub(crate) fn batch_to_bindings(
                         // encoding; anything else means the island did not
                         // produce the shape we expect, so decline the island
                         // rather than fabricate a binding.
-                        _ if id_is_null => Value::Null,
+                        _ if id_is_null => match scalar { Some(i) => column_value(*i, row)?, None => Value::Null },
                         _ => return None,
                     }
                 }
-                Source::EdgeCols(src_id, src_label, dst_id, dst_label, id, label) => {
+                Source::EdgeCols(src_id, src_label, dst_id, dst_label, id, label, scalar) => {
                     if batch.column(*src_id).is_null(row) {
-                        Value::Null
+                        match scalar { Some(i) => column_value(*i, row)?, None => Value::Null }
                     } else {
                         Value::Edge {
                             rel_type: label
@@ -355,6 +362,12 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
                 .downcast_ref::<arrow::array::LargeListArray>()?;
             decode_list(typed.value(row).as_ref(), inner)
         }
+        // Caller functions can return typed nested values. Keep their Arrow
+        // type (including field order/list widths) rather than flattening them
+        // into language maps before another host function consumes them.
+        DataType::Struct(_) | DataType::Map(_, _) | DataType::FixedSizeList(_, _) => {
+            datafusion::common::ScalarValue::try_from_array(array,row).ok().map(Value::Scalar)
+        }
         kind if crate::ir::rel::mapping::is_identity_type(kind) => {
             datafusion::common::ScalarValue::try_from_array(array,row).ok().map(Value::Scalar)
         }
@@ -396,6 +409,7 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             postgres_regions: stats.postgres_regions,
             other_sql_regions: stats.other_sql_regions,
             datafusion_ops: stats.datafusion_operators,
+            boundary_ops: stats.boundary_operators,
             sql_queries: stats.sql_queries,
             write_queries: stats.write_queries,
             native_source_queries: stats.native_source_queries,

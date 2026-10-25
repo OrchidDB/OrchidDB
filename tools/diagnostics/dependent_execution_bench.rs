@@ -5,19 +5,16 @@
 mod benchmark {
     use arrow::{
         array::{Int64Array, RecordBatch},
-        datatypes::{DataType, Field, Schema, SchemaRef},
+        datatypes::{DataType, Field, Schema},
     };
-    use datafusion::{
-        common::DFSchema,
-        physical_plan::{ExecutionPlan, limit::GlobalLimitExec},
-        prelude::SessionContext,
-    };
-    use futures::TryStreamExt;
+    use datafusion::{common::DFSchema,logical_expr::LogicalPlanBuilder};
+    use futures::{StreamExt, TryStreamExt};
+    use orchiddb::ir::rel::engine_exec::{ExecutionPlan, InputBatches, TaskContext};
     use orchiddb::ir::{
         QueryCost,
         rel::{
             dependent::{DependentOperation, exec::DependentOperationExec},
-            sql::{SqlDialect, SqlError, SqlResult, lowering::SqlTemplate, region::RegionSession},
+            sql::{lowering::SqlTemplate, region::RegionSession},
         },
     };
     use std::{
@@ -25,29 +22,7 @@ mod benchmark {
         time::Instant,
     };
 
-    #[derive(Debug)]
-    struct Session(duckdb::Connection);
-    impl RegionSession for Session {
-        fn dialect(&self) -> SqlDialect {
-            SqlDialect::DuckDb
-        }
-        fn query(&mut self, sql: &str, schema: SchemaRef) -> SqlResult<RecordBatch> {
-            let mut statement = self
-                .0
-                .prepare(sql)
-                .map_err(|e| SqlError::Execution(e.to_string()))?;
-            let reader = statement
-                .query_arrow([])
-                .map_err(|e| SqlError::Execution(e.to_string()))?;
-            Ok(arrow::compute::concat_batches(
-                &schema,
-                reader.collect::<Vec<_>>().iter(),
-            )?)
-        }
-    }
-
     async fn trial(rows: usize, limit: bool) -> serde_json::Value {
-        let ctx = SessionContext::new();
         let schema = Arc::new(Schema::new(vec![Field::new(
             "value",
             DataType::Int64,
@@ -65,12 +40,8 @@ mod benchmark {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-        let logical = ctx
-            .read_batches(batches)
-            .unwrap()
-            .into_optimized_plan()
-            .unwrap();
-        let physical = ctx.state().create_physical_plan(&logical).await.unwrap();
+        let logical=LogicalPlanBuilder::empty(false).build().unwrap();
+        let physical = Arc::new(InputBatches::new(schema.clone(), batches));
         let operation = DependentOperation {
             source: Arc::new(logical),
             template: SqlTemplate {
@@ -80,9 +51,9 @@ mod benchmark {
             },
             schema: Arc::new(DFSchema::try_from(schema.as_ref().clone()).unwrap()),
         };
-        let session = Arc::new(Mutex::new(Box::new(Session(
-            duckdb::Connection::open_in_memory().unwrap(),
-        )) as Box<dyn RegionSession>));
+        let session = Arc::new(Mutex::new(
+            Box::new(orchiddb::ir::rel::sql::DuckDbSession::default()) as Box<dyn RegionSession>,
+        ));
         let cost = Arc::new(Mutex::new(QueryCost::default()));
         let dependent = Arc::new(DependentOperationExec::new(
             &operation,
@@ -90,13 +61,11 @@ mod benchmark {
             session,
             cost.clone(),
         ));
-        let plan: Arc<dyn ExecutionPlan> = if limit {
-            Arc::new(GlobalLimitExec::new(dependent.clone(), 0, Some(1)))
-        } else {
-            dependent.clone()
-        };
         let started = Instant::now();
-        let mut stream = plan.execute(0, ctx.task_ctx()).unwrap();
+        let mut stream = dependent
+            .execute(0, Arc::new(TaskContext::default()))
+            .unwrap()
+            .take(if limit { 1 } else { usize::MAX });
         let mut first_batch_micros = None;
         let mut largest_output_batch_bytes = 0;
         let mut output_batches = 0;

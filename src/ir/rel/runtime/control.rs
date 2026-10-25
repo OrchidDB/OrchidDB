@@ -75,6 +75,9 @@ enum EmitMode {
 }
 impl Compiler<'_> {
     fn subplan(&self, node: &Node) -> Result<Subplan> {
+        self.subplan_with_distinct_state(node, self.stateful_distinct)
+    }
+    fn subplan_with_distinct_state(&self, node: &Node, stateful_distinct: bool) -> Result<Subplan> {
         fn observable(node: &Node) -> bool {
             crate::ir::analysis::node_effect(node) != crate::ir::analysis::Effect::Pure
                 || crate::ir::analysis::children(node)
@@ -87,6 +90,8 @@ impl Compiler<'_> {
             policy: self.policy.clone(),
             language_functions: self.language_functions,
             native_values: self.native_values,
+            live_graph_reads: self.live_graph_reads,
+            stateful_distinct,
             // Mapped reads share the statement connection. Independent scans
             // inside a correlated body remain eligible for SQL pushdown;
             // mutation fences retain the live overlay path.
@@ -146,6 +151,12 @@ impl Compiler<'_> {
                                     .contains(&key.as_str())
                                     || key.starts_with("__loops:")
                                     || key.starts_with("__gremlin_select_history_")
+                                    // Label values and their history are one
+                                    // traverser state unit. Dynamic repeat
+                                    // labels can be absent from the static
+                                    // frontier schema but needed after an
+                                    // intermediate select().by() boundary.
+                                    || outer.bindings.contains_key(&format!("__gremlin_select_history_{key}"))
                                 {
                                     row.bindings.insert(key.clone(), value.clone());
                                 }
@@ -289,7 +300,8 @@ impl Compiler<'_> {
                     .as_ref()
                     .map(|n| self.subplan(n))
                     .transpose()?;
-                let body = self.subplan(body)?;
+                let body = self.subplan_with_distinct_state(body,
+                    self.stateful_distinct || self.policy.language == crate::ir::policy::Language::Gremlin)?;
                 let emit = match emit {
                     crate::ir::plan::EmitMode::AfterLoop => EmitMode::AfterLoop,
                     crate::ir::plan::EmitMode::AfterEachIteration => EmitMode::AfterEachIteration,

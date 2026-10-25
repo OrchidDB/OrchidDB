@@ -36,6 +36,7 @@ unsafe fn data_type(t: ffi::duckdb_logical_type) -> Result<DataType> {
         L::Float => DataType::Float32,
         L::Double => DataType::Float64,
         L::Varchar => DataType::Utf8,
+        L::Date => DataType::Date32,
         L::Decimal => DataType::Decimal128(unsafe { ffi::duckdb_decimal_width(t) }, unsafe {
             ffi::duckdb_decimal_scale(t)
         }
@@ -78,6 +79,7 @@ unsafe fn cell(v: ffi::duckdb_vector, t: &DataType, row: usize) -> Result<Scalar
         };
     }
     Ok(match t {
+        DataType::Date32 => ScalarValue::Date32(Some(get!(ffi::duckdb_date).days)),
         DataType::Boolean => ScalarValue::Boolean(Some(get!(bool))),
         DataType::Int8 => ScalarValue::Int8(Some(get!(i8))),
         DataType::Int16 => ScalarValue::Int16(Some(get!(i16))),

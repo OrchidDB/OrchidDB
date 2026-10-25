@@ -81,6 +81,8 @@ struct Cache {
     access_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
     key_defaults: HashMap<(String, String), Option<String>>,
     emptiness_checked: BTreeSet<(bool, String)>,
+    nonempty_sources: BTreeSet<(bool, String)>,
+    empty_lookups: BTreeSet<(bool, String)>,
     edge_defaults: HashMap<(String, String, String), (BTreeMap<String, Value>, BTreeSet<String>)>,
 }
 pub(super) struct Source {
@@ -214,11 +216,16 @@ impl Source {
         if self.cached_keys(edge, name, column, ids).is_some() {
             return Ok(true);
         }
-        // A newly created/empty source otherwise incurs a separate identity
-        // lookup for every inserted element. Confirm emptiness from SQL once;
-        // estimates are not evidence that a source contains no rows.
+        // A failed lookup is evidence to consider an empty source, not proof.
+        // Confirm once before caching emptiness, without probing healthy sources
+        // ahead of every first fetch. Estimates alone never prove emptiness.
         let address = (edge, name.to_owned());
-        let first = self.cache.lock().unwrap().emptiness_checked.insert(address.clone());
+        let first = {
+            let mut cache = self.cache.lock().unwrap();
+            cache.empty_lookups.contains(&address)
+                && !cache.nonempty_sources.contains(&address)
+                && cache.emptiness_checked.insert(address.clone())
+        };
         if first {
             let source = if edge { self.mapping.edge(name).map(|m| &m.source) }
                 else { self.mapping.node(name).map(|m| &m.source) };
@@ -422,6 +429,11 @@ impl Source {
                 cache.records.insert((edge, name.into(), id.clone()), None);
             }
         }
+        if keys.is_empty() {
+            cache.empty_lookups.insert((edge, name.into()));
+        } else {
+            cache.nonempty_sources.insert((edge, name.into()));
+        }
         for (row, id) in keys.iter().enumerate() {
             let properties = props
                 .keys()
@@ -614,6 +626,8 @@ impl GraphSource for Source {
         cache.source_order.clear();
         cache.key_defaults.clear();
         cache.emptiness_checked.clear();
+        cache.nonempty_sources.clear();
+        cache.empty_lookups.clear();
         cache.edge_defaults.clear();
     }
     fn function(&self, name: &str, args: &[Value]) -> Option<Result<Value, String>> {
@@ -978,6 +992,24 @@ pub fn attach(
 mod tests {
     use super::*;
     use crate::engine::mapped_source::attach;
+
+    #[test]
+    fn empty_source_confirmation_follows_a_miss_and_is_cached() {
+        let db = duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE people(id BIGINT, name VARCHAR)").unwrap();
+        let mut mapping = GraphMapping::new();
+        mapping.map_node(crate::ir::rel::mapping::NodeMapping::table("Person", "people", "id").property("name", "name"));
+        let graph = attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))), Arc::new(mapping)).unwrap();
+        let source = graph.source.unwrap();
+        for id in 1_i64..=3 {
+            assert_eq!(source.property(false, "Person", &id.into(), "name"), Value::Null);
+        }
+        source.check().unwrap();
+        let queries = source.stats().1;
+        assert_eq!(queries.len(), 2, "one missed lookup, one confirmation, then cached emptiness: {queries:?}");
+        assert!(!queries[0].starts_with("SELECT 1"));
+        assert!(queries[1].starts_with("SELECT 1"));
+    }
 
     #[test]
     fn native_partition_reads_preserve_endpoints_properties_and_adjacency() {

@@ -1,4 +1,4 @@
-//! Execution state and native kernels used by DataFusion operators.
+//! Statement state for Orchid boundaries and engine-owned SQL subplans.
 
 use std::collections::{BTreeMap, BTreeSet};
 use crate::ir::catalog::PropertyGraph;
@@ -15,6 +15,7 @@ mod procedure_preparation_tests;
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
     pub(crate) rule_context: crate::ir::rules::RuleContext,
+    pub(crate) region_session: Option<crate::ir::rel::sql::region::SharedRegionSession>,
     pub(crate) subplan_runner: Option<std::sync::Arc<dyn crate::ir::rel::runtime::SubplanRunner>>,
     pub(crate) scalar_preparation: std::sync::Arc<super::scalar::preparation::ScalarPreparation>,
     pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
@@ -142,6 +143,7 @@ impl Default for ExecutionContext {
         Self {
             rule_context: Default::default(),
             subplan_runner: None,
+            region_session: None,
             scalar_preparation: Default::default(),
             relational_groups: BTreeMap::new(),
             query_cost: Default::default(),

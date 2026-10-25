@@ -387,6 +387,14 @@ impl LoweringContext<'_> {
         };
         let lhs = self.lower_expr(plan, &args[0])?;
         let rhs = self.lower_expr(plan, &args[1])?;
+        if let Some(value) = self.scalar_rule(TEMPORAL_TYPED, || Ok(
+            temporal_semantics::runtime_typed::native_timestamp_comparison_bound(
+                plan, op, lhs.clone(), rhs.clone(),
+            )
+        ))? {
+            return Ok(value);
+        }
+
         if let Some(value) =
             scalar_union::comparison(plan, &args[0], &args[1], lhs.clone(), rhs.clone(), op)?
         {

@@ -58,7 +58,7 @@ fn request(engine: &str) -> Value {
 #[test]
 fn quickwit_score_uses_the_requested_sort_slot() {
     let session = HttpSession::new(
-        Engine::Quickwit,
+        SourceKind::Quickwit,
         HttpOptions::new("http://localhost:7280"),
         None,
     )
@@ -138,7 +138,7 @@ async fn bounded_request_auth_and_schema_contract() {
     )]);
     let mut options = HttpOptions::new(endpoint);
     options.authentication = Authentication::ApiKey("secret".into());
-    let mut session = HttpSession::new(Engine::Elasticsearch, options, None).unwrap();
+    let mut session = HttpSession::new(SourceKind::Elasticsearch, options, None).unwrap();
     let result = session
         .execute(&request("elasticsearch"), &[column("__c0", "int64", false)])
         .await
@@ -166,7 +166,7 @@ async fn snapshot_pagination_consumes_all_pages_and_clears_context() {
     ]);
     let mut options = HttpOptions::new(endpoint);
     options.page_size = 2;
-    let mut session = HttpSession::new(Engine::Elasticsearch, options, None).unwrap();
+    let mut session = HttpSession::new(SourceKind::Elasticsearch, options, None).unwrap();
     let mut request = request("elasticsearch");
     request["limit"] = Value::Null;
     let batches = session
@@ -191,7 +191,7 @@ async fn failed_first_scroll_page_is_rejected_and_released() {
         (200, json!({"succeeded":true,"num_freed":1})),
     ]);
     let mut session =
-        HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
     let mut request = request("elasticsearch");
     request["limit"] = Value::Null;
     assert!(
@@ -217,7 +217,7 @@ async fn explicit_bounds_and_zero_hit_aggregations_are_preserved() {
         ),
     ]);
     let mut session =
-        HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
     let mut query = request("elasticsearch");
     query["explicit"] = json!(true);
     query["body"]["from"] = json!(3);
@@ -259,7 +259,7 @@ async fn failures_are_not_retried_or_returned_as_partial_rows() {
     ] {
         let (endpoint, requests, server) = serve(vec![(status, body)]);
         let mut session =
-            HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+            HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
         let error = session
             .execute(&request("elasticsearch"), &[column("id", "int64", false)])
             .await
@@ -275,7 +275,8 @@ async fn native_query_returns_full_response_and_null_query_skips_http() {
         200,
         json!({"hits":[],"num_hits":0,"aggregations":{"n":{"value":7}}}),
     )]);
-    let mut session = HttpSession::new(Engine::Quickwit, HttpOptions::new(endpoint), None).unwrap();
+    let mut session =
+        HttpSession::new(SourceKind::Quickwit, HttpOptions::new(endpoint), None).unwrap();
     let request = json!({"version":1,"engine":"quickwit","operation":"query","api":"native","index":"docs","body":{"query":"*","max_hits":0},"columns":[{"source":"response"}]});
     let output = session
         .execute(&request, &[column("result", "json", false)])
@@ -310,7 +311,7 @@ async fn native_query_returns_full_response_and_null_query_skips_http() {
 async fn null_filter_guards_are_applied_without_changing_other_predicates() {
     let (endpoint, requests, server) = serve(vec![(200, json!({"hits":{"hits":[]}}))]);
     let mut session =
-        HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
     let mut request = request("elasticsearch");
     request["body"] = json!({"query":{"term":{"id":null}}});
     request["null_guards"] = json!([{"value":"/body/query/term/id","clause":"/body/query"}]);
@@ -328,7 +329,7 @@ async fn batched_requests_use_msearch_and_preserve_request_order() {
         json!({"responses":[{"hits":{"hits":[{"_source":{"id":10}}]}},{"hits":{"hits":[{"_source":{"id":20}}]}}]}),
     )]);
     let mut session =
-        HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
     let first = request("elasticsearch");
     let second = request("elasticsearch");
     let batches = session
@@ -356,7 +357,7 @@ async fn batched_item_error_rejects_the_entire_result() {
         json!({"responses":[{"hits":{"hits":[{"_source":{"id":10}}]}},{"status":400,"error":{"reason":"unsupported query"}}]}),
     )]);
     let mut session =
-        HttpSession::new(Engine::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
     assert!(
         session
             .execute_many(
@@ -424,7 +425,7 @@ async fn query_timeout_and_response_size_limits_are_enforced() {
     });
     let mut options = HttpOptions::new(format!("http://{address}"));
     options.request_timeout = Duration::from_millis(15);
-    let mut session = HttpSession::new(Engine::Elasticsearch, options, None).unwrap();
+    let mut session = HttpSession::new(SourceKind::Elasticsearch, options, None).unwrap();
     assert!(
         session
             .execute(&request("elasticsearch"), &[column("id", "int64", false)])
@@ -439,7 +440,7 @@ async fn query_timeout_and_response_size_limits_are_enforced() {
     )]);
     let mut options = HttpOptions::new(endpoint);
     options.max_response_bytes = 8;
-    let mut session = HttpSession::new(Engine::Elasticsearch, options, None).unwrap();
+    let mut session = HttpSession::new(SourceKind::Elasticsearch, options, None).unwrap();
     assert!(
         session
             .execute(&request("elasticsearch"), &[column("id", "int64", false)])
@@ -473,7 +474,7 @@ async fn weaviate_batches_aliases_chunks_and_source_identity() {
     ]);
     let mut options = HttpOptions::new(&endpoint);
     options.batch_size = 2;
-    let mut session = HttpSession::new(Engine::Weaviate, options, None).unwrap();
+    let mut session = HttpSession::new(SourceKind::Weaviate, options, None).unwrap();
     let columns = [
         column("source", "int64", false),
         column("doc", "int64", false),
@@ -596,4 +597,98 @@ async fn weaviate_batch_keeps_thresholds_and_rejects_oversized_results() {
         seen.recv().unwrap();
     }
     server.join().unwrap();
+}
+
+#[tokio::test]
+async fn streaming_snapshot_fetches_only_on_demand() {
+    use futures::StreamExt;
+    let (endpoint, requests, server) = serve(vec![
+        (
+            200,
+            json!({"_scroll_id":"a","hits":{"hits":[{"_source":{"id":1}}]}}),
+        ),
+        (
+            200,
+            json!({"_scroll_id":"b","hits":{"hits":[{"_source":{"id":2}}]}}),
+        ),
+        (200, json!({"_scroll_id":"c","hits":{"hits":[]}})),
+        (200, json!({"succeeded":true})),
+    ]);
+    let session =
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+    let mut request = request("elasticsearch");
+    request["limit"] = Value::Null;
+    let mut stream = streaming::request_stream(
+        session,
+        Box::pin(futures::stream::iter([Ok(vec![request])])),
+        vec![column("id", "int64", false)],
+    )
+    .unwrap();
+    assert!(
+        requests.try_recv().is_err(),
+        "constructing a stream must not fetch"
+    );
+    assert_eq!(stream.next().await.unwrap().unwrap().num_rows(), 1);
+    assert!(requests.recv().unwrap().starts_with("POST /docs/_search"));
+    assert!(
+        requests.try_recv().is_err(),
+        "one pull must not fetch the next page"
+    );
+    assert_eq!(stream.next().await.unwrap().unwrap().num_rows(), 1);
+    assert!(requests.recv().unwrap().starts_with("POST /_search/scroll"));
+    assert!(stream.next().await.is_none());
+    assert!(requests.recv().unwrap().starts_with("POST /_search/scroll"));
+    assert!(
+        requests
+            .recv()
+            .unwrap()
+            .starts_with("DELETE /_search/scroll")
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn streaming_snapshot_late_failure_releases_cursor() {
+    use futures::StreamExt;
+    let (endpoint, requests, server) = serve(vec![
+        (
+            200,
+            json!({"_scroll_id":"a","hits":{"hits":[{"_source":{"id":1}}]}}),
+        ),
+        (
+            200,
+            json!({"_scroll_id":"failed","_shards":{"failed":1},"hits":{"hits":[]}}),
+        ),
+        (200, json!({"succeeded":true})),
+    ]);
+    let session =
+        HttpSession::new(SourceKind::Elasticsearch, HttpOptions::new(endpoint), None).unwrap();
+    let mut request = request("elasticsearch");
+    request["limit"] = Value::Null;
+    let mut stream = streaming::request_stream(
+        session,
+        Box::pin(futures::stream::iter([Ok(vec![request])])),
+        vec![column("id", "int64", false)],
+    )
+    .unwrap();
+    assert_eq!(stream.next().await.unwrap().unwrap().num_rows(), 1);
+    assert!(
+        stream
+            .next()
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("partial")
+    );
+    assert!(stream.next().await.is_none());
+    tokio::task::spawn_blocking(move || {
+        requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        let cleanup = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(cleanup.starts_with("DELETE /_search/scroll"));
+        assert!(cleanup.contains("failed"));
+        server.join().unwrap();
+    })
+    .await
+    .unwrap();
 }

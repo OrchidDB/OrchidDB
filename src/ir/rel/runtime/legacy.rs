@@ -1,4 +1,4 @@
-//! Legacy DataFusion physical adapter for already compiled subplans.
+//! Query-local cache of Orchid executable subplans.
 use super::*;
 
 #[derive(Debug)]
@@ -25,6 +25,7 @@ pub(super) fn run(
         .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))?
         .take();
     let rule_context = live.context.rule_context.clone();
+    let region_session = live.context.region_session.clone();
     let graph = live.graph.clone();
     let prepared = if let Some(prepared) = cached {
         *prepared
@@ -50,9 +51,10 @@ pub(super) fn run(
                     })
                 });
         #[cfg(not(feature = "duckdb"))]
-        let resources = None;
+        let resources: Option<super::super::dag::DagSession> = None;
         let cost = Arc::new(Mutex::new(crate::ir::QueryCost::default()));
-        let result = if let Some(resources) = resources {
+        let result = if let Some(mut resources) = resources {
+            resources.region_session = region_session.clone();
             runtime.block_on(super::super::dag::prepare_with_extensions(
                 plan,
                 vec![Arc::new(KernelPlanner {
@@ -62,25 +64,25 @@ pub(super) fn run(
                 cost.clone(),
                 &rule_context,
             ))
-        } else if rule_context.lowering_policy == super::policy::LoweringPolicy::SqlRequired {
-            let mut resources = super::super::dag::DagSession::new(state.lock().map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?.context.sql_timeout);
-            resources.set_rule_context(rule_context.clone());
-            runtime.block_on(super::super::dag::prepare_with_extensions(plan,
-                vec![Arc::new(KernelPlanner { state: state.clone() })], &resources, cost.clone(), &rule_context))
         } else {
-            let session = datafusion::prelude::SessionContext::new_with_config(
-                datafusion::prelude::SessionConfig::new().with_target_partitions(1),
+            let mut resources = super::super::dag::DagSession::new(
+                state
+                    .lock()
+                    .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?
+                    .context
+                    .sql_timeout,
             );
-            let planner =
-                datafusion::physical_planner::DefaultPhysicalPlanner::with_extension_planners(
-                    vec![Arc::new(KernelPlanner {
-                        state: state.clone(),
-                    })],
-                );
-            runtime
-                .block_on(planner.create_physical_plan(plan, &session.state()))
-                .map(|physical| (physical, session.task_ctx(), Default::default()))
-                .map_err(super::super::RelError::from)
+            resources.set_rule_context(rule_context.clone());
+            resources.region_session = region_session;
+            runtime.block_on(super::super::dag::prepare_with_extensions(
+                plan,
+                vec![Arc::new(KernelPlanner {
+                    state: state.clone(),
+                })],
+                &resources,
+                cost.clone(),
+                &rule_context,
+            ))
         };
         let (physical, task, stats) = match result {
             Ok(plan) => plan,
@@ -106,7 +108,7 @@ pub(super) fn run(
             .nested_dag_stats
             .merge_execution(&prepared.stats);
     }
-    let result = runtime.block_on(datafusion::physical_plan::collect(
+    let result = runtime.block_on(super::super::engine_exec::collect(
         prepared.physical.clone(),
         prepared.task.clone(),
     ));

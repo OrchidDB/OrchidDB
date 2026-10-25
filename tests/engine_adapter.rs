@@ -1,4 +1,4 @@
-//! A third SQL engine can join the public compiler without editing dispatch.
+//! Source adapters retain lowering hooks without becoming executable engines.
 use arrow::datatypes::DataType;
 use datafusion::common::ScalarValue;
 use datafusion::sql::{
@@ -228,34 +228,15 @@ fn request(query: &str) -> Value {
         "nodes":[{"label":"Person","table":"people","id":"id","properties":{"name":"name","id":"id"}}]})
 }
 #[tokio::test]
-async fn registered_engine_compiles_graph_query_and_runs_its_ast_rewrite() {
+async fn registering_a_source_dialect_does_not_enable_a_third_execution_engine() {
     SqlDialect::register(&WAREHOUSE).unwrap();
-    let sql: Value = serde_json::from_str(&compile_json(&request("MATCH (p:Person) WHERE p.id > 3 RETURN toLower(p.name) AS name ORDER BY name LIMIT 5").to_string()).await.unwrap()).unwrap();
-    assert_eq!(sql["dialect"], "adapter_test_warehouse");
-    let sql = sql["sql"].as_str().unwrap();
-    assert!(sql.contains("warehouse_lower"), "{sql}");
-    assert!(sql.contains("people") && sql.contains("LIMIT 5"), "{sql}");
-}
-#[tokio::test]
-async fn third_engine_lowers_portable_json_through_general_function_hook() {
-    SqlDialect::register(&WAREHOUSE).unwrap();
-    let output: Value = serde_json::from_str(
-        &compile_json(&request("MATCH (p:Person) RETURN json.valid(p.name) AS valid").to_string())
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    let sql = output["sql"].as_str().unwrap();
-    assert!(sql.contains("warehouse_json_valid"), "{sql}");
-    assert!(!sql.contains("__orchiddb_json_"), "{sql}");
-}
-#[tokio::test]
-async fn unknown_functions_do_not_inherit_duckdb_implementations() {
-    SqlDialect::register(&WAREHOUSE).unwrap();
-    let error = compile_json(&request("MATCH (p:Person) RETURN reverse(p.name)").to_string())
-        .await
-        .unwrap_err();
-    assert!(error.contains("warehouse function reverse"), "{error}");
+    for query in [
+        "MATCH (p:Person) RETURN p.id",
+        "MATCH (p:Person) RETURN json.valid(p.name)",
+    ] {
+        let error = compile_json(&request(query).to_string()).await.unwrap_err();
+        assert!(error.contains("unsupported executable engine"), "{error}");
+    }
 }
 #[test]
 fn registration_and_exchange_codecs_are_engine_owned() {
@@ -434,168 +415,16 @@ fn search_request(mixed: bool) -> Value {
     })
 }
 #[tokio::test]
-async fn third_engine_indexed_relationship_compiles_in_its_own_sql_island() {
+async fn indexed_source_adapter_cannot_be_selected_as_execution_engine() {
     SqlDialect::register(&WAREHOUSE).unwrap();
-    let plan = orchiddb::compiler::compile(serde_json::from_value(search_request(false)).unwrap())
-        .await
-        .unwrap();
-    assert!(plan.transfers.is_empty(), "{plan:?}");
-    assert!(plan.sql.contains("warehouse_neighbors"), "{}", plan.sql);
-    assert!(plan.sql.contains("LATERAL"), "{}", plan.sql);
-    assert!(
-        !plan.sql.contains("lance_") && !plan.sql.contains("<=>"),
-        "{}",
-        plan.sql
-    );
-}
-fn fixture_batch(
-    columns: &[orchiddb::federation::TransferColumn],
-) -> arrow::record_batch::RecordBatch {
-    use arrow::datatypes::{Field, Schema};
-    use std::sync::Arc;
-    let values = columns
-        .iter()
-        .map(|column| match column.data_type.as_str() {
-            "int64" => ScalarValue::Int64(Some(1)),
-            "string" => ScalarValue::Utf8(Some("1".into())),
-            "float64" => ScalarValue::Float64(Some(0.9)),
-            "list:float64" => ScalarValue::List(ScalarValue::new_list(
-                &[
-                    ScalarValue::Float64(Some(1.0)),
-                    ScalarValue::Float64(Some(0.0)),
-                ],
-                &DataType::Float64,
-                true,
-            )),
-            other => panic!("unexpected fixture type {other}"),
-        })
-        .collect::<Vec<_>>();
-    let schema = Arc::new(Schema::new(
-        columns
-            .iter()
-            .zip(&values)
-            .map(|(column, value)| Field::new(&column.name, value.data_type(), column.nullable))
-            .collect::<Vec<_>>(),
-    ));
-    arrow::record_batch::RecordBatch::try_new(
-        schema,
-        values
-            .iter()
-            .map(|value| value.to_array_of_size(1).unwrap())
-            .collect(),
-    )
-    .unwrap()
-}
-#[tokio::test]
-async fn third_engine_bound_search_executes_on_target_session_and_preserves_schema() {
-    use arrow::record_batch::RecordBatch;
-    use orchiddb::federation::{self, Session};
-    use std::{
-        cell::RefCell,
-        collections::{BTreeMap, VecDeque},
-        rc::Rc,
-    };
-    SqlDialect::register(&WAREHOUSE).unwrap();
-    let plan = orchiddb::compiler::compile(serde_json::from_value(search_request(true)).unwrap())
-        .await
-        .unwrap();
-    let dependent = plan
-        .transfers
-        .iter()
-        .find(|t| t.operation.is_some())
-        .expect("mixed ownership must bind search inputs");
-    let operation = dependent.operation.as_ref().unwrap();
-    assert_eq!(operation.engine, "warehouse");
-    assert_eq!(operation.template.dialect, "adapter_test_warehouse");
-    assert!(operation.template.sql.contains("warehouse_neighbors"));
-    let source_batch = fixture_batch(&operation.input_columns);
-    let hits = fixture_batch(&dependent.columns);
-    let log = Rc::new(RefCell::new(vec![]));
-    struct Mock {
-        owner: &'static str,
-        dialect: &'static str,
-        responses: VecDeque<Vec<RecordBatch>>,
-        log: Rc<RefCell<Vec<(String, String)>>>,
+    for mixed in [false, true] {
+        let error =
+            orchiddb::compiler::compile(serde_json::from_value(search_request(mixed)).unwrap())
+                .await
+                .unwrap_err();
+        assert!(error.contains("unsupported executable engine"), "{error}");
     }
-    #[async_trait::async_trait(?Send)]
-    impl Session for Mock {
-        fn dialect(&self) -> &str {
-            self.dialect
-        }
-        async fn query(&mut self, sql: &str) -> Result<Vec<RecordBatch>, String> {
-            self.log.borrow_mut().push((self.owner.into(), sql.into()));
-            self.responses
-                .pop_front()
-                .ok_or_else(|| format!("unexpected {} query: {sql}", self.owner))
-        }
-    }
-    // Each transfer's source query executes before its bound operation. Earlier
-    // exchanges, if present, are given batches with precisely their own schema.
-    let mut seed = VecDeque::new();
-    let mut warehouse = VecDeque::new();
-    for transfer in &plan.transfers {
-        let batch = if transfer.operation.is_some() {
-            source_batch.clone()
-        } else {
-            fixture_batch(&transfer.columns)
-        };
-        if transfer.source_engine == "seed" {
-            seed.push_back(vec![batch]);
-        } else {
-            warehouse.push_back(vec![batch]);
-        }
-        if transfer.operation.is_some() {
-            warehouse.push_back(vec![hits.clone()]);
-        }
-    }
-    let final_rows = fixture_batch(&[
-        orchiddb::federation::TransferColumn {
-            name: "id".into(),
-            data_type: "int64".into(),
-            nullable: false,
-        },
-        orchiddb::federation::TransferColumn {
-            name: "score".into(),
-            data_type: "float64".into(),
-            nullable: true,
-        },
-    ]);
-    warehouse.push_back(vec![final_rows.clone()]);
-    let mut sessions: BTreeMap<String, Box<dyn Session>> = BTreeMap::new();
-    sessions.insert(
-        "seed".into(),
-        Box::new(Mock {
-            owner: "seed",
-            dialect: "duckdb",
-            responses: seed,
-            log: log.clone(),
-        }),
-    );
-    sessions.insert(
-        "warehouse".into(),
-        Box::new(Mock {
-            owner: "warehouse",
-            dialect: "adapter_test_warehouse",
-            responses: warehouse,
-            log: log.clone(),
-        }),
-    );
-    let result = federation::execute(&plan, &mut sessions).await.unwrap();
-    assert_eq!(result[0].schema(), final_rows.schema());
-    assert_eq!(plan.fields, vec!["id", "score"]);
-    let log = log.borrow();
-    let searches = log
-        .iter()
-        .filter(|(_, sql)| sql.contains("warehouse_neighbors"))
-        .collect::<Vec<_>>();
-    assert_eq!(searches.len(), 1, "{log:?}");
-    assert_eq!(searches[0].0, "warehouse");
-    assert!(
-        searches[0].1.contains("ARRAY[") && !searches[0].1.contains("$1"),
-        "{log:?}"
-    );
 }
-
 #[test]
 fn correlated_table_function_preserves_qualified_source_columns_in_parent() {
     use arrow::datatypes::{Field, Schema};
@@ -735,9 +564,9 @@ fn physical_field(
 }
 
 #[tokio::test]
-async fn third_engine_can_bind_declared_native_functions() {
-    SqlDialect::register(&WAREHOUSE).unwrap();
+async fn executable_engines_can_bind_declared_native_functions() {
     let mut r = request("MATCH (p:Person) RETURN warehouseScore(p.id) AS score");
+    r["dialect"] = json!("duckdb");
     r["functions"] = json!([{
         "name": "warehouseScore", "target": "warehouse_score",
         "parameters": ["int64"], "returns": "int64"

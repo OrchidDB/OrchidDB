@@ -69,11 +69,14 @@ async fn run(
     )
     .unwrap();
     let logical = ctx
-        .read_batch(input)
+        .read_batch(input.clone())
         .unwrap()
         .into_optimized_plan()
         .unwrap();
-    let physical = ctx.state().create_physical_plan(&logical).await.unwrap();
+    let physical = Arc::new(orchiddb::ir::rel::engine_exec::InputBatches::new(
+        input.schema(),
+        vec![input],
+    ));
     let schema = Arc::new(
         DFSchema::try_from(Schema::new(vec![Field::new(
             "result",
@@ -104,7 +107,11 @@ async fn run(
         session,
         cost.clone(),
     ));
-    let result = datafusion::physical_plan::collect(execution, ctx.task_ctx()).await;
+    let result = orchiddb::ir::rel::engine_exec::collect(
+        execution,
+        Arc::new(orchiddb::ir::rel::engine_exec::TaskContext::default()),
+    )
+    .await;
     let recorded = calls.lock().unwrap().clone();
     let measured = cost.lock().unwrap().clone();
     (result, recorded, measured)
@@ -281,7 +288,7 @@ fn correlated_and_prepare_time_table_functions_return_the_same_rows() {
         .build()
         .unwrap();
     let lowered = orchiddb::ir::rel::LoweredPlan {
-            rule_context: Default::default(),
+        rule_context: Default::default(),
         plan: parent,
         fields: vec!["value".into()],
         result_form: orchiddb::ir::policy::ResultForm::RowSet,
@@ -383,7 +390,7 @@ fn two_table_functions_compose_in_one_sql_scope() {
         .build()
         .unwrap();
     let lowered = orchiddb::ir::rel::LoweredPlan {
-            rule_context: Default::default(),
+        rule_context: Default::default(),
         plan,
         fields: vec!["left_value".into(), "right_value".into()],
         result_form: orchiddb::ir::policy::ResultForm::RowSet,

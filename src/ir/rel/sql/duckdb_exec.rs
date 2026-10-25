@@ -60,6 +60,7 @@ pub struct DuckDbExecutor {
     retired_scans: BTreeMap<String, i64>,
     scan_clock: u64,
     arrow_registered: bool,
+    stream_registered: bool,
     timeout: Option<Duration>,
     setup_timeout: Option<Duration>,
     lost_connection: bool,
@@ -80,6 +81,7 @@ impl Default for DuckDbExecutor {
             retired_scans: BTreeMap::new(),
             scan_clock: 0,
             arrow_registered: false,
+            stream_registered: false,
             timeout: None,
             setup_timeout: None,
             lost_connection: false,
@@ -185,6 +187,7 @@ impl DuckDbExecutor {
             retired_scans: BTreeMap::new(),
             scan_clock: 0,
             arrow_registered: false,
+            stream_registered: false,
             timeout: None,
             setup_timeout: None,
             lost_connection: false,
@@ -234,6 +237,7 @@ impl DuckDbExecutor {
                 ));
             }
             self.arrow_registered = false;
+            self.stream_registered = false;
             self.language_functions_registered = false;
             self.connection = Some(
                 Connection::open_in_memory()
@@ -515,6 +519,25 @@ impl SqlExecutor for DuckDbExecutor {
 }
 
 impl DuckDbExecutor {
+    pub(crate) fn prepare_stream_setup(&mut self, prepared: &super::PreparedSql) -> Result<(),String> {
+        if let Some(required)=&prepared.float_helper {self.validate_float_helper(required).map_err(|e|e.to_string())?;}
+        self.ensure_connection().map_err(|e|e.to_string())?;
+        if !self.stream_registered {
+            self.connection.as_ref().unwrap().register_table_function::<super::duckdb_stream::Scan>("__orchid_stream_scan").map_err(|e|e.to_string())?;
+            self.stream_registered=true;
+        }
+        self.clear_query_scans().map_err(|e|e.to_string())?;
+        let cache=!self.in_transaction();
+        for table in &prepared.tables {self.ensure_scan_table(table, cache).map_err(|e|e.to_string())?;}
+        // The empty query applies setup through the existing transactional/cache lifecycle.
+        self.run_query(&prepared.setup,"SELECT 1",execute_query).map_err(|e|e.to_string())?;
+        Ok(())
+    }
+    pub(crate) fn finish_stream_setup(&mut self)->Result<(),String>{
+        self.clear_query_scans().map_err(|e|e.to_string())?;
+        if !self.in_transaction(){self.evict_scan_tables(&BTreeSet::new());}
+        Ok(())
+    }
     /// Keep island results in Arrow, preserving binary, temporal, decimal and
     /// full-width scalar keys without a lossy row/string round trip.
     pub(crate) fn execute_prepared_arrow(&mut self, prepared: &super::PreparedSql) -> SqlResult<RecordBatch> {

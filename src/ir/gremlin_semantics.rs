@@ -8,7 +8,20 @@ use bigdecimal::BigDecimal;
 use num_traits::ToPrimitive;
 use std::cmp::Ordering;
 
+fn transport_scalar(value: &Value) -> Option<Value> {
+    fn decode(value: &datafusion::common::ScalarValue) -> Option<Value> {
+        use datafusion::common::ScalarValue;
+        match value {
+            ScalarValue::Int64(Some(value)) => Some(Value::Long(*value)),
+            ScalarValue::Dictionary(_, value) => decode(value),
+            value => super::value::scalar_semantic_value(value),
+        }
+    }
+    match value { Value::Scalar(value) => decode(value), _ => None }
+}
+
 pub fn numeric_width(value: &Value) -> Option<(u16, bool)> {
+    if let Some(value) = transport_scalar(value) { return numeric_width(&value); }
     Some(match value {
         Value::Byte(_) | Value::UInt8(_) => (8, false),
         Value::Short(_) | Value::UInt16(_) => (16, false),
@@ -23,6 +36,7 @@ pub fn numeric_width(value: &Value) -> Option<(u16, bool)> {
 }
 
 pub fn decimal(value: &Value) -> Option<BigDecimal> {
+    if let Some(value) = transport_scalar(value) { return decimal(&value); }
     Some(match value {
         Value::Byte(v) => (*v).into(),
         Value::UInt8(v) => (*v).into(),
@@ -41,6 +55,7 @@ pub fn decimal(value: &Value) -> Option<BigDecimal> {
 }
 
 fn double(value: &Value) -> Option<f64> {
+    if let Some(value) = transport_scalar(value) { return double(&value); }
     match value {
         Value::Float(v) => Some(*v),
         Value::Float32(v) => Some(*v as f64),
@@ -49,6 +64,7 @@ fn double(value: &Value) -> Option<f64> {
 }
 
 pub fn is_nan(value: &Value) -> bool {
+    if let Some(value) = transport_scalar(value) { return is_nan(&value); }
     matches!(value, Value::Float(v) if v.is_nan())
         || matches!(value, Value::Float32(v) if v.is_nan())
 }
@@ -83,6 +99,8 @@ pub fn numeric_cmp(left: &Value, right: &Value) -> Option<Ordering> {
 }
 
 pub fn equals(left: &Value, right: &Value) -> bool {
+    if let Some(value) = transport_scalar(left) { return equals(&value, right); }
+    if let Some(value) = transport_scalar(right) { return equals(left, &value); }
     if numeric_width(left).is_some() || numeric_width(right).is_some() {
         return numeric_cmp(left, right) == Some(Ordering::Equal);
     }
@@ -129,6 +147,8 @@ pub fn equals(left: &Value, right: &Value) -> bool {
 }
 
 pub fn predicate(op: &str, left: &Value, right: &Value) -> Value {
+    if let Some(value) = transport_scalar(left) { return predicate(op, &value, right); }
+    if let Some(value) = transport_scalar(right) { return predicate(op, left, &value); }
     if op == "eq" || op == "neq" {
         return Value::Bool(equals(left, right) == (op == "eq"));
     }
@@ -175,6 +195,18 @@ pub fn compare_order_keys(left: &Value, right: &Value) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn arrow_identity_scalars_use_gremlin_comparison_and_numeric_widths() {
+        use datafusion::common::ScalarValue;
+        let integer = Value::Scalar(ScalarValue::Int32(Some(1)));
+        assert_eq!(predicate("eq", &integer, &Value::Int(1)), Value::Bool(true));
+        assert_eq!(predicate("neq", &integer, &Value::Int(1)), Value::Bool(false));
+        assert_eq!(predicate("lt", &integer, &Value::Int(2)), Value::Bool(true));
+        assert!(equals(&Value::Scalar(ScalarValue::Utf8(Some("id".into()))), &Value::String("id".into())));
+        let rounded = Value::Float32(16_777_216.0);
+        assert!(equals(&Value::Scalar(ScalarValue::Int32(Some(16_777_217))), &rounded));
+        assert!(!equals(&Value::Scalar(ScalarValue::Int64(Some(16_777_217))), &rounded));
+    }
     #[test]
     fn promotion_preserves_decimal_and_uses_upstream_widths() {
         for text in ["0.2", "0.4"] {

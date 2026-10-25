@@ -95,13 +95,13 @@ impl VScalar for Native {
                 let result = match kind.as_str() {
                     "value" | "predicate" => {
                         native::evaluate(&spec, &value, kind == "predicate", clock(3)?, clock(4)?)
-                            .map_err(|e| e.to_string())?
+                            .map_err(|e| e.sql_error())?
                     }
                     "key" => json!(native::key(&value, spec == "true")?),
                     "items" => native::items(&value)?,
                     "aggregate" => native::aggregate(&spec, &value)?,
                     "project" => native::project(&spec, &value, clock(3)?, clock(4)?)
-                        .map_err(|e| e.to_string())?,
+                        .map_err(|e| e.sql_error())?,
                     "sort" => json!(native::sort(&spec, &value)?),
                     _ => return Err("unknown native scalar operation".into()),
                 };
@@ -137,7 +137,10 @@ pub(super) fn register(connection: &Connection) -> duckdb::Result<()> {
         (
             native::PREDICATE,
             "spec, bindings",
-            format!("CAST({} AS BOOLEAN)", call("predicate", "spec", "bindings")),
+            format!(
+                r#"from_json({}, '"BOOLEAN"')"#,
+                call("predicate", "spec", "bindings")
+            ),
         ),
         (
             native::KEY,
@@ -180,4 +183,73 @@ pub(super) fn register(connection: &Connection) -> duckdb::Result<()> {
         connection.execute_batch(&format!("CREATE MACRO {name}({args}) AS {body}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nullable_predicates_and_date_inputs_keep_sql_types() {
+        let connection = Connection::open_in_memory().unwrap();
+        register(&connection).unwrap();
+        let mut statement = connection
+            .prepare(
+                r#"SELECT __orchiddb_predicate('{"Binding":"value"}', struct_pack(value := flag))
+            FROM (VALUES (NULL::BOOLEAN), (false), (true)) AS input(flag)"#,
+            )
+            .unwrap();
+        let actual = statement
+            .query_map([], |row| row.get::<_, Option<bool>>(0))
+            .unwrap()
+            .collect::<duckdb::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(actual, vec![None, Some(false), Some(true)]);
+        let encoded: String = connection
+            .query_row(
+                r#"SELECT (__orchiddb_value('{"Binding":"value"}',
+            struct_pack(value := DATE '2024-02-29'))).__orchiddb_value_v1"#,
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        use base64::Engine;
+        let value = crate::ir::catalog::snapshot::binary::decode_value_bytes(
+            &base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            value,
+            crate::ir::value::Value::Temporal(
+                crate::ir::temporal::parse("date", "2024-02-29").unwrap()
+            )
+        );
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn runtime_diagnosis_survives_duckdb_scalar_error_transport() {
+        let connection = Connection::open_in_memory().unwrap();
+        register(&connection).unwrap();
+        let spec =
+            json!({"Call":{"name":"cypher_slice_bound","args":[{"Binding":"value"}]}}).to_string();
+        let error = connection
+            .query_row::<String, _, _>(
+                "SELECT __orchiddb_value(?, struct_pack(value := -1))",
+                [spec],
+                |row| row.get(0),
+            )
+            .unwrap_err();
+        let error = crate::ir::diagnostics::QueryExecutionError::from_error(error);
+        assert_eq!(
+            error.diagnosis,
+            Some(crate::ir::diagnostics::RuntimeDiagnosis::NegativeIntegerArgument)
+        );
+        assert!(error.message.contains("non-negative"));
+    }
 }

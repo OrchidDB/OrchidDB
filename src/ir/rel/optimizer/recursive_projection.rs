@@ -300,8 +300,13 @@ mod tests {
     use datafusion::{
         logical_expr::{col, lit},
         optimizer::{OptimizerContext, optimize_projections::OptimizeProjections},
-        prelude::SessionConfig,
     };
+
+    fn oracle()->datafusion::prelude::SessionContext {
+        let session=datafusion::prelude::SessionContext::new();
+        let state=datafusion::execution::session_state::SessionStateBuilder::new_from_existing(session.state()).with_optimizer_rules(vec![]).build();
+        datafusion::prelude::SessionContext::new_with_state(state)
+    }
 
     fn recurrence(distinct: bool) -> Result<LogicalPlan> {
         let seed = LogicalPlanBuilder::empty(true)
@@ -371,8 +376,10 @@ mod tests {
         let optimized = optimize(plan)?;
         check_worktables(&optimized, 4)?;
         assert_eq!(optimize(optimized.clone())?, optimized);
-        let ctx = super::super::session(SessionConfig::new());
-        let batches = ctx.execute_logical_plan(optimized).await?.collect().await?;
+        // Test-only semantic oracle for the compiler rewrite. Production
+        // optimizer sessions deliberately reject DataFusion execution.
+        let oracle=oracle();
+        let batches=oracle.execute_logical_plan(optimized).await?.collect().await?;
         let values = batches
             .iter()
             .flat_map(|b| {
@@ -394,8 +401,10 @@ mod tests {
         let plan = project(recurrence(false)?, &[])?;
         let optimized = optimize(plan)?;
         check_worktables(&optimized, 1)?;
-        let ctx = super::super::session(SessionConfig::new());
-        let batches = ctx.execute_logical_plan(optimized).await?.collect().await?;
+        // Test-only semantic oracle for the compiler rewrite. Production
+        // optimizer sessions deliberately reject DataFusion execution.
+        let oracle=oracle();
+        let batches=oracle.execute_logical_plan(optimized).await?.collect().await?;
         assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 4);
         Ok(())
     }
@@ -407,8 +416,10 @@ mod tests {
             .build()?;
         let optimized = optimize(plan)?;
         check_worktables(&optimized, 6)?;
-        let ctx = super::super::session(SessionConfig::new());
-        let batches = ctx.execute_logical_plan(optimized).await?.collect().await?;
+        // Test-only semantic oracle for the compiler rewrite. Production
+        // optimizer sessions deliberately reject DataFusion execution.
+        let oracle=oracle();
+        let batches=oracle.execute_logical_plan(optimized).await?.collect().await?;
         assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 4);
         Ok(())
     }
@@ -433,8 +444,10 @@ mod tests {
         })?;
         assert_eq!(definitions.len(), 2);
         assert_eq!(definitions[0], definitions[1]);
-        let ctx = super::super::session(SessionConfig::new());
-        let batches = ctx.execute_logical_plan(optimized).await?.collect().await?;
+        // Test-only semantic oracle for the compiler rewrite. Production
+        // optimizer sessions deliberately reject DataFusion execution.
+        let oracle=oracle();
+        let batches=oracle.execute_logical_plan(optimized).await?.collect().await?;
         let mut values = batches
             .iter()
             .flat_map(|b| {

@@ -31,7 +31,7 @@ async fn constant_query_needs_no_internal_table() {
 
 #[tokio::test]
 async fn signed_integer_widths_compare_without_lossy_numeric_promotion() {
-    for dialect in ["duckdb", "postgres"] {
+    for dialect in ["duckdb", "trino"] {
         for ty in ["int8", "int16", "int32", "int64"] {
             let mut r = request("MATCH (p:Person) WHERE p.age > 35 RETURN p.age");
             r["dialect"] = json!(dialect);
@@ -59,7 +59,7 @@ async fn validates_protocol_dialect_and_schema() {
     assert!(compile(r).await.unwrap_err().contains("version"));
     let mut r = request("RETURN 1");
     r["dialect"] = json!("clickhouse");
-    assert!(compile(r).await.unwrap_err().contains("dialect"));
+    assert!(compile(r).await.unwrap_err().contains("unsupported executable engine"));
     let mut r = request("RETURN 1");
     r["nodes"][0]["id"] = json!("missing");
     assert!(compile(r).await.unwrap_err().contains("missing column"));
@@ -133,7 +133,7 @@ async fn every_declared_scalar_type_can_be_a_primary_key() {
         "string", "binary", "date", "time", "timestamp", "duration", "interval",
         "decimal:38:2",
     ] {
-        for dialect in ["duckdb", "postgres"] {
+        for dialect in ["duckdb", "trino"] {
             let mut r = request("MATCH (p:Person) RETURN id(p)");
             r["dialect"] = json!(dialect);
             r["tables"][0]["columns"][0]["data_type"] = json!(ty);
@@ -166,7 +166,7 @@ async fn audit_permission_scope_wraps_query_source() {
         "nodes":[{"label":"Person","table":"people","id":"id","properties":{"name":"name"},
           "source_query":"SELECT id, name FROM people WHERE name <> 'hidden'",
           "permission_scopes":[{"resource_column":"id","relation":{"table":"permissions","resource_type":"person","permission":"read","permission_column":"permission","subject_relation_column":"subject_relation"}}]}]});
-    for dialect in ["duckdb", "postgres"] {
+    for dialect in ["duckdb", "trino"] {
         r["dialect"] = json!(dialect);
         let result = compile(r.clone()).await.unwrap();
         #[cfg(feature = "duckdb")]
@@ -203,7 +203,7 @@ async fn compiler_owned_constant_relations_do_not_require_materialization() {
 
 #[tokio::test]
 async fn portable_function_compiles_for_both_engines_without_a_host_catalog() {
-    for dialect in ["duckdb", "postgres"] {
+    for dialect in ["duckdb", "trino"] {
         let mut r = request("MATCH (p:Person) RETURN fn.coalesce(p.name, 'unknown') AS name");
         r["dialect"] = json!(dialect);
         let result = compile(r).await.unwrap();
@@ -217,32 +217,9 @@ async fn portable_function_compiles_for_both_engines_without_a_host_catalog() {
 }
 
 #[tokio::test]
-async fn postgres_computed_relationship_history_uses_jsonb_identity_fields() {
-    for id in [json!("id"), json!(["tenant", "id"])] {
-        let result = compile(json!({
-            "version": 1, "dialect": "postgres", "language": "cypher",
-            "query": "MATCH (a:N)-[:NEXT]->(b:N)-[:NEXT]->(c:N) RETURN a.id, c.id",
-            "tables": [{"name": "nodes", "columns": [
-                {"name": "tenant", "data_type": "string"},
-                {"name": "id", "data_type": "int64"}
-            ]}],
-            "nodes": [{"label": "N", "table": "nodes", "id": id,
-                "properties": {"id": "id", "tenant": "tenant"}}],
-            "computed_relationships": [{"name": "NEXT", "source": "N", "target": "N",
-                "predicate": "source.tenant = target.tenant AND source.id + 1 = target.id"}]
-        })).await.unwrap();
-        let sql = result["sql"].as_str().unwrap();
-        assert!(sql.contains("jsonb_build_object"), "{sql}");
-        assert!(!sql.contains("\"k0\"") && !sql.contains("\"k1\""), "{sql}");
+async fn retired_engines_are_rejected_before_compilation() {
+    for dialect in ["postgres", "starrocks", "datafusion"] {
+        let mut r=request("RETURN 1"); r["dialect"]=json!(dialect);
+        assert!(compile(r).await.unwrap_err().contains("unsupported executable engine"));
     }
-}
-
-#[tokio::test]
-async fn postgres_text_extrema_use_binary_collation() {
-    let mut r = request("UNWIND ['a', 'b', 'B', null, 'abc', 'abc1'] AS i RETURN min(i) AS lo, max(i) AS hi");
-    r["dialect"] = json!("postgres");
-    let result = compile(r).await.unwrap();
-    let sql = result["sql"].as_str().unwrap();
-    assert_eq!(sql.matches("COLLATE \"C\"").count(), 2, "{sql}");
-    assert_eq!(result["fields"], json!(["lo", "hi"]));
 }

@@ -45,6 +45,9 @@ pub struct CompileRequest {
     pub dialect: String,
     #[serde(default)]
     pub engines: BTreeMap<String, crate::federation::Engine>,
+    /// Remote request sources, distinct from relational execution engines.
+    #[serde(default)]
+    pub sources: BTreeMap<String, crate::federation::Source>,
     #[serde(default)]
     pub execution_engine: Option<String>,
     pub language: String,
@@ -108,6 +111,7 @@ pub struct RdfGraphNames {
 pub struct Table {
     pub name: String,
     #[serde(default)]
+    #[serde(alias = "source")]
     pub engine: Option<String>,
     pub columns: Vec<Column>,
 }
@@ -308,20 +312,34 @@ pub struct CompileProcedure {
     pub outputs: Vec<crate::ir::procedures::ProcedureField>,
     pub rows: Vec<Vec<serde_json::Value>>,
 }
-fn procedure_catalog(request:&CompileRequest)->Result<crate::ir::procedures::ProcedureCatalog,String>{
-    request.procedures.iter().map(|(name,p)| {
-        let procedure=crate::ir::procedures::TableProcedure {
-            signature:crate::ir::procedures::ProcedureSignature {inputs:p.inputs.clone(),outputs:p.outputs.clone()},
-            rows:p.rows.iter().map(|row|row.iter().map(parameter).collect()).collect::<Result<_,_>>()?,
-        };
-        procedure.validate()?;
-        Ok((name.clone(),procedure))
-    }).collect()
+fn procedure_catalog(
+    request: &CompileRequest,
+) -> Result<crate::ir::procedures::ProcedureCatalog, String> {
+    request
+        .procedures
+        .iter()
+        .map(|(name, p)| {
+            let procedure = crate::ir::procedures::TableProcedure {
+                signature: crate::ir::procedures::ProcedureSignature {
+                    inputs: p.inputs.clone(),
+                    outputs: p.outputs.clone(),
+                },
+                rows: p
+                    .rows
+                    .iter()
+                    .map(|row| row.iter().map(parameter).collect())
+                    .collect::<Result<_, _>>()?,
+            };
+            procedure.validate()?;
+            Ok((name.clone(), procedure))
+        })
+        .collect()
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CompiledSql {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_deserializing)]
     pub rule_trace: Vec<crate::ir::rules::RuleTrace>,
     pub version: u32,
     pub dialect: String,
@@ -332,11 +350,17 @@ pub struct CompiledSql {
     pub fields: Vec<String>,
     pub result_form: String,
     pub field_types: Vec<Option<String>>,
+    #[serde(skip_deserializing)]
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
+    #[serde(skip_deserializing)]
     pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
+    #[serde(skip_deserializing)]
     pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
+    #[serde(skip_deserializing)]
     pub plan_estimates: Vec<crate::ir::rel::statistics::PlanEstimate>,
+    #[serde(skip_deserializing)]
     pub statistics_usage: Option<String>,
+    #[serde(skip_deserializing)]
     pub optimizer_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
 }
 
@@ -366,21 +390,38 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
         "timestamptz" => DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
         _ if value.starts_with("domain:") => {
-            let (name, storage) = value[7..].split_once(':').ok_or("domain type requires name and storage type")?;
-            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') { return Err("invalid domain name".into()); }
-            if name == "json" { return Err("use the json schema type for JSON documents".into()); }
+            let (name, storage) = value[7..]
+                .split_once(':')
+                .ok_or("domain type requires name and storage type")?;
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+                return Err("invalid domain name".into());
+            }
+            if name == "json" {
+                return Err("use the json schema type for JSON documents".into());
+            }
             crate::ir::functions::domain::data_type(name, data_type(storage)?)
         }
         _ if value.starts_with("list:") => {
             DataType::List(Arc::new(Field::new("item", data_type(&value[5..])?, true)))
         }
         _ if value.starts_with("struct_fields:") => {
-            let fields: Vec<(String, String)> = serde_json::from_str(&value[14..]).map_err(|e| format!("invalid ordered struct type: {e}"))?;
+            let fields: Vec<(String, String)> = serde_json::from_str(&value[14..])
+                .map_err(|e| format!("invalid ordered struct type: {e}"))?;
             let mut names = std::collections::BTreeSet::new();
-            if fields.is_empty() || fields.iter().any(|(name, _)| name.is_empty() || !names.insert(name.clone())) {
+            if fields.is_empty()
+                || fields
+                    .iter()
+                    .any(|(name, _)| name.is_empty() || !names.insert(name.clone()))
+            {
                 return Err("struct requires distinct nonempty field names".into());
             }
-            DataType::Struct(fields.into_iter().map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true)))).collect::<Result<Vec<_>, String>>()?.into())
+            DataType::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true))))
+                    .collect::<Result<Vec<_>, String>>()?
+                    .into(),
+            )
         }
         _ if value.starts_with("struct:") => {
             let fields: BTreeMap<String, String> = serde_json::from_str(&value[7..])
@@ -468,7 +509,10 @@ pub(crate) fn parameter(v: &serde_json::Value) -> Result<Value, String> {
     })
 }
 
-fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Result<BTreeMap<String, Arc<Schema>>, String> {
+fn register_tables(
+    request: &CompileRequest,
+    mapping: &mut GraphMapping,
+) -> Result<BTreeMap<String, Arc<Schema>>, String> {
     let mut schemas = BTreeMap::new();
     for table in &request.tables {
         if table.name.is_empty() || schemas.contains_key(&table.name) {
@@ -487,20 +531,39 @@ fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Resu
             .collect::<Result<Vec<_>, String>>()?;
         let schema = Arc::new(Schema::new(fields));
         let mut provider = crate::ir::rel::mapping::schema_only_provider(schema.clone());
-        let owner = table.engine.as_ref()
-            .and_then(|name| request.engines.get(name))
-            .map(|e| e.dialect.as_str()).unwrap_or(&request.dialect);
+        let owner = table
+            .engine
+            .as_ref()
+            .and_then(|name| crate::federation::endpoint_adapter(request, name))
+            .unwrap_or(&request.dialect);
         if let Ok(dialect) = SqlDialect::resolve(owner) {
-            if let Some(metadata) = request.source_metadata.iter().find(|m| m.table == table.name) {
+            if let Some(metadata) = request
+                .source_metadata
+                .iter()
+                .find(|m| m.table == table.name)
+            {
                 let bound = match dialect {
-                    SqlDialect::Custom(adapter) => adapter.source_provider(metadata, schema.clone()),
-                    SqlDialect::DuckDb => match crate::ir::rel::sql::duckdb_iceberg::provider(metadata, schema.clone()).map_err(|e| e.to_string())? {
+                    SqlDialect::Custom(adapter) => {
+                        adapter.source_provider(metadata, schema.clone())
+                    }
+                    SqlDialect::DuckDb => match crate::ir::rel::sql::duckdb_iceberg::provider(
+                        metadata,
+                        schema.clone(),
+                    )
+                    .map_err(|e| e.to_string())?
+                    {
                         Some(provider) => Ok(Some(provider)),
-                        None => crate::ir::rel::sql::duckdb_observability::provider(metadata, schema.clone()),
+                        None => crate::ir::rel::sql::duckdb_observability::provider(
+                            metadata,
+                            schema.clone(),
+                        ),
                     },
                     _ => Ok(None),
-                }.map_err(|e| e.to_string())?;
-                if let Some(bound) = bound { provider = bound; }
+                }
+                .map_err(|e| e.to_string())?;
+                if let Some(bound) = bound {
+                    provider = bound;
+                }
             }
         }
         mapping.register_table(&table.name, provider.clone());
@@ -518,7 +581,11 @@ fn register_tables(request: &CompileRequest, mapping: &mut GraphMapping) -> Resu
     Ok(schemas)
 }
 
-fn configure_rdf(request: &CompileRequest, mapping: &mut GraphMapping, schemas: &BTreeMap<String, Arc<Schema>>) -> Result<(), String> {
+fn configure_rdf(
+    request: &CompileRequest,
+    mapping: &mut GraphMapping,
+    schemas: &BTreeMap<String, Arc<Schema>>,
+) -> Result<(), String> {
     for rule in &request.rdf {
         mapping.map_rdf(rule.clone());
     }
@@ -526,13 +593,20 @@ fn configure_rdf(request: &CompileRequest, mapping: &mut GraphMapping, schemas: 
         let mut rdf = mapping.rdf_mapping();
         for source in &request.rdf_sources {
             if !schemas.contains_key(&source.table) {
-                return Err(format!("RDF source table `{}` is not registered", source.table));
+                return Err(format!(
+                    "RDF source table `{}` is not registered",
+                    source.table
+                ));
             }
             rdf.map_typed_quads(&request.dataset, source.clone());
         }
         if let Some(names) = &request.rdf_graph_names {
-            let schema = schemas.get(&names.table).ok_or("RDF graph-name table is not registered")?;
-            schema.field_with_name(&names.column).map_err(|e| e.to_string())?;
+            let schema = schemas
+                .get(&names.table)
+                .ok_or("RDF graph-name table is not registered")?;
+            schema
+                .field_with_name(&names.column)
+                .map_err(|e| e.to_string())?;
             if names.writable {
                 rdf.map_writable_named_graphs(&request.dataset, &names.table, &names.column);
             } else {
@@ -565,8 +639,12 @@ fn configure_rdf(request: &CompileRequest, mapping: &mut GraphMapping, schemas: 
 }
 
 /// Bind the same RDF source declarations for a host-owned update session.
-pub fn rdf_mapping(request: &CompileRequest) -> Result<crate::ir::rel::rdf::RdfDatasetMapping, String> {
-    if request.version != 1 { return Err("unsupported compiler protocol version".into()); }
+pub fn rdf_mapping(
+    request: &CompileRequest,
+) -> Result<crate::ir::rel::rdf::RdfDatasetMapping, String> {
+    if request.version != 1 {
+        return Err("unsupported compiler protocol version".into());
+    }
     let mut mapping = GraphMapping::new();
     let schemas = register_tables(request, &mut mapping)?;
     configure_rdf(request, &mut mapping, &schemas)?;
@@ -574,12 +652,25 @@ pub fn rdf_mapping(request: &CompileRequest) -> Result<crate::ir::rel::rdf::RdfD
 }
 
 /// Preserve frontend error classifications without inferring types from text.
-pub fn cypher_diagnostic(request: &CompileRequest) -> Option<crate::language::cypher::preparation::PreparationError> {
-    if request.language != "cypher" { return None; }
-    let parameters = request.parameters.iter().map(|(k, v)| parameter(v).map(|v| (k.clone(), v)))
-        .collect::<Result<BTreeMap<_, _>, _>>().ok()?;
-    let catalog=procedure_catalog(request).ok()?;
-    crate::language::cypher::preparation::prepare(&request.query, &parameters, request.native_values.then_some(&catalog)).err()
+pub fn cypher_diagnostic(
+    request: &CompileRequest,
+) -> Option<crate::language::cypher::preparation::PreparationError> {
+    if request.language != "cypher" {
+        return None;
+    }
+    let parameters = request
+        .parameters
+        .iter()
+        .map(|(k, v)| parameter(v).map(|v| (k.clone(), v)))
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .ok()?;
+    let catalog = procedure_catalog(request).ok()?;
+    crate::language::cypher::preparation::prepare(
+        &request.query,
+        &parameters,
+        request.native_values.then_some(&catalog),
+    )
+    .err()
 }
 
 /// Compile a read query using only schema metadata. SQL is specialized to typed
@@ -589,9 +680,15 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
 }
 
 pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<CompileRequest, String> {
+    crate::execution::ExecutableEngine::parse(&request.dialect)?;
     if let Some(catalog) = request.catalog.take() {
         let snapshot = catalog.resolve().await?;
-        let query = crate::session::Query { text: request.query, language: request.language, parameters: request.parameters, authorization: request.authorization };
+        let query = crate::session::Query {
+            text: request.query,
+            language: request.language,
+            parameters: request.parameters,
+            authorization: request.authorization,
+        };
         let mut resolved = snapshot.schema.request(&request.dialect, &query)?;
         resolved.rule_context = request.rule_context;
         resolved.version = request.version;
@@ -600,17 +697,29 @@ pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<Compi
         resolved.managed_table = request.managed_table;
         resolved.statistics = request.statistics;
         resolved.engines.extend(request.engines);
+        resolved.sources.extend(request.sources);
         resolved.procedures.extend(request.procedures);
-        if !request.functions.is_empty() { resolved.functions = request.functions; }
-        if request.execution_engine.is_some() { resolved.execution_engine = request.execution_engine; }
+        if !request.functions.is_empty() {
+            resolved.functions = request.functions;
+        }
+        if request.execution_engine.is_some() {
+            resolved.execution_engine = request.execution_engine;
+        }
         Ok(resolved)
-    } else { Ok(request) }
+    } else {
+        Ok(request)
+    }
 }
 
 /// Compile a parsed SPARQL query without a text round trip. Update datasets can
 /// distinguish unrestricted named graphs from the empty FROM NAMED set.
-pub async fn compile_sparql(request: CompileRequest, query: &crate::spargebra::Query) -> Result<CompiledSql, String> {
-    if request.language != "sparql" { return Err("Expected SPARQL compiler request".into()); }
+pub async fn compile_sparql(
+    request: CompileRequest,
+    query: &crate::spargebra::Query,
+) -> Result<CompiledSql, String> {
+    if request.language != "sparql" {
+        return Err("Expected SPARQL compiler request".into());
+    }
     compile_parsed(resolve_catalog(request).await?, Some(query)).await
 }
 
@@ -633,15 +742,24 @@ pub struct PreparedGraphBindings {
 }
 impl PreparedGraphQuery {
     pub fn bindings(&self) -> PreparedGraphBindings {
-        PreparedGraphBindings { managed_table: self.managed_table.clone(), mapping: self.mapping.clone(),
-            operators: self.operators.clone(), procedures: self.graph.procedures.clone() }
+        PreparedGraphBindings {
+            managed_table: self.managed_table.clone(),
+            mapping: self.mapping.clone(),
+            operators: self.operators.clone(),
+            procedures: self.graph.procedures.clone(),
+        }
     }
 }
 impl PreparedGraphBindings {
-    pub fn execution_graph(&self, host: crate::ir::rel::host::SharedHost) -> Result<PropertyGraph, String> {
+    pub fn execution_graph(
+        &self,
+        host: crate::ir::rel::host::SharedHost,
+    ) -> Result<PropertyGraph, String> {
         with_operator_table(self.operators.clone(), || {
             let mut graph = match &self.managed_table {
-                Some(table) => crate::ir::rel::host::managed::ManagedStore::new(table).attach(host)?,
+                Some(table) => {
+                    crate::ir::rel::host::managed::ManagedStore::new(table).attach(host)?
+                }
                 None => crate::ir::rel::host::mapped_source::attach(host, self.mapping.clone())?,
             };
             graph.procedures = self.procedures.clone();
@@ -653,16 +771,22 @@ pub fn prepare_graph(request: &CompileRequest) -> Result<PreparedGraphQuery, Str
     let context = request.rule_context.new_query();
     prepare_graph_parsed(request, None, &context)
 }
-fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargebra::Query>, context: &crate::ir::rules::RuleContext) -> Result<PreparedGraphQuery, String> {
-    if request.catalog.is_some() { return Err("resolve the catalog snapshot before synchronous graph preparation".into()); }
+fn prepare_graph_parsed(
+    request: &CompileRequest,
+    sparql: Option<&crate::spargebra::Query>,
+    context: &crate::ir::rules::RuleContext,
+) -> Result<PreparedGraphQuery, String> {
+    if request.catalog.is_some() {
+        return Err("resolve the catalog snapshot before synchronous graph preparation".into());
+    }
     if request.version != 1 {
         return Err("unsupported compiler protocol version".into());
     }
     if request.language != "gremlin" && !request.bindings.is_empty() {
         return Err("typed bindings require the Gremlin language".into());
     }
-    let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     crate::federation::validate(&request)?;
+    let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     let mut mapping = GraphMapping::new();
     mapping.managed_table = request.managed_table.clone();
     let mut schemas = register_tables(&request, &mut mapping)?;
@@ -852,7 +976,11 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
                 check(&edge.table, column, true)?;
             }
         }
-        let constructor = if edge.source_query.is_some() { EdgeMapping::query } else { EdgeMapping::table };
+        let constructor = if edge.source_query.is_some() {
+            EdgeMapping::query
+        } else {
+            EdgeMapping::table
+        };
         let mut e = constructor(
             &edge.label,
             edge.source_query.as_ref().unwrap_or(&edge.table),
@@ -871,13 +999,26 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         }
         mapping.map_edge(e);
     }
-    for source in &request.source_metadata { mapping.register_source_metadata(source.clone()).map_err(|e|e.to_string())?; }
-    for index in &request.search_indexes { mapping.register_search_index(index.clone()).map_err(|e|e.to_string())?; }
+    for source in &request.source_metadata {
+        mapping
+            .register_source_metadata(source.clone())
+            .map_err(|e| e.to_string())?;
+    }
+    for index in &request.search_indexes {
+        mapping
+            .register_search_index(index.clone())
+            .map_err(|e| e.to_string())?;
+    }
     for rule in &request.computed_relationships {
-        mapping.map_computed_relationship(rule.clone()).map_err(|e| e.to_string())?;
+        mapping
+            .map_computed_relationship(rule.clone())
+            .map_err(|e| e.to_string())?;
     }
     mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
-    let mut registry = FunctionRegistry::new(crate::ir::functions::active_operator_table().unwrap_or_else(|| Arc::new(DeclaredCatalog(request.dialect.clone()))));
+    let mut registry = FunctionRegistry::new(
+        crate::ir::functions::active_operator_table()
+            .unwrap_or_else(|| Arc::new(DeclaredCatalog(request.dialect.clone()))),
+    );
     for f in &request.functions {
         registry
             .register_typed_mapping(
@@ -902,26 +1043,37 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
         .map(|(k, v)| Ok((k.clone(), parameter(v)?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     configure_rdf(&request, &mut mapping, &schemas)?;
-    crate::catalog::lowering::install(&mut mapping, &request.cypher_relationships, procedure_catalog(request)?)?;
-    let mut graph=PropertyGraph::new();
-    graph.procedures=Arc::new(procedure_catalog(&request)?);
+    crate::catalog::lowering::install(
+        &mut mapping,
+        &request.cypher_relationships,
+        procedure_catalog(request)?,
+    )?;
+    let mut graph = PropertyGraph::new();
+    graph.procedures = Arc::new(procedure_catalog(&request)?);
     let operators: Arc<dyn OperatorTable> = Arc::new(registry);
     let plan = with_operator_table(operators.clone(), || -> Result<_, String> {
         let plan = match request.language.as_str() {
-            "cypher" => {
-                crate::catalog::lowering::prepare_query(&request.query, &parameters, &mut mapping, request.native_values)
-                    .map_err(|e| e.to_string())?
-            }
+            "cypher" => crate::catalog::lowering::prepare_query(
+                &request.query,
+                &parameters,
+                &mut mapping,
+                request.native_values,
+            )
+            .map_err(|e| e.to_string())?,
             "gremlin" => {
                 if !parameters.is_empty() {
                     return Err("bindings are currently supported only for Cypher".into());
                 }
                 let bindings = crate::language::gremlin::bindings::bindings(
-                    &serde_json::to_value(&request.bindings).map_err(|e| e.to_string())?)?;
-                let (source, values) = crate::language::gremlin::callables::prepare(&request.query, &bindings)
-                    .map_err(|e| e.to_string())?;
-                let parsed = crate::language::gremlin::parser::parse_traversal_with_bindings(&source, &values)
-                    .map_err(|e| e.to_string())?;
+                    &serde_json::to_value(&request.bindings).map_err(|e| e.to_string())?,
+                )?;
+                let (source, values) =
+                    crate::language::gremlin::callables::prepare(&request.query, &bindings)
+                        .map_err(|e| e.to_string())?;
+                let parsed = crate::language::gremlin::parser::parse_traversal_with_bindings(
+                    &source, &values,
+                )
+                .map_err(|e| e.to_string())?;
                 crate::language::gremlin::planner::GremlinPlanner::new()
                     .plan(&parsed)
                     .map_err(|e| e.to_string())?
@@ -934,7 +1086,8 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
                 match sparql {
                     Some(query) => planner.plan(query),
                     None => planner.plan_str(&request.query),
-                }.map_err(|e| e.to_string())?
+                }
+                .map_err(|e| e.to_string())?
             }
             other => return Err(format!("unsupported query language `{other}`")),
         };
@@ -942,19 +1095,40 @@ fn prepare_graph_parsed(request: &CompileRequest, sparql: Option<&crate::spargeb
     })?;
     let mapping = Arc::new(mapping);
     graph.mapping = Some(mapping.clone());
-    let plan = crate::ir::rel::pipeline::normalize_graph(&plan, context).map_err(|e| e.to_string())?;
-    Ok(PreparedGraphQuery { plan, graph, mapping, operators, managed_table: request.managed_table.clone() })
+    let plan =
+        crate::ir::rel::pipeline::normalize_graph(&plan, context).map_err(|e| e.to_string())?;
+    Ok(PreparedGraphQuery {
+        plan,
+        graph,
+        mapping,
+        operators,
+        managed_table: request.managed_table.clone(),
+    })
 }
 
-async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spargebra::Query>) -> Result<CompiledSql, String> {
+async fn compile_parsed(
+    mut request: CompileRequest,
+    sparql: Option<&crate::spargebra::Query>,
+) -> Result<CompiledSql, String> {
     request.rule_context = request.rule_context.new_query();
-    let PreparedGraphQuery { plan, graph, mapping, operators, managed_table } = prepare_graph_parsed(&request, sparql, &request.rule_context)?;
-    if managed_table.is_some() { return Err("Managed graph queries require the host compiled-kernel adapter".into()); }
+    let PreparedGraphQuery {
+        plan,
+        graph,
+        mapping,
+        operators,
+        managed_table,
+    } = prepare_graph_parsed(&request, sparql, &request.rule_context)?;
+    if managed_table.is_some() {
+        return Err("Managed graph queries require the host compiled-kernel adapter".into());
+    }
     let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     let mut lowered = with_operator_table(operators, || -> Result<_, String> {
         crate::ir::analysis::validate_read_capabilities(
             &plan,
-            crate::ir::analysis::ReadCapabilities {read_procedures:request.native_values,..crate::ir::analysis::ReadCapabilities::LOCAL_DUCKDB},
+            crate::ir::analysis::ReadCapabilities {
+                read_procedures: request.native_values,
+                ..crate::ir::analysis::ReadCapabilities::LOCAL_DUCKDB
+            },
         )
         .map_err(|e| e.to_string())?;
         RelBackend::with_options(RelBackendOptions {
@@ -998,7 +1172,8 @@ async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spar
         Ok(TreeNodeRecursion::Continue)
     }).map_err(|e| e.to_string())?;
     let (optimized, constraint_proofs) =
-        crate::ir::rel::pipeline::relational(lowered.plan.clone(), &lowered.rule_context, false).map_err(|e| e.to_string())?;
+        crate::ir::rel::pipeline::relational(lowered.plan.clone(), &lowered.rule_context, false)
+            .map_err(|e| e.to_string())?;
     lowered.plan = optimized;
     if request.language == "sparql"
         && request.rdf.is_empty()
@@ -1040,8 +1215,8 @@ async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spar
             .and_then(|p| p.build())
             .map_err(|e| e.to_string())?;
     }
-    let selected =
-        crate::ir::rel::pipeline::placement(lowered.plan, &lowered.rule_context).map_err(|e| e.to_string())?;
+    let selected = crate::ir::rel::pipeline::placement(lowered.plan, &lowered.rule_context)
+        .map_err(|e| e.to_string())?;
     let (optimized, mut optimizer_decisions) =
         crate::ir::rel::statistics::optimize(selected.plan).map_err(|e| e.to_string())?;
     optimizer_decisions.extend(selected.access_decisions);
@@ -1051,24 +1226,36 @@ async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spar
         // common-subexpression elimination can erase those SQL scopes.
         use datafusion::optimizer::{Optimizer, OptimizerContext};
         let mut rules: Vec<Arc<dyn datafusion::optimizer::OptimizerRule + Send + Sync>> = vec![];
-        if crate::ir::diagnostics::constant_folding_enabled() && crate::ir::rel::conversion_rules::can_fold_plan(&lowered.plan) {
-            rules.push(Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()));
+        if crate::ir::diagnostics::constant_folding_enabled()
+            && crate::ir::rel::conversion_rules::can_fold_plan(&lowered.plan)
+        {
+            rules.push(Arc::new(
+                datafusion::optimizer::simplify_expressions::SimplifyExpressions::new(),
+            ));
         }
-        rules.push(Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()));
-        rules.push(Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()));
+        rules.push(Arc::new(
+            datafusion::optimizer::push_down_filter::PushDownFilter::new(),
+        ));
+        rules.push(Arc::new(
+            datafusion::optimizer::optimize_projections::OptimizeProjections::new(),
+        ));
         let optimizer = Optimizer::with_rules(rules);
         lowered.plan = optimizer
             .optimize(lowered.plan, &OptimizerContext::new(), |_, _| {})
             .map_err(|e| e.to_string())?;
     }
-    lowered.plan=crate::ir::rel::search::bind_seeds(lowered.plan).map_err(|e|e.to_string())?;
-    lowered.plan=crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e|e.to_string())?;
+    lowered.plan = crate::ir::rel::search::bind_seeds(lowered.plan).map_err(|e| e.to_string())?;
+    lowered.plan =
+        crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e| e.to_string())?;
     let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
     lowered.plan = plan;
     crate::ir::rules::RuleSession::new(lowered.rule_context.clone()).invalidate();
     let sql = unparse(&lowered, dialect).map_err(|e| {
         if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
-            eprintln!("Failed SQL emission: {e}\n{}", lowered.plan.display_indent());
+            eprintln!(
+                "Failed SQL emission: {e}\n{}",
+                lowered.plan.display_indent()
+            );
         }
         e.to_string()
     })?;
@@ -1082,7 +1269,13 @@ async fn compile_parsed(mut request: CompileRequest, sparql: Option<&crate::spar
         logical_plan: lowered.plan.display_indent().to_string(),
         fields: lowered.fields,
         result_form: format!("{:?}", lowered.result_form),
-        field_types: lowered.plan.schema().fields().iter().map(|f| crate::federation::type_name(f.data_type()).ok()).collect(),
+        field_types: lowered
+            .plan
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| crate::federation::type_name(f.data_type()).ok())
+            .collect(),
         constraint_proofs,
         layout_selections: selected.layout_selections,
         representation_selections: selected.representation_selections,
@@ -1192,32 +1385,50 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 }
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
-    let message: serde_json::Value = serde_json::from_str(input).map_err(|e|e.to_string())?;
-    if message["op"].as_str().is_some_and(|op| op.starts_with("stream_")) {
+    let message: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    if message["op"]
+        .as_str()
+        .is_some_and(|op| op.starts_with("stream_"))
+    {
         #[cfg(feature = "kafka")]
-        { return crate::streaming::wire::command(message).await.map(|v| v.to_string()); }
+        {
+            return crate::streaming::wire::command(message)
+                .await
+                .map(|v| v.to_string());
+        }
         #[cfg(not(feature = "kafka"))]
-        { return Err("Kafka streaming support is disabled in this runtime".into()); }
+        {
+            return Err("Kafka streaming support is disabled in this runtime".into());
+        }
     }
     if message["op"] == "catalog" {
-        return serde_json::to_string(&crate::catalog::command(&message).await?).map_err(|e| e.to_string());
+        return serde_json::to_string(&crate::catalog::command(&message).await?)
+            .map_err(|e| e.to_string());
     }
     if message["op"] == "resolve_schema" {
         let schema = crate::session::Schema::from_value(message["schema"].clone())?;
-        return serde_json::to_string(&schema.resolve().await?).map_err(|e|e.to_string());
+        return serde_json::to_string(&schema.resolve().await?).map_err(|e| e.to_string());
     }
     if message["op"] == "validate_schema" {
-        return serde_json::to_string(&crate::session::Schema::from_value(message["schema"].clone())?).map_err(|e|e.to_string());
+        return serde_json::to_string(&crate::session::Schema::from_value(
+            message["schema"].clone(),
+        )?)
+        .map_err(|e| e.to_string());
     }
     let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
-    if command.get("op").and_then(serde_json::Value::as_str).is_some_and(|op| matches!(op, "bind_search" | "bind_operation")) {
-        return crate::federation::bind_operation_command(command).map(|v|v.to_string());
+    if command
+        .get("op")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|op| matches!(op, "bind_search" | "bind_operation"))
+    {
+        return crate::federation::bind_operation_command(command).map(|v| v.to_string());
     }
     if command.get("op").and_then(serde_json::Value::as_str) == Some("bind") {
-        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::federation::bind_command(command)
-        )).map_err(|_| "invalid exchange data; no SQL was executed".to_string())?
-            .map(|v| v.to_string());
+        }))
+        .map_err(|_| "invalid exchange data; no SQL was executed".to_string())?
+        .map(|v| v.to_string());
     }
     let request: CompileRequest =
         serde_json::from_str(input).map_err(|e| format!("invalid compiler request: {e}"))?;
@@ -1270,10 +1481,13 @@ mod rule_context_lifetime_tests {
     fn public_prepare_graph_has_a_fresh_query_budget() {
         let mut request: CompileRequest = serde_json::from_value(serde_json::json!({
             "version":1,"dialect":"duckdb","language":"cypher","query":"RETURN 1 AS x"
-        })).unwrap();
+        }))
+        .unwrap();
         request.rule_context.budget.query_visits = 16;
         request.rule_context.budget.stage_visits = 16;
-        for _ in 0..64 { prepare_graph(&request).unwrap(); }
-        assert_eq!(request.rule_context.visits(),0);
+        for _ in 0..64 {
+            prepare_graph(&request).unwrap();
+        }
+        assert_eq!(request.rule_context.visits(), 0);
     }
 }

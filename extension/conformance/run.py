@@ -27,7 +27,7 @@ def main():
     p.add_argument('--limit', type=int)
     p.add_argument('--filter', default='')
     p.add_argument('--case', action='append', default=[], help='Exact pinned case ID; repeatable')
-    p.add_argument("--lowering-policy", choices=["hybrid", "sql_required"], default="hybrid")
+    p.add_argument("--lowering-policy", choices=["hybrid", "sql_required"], default="sql_required")
     p.add_argument("--cypher-aggregates", choices=["conformant", "sql_native"], default="conformant")
     args = p.parse_args()
     os.environ["ORCHID_CONFORMANCE_LOWERING_POLICY"] = args.lowering_policy

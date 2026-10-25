@@ -9,10 +9,12 @@ license = "GPL-3.0-only"
 crate-type = ["staticlib", "rlib"]
 
 [features]
+quickwit = ["orchiddb/quickwit"]
+elasticsearch = ["orchiddb/elasticsearch"]
 prometheus = ["orchiddb/prometheus"]
 loki = ["orchiddb/loki"]
 weaviate = ["orchiddb/weaviate"]
-default = ["spicedb", "orchid-catalog"]
+default = ["spicedb", "orchid-catalog", "quickwit", "elasticsearch", "weaviate", "prometheus", "loki"]
 orchid-catalog = ["orchiddb/orchid-catalog"]
 spicedb = ["dep:reqwest"]
 
@@ -24,5 +26,7 @@ orchiddb = { path = "../..", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlparser = { version = "=0.61.0", default-features = false, features = ["std", "visitor"] }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+futures = "0.3"
+async-trait = "0.1"
 

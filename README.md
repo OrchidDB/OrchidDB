@@ -48,11 +48,11 @@ mappings, and engine routing stay internal to execution. Schema validation rejec
 combined query/schema documents. Existing application connections, transactions,
 and driver configuration remain caller-owned. Results are rows or Arrow batches.
 
-The shared `fn.*` library still lowers to engine SQL or shared runtime kernels.
+The shared `fn.*` library lowers to engine SQL, using SQL compatibility scalar
+helpers where needed.
 Backend-specific functions use declared signatures; the DuckDB extension can
-discover them through its caller's catalog. DuckDB and PostgreSQL adapters share
-the same language frontends and IR. StarRocks uses that same core through its
-SQL adapter.
+discover them through its caller's catalog. DuckDB and Trino are the executable
+engines. Remote retrieval and observability systems remain source adapters.
 
 See [client interfaces and source builds](clients/README.md) for each language.
 This API change is in source; it does not republish older registry packages.
@@ -554,7 +554,7 @@ threshold. A further `WHERE r.score ...` condition filters the expanded results.
 
 Keep the engine dialect `duckdb` and select `duckdb_prometheus` or `duckdb_loki`
 in a table's `source_metadata.format`. This executes through DuckDB's community
-extensions instead of OrchidDB's direct HTTP engines. With named engines, assign
+extensions instead of OrchidDB's direct HTTP source adapters. With named engines, assign
 the table to the DuckDB engine. The caller loads the extensions in its own
 DuckDB session:
 
@@ -619,7 +619,7 @@ Secret Manager. The Prometheus extension currently requires `endpoint` and has
 no authentication support. Loki sources return log streams, not LogQL metric
 results. The generated call overrides Loki's default total row cap and leaves
 paging to the extension; upstream paging behavior, including its limitations
-for many entries at the same nanosecond, still applies. Native HTTP engines
+for many entries at the same nanosecond, still applies. Native HTTP source adapters
 retain their own response validation and resource limits. Planning performs no
 HTTP calls and does not install extensions automatically.
 
@@ -744,65 +744,13 @@ lowering tests, not live backend conformance certification. Run Python transport
 checks separately with `ORCHIDDB_TEST_TRINO=1 pytest clients/python/tests/test_trino.py`.
 These fixtures stay local and do not dispatch CI or modify cloud catalogs.
 
-## StarRocks
-
-StarRocks uses the `starrocks` dialect and a caller-owned MySQL-compatible
-connection. Python provides `StarRocksEngine` for PyMySQL connections and returns
-Arrow results. Install PyMySQL and PyArrow separately; OrchidDB does not bundle
-StarRocks or its database driver.
-
-```python
-import json
-import pymysql
-from orchiddb import Connection, StarRocksEngine
-
-schema = json.load(open("schema.json"))
-with pymysql.connect(host="localhost", port=9030, user="root",
-                     database="graphs", autocommit=True) as database:
-    with Connection(StarRocksEngine(database), schema) as graph:
-        with graph.query("MATCH (p:Person) WHERE p.age > $age RETURN p.name",
-                         parameters={"age": 25}) as result:
-            print(result.read_all().to_pylist())
-```
-
-Java can borrow a MySQL JDBC connection with `SqlDialect.STARROCKS`. Rust,
-TypeScript, C++, and Elixir engine adapters select `starrocks` through their
-existing execution interfaces. SQL lowering is shared across clients. The CLI
-continues to use DuckDB.
-
-StarRocks **4.1.6** passes the full pinned language conformance catalogs through
-the shared native execution DAG, with only the existing SPARQL omissions.
-SQL regions execute on StarRocks; operations it cannot represent correctly stay
-in the shared runtime. Portable `fn.*` mappings are explicit. The direct SQL
-connection adapter rejects unmapped functions rather than using another engine.
-Whole graph values and `collect()` still require runtime kernels that this
-connection adapter does not yet execute. The full portable function catalog and
-federated execution have not been validated on StarRocks. Variable-length paths
-require `SET enable_recursive_cte=true` and a suitable `recursive_cte_max_depth`
-on the StarRocks connection; see the [StarRocks recursion settings](https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/SELECT/SELECT_CTE/#configurations).
-
-```sh
-make starrocks-test
-```
-
-This target starts a pinned local StarRocks container, builds the shared native
-runtime, prepares the Python test dependencies, and runs the focused execution
-checks. It creates and removes its own database and leaves the container running
-for reuse. It is independent of release packaging.
-
-Run the original Cypher, Gremlin, and SPARQL catalogs against StarRocks with
-`make starrocks-conformance`. This uses the shared execution DAG and Python
-StarRocks driver, records SQL engine counts, and writes reports under
-`target/conformance/starrocks`. Only the existing SPARQL omissions are allowed.
-
 ## Kafka, Flink materializations, and streaming Cypher
 
 The Rust API `orchiddb::streaming` (also re-exported by `orchiddb-client`) provides
 Kafka insertion, bounded Kafka queries, hybrid Iceberg/Kafka queries, and a
 pull-based streaming Cypher subscription. Enable `kafka` for the librdkafka
 transport. Authorization is supplied by your client through `Authorizer`; the
-streaming API has no SpiceDB dependency. Default library builds do not require
-Kafka or DuckDB. This API is separate from the DuckDB extension SQL interface.
+streaming API has no SpiceDB dependency. Default library builds enable DuckDB; Kafka remains optional. This API is separate from the DuckDB extension SQL interface.
 
 Python, JavaScript/TypeScript, Go, Java, C++, and Elixir expose the same operations
 through `StreamConnection` (`NewStream` in Go). The native and JNI distributions
@@ -1677,24 +1625,88 @@ there is no `orchid_compile` function or combined query/schema request interface
 
 ## Execution architecture
 
-All integrations share language frontends, graph IR, and relational/kernel programs.
-Standalone callers choose their SQL dialect and session or native execution. In
-extension mode, DuckDB optimizes SQL regions and schedules physical graph kernel operators.
-Multi-input stateful branches run in declared order. Nested kernels execute compiled
-subplans on the same connection and transaction, with query-scoped state and
-cancellation. Immutable prepared subplans may be reused within a query.
+All integrations share language frontends, graph IR, and DataFusion's logical
+compiler and optimizer. DuckDB and Trino execute relational SQL: joins, filters,
+projections, and aggregates. Orchid schedules SQL islands and explicit graph
+boundaries; it does not construct DataFusion physical query plans or run its
+execution environment. Unsupported relational lowering fails explicitly.
 
-DataFusion provides relational planning and native execution in the shared core;
-its executor does not run extension queries. PostgreSQL execution is an optional
-feature. The extension opens no second database connection. Iceberg and Lance
-retain their own scans and indexes. Existing JVM
-algorithms, callbacks, and graph file codecs remain internal reusable components.
-The retained `orchiddb-jvm-store` binary is an internal helper, not a public CLI.
+Engine adapters consume and return schema-known Arrow batch streams. DuckDB
+pulls typed input relations with bounded output buffering. Trino reads authenticated
+Arrow IPC exchanges through the Orchid connector and streams result pages.
+Dropping a stream cancels its producer; late producer errors fail the query.
+Streaming does not remove a SQL engine's own blocking work, such as sorting or
+building a hash table for a join.
+
+Single-consumer exchanges remain streams. Repeated consumers and a second query
+on a connection that cannot support concurrent statements require an explicit
+replay boundary, backed by a temporary Arrow IPC file with bounded memory. The
+file is removed when its final source or reader is dropped. Remote operations are
+not silently reissued to satisfy a second scan.
+
+The DuckDB extension uses the caller's catalog, connection, and transaction.
+Iceberg and Lance retain their own scans and indexes. Existing JVM algorithms,
+callbacks, and graph file codecs remain reusable components. The retained
+`orchiddb-jvm-store` binary is an internal helper, not a public CLI.
 
 Host integration lives in `extension/src` and `extension/compiler`; shared kernel
 programs, native value transport, and storage access live in `src/ir/rel`.
 Compiler probes and historical implementation diagnostics live in `tools/diagnostics`.
 They are developer tooling, not product usage examples or a client SDK.
+
+### Engines, sources, and streaming transport
+
+Schema configuration distinguishes executable engines from request sources:
+
+```json
+{
+  "engines": {"local": {"dialect": "duckdb"}},
+  "sources": {"vectors": {"adapter": "weaviate"}},
+  "execution_engine": "local"
+}
+```
+
+Tables can name a source with `source`; existing `engine` ownership fields remain
+accepted. A source cannot be the execution engine. Weaviate, Quickwit,
+Elasticsearch, Prometheus, and Loki retain their request adapters, including
+bounded request batching. PostgreSQL and StarRocks are no longer executable
+targets in the shared core. Client packages have not been migrated in this change.
+
+For a DuckDB extension session, register transport options separately:
+
+```sql
+SELECT * FROM orchid_register_source(
+  'vectors', 'weaviate', '{"endpoint":"http://localhost:8080"}'
+);
+```
+
+Registration does not contact the source. Planning and `EXPLAIN` read schema
+metadata without issuing remote requests. Queries bind source results as typed
+Arrow inputs to the host engine.
+
+Rust integrations use `execution::stream::{BatchStream, BatchSource, InputRelation}`
+and `federation::Session::query_stream`. A Trino-only transport/compiler build uses
+`--no-default-features --features trino`. The durable `GraphEngine` still uses
+DuckDB for checkpoint storage, even when Trino executes its SQL regions.
+`DuckDbSession` owns a supplied
+`DuckDbExecutor`; `TrinoSession` uses a caller-configured HTTP endpoint and exchange
+registry. Collection is reserved for terminal APIs that explicitly return all
+rows. Source and SQL errors remain errors after earlier batches have arrived.
+
+Build the Trino **484** exchange connector locally with
+`tools/trino/build_connector.sh`. Install the JARs from
+`target/trino-connector/plugin` into the Trino plugin directory. Its catalog uses
+`connector.name=orchid_arrow`, `exchange.uri` pointing to the Rust `ExchangeServer`,
+and `exchange.bearer-token` matching the server's token (at least 32 characters).
+Start the JVM with `--add-opens=java.base/java.nio=ALL-UNNAMED` for Arrow. The exchange
+server must be reachable from Trino workers. The Rust exchange server serves plain
+HTTP; use a TLS-terminating proxy when configuring an HTTPS exchange endpoint.
+SQL tables backed by other Trino connectors continue to use their existing catalogs.
+
+The Cypher compatibility scalar library currently targets DuckDB. Trino executes
+its native SQL mappings; queries requiring that compatibility library fail with
+an explicit capability error. Installing the Arrow exchange connector does not
+install Cypher scalar functions or imply full Cypher conformance.
 
 ### SQL-required execution and boundary executables
 
@@ -1704,7 +1716,8 @@ SQL lowering; it cannot fall back to a native relational kernel or DataFusion
 physical operator. Planning and transport still use shared infrastructure.
 Explicit boundaries such as Gremlin barriers, traversal state, mutation, and
 control flow retain their executables. Nested subplans obey the same policy.
-`Hybrid` remains the default.
+`SqlRequired` is the default. The legacy `Hybrid` setting does not enable a
+DataFusion relational executor.
 
 In Rust, use `GraphEngine::set_lowering_policy` and
 `GraphEngine::set_boundary_executables`. An `ExecutableSet` supplies optional
@@ -1862,15 +1875,16 @@ The RDF runner reports its full catalog, including the existing exclusions.
 
 ### Standalone SQL backend conformance
 
-Recorded full runs cover **DuckDB, PostgreSQL, and StarRocks 4.1.6**:
+Historical runs, predating the streaming execution migration, cover
+**DuckDB, PostgreSQL, and StarRocks 4.1.6**:
 3,897 Cypher, 1,511 Gremlin, and 974 SPARQL cases per backend.
 The same 77 skipped and 74 not-applicable SPARQL cases remain omitted.
 [Standalone execution evidence](conformance/sql-engine-results/summary.json)
 records full reports, each run's executable identity, selected-engine SQL region counts,
 and uninterrupted Gremlin instances.
 
-After installing the assertion dependencies above, build the shared native runner
-and run all three pinned suites on DuckDB and PostgreSQL:
+These historical reports do not certify the current streaming runtime. Build the
+shared runner and select a supported engine when reproducing new results:
 
 ```sh
 bash conformance/build-orchiddb.sh
@@ -1879,16 +1893,20 @@ export ORCHIDDB_JVM_STORE="$PWD/target/debug/orchiddb-jvm-store"
 export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
 export CONFORMANCE_JAVA=/path/to/java
-export ORCHIDDB_TEST_PG_URL='host=localhost dbname=orchiddb_test'
-extension/vendor/test-env/bin/python conformance/upstream/engine_matrix.py
+extension/vendor/test-env/bin/python conformance/upstream/engine_matrix.py --engine duckdb
 ```
+
+For Trino, install the Arrow connector, set `ORCHIDDB_TEST_TRINO_URL` and
+`ORCHIDDB_EXCHANGE_TOKEN` to match its exchange catalog, and select `--engine trino`.
+The runner starts its exchange server at `ORCHIDDB_EXCHANGE_BIND` (default
+`0.0.0.0:18883`). Trino runs one suite worker per configured exchange endpoint.
 
 The matrix requires complete catalogs, one uninterrupted Gremlin instance per
 backend, SQL regions executed by the selected backend, and no unexpected failures
 or omissions. Only the existing SPARQL omissions with unchanged case hashes are
 allowed. Reports are written under `target/conformance/sql-engines/`.
 
-The matrix uses four isolated workers for Cypher and RDF. Use `--jobs 1` for a
+The DuckDB matrix uses four isolated workers for Cypher and RDF. Use `--jobs 1` for a
 serial run or `--jobs N` to set the worker count. Gremlin always uses one
 uninterrupted engine instance. Individual native suite runs accept the same
 option:
@@ -1950,9 +1968,19 @@ fixtures use endpoint degrees when no input traversal can add relationships.
 Unknown cardinality retains a junction table. DuckDB limitations, including
 cyclic table declarations and deleting referenced rows in one transaction,
 remain visible failures rather than a switch to unmanaged graph storage.
-Fixtures requiring
-multi-properties, meta-properties, or stored-null properties are reported as
-adapter limitations. Historical snapshot-based results remain historical evidence.
+Fixtures requiring multi-properties, meta-properties, stored-null properties,
+or supplied vertex-property IDs exceed ordinary property-column mappings.
+Mapped element identities retain their declared primary-key types; queries
+cannot replace them with an unrelated public ID. Generated mapped vertex-property
+IDs are opaque identities derived from the typed owner and property key, stable
+across SQL boundaries and independent of hydration order. These adapter limitations
+remain visible in results. Historical snapshot-based results remain historical evidence.
+For slower debug builds, `CONFORMANCE_SQL_TIMEOUT_SECONDS` adjusts the runner's
+per-query SQL budget (default 8 seconds), and
+`CONFORMANCE_ORCHIDDB_TIMEOUT_SECONDS` adjusts its scenario response budget
+(default 40 seconds). `ORCHIDDB_JVM_TIMEOUT_SECONDS` adjusts the JVM boundary
+budget (default 30 seconds; a positive integer), which is independent of SQL.
+Longer budgets do not change assertions or capability checks.
 Fully lowered means one SQL region, no residual operators, and no native source
 fetches or runtime write operations. Historical reports, syntax checks, and requests without execution
 statistics remain explicitly unclassified. `compact_report.py` preserves the
@@ -2051,7 +2079,7 @@ are also available in the root Makefile.
 and notices.
 ### Weaviate retrieval
 
-Weaviate is an optional execution engine for `vector.cosine_similarity`,
+Weaviate is an optional retrieval source for `vector.cosine_similarity`,
 `vector.dot`, and `vector.l2_distance`. Derived edges use those shared primitives;
 the runner lowers ranked retrieval to Weaviate's HTTP API and joins returned keys
 back to the mapped SQL tables. There is no Weaviate SDK dependency. Rust users
@@ -2059,7 +2087,7 @@ opt in with the `weaviate` feature; the native clients and CLI include the adapt
 Weaviate runs separately.
 
 Function-backed retrieval edges batch source lookups automatically through the
-shared `Session::execute_requests` interface. Weaviate combines lookups into one
+shared `Session::execute_requests_stream` interface. Weaviate combines lookups into one
 GraphQL request using a distinct alias for each source. `batch_size` on the remote
 session controls the maximum lookups per request (default 64); set it to 1 for
 single-lookup requests. Each lookup keeps its own vector, filters, threshold,
@@ -2107,7 +2135,8 @@ In the runner's schema, bind the document embedding index separately:
 ```yaml
 engines:
   local: {dialect: duckdb}
-  vectors: {dialect: weaviate}
+sources:
+  vectors: {adapter: weaviate}
 execution_engine: local
 source_metadata:
   - table: documents
@@ -2129,8 +2158,10 @@ Text equality filters require `field` tokenization; null checks require
 names differ from table columns. For named vectors, add `target_vector` to the
 binding options; for Weaviate multi-tenancy, add `tenant`.
 
-Applications own engine sessions and credentials. For Python, with the registered
-schema and an existing DuckDB connection:
+Applications own execution and source sessions and their credentials. Existing
+clients retain their `RemoteEngine` names and `engines` session registry; remote
+entries represent sources and cannot be selected as executable engines. For
+Python, with the registered schema and an existing DuckDB connection:
 
 ```python
 import os
@@ -2154,10 +2185,10 @@ with RemoteEngine(
 Java, JS/TS, C++, and Elixir use their existing `RemoteEngine` with adapter
 `weaviate`; the Rust client exposes `engines::HttpSession::weaviate` and the core
 exposes `remote::WeaviateSession`. The CLI accepts the same
-adapter in its remote engine configuration. Credentials stay in engine sessions,
+adapter in its remote configuration. Credentials stay in source sessions,
 separate from catalog metadata. HTTPS is required outside loopback; HTTP errors
-omit response bodies. The DuckDB extension currently executes within its DuckDB
-session and does not expose remote engine federation.
+omit response bodies. The DuckDB extension registers remote source sessions with
+`orchid_register_source`; source credentials remain outside schema metadata.
 
 The adapter validates the collection's configured metric. Cosine results use
 `1 - distance`, dot product uses `-distance`, and L2 uses the square root of

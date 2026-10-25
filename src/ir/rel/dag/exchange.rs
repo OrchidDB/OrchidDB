@@ -8,10 +8,8 @@ pub(super) fn cut_inputs(
     next: &mut usize,
     external: &std::collections::BTreeSet<String>,
 ) -> Result<Option<(LogicalPlan, Vec<(LogicalPlan, sql::TableData)>)>> {
-    if matches!(
-        plan,
-        LogicalPlan::Extension(_) | LogicalPlan::TableScan(_) | LogicalPlan::Unnest(_)
-    ) || plan.inputs().is_empty()
+    if matches!(plan, LogicalPlan::Extension(_) | LogicalPlan::TableScan(_))
+        || plan.inputs().is_empty()
     {
         return Ok(None);
     }
@@ -27,14 +25,16 @@ pub(super) fn cut_inputs(
             bindings.extend(nested);
             continue;
         }
-        // A zero-column relation needs a separate row-count representation.
-        if input.schema().fields().is_empty() {
-            return Ok(None);
-        }
         // Do not erase the ordering contract of a sorted input by transporting
         // it through an unordered SQL table. An explicit sort above the cut is safe.
         let mut ordered = false;
         input.apply(|node| {
+            // A boundary owns its internal ordering semantics. A ranking
+            // window or limit inside a callback does not impose an ordering
+            // contract on the boundary's exported relation.
+            if matches!(node, LogicalPlan::Extension(_)) {
+                return Ok(TreeNodeRecursion::Jump);
+            }
             ordered |= matches!(
                 node,
                 LogicalPlan::Sort(_) | LogicalPlan::Limit(_) | LogicalPlan::Window(_)
@@ -51,7 +51,10 @@ pub(super) fn cut_inputs(
                 break name;
             }
         };
-        let schema = Arc::new(input.schema().as_arrow().clone());
+        let schema = if input.schema().fields().is_empty() {
+            Arc::new(arrow::datatypes::Schema::new(vec![arrow::datatypes::Field::new(
+                "__orchid_cardinality", arrow::datatypes::DataType::Int64, false)]))
+        } else { Arc::new(input.schema().as_arrow().clone()) };
         // Duplicate SQL field names cannot form a table interface.
         let names = schema
             .fields()
@@ -94,7 +97,13 @@ pub(super) fn cut_inputs(
     if bindings.is_empty() {
         return Ok(None);
     }
-    let candidate = plan.with_new_exprs(plan.expressions(), inputs)?;
+    let candidate = if let LogicalPlan::Unnest(unnest) = plan {
+        let mut unnest = unnest.clone();
+        unnest.input = Arc::new(inputs.remove(0));
+        LogicalPlan::Unnest(unnest)
+    } else {
+        plan.with_new_exprs(plan.expressions(), inputs)?
+    };
     let mut check = SqlEligibility {
         dialect: eligibility.dialect,
         language_functions: eligibility.language_functions,

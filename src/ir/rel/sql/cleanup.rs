@@ -152,7 +152,6 @@ pub(super) fn simplify(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         // constant relation. Never remove filters or a zero-row fetch.
         if let LogicalPlan::TableScan(scan) = &node
             && scan.table_name.table().starts_with("__graph_rel_one_row_")
-            && !scan.projected_schema.fields().is_empty()
             && scan.filters.is_empty()
             && scan.fetch != Some(0)
         {
@@ -170,6 +169,9 @@ pub(super) fn simplify(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
                             .alias_qualified(qualifier.cloned(), field.name()))
                     }).collect::<datafusion::common::Result<Vec<_>>>()?;
                 let input = Arc::new(LogicalPlanBuilder::empty(true).build()?);
+                if exprs.is_empty() {
+                    return Ok(Transformed::yes(input.as_ref().clone()));
+                }
                 return Ok(Transformed::yes(LogicalPlan::Projection(
                     Projection::try_new_with_schema(exprs, input, scan.projected_schema.clone())?)));
             }

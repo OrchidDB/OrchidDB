@@ -132,17 +132,21 @@ impl RankedJoin {
             .order_by(order)
             .build()?
             .alias(rank);
-        Ok(builder
+        let ranked = builder
             .window(vec![row])?
             .filter(col_exact(rank).lt_eq(lit(self.limit)))?
-            .project(
-                self.schema
-                    .columns()
-                    .into_iter()
-                    .map(Expr::Column)
-                    .collect::<Vec<_>>(),
-            )?
-            .build()?)
+            .build()?;
+        // RankedJoin exposes a fixed interface, including conservative field
+        // nullability and unqualified column names. The expansion may infer
+        // narrower nullability or retain source qualifiers; keep the declared
+        // interface when replacing the extension with ordinary relational SQL.
+        Ok(LogicalPlan::Projection(
+            datafusion::logical_expr::Projection::try_new_with_schema(
+                self.schema.columns().into_iter().map(Expr::Column).collect(),
+                Arc::new(ranked),
+                self.schema.clone(),
+            )?,
+        ))
     }
 }
 impl UserDefinedLogicalNodeCore for RankedJoin {

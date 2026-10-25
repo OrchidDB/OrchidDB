@@ -654,9 +654,24 @@ pub(super) fn lower_coalesce(
                 .build()?;
         }
         selected = Some(match selected {
-            Some(previous) => LogicalPlanBuilder::from(previous)
-                .union_by_name(matched)?
-                .build()?,
+            Some(previous) => {
+                // Native language values and SQL scalars can occur in separate
+                // coalesce arms. Encode only mismatched carrier columns before
+                // UNION; SQL coercion cannot cast a VARCHAR into our carrier.
+                let carriers = previous.schema().fields().iter().chain(matched.schema().fields())
+                    .filter(|field| native_values::is_value(field.data_type()))
+                    .map(|field| field.name().clone()).collect::<BTreeSet<_>>();
+                let encode = |plan: LogicalPlan| -> RelResult<LogicalPlan> {
+                    let expressions = plan.schema().iter().map(|(qualifier, field)| {
+                        let expr = if carriers.contains(field.name()) && !native_values::is_value(field.data_type()) {
+                            ctx.native_expr(&plan, &IrExpr::Binding(field.name().clone()))?
+                        } else { Expr::Column(datafusion::common::Column::new(qualifier.cloned(), field.name())) };
+                        Ok(expr.alias_qualified(qualifier.cloned(), field.name()))
+                    }).collect::<RelResult<Vec<_>>>()?;
+                    Ok(LogicalPlanBuilder::from(plan).project(expressions)?.build()?)
+                };
+                LogicalPlanBuilder::from(encode(previous)?).union_by_name(encode(matched)?)?.build()?
+            },
             None => matched,
         });
     }

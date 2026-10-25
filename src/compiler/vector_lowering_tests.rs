@@ -51,17 +51,13 @@ fn request(engine: &str, metric: &str) -> CompileRequest {
             "returns": {"target": "target", "properties": {"score": {"type": "number"}}}
         }]
     });
-    if engine != "duckdb" {
+    if engine == "weaviate" {
         let mut options = json!({"retrieval": "approximate_allowed"});
-        let format = if engine == "weaviate" {
-            schema["engines"]["vectors"] = json!({"dialect": "weaviate"});
-            options["engine"] = json!("vectors");
-            options["collection"] = json!("Documents");
-            options["key_field"] = json!("doc_id");
-            "weaviate"
-        } else {
-            "pgvector"
-        };
+        schema["sources"] = json!({"vectors": {"adapter": "weaviate"}});
+        options["engine"] = json!("vectors");
+        options["collection"] = json!("Documents");
+        options["key_field"] = json!("doc_id");
+        let format = "weaviate";
         schema["source_metadata"] = json!([{
             "table": "documents", "format": format, "options": options,
             "indexes": [{"column": "embedding", "metric": metric}]
@@ -93,18 +89,8 @@ async fn assert_sql(engine: &str, metric: &str, expected: &str) {
     assert!(result.sql.contains(expected), "{}", result.sql);
     assert!(result.sql.contains("0.7"), "{}", result.sql);
     assert!(result.sql.contains("tenant_id"), "{}", result.sql);
-    if engine == "postgres" {
-        assert!(result.sql.contains("LATERAL"), "{}", result.sql);
-        assert!(result.sql.contains("LIMIT 3"), "{}", result.sql);
-        assert!(result.sql.contains("ASC NULLS LAST"), "{}", result.sql);
-    } else {
-        assert!(
-            result.sql.to_lowercase().contains("row_number"),
-            "{}",
-            result.sql
-        );
-        assert!(result.sql.contains("<= 3"), "{}", result.sql);
-    }
+    assert!(result.sql.to_lowercase().contains("row_number"), "{}", result.sql);
+    assert!(result.sql.contains("<= 3"), "{}", result.sql);
 }
 
 async fn assert_weaviate(metric: &str) {
@@ -206,16 +192,16 @@ async fn l2_lowers_to_duckdb() {
     assert_sql("duckdb", "l2", "list_distance").await;
 }
 #[tokio::test]
-async fn cosine_lowers_to_postgres() {
-    assert_sql("postgres", "cosine", "<=>").await;
+async fn cosine_lowers_to_trino() {
+    assert_sql("trino", "cosine", "dot_product").await;
 }
 #[tokio::test]
-async fn dot_lowers_to_postgres() {
-    assert_sql("postgres", "dot", "<#>").await;
+async fn dot_lowers_to_trino() {
+    assert_sql("trino", "dot", "dot_product").await;
 }
 #[tokio::test]
-async fn l2_lowers_to_postgres() {
-    assert_sql("postgres", "l2", "<->").await;
+async fn l2_lowers_to_trino() {
+    assert_sql("trino", "l2", "euclidean_distance").await;
 }
 #[tokio::test]
 async fn cosine_lowers_to_weaviate() {

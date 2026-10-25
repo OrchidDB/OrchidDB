@@ -534,8 +534,13 @@ fn split_writer_finalizer(plan: &mut Subplan) -> Option<(Subplan, AggKind)> {
     Some((*barrier, kind))
 }
 fn group_members_source() -> Subplan {
+    // The group reducer receives its already selected frontier as an input
+    // relation. This source performs no grouping, filtering, or aggregation.
+    let LogicalPlan::Extension(extension) = kernel("GroupMembers", vec![], |_, s| Ok(s.frontier.clone())) else { unreachable!() };
+    let mut source = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+    source.boundary = Some(policy::BoundaryKind::Correlation);
     Subplan {
-        plan: kernel("GroupMembers", vec![], |_, s| Ok(s.frontier.clone())),
+        plan: LogicalPlan::Extension(Extension { node: Arc::new(source) }),
         prepared: Default::default(),
         observable: false,
         batchable: false,

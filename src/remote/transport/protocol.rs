@@ -252,15 +252,15 @@ mod tests {
 pub(super) fn new_session(adapter: &str, options: Value) -> Result<HttpSession, String> {
     let engine = match adapter {
         #[cfg(feature = "weaviate")]
-        "weaviate" => Engine::Weaviate,
+        "weaviate" => SourceKind::Weaviate,
         #[cfg(feature = "quickwit")]
-        "quickwit" => Engine::Quickwit,
+        "quickwit" => SourceKind::Quickwit,
         #[cfg(feature = "elasticsearch")]
-        "elasticsearch" => Engine::Elasticsearch,
+        "elasticsearch" => SourceKind::Elasticsearch,
         #[cfg(feature = "prometheus")]
-        "prometheus" => Engine::Prometheus,
+        "prometheus" => SourceKind::Prometheus,
         #[cfg(feature = "loki")]
-        "loki" => Engine::Loki,
+        "loki" => SourceKind::Loki,
         _ => return Err("unsupported or disabled remote adapter".into()),
     };
     // Do not include raw option values (potential credentials) in errors.

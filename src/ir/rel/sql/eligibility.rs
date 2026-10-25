@@ -1,6 +1,6 @@
 use super::*;
 use crate::ir::rel::sql;
-/// Unknown or volatile UDFs and extension nodes execute only in DataFusion.
+/// Unknown functions and residual extension nodes require an explicit boundary.
 /// DuckDB eligibility is a planning decision; execution errors are never retried
 /// through another engine, avoiding repeated effects or changed error semantics.
 /// Analyze each logical node once. A rejected ancestor must not repeatedly
@@ -56,7 +56,14 @@ impl SqlEligibility {
             LogicalPlan::Extension(_) => Some("residual extension"),
             LogicalPlan::EmptyRelation(empty) if empty.produce_one_row => None,
             LogicalPlan::EmptyRelation(_) => Some("empty relation"),
-            _ if plan.schema().fields().is_empty() => Some("zero-column relation"),
+            // Projection pushdown can remove every referenced field while the
+            // scan still supplies cardinality (e.g. SELECT 3 FROM a source).
+            // Its underlying table retains a physical SQL schema.
+            LogicalPlan::TableScan(scan) if !scan.source.schema().fields().is_empty() => None,
+            LogicalPlan::TableScan(_) => Some("zero-column physical table"),
+            // Zero-column relational operators use a constant SQL carrier;
+            // the engine boundary removes that transport column. Filters,
+            // DISTINCT and LIMIT still run in the selected SQL engine.
             _ => None,
         };
         if reason.is_some() {

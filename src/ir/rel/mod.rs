@@ -8,6 +8,7 @@
 //! DataFusion can execute directly.
 
 pub mod dag;
+pub mod engine_exec;
 pub mod host;
 pub mod layout;
 pub mod collection_source;
@@ -97,7 +98,6 @@ use arrow::array::{
     StringArray, StringBuilder,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use arrow_select::concat::concat_batches;
 use datafusion::common::{Column, ScalarValue};
 use datafusion::datasource::{MemTable, provider_as_source};
 use datafusion::error::DataFusionError;
@@ -119,7 +119,7 @@ use datafusion::logical_expr::{
     BinaryExpr, Cast, Expr, ExprSchemable, JoinType, LogicalPlan, LogicalPlanBuilder, Operator,
     TryCast,
 };
-use datafusion::prelude::{SessionConfig, lit};
+use datafusion::prelude::lit;
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 
@@ -164,7 +164,10 @@ pub struct RelBackendOptions {
     pub rule_context: crate::ir::rules::RuleContext,
     /// Preserve graph-language scalar values using the host native value functions.
     pub native_values: bool,
-    /// Emit calls to opt-in DuckDB language functions (also executable by DataFusion).
+    /// Internal source adapter for reads of the current mutable graph overlay.
+    #[doc(hidden)]
+    pub live_graph_reads: bool,
+    /// Emit calls to opt-in DuckDB language functions.
     pub language_functions: bool,
     /// Internal path-maintenance expressions are ignored when the path is not
     /// projected to the user. This lets ordinary Gremlin traversals lower to
@@ -186,6 +189,7 @@ impl Default for RelBackendOptions {
             tolerate_internal_path_state: true,
             language_functions: false,
             native_values: false,
+            live_graph_reads: false,
             mapping: None,
             rdf_datasets: None,
         }
@@ -384,28 +388,7 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
 }
 
 async fn execute_lowered_inner(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
-    pipeline::validate_host_contract(&lowered.plan)?;
-    let output_schema = Arc::new(lowered.plan.schema().as_arrow().clone());
-    let config = SessionConfig::new()
-        .set_usize("datafusion.optimizer.max_passes", 1)
-        .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
-    let ctx = optimizer::session(config);
-    let (plan, _) = pipeline::relational(dependent::native(search::native(lowered.plan)?)?, &lowered.rule_context, false)?;
-    let plan = statistics::optimize(pipeline::placement(plan, &lowered.rule_context)?.plan)?.0;
-    let df = ctx.execute_logical_plan(plan).await?;
-    let batches = df.collect().await?;
-    let batch = if batches.is_empty() {
-        RecordBatch::new_empty(output_schema)
-    } else if batches.len() == 1 {
-        batches.into_iter().next().expect("single batch")
-    } else {
-        concat_batches(&output_schema, batches.iter())?
-    };
-    Ok(ReturnedBatches {
-        fields: lowered.fields,
-        result_form: lowered.result_form,
-        batch,
-    })
+    dag::execute(lowered).await.map(|(returned,_)|returned)
 }
 
 fn graph_plan_stats(root: &Node) -> GraphPlanStats {

@@ -4,6 +4,7 @@ mod authorization;
 mod catalog;
 mod update;
 mod host;
+mod federation;
 mod managed;
 mod program;
 
@@ -170,9 +171,6 @@ fn compile(input: Value, inspect: bool) -> Result<Value, String> {
     };
     if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
         eprintln!("Compiled host SQL:\n{}\nLogical plan:\n{}", compiled.sql, compiled.logical_plan);
-    }
-    if !compiled.transfers.is_empty() {
-        return Err("query requires dependent execution, which is not supported by the DuckDB extension yet".into());
     }
     serde_json::to_value(compiled).map_err(|e| e.to_string())
 }

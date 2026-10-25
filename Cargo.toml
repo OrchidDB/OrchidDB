@@ -14,7 +14,7 @@ include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 [workspace]
 members = ["clients/rust", "clients/native", "clients/java/native", "extension/compiler"]
 default-members = ["."]
-exclude = ["clients/rust/examples"]
+exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo"]
 resolver = "2"
 
 [[bin]]
@@ -22,14 +22,14 @@ name = "orchiddb-jvm-store"
 path = "src/bin/orchiddb-jvm-store.rs"
 
 [features]
-default = []
+default = ["duckdb"]
 # Optional syntax extensions of the embedded SPARQL parser.
 sep-0002 = []
 sep-0006 = []
 sparql-12 = ["oxrdf/rdf-12"]
 standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
-postgres = ["dep:postgres"]
+trino = ["dep:reqwest"]
 weaviate = ["dep:reqwest"]
 quickwit = ["dep:reqwest"]
 prometheus = ["dep:reqwest"]
@@ -50,7 +50,7 @@ arrow = { version = "58.2.0", default-features = false, features = ["ipc"] }
 arrow-json = "58.2.0"
 arrow-select = "58.2.0"
 bigdecimal = "0.4"
-# SQL compilation and in-memory execution do not need DataFusion file readers.
+# Logical compilation does not need DataFusion file readers or its executor.
 datafusion = { version = "53.1.0", default-features = false, features = [
     "nested_expressions", "crypto_expressions", "datetime_expressions",
     "encoding_expressions", "regex_expressions", "string_expressions",
@@ -63,9 +63,8 @@ num-bigint = "0.4"
 num-traits = "0.2"
 oxiri = "0.2"
 oxsdatatypes = "0.2.2"
-postgres = { version = "0.19", optional = true, features = ["with-chrono-0_4"] }
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"], optional = true }
 sha2 = "0.10"
 sha1 = "0.10"
 base64 = "0.22"
@@ -150,3 +149,7 @@ required-features = ["kafka"]
 name = "manufacturing_audit"
 path = "tools/diagnostics/manufacturing_audit.rs"
 required-features = ["duckdb"]
+
+# Pinned driver fix: fallible Arrow streaming must not report late errors as EOF.
+[patch.crates-io]
+duckdb = { path = "vendor/duckdb" }

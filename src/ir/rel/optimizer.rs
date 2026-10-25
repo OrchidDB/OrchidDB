@@ -58,6 +58,26 @@ impl OptimizerRule for ConstraintDistinctGuard {
     }
 }
 
+/// UNNEST keeps a column name but changes List<T> into T. Upstream's leaf
+/// extraction pushdown checks column presence, not that type-changing contract.
+/// Keep field extraction above this boundary; children below it still optimize.
+#[derive(Debug)]
+struct UnnestLeafProjectionGuard {inner:Arc<dyn OptimizerRule+Send+Sync>}
+impl OptimizerRule for UnnestLeafProjectionGuard {
+    fn name(&self)->&str{self.inner.name()}
+    fn supports_rewrite(&self)->bool{true}
+    fn apply_order(&self)->Option<datafusion::optimizer::ApplyOrder>{self.inner.apply_order()}
+    fn rewrite(&self,plan:LogicalPlan,config:&dyn OptimizerConfig)->Result<Transformed<LogicalPlan>> {
+        use datafusion::common::tree_node::{TreeNode,TreeNodeRecursion};
+        if let LogicalPlan::Projection(projection)=&plan {
+            let mut unnest=false;
+            projection.input.apply(|node|{unnest|=matches!(node,LogicalPlan::Unnest(_));Ok(TreeNodeRecursion::Continue)})?;
+            if unnest{return Ok(Transformed::no(plan));}
+        }
+        self.inner.rewrite(plan,config)
+    }
+}
+
 /// Sessions can outlive the diagnostic scope; consult it at rewrite time.
 #[derive(Debug)]
 struct ScopedConstantFolding {
@@ -73,6 +93,15 @@ impl OptimizerRule for ScopedConstantFolding {
     }
 }
 
+#[derive(Debug)]
+struct CompilerOnlyPlanner;
+#[async_trait::async_trait]
+impl datafusion::execution::context::QueryPlanner for CompilerOnlyPlanner {
+    async fn create_physical_plan(&self,_:&LogicalPlan,_:&datafusion::execution::context::SessionState)->Result<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
+        Err(datafusion::common::DataFusionError::Plan("DataFusion is compiler-only; execute relational plans through DuckDB or Trino".into()))
+    }
+}
+
 pub(super) fn session(config: SessionConfig) -> SessionContext {
     let session = SessionContext::new_with_config(config);
     let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = session
@@ -82,6 +111,8 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
         .map(|rule| {
             if rule.name() == "simplify_expressions" {
                 Arc::new(ScopedConstantFolding { inner: rule.clone() }) as Arc<dyn OptimizerRule + Send + Sync>
+            } else if rule.name() == "push_down_leaf_projections" {
+                Arc::new(UnnestLeafProjectionGuard{inner:rule.clone()}) as Arc<dyn OptimizerRule+Send+Sync>
             } else if rule.name() == "optimize_projections" {
                 Arc::new(RecursiveProjection {
                     inner: rule.clone(),
@@ -97,6 +128,7 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
         .collect();
     let state = SessionStateBuilder::new_from_existing(session.state())
         .with_optimizer_rules(rules)
+        .with_query_planner(Arc::new(CompilerOnlyPlanner))
         .build();
     SessionContext::new_with_state(state)
 }
@@ -198,4 +230,15 @@ pub(super) fn prune_sql_outputs(plan: LogicalPlan) -> Result<LogicalPlan> {
 
     Ok(RecursiveProjection { inner: Arc::new(OptimizeProjections::new()) }
         .rewrite(plan, &OptimizerContext::new())?.data)
+}
+
+#[cfg(test)]
+mod executable_environment_tests {
+    #[tokio::test]
+    async fn compiler_session_refuses_datafusion_physical_execution() {
+        let session=super::session(datafusion::prelude::SessionConfig::new());
+        let plan=datafusion::logical_expr::LogicalPlanBuilder::empty(true).build().unwrap();
+        let error=session.state().create_physical_plan(&plan).await.unwrap_err();
+        assert!(error.to_string().contains("DataFusion is compiler-only"),"{error}");
+    }
 }

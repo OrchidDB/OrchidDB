@@ -1,4 +1,4 @@
-//! Test-only adapters to the production DataFusion DAG executor.
+//! Test-only adapters to the production SQL engine and boundary scheduler.
 #![allow(dead_code)]
 use orchiddb::ir::runtime::{ReturnedBatches, Row};
 use orchiddb::ir::{GraphPlan, PropertyGraph};

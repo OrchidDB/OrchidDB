@@ -48,8 +48,6 @@ help:
 	@echo 'make clients-test   Test Rust client and native binding locally'
 	@echo 'make go-check       Build and vet the Go client'
 	@echo 'make go-test        Test the Go client with the race detector'
-	@echo 'make starrocks-test Start local StarRocks and check query execution'
-	@echo 'make starrocks-conformance Run all language catalogs on local StarRocks'
 	@echo 'make conformance-report Build the HTML comparison report from recorded results'
 	@echo 'make extension      Build the optional DuckDB extension'
 	@echo 'See clients/README.md for language-specific build and test commands.'
@@ -101,13 +99,9 @@ release-package:
 release-publish:
 	$(PYTHON) scripts/release/release.py publish --version "$(VERSION)"
 
-.PHONY: starrocks-test
-starrocks-test:
-	$(PYTHON) tools/diagnostics/starrocks_test.py
-
-.PHONY: starrocks-conformance
-starrocks-conformance:
-	$(PYTHON) tools/diagnostics/starrocks_test.py --conformance
+.PHONY: trino-connector
+trino-connector:
+	tools/trino/build_connector.sh
 
 .PHONY: catalog-smoke
 catalog-smoke:

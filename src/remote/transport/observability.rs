@@ -19,7 +19,7 @@ impl HttpSession {
             .ok_or("missing source query")?;
         let start = request["start_ns"].as_i64().ok_or("missing start_ns")?;
         let end = request["end_ns"].as_i64().ok_or("missing end_ns")?;
-        let logs = self.engine == Engine::Loki;
+        let logs = self.engine == SourceKind::Loki;
         let span = end.checked_sub(start).ok_or("invalid time bounds")?;
         if start < 0
             || span <= 0

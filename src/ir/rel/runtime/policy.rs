@@ -15,9 +15,9 @@ use std::{
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoweringPolicy {
-    #[default]
     Hybrid,
     /// SQL owns all relational processing; explicit execution boundaries remain.
+    #[default]
     SqlRequired,
 }
 
@@ -26,6 +26,8 @@ pub enum LoweringPolicy {
 pub enum BoundaryKind {
     ResultTransport,
     LiteralInput,
+    /// Read the current mutable graph overlay as an Arrow source.
+    GraphSource,
     Correlation,
     Barrier,
     ControlFlow,
@@ -73,6 +75,7 @@ pub(super) fn boundary(node: &crate::ir::plan::Node) -> Option<BoundaryKind> {
         GraphValues { .. } | GraphOneRow | GraphEmpty => BoundaryKind::LiteralInput,
         GraphCorrelate { .. } => BoundaryKind::Correlation,
         GraphBarrier { .. } => BoundaryKind::Barrier,
+        GraphGroupMap { value: crate::ir::plan::GroupValue::Traversal { .. }, .. } => BoundaryKind::ControlFlow,
         GraphApply { .. } | GraphRepeat { .. } | GraphCoalesce { .. } | GraphChoose { .. } => {
             BoundaryKind::ControlFlow
         }

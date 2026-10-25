@@ -72,6 +72,7 @@ impl Program {
         request.rule_context = crate::catalog::rule_context()?;
         if request.dialect != "duckdb"
             || !request.engines.is_empty()
+            || !request.sources.is_empty()
             || !matches!(request.language.as_str(), "cypher" | "gremlin")
         {
             return Err("Compiled graph programs require local DuckDB Cypher or Gremlin".into());
@@ -339,6 +340,18 @@ fn export(batch: RecordBatch) -> FFI_ArrowArrayStream {
     let schema = batch.schema();
     FFI_ArrowArrayStream::new(Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema)))
 }
+fn export_reader(reader: Box<dyn RecordBatchReader + Send>) -> FFI_ArrowArrayStream {
+    let schema = reader.schema();
+    let batches = reader.map(|batch| batch.map_err(|error| {
+        let detail = message(QueryExecutionError::from_error(error));
+        // Arrow's error callback transports text; retain the authoritative
+        // diagnosis in the same machine envelope the host already decodes.
+        let envelope = json!({"exception_message":detail["error"],
+            "orchid_classification":detail["classification"],"orchid_diagnosis":detail["diagnosis"]});
+        arrow::error::ArrowError::ExternalError(Box::new(std::io::Error::other(envelope.to_string())))
+    }));
+    FFI_ArrowArrayStream::new(Box::new(RecordBatchIterator::new(batches, schema)))
+}
 fn import_owned(stream: FFI_ArrowArrayStream) -> Result<RecordBatch, QueryExecutionError> {
     let reader =
         ArrowArrayStreamReader::try_new(stream).map_err(QueryExecutionError::from_error)?;
@@ -600,7 +613,7 @@ pub unsafe extern "C" fn orchid_program_invoke(
             kernel.invoke(rows, state)
         })?;
         unsafe {
-            std::ptr::write(output, export(kernel.encode_host_output(rows, state)?));
+            std::ptr::write(output, export_reader(kernel.host_output_reader(rows, state, 2048)));
         }
         Ok(())
     })
@@ -655,7 +668,7 @@ pub unsafe extern "C" fn orchid_program_source_next(
             *done = rows.is_none();
             std::ptr::write(
                 output,
-                export(kernel_host::encode_rows(rows.unwrap_or_default())?),
+                export_reader(cursor.cursor.host_output_reader(rows.unwrap_or_default(), state, size)),
             );
         }
         Ok(())

@@ -18,21 +18,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-struct Local(duckdb::Connection);
-#[async_trait::async_trait(?Send)]
-impl Session for Local {
-    fn dialect(&self) -> &str {
-        "duckdb"
-    }
-    async fn query(&mut self, sql: &str) -> Result<Vec<RecordBatch>, String> {
-        let mut statement = self.0.prepare(sql).map_err(|e| e.to_string())?;
-        Ok(statement
-            .query_arrow([])
-            .map_err(|e| e.to_string())?
-            .collect())
-    }
-}
-
 struct Fixture {
     kind: &'static str,
     endpoint: String,
@@ -137,7 +122,7 @@ impl Fixture {
     }
     fn request(&self, query: &str) -> Value {
         json!({"version":1,"dialect":"duckdb","language":"cypher","query":query,
-            "engines":{"local":{"dialect":"duckdb"},"text":{"dialect":self.kind}},"execution_engine":"local",
+            "engines":{"local":{"dialect":"duckdb"}},"sources":{"text":{"adapter":self.kind}},"execution_engine":"local",
             "tables":[
                 {"name":"queries","engine":"local","columns":[{"name":"id","data_type":"int64"},{"name":"body","data_type":"string"},{"name":"tenant","data_type":"string"}]},
                 {"name":self.index,"engine":"text","columns":[{"name":"id","data_type":"int64"},{"name":"body","data_type":"string"},{"name":"tenant","data_type":"string"},{"name":"title","data_type":"string"},{"name":"year","data_type":"int64"},{"name":"payload","data_type":"json"}]},
@@ -180,7 +165,9 @@ impl Fixture {
         BTreeMap::from([
             (
                 "local".into(),
-                Box::new(Local(connection)) as Box<dyn Session>,
+                Box::new(orchiddb::ir::rel::sql::DuckDbSession::new(
+                    orchiddb::ir::rel::sql::DuckDbExecutor::from_connection(connection),
+                )) as Box<dyn Session>,
             ),
             ("text".into(), remote),
         ])

@@ -1,7 +1,11 @@
 //! Query-scoped switches for internal compiler diagnostics, never process-wide
 //! engine configuration. The flag is installed for each poll, so suspension,
 //! task migration, nested scopes and unwinding restore the caller's setting.
-use std::{cell::Cell, future::{Future, poll_fn}, pin::pin};
+use std::{
+    cell::Cell,
+    future::{Future, poll_fn},
+    pin::pin,
+};
 
 thread_local! {
     static CONSTANT_FOLDING: Cell<bool> = const { Cell::new(true) };
@@ -13,7 +17,9 @@ pub(crate) fn constant_folding_enabled() -> bool {
 
 struct Restore(bool);
 impl Drop for Restore {
-    fn drop(&mut self) { CONSTANT_FOLDING.with(|flag| flag.set(self.0)); }
+    fn drop(&mut self) {
+        CONSTANT_FOLDING.with(|flag| flag.set(self.0));
+    }
 }
 
 /// Internal SQL-quality diagnostics: suppress optional frontend/relational
@@ -27,7 +33,8 @@ pub async fn without_constant_folding<F: Future>(future: F) -> F::Output {
     poll_fn(move |cx| {
         let _restore = Restore(CONSTANT_FOLDING.with(|flag| flag.replace(false)));
         future.as_mut().poll(cx)
-    }).await
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -41,13 +48,17 @@ mod tests {
         let work = poll_fn(|_| {
             assert!(!constant_folding_enabled());
             polls += 1;
-            if polls == 1 { Poll::Pending } else { Poll::Ready(7) }
+            if polls == 1 {
+                Poll::Pending
+            } else {
+                Poll::Ready(7)
+            }
         });
         let mut scoped = pin!(without_constant_folding(work));
         let mut context = Context::from_waker(std::task::Waker::noop());
         assert!(scoped.as_mut().poll(&mut context).is_pending());
         assert!(constant_folding_enabled());
-        assert_eq!(scoped.as_mut().poll(&mut context),Poll::Ready(7));
+        assert_eq!(scoped.as_mut().poll(&mut context), Poll::Ready(7));
         assert!(constant_folding_enabled());
     }
 
@@ -55,16 +66,22 @@ mod tests {
     async fn nested_scopes_and_panics_restore_caller_setting() {
         without_constant_folding(async {
             assert!(!constant_folding_enabled());
-            without_constant_folding(async { assert!(!constant_folding_enabled()); }).await;
+            without_constant_folding(async {
+                assert!(!constant_folding_enabled());
+            })
+            .await;
             assert!(!constant_folding_enabled());
             assert!(std::thread::spawn(constant_folding_enabled).join().unwrap());
-        }).await;
+        })
+        .await;
         assert!(constant_folding_enabled());
         use futures::FutureExt;
         let result = std::panic::AssertUnwindSafe(without_constant_folding(async {
             assert!(!constant_folding_enabled());
             panic!("diagnostic panic");
-        })).catch_unwind().await;
+        }))
+        .catch_unwind()
+        .await;
         assert!(result.is_err());
         assert!(constant_folding_enabled());
     }

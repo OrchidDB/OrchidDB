@@ -2,8 +2,6 @@
 mod gremlin_bindings;
 #[path = "../relational_fixture.rs"]
 mod relational_fixture;
-#[path = "../starrocks.rs"]
-mod starrocks;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
@@ -31,8 +29,7 @@ fn query_evidence(stats: &orchiddb::ir::exec::ExecStats) -> Value {
   "write_queries": stats.write_queries,
   "storage": "mapped_relational_tables",
   "native_source_queries": stats.native_source_queries,
-  "sql_regions": {"duckdb": stats.duckdb_regions, "postgres": stats.postgres_regions,
-                  "other": stats.other_sql_regions},
+  "sql_regions": {"duckdb": stats.duckdb_regions, "trino": stats.other_sql_regions},
   "residual_operators": stats.datafusion_ops,
   "fully_lowered_to_sql": fully_sql,
   "lowering": if fully_sql { "full_sql" } else if has_sql { "mixed" } else { "runtime" }
@@ -45,15 +42,24 @@ fn configure_sql_engine(engine: &mut GraphEngine) -> Result<(), String> {
  let config: Value = serde_json::from_str(&config).map_err(|e| format!("Invalid SQL engine JSON: {e}"))?;
  match config["dialect"].as_str() {
   Some("duckdb") => Ok(()),
-  Some("starrocks") => {
-   engine.set_sql_region_session(Box::new(starrocks::Session::new()?));
-   Ok(())
-  },
-  Some("postgres") => {
-   let url = config["connection"].as_str().ok_or("PostgreSQL connection is required")?;
-   let url = url.to_owned();
-   let client = std::thread::spawn(move || { let mut config: postgres::Config = url.parse()?; config.options("-c statement_timeout=8000 -c jit=off"); config.connect(postgres::NoTls) }).join().map_err(|_| "PostgreSQL connection worker failed")?.map_err(|e| e.to_string())?;
-   engine.set_sql_region_session(Box::new(orchiddb::ir::rel::sql::region::PostgresRegionSession::new(client)));
+  Some("trino") => {
+   use orchiddb::execution::{exchange::{ExchangeRegistry, ExchangeServer, ExchangeServerOptions}, trino::{TrinoOptions, TrinoSession}};
+   static EXCHANGE: std::sync::OnceLock<Result<(ExchangeRegistry, ExchangeServer), String>> = std::sync::OnceLock::new();
+   let (registry, _) = EXCHANGE.get_or_init(|| {
+    let registry = ExchangeRegistry::default();
+    let token = config["exchange_token"].as_str().ok_or("Trino exchange_token is required")?;
+    let mut options = ExchangeServerOptions::local(token.to_owned());
+    options.bind = config["exchange_bind"].as_str().unwrap_or("0.0.0.0:18883").parse().map_err(|e| format!("Invalid exchange bind: {e}"))?;
+    let server = ExchangeServer::bind(registry.clone(), options)?;
+    Ok((registry, server))
+   }).as_ref().map_err(Clone::clone)?;
+   let endpoint = config["endpoint"].as_str().ok_or("Trino endpoint is required")?;
+   let mut options = TrinoOptions::new(endpoint, config["user"].as_str().unwrap_or("orchiddb-conformance"));
+   options.exchange_catalog = config["exchange_catalog"].as_str().unwrap_or("orchid").to_owned();
+   options.catalog = config["catalog"].as_str().map(str::to_owned);
+   options.schema = config["schema"].as_str().map(str::to_owned);
+   options.bearer_token = config["bearer_token"].as_str().map(str::to_owned);
+   engine.set_sql_region_session(Box::new(TrinoSession::new(options, registry.clone())?));
    Ok(())
   },
   _ => Err("Unsupported SQL engine dialect".into()),
@@ -132,13 +138,14 @@ async fn rdf(req:&Value)->Result<Value,String>{
  let mut output=response?;
  output["query_cost"]=query_evidence(&stats);
  output["query_cost"]["execution_plan"]["schema_sql"]=json!(schema_sql);
- output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"postgres":stats.postgres_regions,"starrocks":stats.other_sql_regions});
+ output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"trino":stats.other_sql_regions});
  Ok(output)
 }
 #[tokio::main]
 async fn main(){
  let mut fixture=relational_fixture::RelationalFixture::new().unwrap();
- fixture.engine.set_sql_timeout(std::time::Duration::from_secs(8));
+ let sql_timeout_seconds=std::env::var("CONFORMANCE_SQL_TIMEOUT_SECONDS").ok().map(|value| value.parse::<u64>().expect("CONFORMANCE_SQL_TIMEOUT_SECONDS must be an integer")).unwrap_or(8);
+ fixture.engine.set_sql_timeout(std::time::Duration::from_secs(sql_timeout_seconds));
  configure_sql_engine(&mut fixture.engine).expect("SQL engine configuration");
  for line in io::stdin().lock().lines(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
@@ -197,7 +204,7 @@ async fn main(){
   Err(_) if op=="gremlin"=>match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>fixture.engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)},
   Err((message,detail))=>{classification=detail;Err(message)}
  };
- r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions,"starrocks":r.stats.other_sql_regions},"query_cost":query_evidence(&r.stats),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"trino":r.stats.other_sql_regions},"query_cost":query_evidence(&r.stats),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
  let mut output=result.unwrap_or_else(|e|json!({"error":e}));
  if matches!(op,"cypher"|"gremlin"|"rdf"|"sparql-syntax") {

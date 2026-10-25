@@ -1,4 +1,4 @@
-//! DataFusion DAG regressions with independent, explicit expected results.
+//! Engine execution regressions with independent, explicit expected results.
 use orchiddb::ir::jvm::JvmExecution;
 use orchiddb::ir::rel::runtime::execute_rows_with_jvm;
 use orchiddb::ir::{GraphPlan, PropertyGraph, Value};
@@ -60,6 +60,163 @@ fn sorted(mut values: Vec<Value>) -> Vec<Value> {
     values.sort_by_key(|v| format!("{v:?}"));
     values
 }
+
+#[tokio::test]
+async fn grouped_property_collection_drops_absent_values() {
+    let (rows, _) = execute_rows_with_jvm(&plan("g.V().group().by('name').by('age')"), &graph(), JvmExecution::default()).await.unwrap();
+    let values = current_values(rows);
+    let entries = match &values[0] {
+        Value::Map(entries) => entries.clone(),
+        Value::TypedMap(entries) => entries.iter().map(|(key, value)| {
+            let Value::String(key) = key else { panic!("expected string group key") };
+            (key.clone(), value.clone())
+        }).collect(),
+        other => panic!("expected grouped map, got {other:?}"),
+    };
+    assert_eq!(entries["a"], Value::List(vec![Value::Int(29)]));
+    assert_eq!(entries["b"], Value::List(vec![Value::Int(35)]));
+    assert_eq!(entries["c"], Value::List(vec![]));
+}
+#[tokio::test]
+async fn fold_map_reduction_preserves_injected_order() {
+    let query = "g.inject(['a':1], ['b':2], ['b':4]).fold([:], Operator.addAll)";
+    let (rows, _) = execute_rows_with_jvm(&plan(query), &graph(), JvmExecution::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::Map(BTreeMap::from([("a".into(), Value::Int(1)), ("b".into(), Value::Int(4))]))]);
+}
+#[tokio::test]
+async fn mutation_aggregate_labels_survive_sql_reentry() {
+    for query in [
+        "g.V().limit(3).addV('software').aggregate('a1').by(T.label).cap('a1')",
+        "g.V().limit(3).addV('software').aggregate('a1').by(T.label).aggregate('a2').by(T.label).cap('a1','a2').select('a1','a2').by(unfold().fold())",
+    ] {
+        let (rows, _) = execute_rows_with_jvm(&plan(query), &graph(), JvmExecution::default()).await.unwrap();
+        let labels = Value::List(vec![Value::String("software".into()); 3]);
+        let expected = if query.contains("a2") { Value::Map(BTreeMap::from([("a1".into(), labels.clone()), ("a2".into(), labels)])) } else { Value::BulkSet(vec![Value::String("software".into()); 3]) };
+        assert_eq!(current_values(rows), vec![expected], "{query}");
+    }
+}
+#[tokio::test]
+async fn sql_tail_keeps_order_and_logical_multiplicity() {
+    for (query, expected) in [
+        ("g.V().values('name').order().tail(2)", vec![Value::String("b".into()), Value::String("c".into())]),
+        ("g.V().values('name').order().tail(0)", vec![]),
+        ("g.V().values('name').order().tail(7)", vec![Value::String("a".into()), Value::String("b".into()), Value::String("c".into())]),
+        ("g.inject(3,1,2).order().tail()", vec![Value::Int(3)]),
+        ("g.V().repeat(both()).times(3).tail(7).count()", vec![Value::Long(7)]),
+    ] {
+        let (rows, _) = execute_rows_with_jvm(&plan(query), &graph(), JvmExecution::default()).await.unwrap();
+        assert_eq!(current_values(rows), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn graph_service_reads_resume_sql_projection() {
+    for (query, expected) in [
+        ("g.V().call('tinker.degree.centrality').order()", vec![Value::Long(0), Value::Long(1), Value::Long(1)]),
+        ("g.V().call('tinker.degree.centrality').with('direction',OUT).order()", vec![Value::Long(0), Value::Long(0), Value::Long(2)]),
+        ("g.call('tinker.search').with('search','b').element().values('name')", vec![Value::String("b".into())]),
+    ] {
+        let (rows, _) = execute_rows_with_jvm(&plan(query), &graph(), JvmExecution::default())
+            .await.unwrap_or_else(|error| panic!("{query}: {error}"));
+        assert_eq!(current_values(rows), expected, "{query}");
+    }
+}
+#[tokio::test]
+async fn element_reference_sources_feed_sql_projections() {
+    use orchiddb::language::gremlin::{parse_traversal_with_bindings, semantics::GValue};
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node("person", BTreeMap::new());
+    let b = graph.insert_node("person", BTreeMap::from([("name".into(), Value::String("b".into()))]));
+    let c = graph.insert_node("person", BTreeMap::from([("name".into(), Value::String("c".into()))]));
+    graph.insert_edge("knows", &a, &b, BTreeMap::new()).unwrap();
+    graph.insert_edge("knows", &a, &c, BTreeMap::new()).unwrap();
+    let key = |value: &Value| match graph.element_public_id(value) {
+        Value::String(id) => GValue::String(id),
+        Value::Int(id) | Value::Long(id) => GValue::Long(id),
+        _ => unreachable!(),
+    };
+    let mut bindings = std::collections::HashMap::from([
+        ("vid1".into(), key(&a)),
+        ("v2".into(), GValue::VertexRef { id: Box::new(key(&b)), label: "descriptive-only".into() }),
+    ]);
+    let query = "g.withSideEffect('a',v2).V(vid1).out().where(P.neq('a')).values('name')";
+    let compile = |bindings: &std::collections::HashMap<String, GValue>| {
+        let arguments = bindings.iter().map(|(key, value)| (key.clone(),
+            orchiddb::language::gremlin::GremlinBinding::Value(value.clone()))).collect();
+        let (query, values) = orchiddb::language::gremlin::callables::prepare(query, &arguments).unwrap();
+        GremlinPlanner::new().plan(&parse_traversal_with_bindings(&query, &values).unwrap()).unwrap()
+    };
+    let (rows, stats) = execute_rows_with_jvm(&compile(&bindings), &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::String("c".into())]);
+    assert_eq!(stats.datafusion_operators, 0);
+    let property = graph.properties(&b, &["name".into()]).remove(0);
+    let property_binding = GValue::VertexPropertyRef {
+        id: Box::new(key(&property)),
+        owner: Box::new(GValue::VertexRef { id: Box::new(key(&b)), label: "person".into() }),
+        key: "name".into(),
+    };
+    let arguments = std::collections::HashMap::from([("p".into(),
+        orchiddb::language::gremlin::GremlinBinding::Value(property_binding))]);
+    let (query, values) = orchiddb::language::gremlin::callables::prepare("g.inject(p).value()", &arguments).unwrap();
+    let property_plan = GremlinPlanner::new().plan(&parse_traversal_with_bindings(&query, &values).unwrap()).unwrap();
+    let (rows, _) = execute_rows_with_jvm(&property_plan, &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::String("b".into())]);
+    bindings.insert("v2".into(), GValue::VertexRef { id: Box::new(GValue::Long(i64::MAX)), label: "person".into() });
+    assert!(execute_rows_with_jvm(&compile(&bindings), &graph, JvmExecution::default()).await
+        .unwrap_err().contains("does not exist"));
+}
+
+#[tokio::test]
+async fn merge_edge_resolves_references_inside_sql_maps_and_lists() {
+    use orchiddb::language::gremlin::{parse_traversal_with_bindings, semantics::GValue};
+    for query in ["g.mergeE(criteria)", "g.inject(criteria).mergeE()"] {
+        let graph = PropertyGraph::new();
+        let a = graph.insert_node("person", BTreeMap::new());
+        let b = graph.insert_node("person", BTreeMap::new());
+        let reference = |value: &Value| GValue::VertexRef {
+            id: Box::new(match graph.element_public_id(value) {
+                Value::String(id) => GValue::String(id),
+                Value::Int(id) | Value::Long(id) => GValue::Long(id),
+                _ => unreachable!(),
+            }),
+            label: "person".into(),
+        };
+        let bindings: std::collections::HashMap<String, GValue> = std::collections::HashMap::from([("criteria".into(), GValue::TypedMap(vec![
+            (GValue::Token("label".into()), GValue::String("knows".into())),
+            (GValue::DirectionToken("OUT".into()), reference(&a)),
+            (GValue::DirectionToken("IN".into()), reference(&b)),
+        ]))]);
+        let arguments = bindings.iter().map(|(key, value)| (key.clone(),
+            orchiddb::language::gremlin::GremlinBinding::Value(value.clone()))).collect();
+        let (query, values) = orchiddb::language::gremlin::callables::prepare(query, &arguments).unwrap();
+        let plan = GremlinPlanner::new().plan(&parse_traversal_with_bindings(&query, &values).unwrap()).unwrap();
+        let (rows, stats) = execute_rows_with_jvm(&plan, &graph, JvmExecution::default())
+            .await.unwrap_or_else(|error| panic!("{query}: {error}"));
+        let values = current_values(rows);
+        assert_eq!(values.len(), 1, "{query}");
+        assert!(matches!(&values[0], Value::Edge { rel_type, .. } if rel_type == "knows"));
+        assert_eq!(stats.datafusion_operators, 0);
+    }
+}
+
+#[tokio::test]
+async fn regex_predicates_keep_boolean_types_across_sql_boundaries() {
+    let graph = graph();
+    graph.insert_node("software", BTreeMap::from([
+        ("name".into(), Value::String("TinkerGraph ©".into())),
+    ]));
+    for (query, expected) in [
+        ("g.V().has('name',TextP.regex('^a')).values('name')", vec![Value::String("a".into())]),
+        ("g.V().has('name',TextP.regex('Tinker')).values('name')", vec![Value::String("TinkerGraph ©".into())]),
+        ("g.V().has('name',TextP.regex('Tinker.*©')).values('name')", vec![Value::String("TinkerGraph ©".into())]),
+    ] {
+        let (rows, stats) = execute_rows_with_jvm(&plan(query), &graph, JvmExecution::default())
+            .await.unwrap_or_else(|error| panic!("{query}: {error}"));
+        assert_eq!(current_values(rows), expected, "{query}");
+        assert_eq!(stats.datafusion_operators, 0);
+    }
+}
+
 #[tokio::test]
 async fn typed_traversers_and_correlated_state_have_expected_results() {
     let text = |s: &str| Value::String(s.into());
@@ -148,7 +305,7 @@ async fn branch_scans_observe_prior_writes_and_outer_rollback() {
         .gremlin("g.inject(1).union(__.addV('person'),__.V()).count()")
         .await
         .unwrap();
-    assert!(result.stats.datafusion_ops > 0);
+    assert_eq!(result.stats.datafusion_ops, 0);
     let rows: serde_json::Value = serde_json::from_str(
         &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
@@ -296,7 +453,7 @@ async fn batched_apply_preserves_occurrences_bulk_and_optional_results() {
             .await
             .unwrap();
         assert!(
-            stats.physical_plan.contains("BatchableLateralApply"),
+            stats.physical_plan.contains("LateralApply"),
             "{}",
             stats.physical_plan
         );
@@ -367,7 +524,7 @@ async fn projection_composition_preserves_shadowing_and_missing_bindings() {
             .await
             .unwrap();
         assert!(
-            stats.physical_plan.contains("CollapsedProject"),
+            stats.duckdb_regions > 0 && stats.datafusion_operators == 0,
             "{}",
             stats.physical_plan
         );
@@ -494,7 +651,7 @@ async fn pure_filter_moves_before_unrelated_projection() {
         .await
         .unwrap();
     assert!(
-        stats.physical_plan.contains("Values -> Filter"),
+        stats.duckdb_regions > 0 && stats.datafusion_operators == 0,
         "{}",
         stats.physical_plan
     );
@@ -541,7 +698,7 @@ async fn batched_fanout_keeps_duplicate_outputs_and_parent_bulk() {
     let (actual, stats) = execute_rows_with_jvm(&plan, &graph, JvmExecution::default())
         .await
         .unwrap();
-    assert!(stats.physical_plan.contains("BatchableLateralApply"));
+    assert!(stats.physical_plan.contains("LateralApply"));
     assert_eq!(actual.len(), 4);
     assert_eq!(
         actual.iter().map(|r| r.bulk).collect::<Vec<_>>(),
@@ -589,6 +746,17 @@ async fn streaming_batches_preserve_global_order_aggregation_and_bulk() {
     let (rows, _) = execute_rows_with_jvm(&aggregated, &graph, JvmExecution::default()).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].bindings["count"], Value::Long(34000));
+    // Compact multiplicity must also remain exact beyond signed-long range,
+    // and an empty input still produces a single zero count.
+    for (bulk, expected) in [(vec![], 0_i64), (vec![u64::MAX], -1_i64)] {
+        let plan = GraphPlan::new(GraphPlanPolicy::gremlin(), Node::GraphAggregate {
+            group: vec![], aggs: vec![AggCall { kind: AggKind::CountBulk, alias: "count".into(), arg: None, distinct: false }], fields: vec!["count".into()],
+            input: Box::new(Node::GraphValues { bindings: vec!["x".into()], rows: bulk.iter().map(|_| vec![Value::Int(1)]).collect(), bulk: Some(bulk) }),
+        });
+        let (rows, _) = execute_rows_with_jvm(&plan, &graph, JvmExecution::default()).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].bindings["count"], Value::Long(expected));
+    }
 }
 
 #[tokio::test]
@@ -636,4 +804,164 @@ async fn nested_correlated_bodies_compile_in_their_own_scope() {
     let (rows, _) = execute_rows_with_jvm(&query, &PropertyGraph::new(), Default::default()).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("current"), Value::String("ok".into()));
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn same_statement_expansion_reads_created_edges() {
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
+    let result = engine.cypher("CREATE (a:Live {name:'a'})-[r:CREATED]->(b:Live {name:'b'}) WITH a,b MATCH (a)-[e:CREATED]->(b) RETURN count(e) AS n").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "1");
+    assert_eq!(result.stats.datafusion_ops, 0);
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn correlated_expansion_preserves_typed_mapped_keys() {
+    use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping, EdgeMapping};
+    use std::sync::Arc;
+    for (kind, first, second) in [("INTEGER", "1", "2"), ("VARCHAR", "'node-a'", "'node-b'")] {
+        let storage = duckdb::Connection::open_in_memory().unwrap();
+        storage.execute_batch(&format!("CREATE TABLE nodes(id {kind}, name VARCHAR); INSERT INTO nodes VALUES ({first},'a'),({second},'b'); CREATE TABLE links(id {kind},src {kind},dst {kind}); INSERT INTO links VALUES ({first},{first},{second});")).unwrap();
+        let mut mapping = GraphMapping::new();
+        mapping.map_node(NodeMapping::table("N", "nodes", "id").property("name", "name"));
+        mapping.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "N", "N").with_id("id"));
+        let mut engine = orchiddb::engine::GraphEngine::mapped(storage, Arc::new(mapping)).unwrap();
+        let output = engine.gremlin("g.V().has('name','a').repeat(__.out('LINK')).times(1).values('name')").await.unwrap();
+        assert_eq!(output.returned.batch.num_rows(), 1, "{kind}");
+        assert_eq!(arrow::util::display::array_value_to_string(output.returned.batch.column(0), 0).unwrap(), "b", "{kind}");
+        assert_eq!(output.stats.datafusion_ops, 0);
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn mapped_branch_hydration_releases_sql_stream_connection() {
+    use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping, EdgeMapping};
+    use std::sync::Arc;
+    let storage = duckdb::Connection::open_in_memory().unwrap();
+    storage.execute_batch("CREATE TABLE nodes(id INTEGER, name VARCHAR); INSERT INTO nodes VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(6,'f'); CREATE TABLE links(id INTEGER,src INTEGER,dst INTEGER); INSERT INTO links VALUES(1,1,2),(2,1,3),(3,2,4),(4,3,5),(5,3,6);").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.map_node(NodeMapping::table("N", "nodes", "id").property("name", "name"));
+    mapping.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "N", "N").with_id("id"));
+    let mut engine = orchiddb::engine::GraphEngine::mapped(storage, Arc::new(mapping)).unwrap();
+    for _ in 0..4 {
+        let result = engine.gremlin("g.V().branch(__.identity()).option(__.has('name','a'),__.out('LINK').values('name').order().fold()).option(P.neq(123),__.bothE().count())").await.unwrap();
+        // Branch options receive all selected traversers: their count/fold
+        // barriers each produce one result, rather than one per vertex.
+        assert_eq!(result.returned.batch.num_rows(), 2);
+        let mut values = (0..2).map(|row| arrow::util::display::array_value_to_string(result.returned.batch.column(0), row).unwrap()).collect::<Vec<_>>();
+        values.sort();
+        assert_eq!(values, vec!["d[10].l", "l[b,c]"]);
+        assert_eq!(result.stats.datafusion_ops, 0);
+        assert!(result.stats.physical_plan.contains("source reentry"));
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn multi_select_preserves_original_current_map() {
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
+    let output = engine.gremlin("g.inject(['src':1,'tgt':2]).select('src','tgt')").await.unwrap();
+    assert_eq!(output.returned.batch.num_rows(), 1);
+    assert_eq!(arrow::util::display::array_value_to_string(output.returned.batch.column(0), 0).unwrap(), "m[{\"src\":\"d[1].i\",\"tgt\":\"d[2].i\"}]");
+    assert_eq!(output.stats.datafusion_ops, 0);
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn mapped_both_endpoints_keep_strategy_properties() {
+    use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping, EdgeMapping};
+    use std::sync::Arc;
+    let storage = duckdb::Connection::open_in_memory().unwrap();
+    storage.execute_batch("CREATE TABLE nodes(id INTEGER,name VARCHAR); INSERT INTO nodes VALUES(1,'a'),(2,'b'); CREATE TABLE links(id INTEGER,src INTEGER,dst INTEGER); INSERT INTO links VALUES(1,1,2),(2,1,1);").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.map_node(NodeMapping::table("N", "nodes", "id").property("name", "name"));
+    mapping.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "N", "N").with_id("id"));
+    let mut engine = orchiddb::engine::GraphEngine::mapped(storage, Arc::new(mapping)).unwrap();
+    let result = engine.gremlin("g.withStrategies(new SubgraphStrategy(vertices: __.has('name',P.within('a','b')))).E().bothV().values('name').order()").await.unwrap();
+    let values = (0..result.returned.batch.num_rows()).map(|row| arrow::util::display::array_value_to_string(result.returned.batch.column(0),row).unwrap()).collect::<Vec<_>>();
+    assert_eq!(values, vec!["a", "a", "a", "b"]);
+    assert_eq!(result.stats.datafusion_ops, 0);
+}
+
+#[tokio::test]
+async fn floating_sum_preserves_traversal_encounter_order() {
+    let query = plan("g.inject(0.4d,0.4d,0.2d,1.0d).sum()");
+    let (rows, stats) = execute_rows_with_jvm(&query, &PropertyGraph::new(), Default::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::Float(2.0)]);
+    assert_eq!(stats.datafusion_operators, 0);
+    let graph = PropertyGraph::new();
+    let source = graph.insert_node("person", BTreeMap::new());
+    let a = graph.insert_node("software", BTreeMap::from([("name".into(), Value::String("a".into()))]));
+    let b = graph.insert_node("software", BTreeMap::from([("name".into(), Value::String("b".into()))]));
+    for (target, weight) in [(&a, 0.4), (&b, 1.0), (&a, 0.4), (&a, 0.2)] {
+        graph.insert_edge("created", &source, target, BTreeMap::from([("weight".into(), Value::Float(weight))])).unwrap();
+    }
+    let query = plan("g.V().hasLabel('software').order().by('name').bothE().values('weight').sum()");
+    let (rows, _) = execute_rows_with_jvm(&query, &graph, Default::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::Float(2.0)]);
+}
+
+#[tokio::test]
+async fn repeat_labels_survive_multiple_select_modulators() {
+    let graph = PropertyGraph::new();
+    let nodes = ["a", "b", "c"].map(|name| graph.insert_node("N", BTreeMap::from([("name".into(), Value::String(name.into()))])));
+    graph.insert_edge("R", &nodes[0], &nodes[1], BTreeMap::new()).unwrap();
+    graph.insert_edge("R", &nodes[1], &nodes[2], BTreeMap::new()).unwrap();
+    let (rows, stats) = execute_rows_with_jvm(&plan("g.V().until(__.out().out()).repeat(__.in().as('a').in().as('b')).select('a','b').by('name')"), &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(current_values(rows), vec![Value::Map(BTreeMap::from([("a".into(),Value::String("b".into())),("b".into(),Value::String("a".into()))]))]);
+    assert_eq!(stats.datafusion_operators, 0);
+}
+
+#[tokio::test]
+async fn match_disjunction_anchors_existing_labels_in_each_predicate_arm() {
+    let graph = PropertyGraph::new();
+    let nodes = ["a", "b", "c", "d"].map(|name| graph.insert_node("N", BTreeMap::from([("name".into(), Value::String(name.into()))])));
+    for (label, source, target) in [("knows",0,1),("created",0,2),("knows",0,3),("created",1,2),("created",3,2)] {
+        graph.insert_edge(label, &nodes[source], &nodes[target], BTreeMap::new()).unwrap();
+    }
+    let query = "g.V().as('a').out().as('b').match(__.as('a').out().count().as('c'),__.or(__.as('a').out('knows').as('b'),__.as('b').in().count().as('c').and().as('c').is(P.gt(2)))).select('b').values('name')";
+    let (rows, stats) = execute_rows_with_jvm(&plan(query), &graph, JvmExecution::default()).await.unwrap();
+    assert_eq!(sorted(current_values(rows)), sorted(vec![Value::String("b".into()),Value::String("c".into()),Value::String("d".into())]));
+    assert_eq!(stats.datafusion_operators, 0);
+    let (rows, _) = execute_rows_with_jvm(&plan("g.inject(1,2).union(__.count(),__.fold())"), &PropertyGraph::new(), JvmExecution::default()).await.unwrap();
+    assert_eq!(sorted(current_values(rows)), sorted(vec![Value::Long(2), Value::List(vec![Value::Int(1), Value::Int(2)])]));
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn mapped_property_reference_survives_independent_sql_contexts() {
+    use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping};
+    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
+    let storage = duckdb::Connection::open_in_memory().unwrap();
+    storage.execute_batch("CREATE TABLE people(id INTEGER, name VARCHAR, age INTEGER); INSERT INTO people VALUES(1,'marko',29),(2,'vadas',27)").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.map_node(NodeMapping::table("person", "people", "id").property("name", "name").property("age", "age"));
+    let mut engine = orchiddb::engine::GraphEngine::mapped(storage, std::sync::Arc::new(mapping)).unwrap();
+    let output = engine.gremlin("g.V(1).properties('name').id()").await.unwrap();
+    let id = arrow::util::display::array_value_to_string(output.returned.batch.column(0), 0).unwrap();
+    let property_output = engine.gremlin("g.V(1).properties('name')").await.unwrap();
+    let typed: serde_json::Value = serde_json::from_str(&property_output.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
+    assert_eq!(typed[0][0]["id"]["value"], id, "returned property object must expose the same public ID as id()");
+    let id_bindings = std::collections::HashMap::from([("pid".into(), GremlinBinding::Value(GValue::String(id.clone())))]);
+    let selected = engine.gremlin_with_bindings("g.V().has('age').properties().hasId(pid).value()", &id_bindings).await.unwrap();
+    assert_eq!(selected.returned.batch.num_rows(), 1, "property ID {id:?}; selected {:?}", selected.returned.batch);
+    assert_eq!(arrow::util::display::array_value_to_string(selected.returned.batch.column(0), 0).unwrap(), "marko");
+    // Populate another query's property slots in a different order.
+    engine.gremlin("g.V(2).properties('age','name').id()").await.unwrap();
+    let property = |id: String| GValue::VertexPropertyRef {
+        id: Box::new(GValue::String(id)),
+        owner: Box::new(GValue::VertexRef {id: Box::new(GValue::Long(1)), label: "person".into()}),
+        key: "name".into(),
+    };
+    let bindings = std::collections::HashMap::from([("p".into(), GremlinBinding::Value(property(id.clone())))]);
+    let output = engine.gremlin_with_bindings("g.inject(p).value()", &bindings).await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(output.returned.batch.column(0), 0).unwrap(), "marko");
+    let bindings = std::collections::HashMap::from([("p".into(), GremlinBinding::Value(property(format!("{id}-invalid"))))]);
+    assert!(engine.gremlin_with_bindings("g.inject(p).value()", &bindings).await.err().unwrap().contains("does not exist"));
+    engine.gremlin("g.V(1).properties('name').drop()").await.unwrap();
+    assert_eq!(engine.gremlin("g.V(1).values('name')").await.unwrap().returned.batch.num_rows(), 0);
+    let remaining = engine.gremlin("g.V(2).values('name')").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(remaining.returned.batch.column(0), 0).unwrap(), "vadas");
 }

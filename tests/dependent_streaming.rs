@@ -5,23 +5,13 @@ use arrow::{
 };
 use datafusion::{
     common::{DFSchema, DataFusionError, Result},
-    execution::{
-        TaskContext,
-        memory_pool::{GreedyMemoryPool, MemoryPool},
-        runtime_env::RuntimeEnvBuilder,
-    },
     logical_expr::LogicalPlanBuilder,
-    physical_expr::EquivalenceProperties,
-    physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
-        SendableRecordBatchStream,
-        execution_plan::{Boundedness, EmissionType},
-        limit::GlobalLimitExec,
-        stream::RecordBatchStreamAdapter,
-    },
-    prelude::{SessionConfig, SessionContext},
 };
 use futures::{StreamExt, TryStreamExt, stream};
+use orchiddb::ir::rel::engine_exec::{
+    self, ExecutionPlan, GreedyMemoryPool, MemoryPool, PlanProperties, RecordBatchStreamAdapter,
+    SendableRecordBatchStream, TaskContext,
+};
 use orchiddb::ir::{
     QueryCost,
     rel::{
@@ -32,7 +22,6 @@ use orchiddb::ir::{
 use std::{
     any::Any,
     collections::VecDeque,
-    fmt,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -69,11 +58,6 @@ struct Feed {
     fail_at_end: bool,
     polls: Arc<AtomicUsize>,
     properties: Arc<PlanProperties>,
-}
-impl DisplayAs for Feed {
-    fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Feed")
-    }
 }
 impl ExecutionPlan for Feed {
     fn name(&self) -> &str {
@@ -140,11 +124,7 @@ impl Fixture {
         fail_at_end: bool,
     ) -> Self {
         let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(budget));
-        let runtime = RuntimeEnvBuilder::new()
-            .with_memory_pool(pool.clone())
-            .build_arc()
-            .unwrap();
-        let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
+        let task = Arc::new(TaskContext::default().with_memory_pool(pool.clone()));
         let polls = Arc::new(AtomicUsize::new(0));
         let input_schema = inputs
             .first()
@@ -154,12 +134,7 @@ impl Fixture {
             batches: inputs,
             fail_at_end,
             polls: polls.clone(),
-            properties: Arc::new(PlanProperties::new(
-                EquivalenceProperties::new(input_schema),
-                Partitioning::UnknownPartitioning(1),
-                EmissionType::Incremental,
-                Boundedness::Bounded,
-            )),
+            properties: Arc::new(PlanProperties::new(input_schema)),
         });
         let operation = DependentOperation {
             source: Arc::new(LogicalPlanBuilder::empty(false).build().unwrap()),
@@ -183,7 +158,7 @@ impl Fixture {
         ));
         Self {
             plan,
-            task: ctx.task_ctx(),
+            task,
             calls,
             polls,
             pool,
@@ -209,8 +184,7 @@ async fn limit_one_does_not_execute_remaining_rows_or_poll_later_batches() {
         4096,
         false,
     );
-    let limit = GlobalLimitExec::new(f.plan.clone(), 0, Some(1));
-    let mut stream = limit.execute(0, f.task.clone()).unwrap();
+    let mut stream = f.plan.execute(0, f.task.clone()).unwrap().take(1);
     assert_eq!(f.polls.load(Ordering::SeqCst), 0);
     assert!(f.calls.lock().unwrap().is_empty());
     assert_eq!(
@@ -239,7 +213,7 @@ async fn streaming_preserves_duplicates_empty_results_and_multirow_output_order(
         4096,
         false,
     );
-    let result = datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+    let result = engine_exec::collect(f.plan.clone(), f.task.clone())
         .await
         .unwrap();
     assert_eq!(values(&result), vec![20, 21, 30, 31]);
@@ -278,7 +252,7 @@ async fn dropping_a_partially_consumed_stream_releases_memory_and_stops_requests
 #[tokio::test]
 async fn memory_budget_rejects_input_before_a_sql_request() {
     let f = Fixture::new(vec![batch(vec![2, 3])], vec![], schema(false), 1, false);
-    let error = datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+    let error = engine_exec::collect(f.plan.clone(), f.task.clone())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("Resources exhausted"), "{error}");
@@ -356,7 +330,7 @@ async fn output_contract_errors_remain_errors() {
             4096,
             false,
         );
-        let error = datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+        let error = engine_exec::collect(f.plan.clone(), f.task.clone())
             .await
             .unwrap_err();
         assert!(error.to_string().contains(message), "{error}");
@@ -381,7 +355,7 @@ async fn zero_column_results_preserve_row_count() {
         4096,
         false,
     );
-    let result = datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+    let result = engine_exec::collect(f.plan.clone(), f.task.clone())
         .await
         .unwrap();
     assert_eq!(result.iter().map(RecordBatch::num_rows).sum::<usize>(), 3);
@@ -389,7 +363,7 @@ async fn zero_column_results_preserve_row_count() {
 }
 
 #[tokio::test]
-async fn later_demand_uses_bounded_groups_and_drop_releases_queued_output() {
+async fn later_demand_starts_only_requested_occurrences_and_drop_releases_input() {
     let f = Fixture::new(
         vec![batch(vec![2; 1024])],
         (0..65).map(|_| Ok(batch(vec![20]))).collect(),
@@ -401,11 +375,11 @@ async fn later_demand_uses_bounded_groups_and_drop_releases_queued_output() {
     stream.try_next().await.unwrap().unwrap();
     assert_eq!(f.calls.lock().unwrap().len(), 1);
     stream.try_next().await.unwrap().unwrap();
-    assert_eq!(f.calls.lock().unwrap().len(), 65);
+    assert_eq!(f.calls.lock().unwrap().len(), 2);
     assert!(f.pool.reserved() > 0);
-    // Consuming queued output needs neither another worker nor more SQL calls.
+    // Each additional response starts only when demanded.
     stream.try_next().await.unwrap().unwrap();
-    assert_eq!(f.calls.lock().unwrap().len(), 65);
+    assert_eq!(f.calls.lock().unwrap().len(), 3);
     drop(stream);
     assert_eq!(f.pool.reserved(), 0);
 }
@@ -419,7 +393,7 @@ async fn output_budget_failure_stops_following_occurrences_and_frees_reservation
         1024,
         false,
     );
-    let error = datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+    let error = engine_exec::collect(f.plan.clone(), f.task.clone())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("Resources exhausted"), "{error}");
@@ -517,7 +491,7 @@ async fn prepared_template_does_not_retain_a_previous_rows_bound_value() {
         4096,
         false,
     );
-    datafusion::physical_plan::collect(f.plan.clone(), f.task.clone())
+    engine_exec::collect(f.plan.clone(), f.task.clone())
         .await
         .unwrap();
     assert_eq!(

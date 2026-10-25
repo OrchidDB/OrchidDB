@@ -280,9 +280,12 @@ pub(crate) fn execute(
     }
     // One deadline covers startup, native callbacks, output decoding and later JVM
     // nodes. Callers can supply an earlier deadline and a cancellation token.
-    execution
-        .deadline
-        .get_or_insert_with(|| Instant::now() + Duration::from_secs(30));
+    execution.deadline.get_or_insert_with(|| {
+        let seconds = std::env::var("ORCHIDDB_JVM_TIMEOUT_SECONDS").ok()
+            .and_then(|value| value.parse::<u64>().ok()).filter(|seconds| *seconds > 0).unwrap_or(30);
+        let now = Instant::now();
+        now.checked_add(Duration::from_secs(seconds)).unwrap_or_else(|| now + Duration::from_secs(30))
+    });
     let pool = execution.worker.0.clone();
     let mut guard = loop {
         execution.check()?;

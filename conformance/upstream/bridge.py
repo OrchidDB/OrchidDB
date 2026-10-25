@@ -10,7 +10,7 @@ class Rust:
   if self.p.poll() is not None:
    raise RuntimeError('The single OrchidDB instance exited; this run cannot restart it')
   self.p.stdin.write(json.dumps(req)+'\n');self.p.stdin.flush()
-  if not select.select([self.p.stdout],[],[],40)[0]:self.p.kill();raise TimeoutError('OrchidDB adapter deadline')
+  if not select.select([self.p.stdout],[],[],float(os.environ.get('CONFORMANCE_ORCHIDDB_TIMEOUT_SECONDS','40')))[0]:self.p.kill();raise TimeoutError('OrchidDB adapter deadline')
   line=self.p.stdout.readline()
   if not line:raise RuntimeError('OrchidDB adapter exited')
   return json.loads(line)

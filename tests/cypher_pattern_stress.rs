@@ -1,4 +1,4 @@
-//! End-to-end pattern stress cases execute the compiled DataFusion plans.
+//! End-to-end pattern stress cases execute the shared SQL engine runtime.
 #[path = "common/execution.rs"]
 mod datafusion_test;
 use datafusion_test::execute;
@@ -284,7 +284,7 @@ fn variable_length_matches_edge_distinct_reference_walks() {
 }
 
 #[test]
-fn pattern_matrix_compiles_for_mapped_duckdb_and_postgres() {
+fn pattern_matrix_compiles_for_mapped_duckdb_and_trino() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -368,7 +368,7 @@ fn pattern_matrix_compiles_for_mapped_duckdb_and_postgres() {
     let mut failures = Vec::new();
     let graph = fixture();
     let mut exports = Vec::new();
-    for dialect in ["duckdb", "postgres"] {
+    for dialect in ["duckdb", "trino"] {
         for &(query, expected) in queries {
             let request = json!({"version":1,"dialect":dialect,"language":"cypher","query":query,
             "tables":[

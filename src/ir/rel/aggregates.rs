@@ -419,6 +419,29 @@ pub(super) fn count_input_rows(plan: &LogicalPlan) -> Expr {
     df_count(col_exact(field.name()).is_null())
 }
 
+/// Count logical traversers without expanding compact bulk at an Arrow boundary.
+pub(super) fn count_input_bulk(plan: &LogicalPlan, operand: Option<Expr>) -> Expr {
+    const BULK: &str = "__orchid_traverser_bulk";
+    if !has_exact_col(plan, BULK) {
+        return operand.map(df_count).unwrap_or_else(|| count_input_rows(plan));
+    }
+    let weight = match operand {
+        Some(value) => super::varlen::case_when(value.is_not_null(), col_exact(BULK), lit(0_u64)),
+        None => col_exact(BULK),
+    };
+    // A wider accumulator detects overflow rather than wrapping in SQL. Gremlin
+    // exposes the resulting unsigned multiplicity through Java's signed long.
+    let sum = df_sum(Expr::Cast(Cast::new(Box::new(weight), DataType::Decimal128(38, 0))));
+    let total = df_core::coalesce(vec![Expr::Cast(Cast::new(Box::new(sum), DataType::UInt64)), lit(0_u64)]);
+    super::varlen::case_when(
+        binary(total.clone(), BinaryOp::Gt, lit(i64::MAX as u64)),
+        binary(
+            Expr::Cast(Cast::new(Box::new(binary(total.clone(), BinaryOp::Sub, lit(1_u64 << 63))), DataType::Int64)),
+            BinaryOp::Add, lit(i64::MIN)),
+        Expr::Cast(Cast::new(Box::new(total), DataType::Int64)),
+    )
+}
+
 /// Preserve the original blob display text while ordering its `\\xNN`
 /// escapes as non-ASCII bytes rather than as a leading backslash.
 pub(super) fn blob_extreme(value: Expr, maximum: bool) -> Expr {

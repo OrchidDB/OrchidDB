@@ -4,6 +4,37 @@
 //! then calls [`execute`]. Use the same schema/session snapshot across those steps.
 //! Connection pools, transactions, UDFs, cancellation, and cache policy belong to
 //! the adapter. This is a single-engine boundary, not a federated coordinator.
+pub mod exchange;
+pub mod stream;
+#[cfg(feature = "trino")]
+pub mod trino;
+
+/// The only relational execution environments. Remote APIs are sources, not engines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutableEngine {
+    #[serde(rename = "duckdb")]
+    DuckDb,
+    Trino,
+}
+impl ExecutableEngine {
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name {
+            "duckdb" => Ok(Self::DuckDb),
+            "trino" => Ok(Self::Trino),
+            _ => Err(format!(
+                "unsupported executable engine {name:?}; expected duckdb or trino"
+            )),
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::DuckDb => "duckdb",
+            Self::Trino => "trino",
+        }
+    }
+}
+
 use crate::compiler::CompiledSql;
 pub use crate::ir::rel::sql::{DialectAdapter, EngineAdapter, SqlDialect};
 pub use arrow::record_batch::{RecordBatch, RecordBatchReader};
@@ -46,6 +77,8 @@ pub enum ExecutionError<E> {
     Driver(E),
     #[error("query requires federated execution")]
     Federation,
+    #[error("unsupported executable engine: {0}; expected duckdb or trino")]
+    UnsupportedEngine(String),
 }
 
 /// Validate the compiler protocol and dialect before handing SQL to a session.
@@ -55,6 +88,8 @@ pub async fn execute<'session, S: SqlSession>(
     session: &'session mut S,
     query: &CompiledSql,
 ) -> Result<S::Output<'session>, ExecutionError<S::Error>> {
+    ExecutableEngine::parse(&query.dialect)
+        .map_err(|_| ExecutionError::UnsupportedEngine(query.dialect.clone()))?;
     if query.version != 1 {
         return Err(ExecutionError::Version(query.version));
     }

@@ -106,7 +106,7 @@ pub fn lower_relation(
         }
         Some(RelationLowering::Rewrite(replacement)) if replacement.schema() != plan.schema() => {
             return Err(SqlError::Conversion(
-                "relational rewrite changed the output schema".into(),
+                format!("relational rewrite changed the output schema: expected {:?}, got {:?}", plan.schema(), replacement.schema()),
             ));
         }
         Some(RelationLowering::Dependent {

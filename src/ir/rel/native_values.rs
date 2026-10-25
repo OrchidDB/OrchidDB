@@ -53,6 +53,55 @@ pub(super) fn literal_value(expr: &Expr) -> Option<Value> {
 }
 fn from_json(value: &serde_json::Value, context: &mut Context) -> Result<Value, String> {
     Ok(match value {
+        serde_json::Value::Object(map) if map.len() == 4
+            && ["__cypher_scalar_tag", "integer", "string", "boolean"].iter().all(|key| map.contains_key(*key)) => {
+            // SQL carries heterogeneous primitive properties as a tagged struct.
+            // Scalar helpers must see its payload, just like the Arrow decoder.
+            let tag = from_json(&map["__cypher_scalar_tag"], context)?;
+            let key = match tag {
+                Value::Byte(1) | Value::Short(1) | Value::Int(1) | Value::Long(1) => "integer",
+                Value::Byte(2) | Value::Short(2) | Value::Int(2) | Value::Long(2) => "string",
+                Value::Byte(3) | Value::Short(3) | Value::Int(3) | Value::Long(3) => "boolean",
+                _ => return Err("Invalid heterogeneous scalar tag".into()),
+            };
+            from_json(&map[key], context)?
+        }
+        serde_json::Value::Object(map) if map.len() == 1 && map.keys().next().is_some_and(|name|
+            name == "__orchiddb_domain_cypher_temporal" || matches!(name.as_str(),
+                "__orchiddb_domain_cypher_temporal_date" | "__orchiddb_domain_cypher_temporal_localtime" |
+                "__orchiddb_domain_cypher_temporal_time" | "__orchiddb_domain_cypher_temporal_localdatetime" |
+                "__orchiddb_domain_cypher_temporal_datetime" | "__orchiddb_domain_cypher_temporal_datetime_fixed" |
+                "__orchiddb_domain_cypher_temporal_duration")) => {
+            let (name, payload) = map.iter().next().unwrap();
+            if payload.is_null() { Value::Null } else {
+                let text = payload.as_str().ok_or("Invalid temporal domain payload")?;
+                // SQL DATE domains serialize as ISO dates; encoded temporal
+                // domains retain the shared temporal transport representation.
+                let value = crate::ir::temporal::TemporalValue::decode(text)
+                    .or_else(|_| crate::ir::temporal::parse("date", text))?;
+                if let Some(kind) = name.strip_prefix("__orchiddb_domain_cypher_temporal_") {
+                    if value.kind() != kind.trim_end_matches("_fixed") {
+                        return Err("Temporal payload violates its declared kind".into());
+                    }
+                }
+                Value::Temporal(value)
+            }
+        }
+        serde_json::Value::Object(map) if map.len() == 1
+            && (map.contains_key("__orchiddb_domain_graph_node") || map.contains_key("__orchiddb_domain_graph_edge")) => {
+            // Nested relational graph references carry identity and endpoints,
+            // not ordinary user maps. Preserve their value kind across scalar
+            // SQL calls (notably bound relationship-list comparisons).
+            let edge = map.contains_key("__orchiddb_domain_graph_edge");
+            let key = if edge { "__orchiddb_domain_graph_edge" } else { "__orchiddb_domain_graph_node" };
+            let value = from_json(&map[key], context)?;
+            if value == Value::Null { Value::Null } else {
+                let Value::Map(mut fields) = value else { return Err("Invalid graph reference".into()); };
+                fields.insert("kind".into(), Value::String(if edge { "edge" } else { "node" }.into()));
+                fields.insert("properties".into(), Value::Map(BTreeMap::new()));
+                context.attach(Value::Map(fields))?
+            }
+        }
         serde_json::Value::Object(map) if map.len() == 1 && map.contains_key(elements::FIELD) => {
             let descriptor = from_json(&map[elements::FIELD], context)?;
             context.attach(descriptor)?
@@ -286,7 +335,18 @@ pub(super) fn list(expr: Expr) -> Expr {
         vec![expr],
     )
 }
-pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool) -> RelResult<Expr> {
+pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool, ordinal: Option<&str>) -> RelResult<Expr> {
+    use datafusion::logical_expr::ExprFunctionExt;
+    // Rebinding the captured expression below must retain the productivity
+    // contract of property collection. An absent property is no traverser.
+    let mut collected = df_array_agg(arg.clone());
+    if matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::CollectNonNull)
+        && matches!(&agg.arg, Some(IrExpr::Property { policy: crate::ir::policy::PropertyMissing::DropUnproductive, .. })) {
+        collected = collected.filter(arg.is_not_null()).build()?;
+    }
+    if let Some(ordinal) = ordinal {
+        collected = collected.order_by(vec![col_exact(ordinal).sort(true, false)]).build()?;
+    }
     let mut spec = agg.clone();
     spec.arg = Some(if matches!(agg.kind, AggKind::PercentileCont | AggKind::PercentileDisc) {
         IrExpr::List((0..2).map(|index| IrExpr::Call { name: "cypher_subscript".into(),
@@ -298,7 +358,7 @@ pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool) -> RelResul
         vec![
             lit(serde_json::to_string(&(spec, cypher))
                 .map_err(|e| RelError::Unsupported(e.to_string()))?),
-            df_array_agg(arg),
+            collected,
         ],
     ))
 }
@@ -652,6 +712,7 @@ impl LoweringContext<'_> {
                                 | "requested_property_values"
                                 | "gremlin_cast_string"
                                 | "gremlin_id"
+                                | "gremlin_merge_matches"
                                 | "select_key_or_binding"
                                 | "select_key_or_binding_pop"
                         ))
@@ -739,7 +800,7 @@ impl LoweringContext<'_> {
 
     pub(super) fn native_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         let packed = self.native_bindings(plan, expr)?;
-        let boolean = matches!(expr,IrExpr::Call{name,..} if matches!(name.as_str(),"gremlin_compare"|"gremlin_within"|"path_simple"|"path_cyclic"))
+        let boolean = matches!(expr,IrExpr::Call{name,..} if matches!(name.as_str(),"gremlin_compare"|"gremlin_within"|"regex_match"|"path_simple"|"path_cyclic"))
             || matches!(
                 expr,
                 IrExpr::SimplePath(_)

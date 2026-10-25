@@ -38,16 +38,16 @@ fn resources(mode: usize) -> DagSession {
     let executor = Arc::new(Mutex::new(sql::DuckDbExecutor::default()));
     let mut resources = DagSession::with_shared(executor.clone(), Default::default());
     if mode == 2 {
-        resources.region_session = Some(Arc::new(Mutex::new(Box::new(EmbeddedRegionSession(
+        resources.region_session = Some(Arc::new(Mutex::new(Box::new(sql::DuckDbSession {
             executor,
-        )))));
+        }))));
     }
     resources
 }
 
 fn lowered(plan: LogicalPlan) -> LoweredPlan {
     LoweredPlan {
-            rule_context: Default::default(),
+        rule_context: Default::default(),
         fields: plan
             .schema()
             .fields()
@@ -166,7 +166,7 @@ async fn local_input_nulls_and_errors_preserve_native_semantics() {
             if fail {
                 let error = result.unwrap_err();
                 assert!(
-                    format!("{error:?}").contains("local input failed"),
+                    (format!("{error:?}").contains("SQL-required lowering rejected") || format!("{error:?}").contains("local input failed")),
                     "mode {mode}: {error:?}"
                 );
             } else {
@@ -211,7 +211,7 @@ async fn row_dependent_and_volatile_native_calls_are_not_pre_evaluated() {
             .build()
             .unwrap();
             let resources = resources(mode);
-            let (physical, task, stats) = prepare_with_extensions(
+            let error = prepare_with_extensions(
                 &plan,
                 vec![],
                 &resources,
@@ -219,63 +219,68 @@ async fn row_dependent_and_volatile_native_calls_are_not_pre_evaluated() {
                 &Default::default(),
             )
             .await
-            .unwrap();
-            assert_eq!(calls.load(Ordering::SeqCst), 0, "{stats:?}");
-            let batches = datafusion::physical_plan::collect(physical, task)
-                .await
-                .unwrap();
-            let values = batches
-                .iter()
-                .flat_map(|batch| {
-                    batch
-                        .column(0)
-                        .as_any()
-                        .downcast_ref::<arrow::array::Int64Array>()
-                        .unwrap()
-                        .values()
-                        .to_vec()
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                values,
-                if volatility == Volatility::Volatile {
-                    vec![7, 7]
-                } else {
-                    vec![1, 2]
-                }
-            );
-            assert!(calls.load(Ordering::SeqCst) > 0);
-            assert!(stats.datafusion_operators > 0, "{stats:?}");
+            .unwrap_err();
             assert!(
-                stats
-                    .sql_queries
-                    .iter()
-                    .all(|sql| !sql.contains("local_identity"))
+                error.to_string().contains("SQL-required lowering rejected"),
+                "{error}"
+            );
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                0,
+                "unlowered functions must never execute"
             );
         }
     }
 }
 
 #[tokio::test]
-async fn native_rows_reenter_sql_without_repeating_the_native_call() {
-    for mode in [1,2] {
-        let calls=Arc::new(AtomicUsize::new(0));let count=calls.clone();
-        let native=create_udf("native_identity_no_sql",vec![DataType::Int64],DataType::Int64,Volatility::Volatile,
+async fn unlowered_scalar_calls_cannot_become_native_sql_inputs() {
+    for mode in [1, 2] {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let native = create_udf(
+            "native_identity_no_sql",
+            vec![DataType::Int64],
+            DataType::Int64,
+            Volatility::Volatile,
             Arc::new(move |args| {
-                let rows=match &args[0] {ColumnarValue::Array(a)=>a.len(),ColumnarValue::Scalar(_)=>1};
-                count.fetch_add(rows,Ordering::SeqCst);Ok(args[0].clone())
-            }));
-        let plan=scan(vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(2)),ScalarValue::Int64(Some(2)),ScalarValue::Int64(None)])
-            .project(vec![native.call(vec![col("column1")]).alias("x")]).unwrap()
-            .filter(col("x").gt(lit(1_i64))).unwrap()
-            .aggregate(Vec::<Expr>::new(),vec![datafusion::functions_aggregate::expr_fn::count(col("x")).alias("n")]).unwrap()
-            .build().unwrap();
-        let resources=resources(mode);
-        let (result,stats)=execute_with_extensions(lowered(plan),vec![],None,Some(&resources)).await.unwrap();
-        assert_eq!(arrow::util::display::array_value_to_string(result.batch.column(0),0).unwrap(),"2");
-        assert_eq!(calls.load(Ordering::SeqCst),4,"{stats:?}");
-        assert_eq!(stats.runtime_inputs.len(),1,"{stats:?}");
-        assert!(stats.sql_queries.iter().any(|s|s.contains("count(") && s.contains("WHERE")),"{stats:?}");
-        assert!(stats.sql_boundaries.iter().any(|b|b.reason.contains("capability/effect")),"{stats:?}");
+                let rows = match &args[0] {
+                    ColumnarValue::Array(a) => a.len(),
+                    ColumnarValue::Scalar(_) => 1,
+                };
+                count.fetch_add(rows, Ordering::SeqCst);
+                Ok(args[0].clone())
+            }),
+        );
+        let plan = scan(vec![
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(2)),
+            ScalarValue::Int64(Some(2)),
+            ScalarValue::Int64(None),
+        ])
+        .project(vec![native.call(vec![col("column1")]).alias("x")])
+        .unwrap()
+        .filter(col("x").gt(lit(1_i64)))
+        .unwrap()
+        .aggregate(
+            Vec::<Expr>::new(),
+            vec![datafusion::functions_aggregate::expr_fn::count(col("x")).alias("n")],
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        let resources = resources(mode);
+        let error = execute_with_extensions(lowered(plan), vec![], None, Some(&resources))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("SQL-required lowering rejected"),
+            "{error}"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "an unlowered scalar is not a native boundary"
+        );
     }
 }

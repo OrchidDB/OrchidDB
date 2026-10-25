@@ -1,15 +1,17 @@
-use arrow::record_batch::RecordBatch;
+use arrow::datatypes::{DataType, Field, Schema};
+use orchiddb::execution::stream::{BatchStream, InputRelation};
 use orchiddb::{
     compiler::{CompileRequest, compile},
     federation::{self, Session},
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 fn request() -> Value {
     json!({"version":1,"dialect":"duckdb","language":"cypher",
     "query":"MATCH (a:Person) WHERE a.age > 25 RETURN count(a) AS n",
-    "engines":{"local":{"dialect":"duckdb"},"remote":{"dialect":"postgres"}},"execution_engine":"local",
+    "engines":{"local":{"dialect":"duckdb"},"remote":{"dialect":"trino"}},"execution_engine":"local",
     "tables":[{"name":"people","engine":"remote","columns":[{"name":"id","data_type":"int64"},{"name":"age","data_type":"int64"},{"name":"unused","data_type":"string"}]}],
     "nodes":[{"label":"Person","table":"people","id":"id","properties":{"age":"age"}}]})
 }
@@ -23,7 +25,7 @@ async fn maximal_island_pushes_filter_projection_and_aggregate() {
     assert_eq!(p.transfers.len(), 1);
     let t = &p.transfers[0];
     assert_eq!(t.source_engine, "remote");
-    assert_eq!(t.source_dialect, "postgres");
+    assert_eq!(t.source_dialect, "trino");
     assert!(t.sql.to_lowercase().contains("count("), "{}", t.sql);
     assert!(t.sql.contains("25"));
     assert!(!t.sql.contains("unused"));
@@ -44,7 +46,7 @@ async fn engine_validation_and_local_execution() {
     r["tables"][0]["engine"] = json!("missing");
     assert!(plan(r).await.unwrap_err().contains("unknown engine"));
     let mut r = request();
-    r["engines"]["local"]["dialect"] = json!("postgres");
+    r["engines"]["local"]["dialect"] = json!("trino");
     assert!(plan(r).await.unwrap_err().contains("dialect"));
     let mut r = request();
     r["tables"][0]["engine"] = json!("local");
@@ -63,7 +65,11 @@ impl Session for Mock {
     fn dialect(&self) -> &str {
         self.dialect
     }
-    async fn query(&mut self, sql: &str) -> Result<Vec<RecordBatch>, String> {
+    async fn query_stream(
+        &mut self,
+        sql: &str,
+        _inputs: Vec<InputRelation>,
+    ) -> Result<BatchStream, String> {
         self.log
             .borrow_mut()
             .push(format!("query:{}", self.dialect));
@@ -71,7 +77,10 @@ impl Session for Mock {
             Err("query failure".into())
         } else {
             assert!(!sql.to_ascii_uppercase().contains("CREATE TABLE"));
-            Ok(vec![])
+            Ok(BatchStream::new(
+                Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, true)])),
+                futures::stream::empty(),
+            ))
         }
     }
 }
@@ -98,7 +107,7 @@ async fn routing_preflight_and_cleanup_after_final_error() {
     sessions.insert(
         "remote".into(),
         Box::new(Mock {
-            dialect: "postgres",
+            dialect: "trino",
             log: log.clone(),
             fail: false,
         }),
@@ -137,10 +146,15 @@ async fn unsupported_exchange_cannot_read_same_named_local_table() {
 
 #[tokio::test]
 async fn binding_is_a_query_scoped_cte_with_typed_empty_rows() {
-    for dialect in ["duckdb", "postgres"] {
+    for dialect in ["duckdb", "trino"] {
         let mut r = request();
         r["dialect"] = json!(dialect);
         r["engines"]["local"]["dialect"] = json!(dialect);
+        r["engines"]["remote"]["dialect"] = json!(if dialect == "trino" {
+            "duckdb"
+        } else {
+            "trino"
+        });
         let p = plan(r).await.unwrap();
         let command =
             json!({"op":"bind", "plan":p, "relation":p.transfers[0].target_relation, "rows":[]});
@@ -169,5 +183,105 @@ async fn binding_rejects_missing_relations_and_wrong_row_shapes() {
         federation::bind_command(command)
             .unwrap_err()
             .contains("width mismatch")
+    );
+}
+
+#[tokio::test]
+async fn executable_engine_registry_is_closed() {
+    for unsupported in ["postgres", "starrocks", "datafusion"] {
+        let mut r = request();
+        r["engines"]["remote"]["dialect"] = json!(unsupported);
+        assert!(
+            plan(r)
+                .await
+                .unwrap_err()
+                .contains("unsupported executable engine")
+        );
+    }
+    assert_eq!(
+        serde_json::to_string(&orchiddb::execution::ExecutableEngine::DuckDb).unwrap(),
+        "\"duckdb\""
+    );
+}
+
+#[cfg(feature = "weaviate")]
+#[tokio::test]
+async fn request_sources_are_distinct_from_executable_engines() {
+    let mut r = request();
+    r["sources"] = json!({"vectors":{"adapter":"weaviate"}});
+    assert!(plan(r.clone()).await.is_ok());
+    r["execution_engine"] = json!("vectors");
+    assert!(
+        plan(r)
+            .await
+            .unwrap_err()
+            .contains("unknown execution_engine")
+    );
+    let mut r = request();
+    r["sources"] = json!({"remote":{"adapter":"weaviate"}});
+    assert!(plan(r).await.unwrap_err().contains("duplicate"));
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn aliased_duckdb_connection_spools_without_deadlocking_or_leaking() {
+    use orchiddb::ir::rel::sql::DuckDbSession;
+    let mut p = plan(request()).await.unwrap();
+    let transfer = &mut p.transfers[0];
+    transfer.source_engine = "upstream".into();
+    transfer.source_dialect = "duckdb".into();
+    transfer.sql = "SELECT i::BIGINT AS n FROM range(10000) t(i)".into();
+    transfer.columns = vec![federation::TransferColumn {
+        name: "n".into(),
+        data_type: "int64".into(),
+        nullable: false,
+    }];
+    p.sql = format!(
+        "SELECT SUM(n)::BIGINT AS total FROM {}",
+        transfer.target_relation
+    );
+    let session = DuckDbSession::default();
+    let mut sessions: BTreeMap<String, Box<dyn Session>> = BTreeMap::from([
+        ("local".into(), Box::new(session.clone()) as Box<dyn Session>),
+        ("upstream".into(), Box::new(session) as Box<dyn Session>),
+    ]);
+    let directory =
+        std::env::temp_dir().join(format!("orchid-federation-reentry-{}", std::process::id()));
+    let options = federation::ExchangeOptions {
+        replay_directory: directory.clone(),
+        ..Default::default()
+    };
+    let batches = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        federation::execute_stream_with_options(&p, &mut sessions, &options)
+            .await
+            .unwrap()
+            .collect_batches()
+            .await
+            .unwrap()
+    })
+    .await
+    .expect("same-session pipeline deadlocked");
+    let value = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow::array::Int64Array>()
+        .unwrap()
+        .value(0);
+    assert_eq!(value, 49_995_000);
+    assert_eq!(
+        std::fs::read_dir(&directory).unwrap().count(),
+        0,
+        "query replay file leaked"
+    );
+    std::fs::remove_dir(directory).unwrap();
+    assert_eq!(
+        sessions
+            .get_mut("local")
+            .unwrap()
+            .query("SELECT 42")
+            .await
+            .unwrap()[0]
+            .num_rows(),
+        1
     );
 }
