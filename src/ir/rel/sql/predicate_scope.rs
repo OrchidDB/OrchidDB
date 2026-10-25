@@ -4,7 +4,8 @@ use super::*;
 use datafusion::logical_expr::{Filter, Projection, LogicalPlanBuilder, Operator, JoinType, ExprSchemable};
 
 fn value(e: &Expr) -> bool {
-    match e { Expr::Column(_) | Expr::Literal(..) => true, Expr::Alias(a) => value(&a.expr), _ => false }
+    match e { Expr::Column(_) | Expr::Literal(..) => true, Expr::Alias(a) => value(&a.expr),
+        Expr::Cast(c) => matches!(c.expr.as_ref(), Expr::Literal(v, _) if v.is_null()), _ => false }
 }
 fn total(e: &Expr, schema: &datafusion::common::DFSchema) -> bool {
     match e {
@@ -17,7 +18,14 @@ fn total(e: &Expr, schema: &datafusion::common::DFSchema) -> bool {
         _ => false,
     }
 }
-fn unalias(e: Expr) -> Expr { if let Expr::Alias(a) = e { *a.expr } else { e } }
+fn unalias(e: Expr) -> Expr {
+    match e {
+        Expr::Alias(a) => unalias(*a.expr),
+        Expr::Cast(ref c) if matches!(c.expr.as_ref(), Expr::Literal(v, _) if v.is_null()) =>
+            ScalarValue::try_from(&c.data_type).map(lit).unwrap_or(e),
+        e => e,
+    }
+}
 fn substitute(e: Expr, p: &Projection) -> datafusion::common::Result<Expr> {
     Ok(e.transform_up(|e| {
         if let Expr::Column(c) = &e {
@@ -37,6 +45,19 @@ fn filtered(input: LogicalPlan, predicate: Expr) -> datafusion::common::Result<L
 }
 fn literals(e: Expr) -> datafusion::common::Result<Expr> {
     Ok(e.transform_up(|e| {
+        match &e {
+            Expr::IsNull(inner) | Expr::IsNotNull(inner) => {
+                if let Expr::Literal(v, _) = inner.as_ref() {
+                    return Ok(Transformed::yes(lit(if matches!(e, Expr::IsNull(_)) { v.is_null() } else { !v.is_null() })));
+                }
+            }
+            Expr::Not(inner) => {
+                if let Expr::Literal(ScalarValue::Boolean(v), _) = inner.as_ref() {
+                    return Ok(Transformed::yes(lit(ScalarValue::Boolean(v.map(|v| !v)))));
+                }
+            }
+            _ => {}
+        }
         if let Expr::BinaryExpr(b) = &e {
             if let (Expr::Literal(a,_),Expr::Literal(c,_)) = (b.left.as_ref(),b.right.as_ref())
                 && a.data_type() == c.data_type()
@@ -197,7 +218,8 @@ pub(super) fn rewrite(mut plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         plan = result.data;
         if !result.transformed { break; }
     }
-    Ok(plan)
+    Ok(crate::ir::rel::empty_relations::simplify(plan)
+        .map_err(|error| SqlError::Unsupported(error.to_string()))?)
 }
 
 #[cfg(test)]

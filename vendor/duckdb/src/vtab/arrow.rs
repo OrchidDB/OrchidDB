@@ -782,6 +782,16 @@ impl WritableVector for duckdb_vector {
     }
 }
 
+// Nested list children can contain more entries than STANDARD_VECTOR_SIZE.
+// Their storage is reserved by the parent; retain that capacity recursively.
+struct SizedWritableVector(duckdb_vector, usize);
+impl WritableVector for SizedWritableVector {
+    fn flat_vector(&mut self)->FlatVector<'_> {FlatVector::with_capacity(self.0,self.1)}
+    fn list_vector(&mut self)->ListVector<'_> {unsafe {ListVector::from_raw(self.0)}}
+    fn array_vector(&mut self)->ArrayVector<'_> {unsafe {ArrayVector::from_raw(self.0)}}
+    fn struct_vector(&mut self)->StructVector<'_> {unsafe {StructVector::from_raw(self.0)}}
+}
+
 /// Converts a `RecordBatch` to a `DataChunk` in the DuckDB format.
 ///
 /// # Arguments
@@ -1045,7 +1055,7 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     out: &mut ListVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
-    write_arrow_array_to_vector(value_array, &mut out.raw_child(value_array.len()))?;
+    write_arrow_array_to_vector(value_array, &mut SizedWritableVector(out.raw_child(value_array.len()),value_array.len()))?;
     out.set_len(value_array.len());
 
     for i in 0..array.len() {
@@ -1101,7 +1111,7 @@ fn struct_array_to_vector(
     out: &mut StructVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..array.num_columns() {
-        write_arrow_array_to_vector(array.column(i), &mut out.raw_child(i))?;
+        write_arrow_array_to_vector(array.column(i), &mut SizedWritableVector(out.raw_child(i),array.len()))?;
     }
     set_nulls_in_struct_vector(array, out);
     Ok(())

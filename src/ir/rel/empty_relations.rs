@@ -24,6 +24,21 @@ fn discardable(plan: &LogicalPlan) -> bool {
 }
 pub(super) fn simplify(plan: LogicalPlan) -> RelResult<LogicalPlan> {
     Ok(plan.transform_up_with_subqueries(|node| {
+        if let LogicalPlan::Union(union) = &node {
+            let inputs = union.inputs.iter().filter(|input| !empty(input)).cloned().collect::<Vec<_>>();
+            if inputs.len() != union.inputs.len() {
+                let result = if inputs.is_empty() {
+                    LogicalPlan::EmptyRelation(EmptyRelation { produce_one_row: false, schema: union.schema.clone() })
+                } else if inputs.len() == 1 {
+                    let exprs = inputs[0].schema().columns().into_iter().zip(union.schema.iter())
+                        .map(|(column, (qualifier, field))| Expr::Column(column).alias_qualified(qualifier.cloned(), field.name())).collect();
+                    LogicalPlan::Projection(Projection::try_new_with_schema(exprs, inputs[0].clone(), union.schema.clone())?)
+                } else {
+                    let mut union = union.clone(); union.inputs = inputs; LogicalPlan::Union(union)
+                };
+                return Ok(Transformed::yes(result));
+            }
+        }
         let erase = match &node {
             LogicalPlan::Projection(p) => empty(&p.input),
             LogicalPlan::SubqueryAlias(p) => empty(&p.input),

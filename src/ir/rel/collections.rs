@@ -238,7 +238,7 @@ impl LoweringContext<'_> {
             )),
             None => {
                 let lowered=self.lower_expr(plan,expr)?;
-                if self.options.native_values && native_values::is_value(&lowered.get_type(plan.schema())?) {Ok(native_values::list(lowered))} else {Ok(lowered)}
+                if self.options.native_values && native_values::is_value(&lowered.get_type(plan.schema())?) {Ok(if self.language == Language::Cypher { native_values::typed::call("items",vec![lowered]) } else {native_values::list(lowered)})} else {Ok(lowered)}
             },
         }
     }

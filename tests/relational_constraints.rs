@@ -126,6 +126,10 @@ async fn benefiting_queries_preserve_results_and_have_proofs() {
             "eliminate_join",
         ),
         (
+            "SELECT o.id FROM people p JOIN orders o ON p.id=o.person",
+            "eliminate_source_endpoint",
+        ),
+        (
             "SELECT o.id FROM orders o LEFT JOIN people p ON o.person=p.id",
             "eliminate_join",
         ),
@@ -187,6 +191,7 @@ async fn fanout_filtered_targets_and_payload_distinct_are_retained() {
         "SELECT DISTINCT name FROM people",
         "SELECT DISTINCT p.id FROM people p JOIN orders o ON o.person=p.id",
         "SELECT o.id FROM orders o JOIN (SELECT * FROM people WHERE name='Ada') p ON o.person=p.id",
+        "SELECT o.id FROM (SELECT * FROM people WHERE name='Ada') p JOIN orders o ON p.id=o.person",
         "SELECT p.id FROM people p LEFT JOIN orders o ON o.person=p.id",
         "SELECT o.id,p.name FROM orders o JOIN people p ON o.person=p.id",
     ] {

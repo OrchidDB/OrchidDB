@@ -1,6 +1,6 @@
 """Versioned observational cost reporting; never changes conformance outcomes."""
 import hashlib
-METRIC_VERSION = 1
+METRIC_VERSION = 2
 ATTRIBUTION_VERSION = 2
 
 def transport_phase(transport):
@@ -32,9 +32,11 @@ def collect(adapter, result):
             'helper_query_count': len(entries) - len(selected),
             'query_count': len(selected), 'measured_queries': len(measured),
             'coverage': ('unavailable' if result.get('status') in ('timeout','adapter-error','fail') else 'not_executed') if not selected else
-                        'boundary_work' if len(measured) == len(selected) else
+                        ('engine_and_boundary_work' if all(e['cost'].get('coverage') == 'engine_and_boundary_work' for e in measured) else 'partial_engine_and_boundary_work') if len(measured) == len(selected) else
                         'partial' if measured else 'elapsed_only',
             'request_elapsed_micros': elapsed,
+            'orchid_work_units': sum(e['cost'].get('orchid_work_units',0) for e in measured) if measured else None,
+            'engine_work_units': sum(e['cost'].get('engine_work_units',0) for e in measured) if measured else None,
             'work_units': sum(e['cost']['work_units'] for e in measured) if measured else None}
 
 def signature(cost):
@@ -56,7 +58,7 @@ def summarize(results, threshold=100000, baseline=None):
         if (a.get('metric_version') != METRIC_VERSION or b.get('metric_version') != METRIC_VERSION
             or a.get('attribution_version', 1) != b.get('attribution_version', 1)
             or 'queries' not in a or 'queries' not in b
-            or a.get('coverage') != 'boundary_work' or b.get('coverage') != 'boundary_work'
+            or a.get('coverage') != b.get('coverage') or a.get('coverage') not in ('engine_and_boundary_work', 'partial_engine_and_boundary_work')
             or a.get('work_units') is None or b.get('work_units') is None
             or old.get('case_sha256') != row.get('case_sha256') or signature(a) != signature(b)):
             continue

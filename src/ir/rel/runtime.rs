@@ -241,6 +241,7 @@ struct Compiler<'a> {
     language_functions: bool,
     native_values: bool,
     live_graph_reads: bool,
+    snapshot_reads: std::collections::BTreeSet<usize>,
     /// Gremlin repeat bodies share deduplication history across iterations.
     stateful_distinct: bool,
     islands: super::island_planner::SharedMemo,
@@ -309,7 +310,8 @@ impl Compiler<'_> {
                 pending.extend(crate::ir::analysis::children(part));
             }
         }
-        if self.live_graph_reads {
+        let live_graph_reads = self.live_graph_reads && !self.snapshot_reads.contains(&(node as *const Node as usize));
+        if live_graph_reads {
             let mut pending = vec![node];
             while let Some(part) = pending.pop() {
                 if matches!(part, Node::GraphNodeScan { .. } | Node::GraphRelScan { .. }) {
@@ -339,7 +341,7 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             ))
         {
-            let backend = RelBackend::with_options(super::RelBackendOptions { rule_context: self.rule_context.clone(), mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, live_graph_reads: self.live_graph_reads, ..Default::default() });
+            let backend = RelBackend::with_options(super::RelBackendOptions { rule_context: self.rule_context.clone(), mapping: self.graph.mapping.clone(), language_functions: self.language_functions, native_values: self.native_values, live_graph_reads, ..Default::default() });
             // A complete terminal traversal needs only its returned values.
             // Partial islands must retain state for downstream graph operators.
             let backend = if terminal_gremlin { backend } else { backend.preserving_traverser_state() };
@@ -1510,6 +1512,39 @@ pub(crate) async fn execute_with_session(
     stats.cost.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     scope.complete();
     Ok((returned, stats))
+}
+
+// A unary statement prefix is read before its first mutation. Its immutable
+// source snapshot can be filtered/joined in SQL instead of hydrating every
+// source record in Orchid. Never grant this permission to correlated bodies,
+// opaque effects, or branches whose execution order is not proven here.
+fn initial_snapshot_reads(root: &Node) -> std::collections::BTreeSet<usize> {
+    let mut node = root;
+    let mut candidate = None;
+    loop {
+        let children = crate::ir::analysis::children(node);
+        if children.len() != 1 { break; }
+        if crate::ir::analysis::node_effect(node) == crate::ir::analysis::Effect::SourceMutation {
+            candidate = Some(children[0]);
+        }
+        node = children[0];
+    }
+    let Some(candidate) = candidate else { return Default::default(); };
+    let mut selected = std::collections::BTreeSet::new();
+    let mut pending = vec![candidate];
+    let mut has_filter = false;
+    while let Some(node) = pending.pop() {
+        if crate::ir::analysis::node_effect(node) != crate::ir::analysis::Effect::Pure {
+            return Default::default();
+        }
+        has_filter |= matches!(node, Node::GraphFilter { .. });
+        selected.insert(node as *const Node as usize);
+        pending.extend(crate::ir::analysis::children(node));
+    }
+    // Unfiltered mutation inputs already use batched source reads. A new island
+    // can add a request (especially for empty optional matches) without avoiding
+    // hydration. Enable this path when a predicate can reduce that hydration.
+    if has_filter { selected } else { Default::default() }
 }
 
 fn has_mutating_branches(node: &Node) -> bool {

@@ -246,10 +246,8 @@ impl Context {
         }
         Ok(parts.pop().unwrap())
     }
-    pub fn wire(&self, value: &Value) -> serde_json::Value {
-        if *value == Value::Null {
-            return serde_json::Value::Null;
-        }
+    pub fn encode(&self, value: &Value) -> Option<String> {
+        if *value == Value::Null { return None; }
         let keys = referenced_elements(value);
         let elements = keys
             .iter()
@@ -263,7 +261,10 @@ impl Context {
                 encode(&Value::List(vec![value.clone(), Value::List(elements)]))
             )
         };
-        serde_json::json!({super::FIELD:text})
+        Some(text)
+    }
+    pub fn wire(&self, value: &Value) -> serde_json::Value {
+        self.encode(value).map(|text|serde_json::json!({super::FIELD:text})).unwrap_or(serde_json::Value::Null)
     }
 }
 fn referenced_elements(value: &Value) -> BTreeSet<(bool,String,ElementId)> {
@@ -362,6 +363,9 @@ impl LoweringContext<'_> {
             let column = match key { "src_id" => src_id_col(binding), "dst_id" => dst_id_col(binding), _ => id_col(binding) };
             let kind = col_exact(column).get_type(plan.schema())?;
             fields.extend([lit(format!("{key}_type")), lit(kind.to_string())]);
+        }
+        if self.language == Language::Cypher {
+            return Ok(super::typed::call("element", vec![df_core::named_struct(fields)]));
         }
         Ok(function(
             VALUE,

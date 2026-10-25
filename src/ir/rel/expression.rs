@@ -75,6 +75,16 @@ impl<'a> LoweringContext<'a> {
         if let Some(value) = self.lower_graph_scalar(plan, expr)? {
             return Ok(value);
         }
+        if self.options.native_values && self.language == Language::Cypher
+            && let Some(value) = self.lower_list_consumer(plan, expr)? { return Ok(value); }
+        if self.options.native_values && self.language == Language::Cypher
+            && matches!(expr,IrExpr::ListTransform{..}|IrExpr::ListFilter{..}|IrExpr::Quantifier{..}) {
+            return self.lower_sql_lambda(plan,expr);
+        }
+        if self.options.native_values && self.language == Language::Cypher
+            && matches!(expr,IrExpr::Call{name,..} if name=="map") {
+            return self.native_expr(plan,expr);
+        }
         // Aggregate rewrites represent known entity properties as subscripts.
         // Preserve their declared SQL type before the generic value evaluator.
         if self.language == Language::Cypher
@@ -86,6 +96,22 @@ impl<'a> LoweringContext<'a> {
             return self.lower_cypher_subscript(plan, &args[0], &args[1]);
         }
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
+            if self.language == Language::Cypher && !matches!(expr, IrExpr::Binding(_) | IrExpr::Lit(_)) {
+                let mut opaque_operand = false;
+                crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |part, scope| {
+                    let binding = match part {
+                        IrExpr::Binding(binding) | IrExpr::Property { binding, .. } => Some(binding),
+                        _ => None,
+                    };
+                    if let Some(binding) = binding.filter(|binding| !scope.is_bound(binding))
+                        && let Some(column) = resolve_column_name(plan,binding)
+                        && let Ok(ty) = col_exact(column).get_type(plan.schema()) {
+                        opaque_operand |= native_values::is_value(&ty);
+                    }
+                });
+                if opaque_operand && let Ok(value) = self.native_expr(plan,expr) { return Ok(value); }
+            }
+            if self.language == Language::Gremlin {
             // Map literals must retain their typed runtime value across collect/UNWIND.
             if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(), "map" | "cypher_subscript")) {
                 return self.native_expr(plan, expr);
@@ -102,6 +128,7 @@ impl<'a> LoweringContext<'a> {
                 && plan.schema().fields().iter().any(|f| native_values::is_value(f.data_type()))
                 && let Ok(native) = self.native_expr(plan, expr) {
                 return Ok(native);
+            }
             }
             match self.lower_sql_expr(plan, expr) {
                 Ok(value) => return Ok(value),
@@ -632,6 +659,15 @@ impl<'a> LoweringContext<'a> {
                     arg => self.lower_expr(plan, arg),
                 }
             }
+            IrExpr::Call { name, args } if name == "reverse" && args.len()==1 && self.language==Language::Cypher => {
+                let value=self.lower_expr(plan,&args[0])?;
+                match value.get_type(plan.schema())? {
+                    DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(_,_)=>Ok(datafusion::functions_nested::expr_fn::array_reverse(value)),
+                    DataType::Utf8|DataType::LargeUtf8|DataType::Utf8View=>Ok(df_unicode::reverse(value)),
+                    _=>Ok(native_values::typed::call("reverse",vec![value])),
+                }
+            }
+            IrExpr::Call { name, args } if name == "rand" && args.is_empty() => Ok(df_math::random()),
             IrExpr::Call { name, args } if name.eq_ignore_ascii_case("uuid") && args.len() == 1 => {
                 Ok(df_string::lower(self.lower_expr(plan, &args[0])?))
             }
@@ -1044,6 +1080,17 @@ impl<'a> LoweringContext<'a> {
                 }
                 Ok(df_core::coalesce(lowered))
             }
+            IrExpr::Call { name, args } if matches!(name.as_str(), "cypher_convert.tointeger" | "cypher_convert.toboolean") && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let ty = value.get_type(plan.schema())?;
+                if name == "cypher_convert.toboolean" && matches!(ty, DataType::Boolean | DataType::Null) {
+                    return Ok(value.cast_to(&DataType::Boolean, plan.schema())?);
+                }
+                if name == "cypher_convert.tointeger" && matches!(ty, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Null) {
+                    return Ok(value.cast_to(&DataType::Int64, plan.schema())?);
+                }
+                Err(RelError::Unsupported(format!("Cypher conversion {name} for {ty} requires its semantic helper")))
+            }
             IrExpr::Call { name, args } if name == "cypher_convert.tostring" && args.len() == 1 => {
                 let value = self.lower_expr(plan, &args[0])?;
                 let ty = value.get_type(plan.schema())?;
@@ -1449,6 +1496,12 @@ impl<'a> LoweringContext<'a> {
                     name: key.clone(),
                     policy: crate::ir::policy::PropertyMissing::NullOnMissing,
                 });
+            }
+        }
+        if self.language==Language::Cypher && self.options.native_values {
+            let value=self.lower_expr(plan,target)?;
+            if native_values::is_value(&value.get_type(plan.schema())?) {
+                return Ok(native_values::typed::call("cypher_subscript",vec![value,self.lower_expr(plan,index)?]));
             }
         }
         let target_expr = if matches!(target, IrExpr::List(_)) {

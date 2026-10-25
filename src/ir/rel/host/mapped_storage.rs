@@ -60,9 +60,41 @@ pub(crate) fn property_projection(props: &BTreeMap<String, String>) -> Vec<Strin
         .map(|(name, column)| format!("{} AS {}", quote(column), quote(name)))
         .collect()
 }
+/// Reuse a physical table schema already bound in this query. Missing or
+/// differently cased names fall back to the host binder for its exact rules.
+fn bound_empty_projection(mapping: &GraphMapping, source: &MappedSource,
+    keys: &[(&str, &KeyColumns)], properties: &BTreeMap<String, String>) -> Option<RecordBatch> {
+    let MappedSource::Table(name) = source else { return None; };
+    if mapping.logical_source(name).is_some() || mapping.collection_source(name).is_some()
+        || mapping.representation_source(name).is_some() { return None; }
+    let schema = mapping.table_schema(name)?;
+    let mut fields = keys.iter().map(|(name,key)|
+        key.data_type(&schema).ok().map(|ty| Field::new(*name,ty,true)))
+        .collect::<Option<Vec<_>>>()?;
+    for (name,column) in properties {
+        fields.push(schema.field_with_name(column).ok()?.clone().with_name(name));
+    }
+    Some(RecordBatch::new_empty(Arc::new(Schema::new(fields))))
+}
+
 pub fn metadata(
     connection: &dyn HostRelational,
     mapping: Arc<GraphMapping>,
+) -> Result<PropertyGraph, String> {
+    metadata_inner(connection, mapping, true, false)
+}
+pub(crate) fn metadata_with_insert_defaults(
+    connection: &dyn HostRelational,
+    mapping: Arc<GraphMapping>,
+    load_insert_defaults: bool,
+) -> Result<PropertyGraph, String> {
+    metadata_inner(connection, mapping, load_insert_defaults, true)
+}
+fn metadata_inner(
+    connection: &dyn HostRelational,
+    mapping: Arc<GraphMapping>,
+    load_insert_defaults: bool,
+    bound_schemas: bool,
 ) -> Result<PropertyGraph, String> {
     // Computed edges need endpoint schemas to build their native logical plan.
     // Bind those schemas without executing scores or reading data rows.
@@ -97,14 +129,18 @@ pub fn metadata(
         let m = mapping.node(&label).unwrap();
         let mut projection = vec![format!("{} AS __key", m.id_column.sql(None))];
         projection.extend(property_projection(&m.properties));
-        let batch = query(
+        let cached = bound_schemas.then(|| bound_empty_projection(&mapping, &m.source,
+            &[("__key", &m.id_column)], &m.properties)).flatten();
+        let batch = if let Some(batch) = cached { batch } else {
+        query(
             connection,
             &format!(
                 "SELECT {} FROM {} WHERE false",
                 projection.join(","),
                 resolved_source(&mapping, &m.source, &[])?
             ),
-        )?;
+        )?
+        };
         graph
             .key_types
             .insert((false, label.clone()), batch.column(0).data_type().clone());
@@ -133,7 +169,10 @@ pub fn metadata(
             format!("{} AS __dst_id", m.dst_column.sql(None)),
         ];
         projection.extend(property_projection(&m.properties));
-        let batch = if matches!(m.source, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
+        let cached = bound_schemas.then(|| bound_empty_projection(&mapping, &m.source,
+            &[("__key", m.id_column.as_ref().unwrap_or(&m.src_column)),
+              ("__src_id", &m.src_column), ("__dst_id", &m.dst_column)], &m.properties)).flatten();
+        let batch = if let Some(batch) = cached { batch } else if matches!(m.source, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
             let plan = mapping.source_plan(&m.source).map_err(|e| e.to_string())?;
             let schema = plan.schema().as_arrow();
             let mut fields = vec![
@@ -220,6 +259,13 @@ pub fn metadata(
             .map_err(|e| e.to_string())?;
         }
     }
+    // Insert defaults are write metadata. Read-only execution needs the bound
+    // property/key schemas above, but must not query or evaluate defaults.
+    if !load_insert_defaults {
+        graph.mapping = Some(mapping);
+        return Ok(graph);
+    }
+    let mut default_declarations = BTreeMap::<String, Vec<(String, String)>>::new();
     for edge in [false, true] {
         for name in if edge {
             mapping.rel_types()
@@ -240,11 +286,18 @@ pub fn metadata(
             let MappedSource::Table(table_name) = source else {
                 continue;
             };
+            // This metadata invocation observes one catalog snapshot. Several
+            // node/edge mappings may share a physical table; bind its defaults
+            // once without caching volatile default values or future queries.
+            let rows = if let Some(rows) = default_declarations.get(table_name) { rows.clone() } else {
             let reference = datafusion::common::TableReference::from(table_name.as_str());
             let batch = connection.query(HostRequest::new("SELECT column_name, column_default FROM duckdb_columns() WHERE table_name = $1 AND schema_name = coalesce($2, current_schema()) AND database_name = coalesce($3, current_database()) AND column_default IS NOT NULL").parameters(vec![ScalarValue::Utf8(Some(reference.table().into())),ScalarValue::Utf8(reference.schema().map(str::to_owned)),ScalarValue::Utf8(reference.catalog().map(str::to_owned))]))?;
             let rows = (0..batch.num_rows())
                 .map(|row| Ok((text(&batch, 0, row)?, text(&batch, 1, row)?)))
                 .collect::<Result<Vec<_>, String>>()?;
+                default_declarations.insert(table_name.clone(), rows.clone());
+                rows
+            };
             for (column, expression) in rows {
                 if key.contains(&column) {
                     continue;

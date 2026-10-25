@@ -331,7 +331,7 @@ mod tests {
     };
     use std::sync::Mutex;
     fn host() -> SharedHost {
-        Arc::new(ExecutorHost(Arc::new(Mutex::new(
+        Arc::new(ExecutorHost::new(Arc::new(Mutex::new(
             DuckDbExecutor::from_connection(duckdb::Connection::open_in_memory().unwrap()),
         ))))
     }

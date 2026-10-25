@@ -1,10 +1,10 @@
 import unittest
 from types import SimpleNamespace
-from query_cost import collect, summarize
+from query_cost import collect, summarize, METRIC_VERSION
 
 class QueryCostTests(unittest.TestCase):
     def entry(self, phase='query', work=10):
-        return {'query':'RETURN 1','phase':phase,'cost':{'metric_version':1,'work_units':work,'request_elapsed_micros':20}}
+        return {'query':'RETURN 1','phase':phase,'cost':{'metric_version':METRIC_VERSION,'coverage':'engine_and_boundary_work','work_units':work,'request_elapsed_micros':20}}
     def test_fixture_work_is_not_ranked_as_test_query_work(self):
         result=collect(SimpleNamespace(query_costs=[self.entry('fixture',10000),self.entry()]),{})
         self.assertEqual(result['work_units'],10)

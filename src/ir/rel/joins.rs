@@ -104,6 +104,9 @@ impl<'a> LoweringContext<'a> {
             return self.lower_node(&pushed);
         }
         let left = self.lower_node(left)?;
+        if let Some(grouped) = self.try_grouped_pattern_collect(kind, &left, right, outputs)? {
+            return Ok(grouped);
+        }
         if let Some(marked) = self.try_simple_expand_cardinality(kind, &left, right, outputs)? {
             return Ok(marked);
         }

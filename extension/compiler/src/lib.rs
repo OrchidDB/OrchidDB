@@ -7,6 +7,7 @@ mod host;
 mod federation;
 mod managed;
 mod program;
+mod typed_scalar;
 
 use serde_json::{Value, json};
 use std::ffi::{CStr, CString, c_char};
@@ -21,6 +22,11 @@ fn request(input: Value) -> Result<Value, String> {
             serde_json::to_value(runtime.block_on(schema.resolve())?).map_err(|e|e.to_string())
         }
         Some("spicedb_check") => authorization::check(&input),
+        Some("typed_scalar_catalog") => Ok(Value::Array(orchiddb::ir::rel::native_values::typed::operations().map(|operation| {
+            use orchiddb::ir::rel::native_values::typed::{self,Output};
+            let output=match typed::output(operation) {Output::Value=>"value",Output::Boolean=>"boolean",Output::Integer=>"integer",Output::Text=>"text",Output::List=>"list",Output::Indices=>"indices"};
+            json!({"operation":operation,"name":typed::sql_name(operation),"output":output})
+        }).collect())),
         Some("native_key") => {
             let values = input["rows"].as_array().ok_or("Missing key rows")?.iter().map(|row| {
                 orchiddb::ir::rel::native_values::key(&row[0], row[1].as_bool().unwrap_or(false))

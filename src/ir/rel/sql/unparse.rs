@@ -52,6 +52,14 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.aggregate_scan", false, |p| Ok(super::aggregate_scan::rewrite(p)?))?;
+    // Demand pruning exposes unused endpoint columns only at this stage.
+    // Revisit the same catalog-backed proofs; never infer endpoint integrity
+    // merely from mapping names or an observed fixture.
+    let plan = super::super::pipeline::relational(plan, context, true)
+        .map_err(|error| match error {
+            super::super::RelError::RulePipeline(error) => SqlError::RulePipeline(error),
+            error => SqlError::Unsupported(error.to_string()),
+        })?.0;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.conditional_count", false, |p| Ok(super::count_filter::rewrite(p, dialect)?))?;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
@@ -133,7 +141,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
         Ok(Transformed::yes(LogicalPlan::Sort(sort)))
     })?.data;
     let plan = preserve_limit_output(plan)?;
-    let plan = if !dialect.requires_scope_repair() && !has_rdf_source(&plan) {
+    let plan = if !dialect.requires_scope_repair() && !requires_plan_scope_repair(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
     } else { plan };
     // DataFusion may decorrelate a scalar aggregate to a conditionless outer
@@ -152,7 +160,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     })?.data;
     let plan = super::correlation::preserve_scopes(plan)?;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
-    let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
+    let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
     Ok(apply_identifier_repairs(sql, &repairs))
 }
 
@@ -466,6 +474,13 @@ pub(super) fn encode_expression_literals(
                     f64::from(*value),
                     DataType::Float32,
                 )));
+            }
+            Expr::Literal(value @ (ScalarValue::Float64(_) | ScalarValue::Float32(_)), _) if dialect == SqlDialect::DuckDb => {
+                // DuckDB parses decimal-looking SQL literals as DECIMAL. A
+                // typed ANY-argument helper must receive the declared float.
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    inner.clone(), value.data_type(), dialect.name(),
+                )?));
             }
             _ => {}
         }
@@ -860,6 +875,19 @@ fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
 
 // Ontology relationship mappings contain joins whose source namespaces must
 // survive until the SQL AST exposes the final derived-table scopes.
+/// Nested collections cross derived relations whose original qualifiers must
+/// be rebound to emitted SQL aliases, just like mapped RDF source joins.
+pub(super) fn requires_plan_scope_repair(plan: &LogicalPlan) -> bool {
+    let mut found = has_rdf_source(plan);
+    let _ = plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::SubqueryAlias(alias) = node {
+            found |= alias.alias.table().starts_with("__w_sql_cte_cypher_collect_input_");
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
+}
+
 pub(super) fn has_rdf_source(plan: &LogicalPlan) -> bool {
     let mut found = false;
     let _ = plan.apply_with_subqueries(|node| {

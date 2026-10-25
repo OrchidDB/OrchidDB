@@ -125,6 +125,9 @@ pub fn compile_for_host(
             language_functions: options.language_functions,
             native_values: options.native_values,
             live_graph_reads: crate::ir::analysis::contains_source_mutation(&plan.root) || graph.has_mutations(),
+            snapshot_reads: if !graph.has_mutations() && plan.policy.language == crate::ir::policy::Language::Cypher {
+                initial_snapshot_reads(&plan.root)
+            } else { Default::default() },
             stateful_distinct: false,
             islands: super::super::island_planner::IslandMemo::new(&plan.root),
             lowered: Default::default(),

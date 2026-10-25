@@ -748,7 +748,10 @@ impl GraphEngine {
             return Err("transaction failed; roll it back".into());
         }
         if let Some(mapping) = self.mapping.clone() {
-            let placeholder = Connection::open_in_memory().map_err(|e|e.to_string())?;
+            // The placeholder is never used for execution. A lightweight connection
+            // to the same database avoids creating/destroying a database per query;
+            // the lease still moves and restores the original transaction/session.
+            let placeholder = self.storage.try_clone().map_err(|e|e.to_string())?;
             let storage = std::mem::replace(&mut self.storage, placeholder);
             let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
             lease.executor.set_language_functions(self.language_functions).map_err(|e| e.to_string())?;
@@ -868,7 +871,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
             return context.execute_plan(plan).await.map_err(Into::into);
         }
         if contains_mutation(&plan.root) { mapping.validate_partitioned_writes()?; }
-        let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
+        let mut graph = mapped_source::attach_for_query(session.shared_executor(), mapping.clone(), plan)?;
         graph.procedures = procedures;
         let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await?;
         if contains_mutation(&plan.root) {
@@ -890,9 +893,12 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
             }
             graph.check_source()?;
             let mut executor=session.executor()?;
-            result.1.write_queries = mapped_storage::persist_observed(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping)?;
+            let profiling = executor.cost_profiling_enabled();
+            let (writes, cost) = mapped_storage::persist_observed(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping,profiling)?;
+            result.1.write_queries = writes;
+            result.1.cost.write_engine = cost;
         }
-        if let Some(source)=&graph.source {let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;result.1.optimizer_decisions.extend(source.access_decisions());}
+        if let Some(source)=&graph.source {result.1.cost.source_engine=source.engine_cost();let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;result.1.optimizer_decisions.extend(source.access_decisions());}
         Ok(result)
     }.await;
     drop(session);

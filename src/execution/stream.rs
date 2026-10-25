@@ -15,6 +15,8 @@ pub struct BatchStream {
     schema: SchemaRef,
     inner: Pin<Box<dyn Stream<Item = BatchResult> + Send + 'static>>,
     failed: bool,
+    pub(crate) engine_cost: Option<Arc<Mutex<crate::ir::query_cost::EngineCost>>>,
+    cost_sink: Option<Arc<Mutex<crate::ir::QueryCost>>>,
 }
 impl std::fmt::Debug for BatchStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -32,6 +34,18 @@ impl BatchStream {
             schema,
             inner: Box::pin(stream),
             failed: false,
+            engine_cost: None,
+            cost_sink: None,
+        }
+    }
+    pub(crate) fn record_cost(mut self,sink:Arc<Mutex<crate::ir::QueryCost>>)->Self {
+        self.cost_sink=Some(sink);self
+    }
+    fn finish_cost(&mut self) {
+        if let Some(sink)=self.cost_sink.take() {
+            if let Some(engine)=&self.engine_cost {
+                if let (Ok(mut sink),Ok(engine))=(sink.lock(),engine.lock()) {sink.engine.merge(&engine);}
+            }
         }
     }
     pub fn schema(&self) -> SchemaRef {
@@ -81,6 +95,7 @@ impl Stream for BatchStream {
                 Poll::Ready(Some(Err(error)))
             }
             Poll::Ready(None) => {
+                self.finish_cost();
                 self.failed = true;
                 self.inner = Box::pin(futures::stream::empty());
                 Poll::Ready(None)

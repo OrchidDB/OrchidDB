@@ -91,6 +91,7 @@ impl Compiler<'_> {
             language_functions: self.language_functions,
             native_values: self.native_values,
             live_graph_reads: self.live_graph_reads,
+            snapshot_reads: Default::default(),
             stateful_distinct,
             // Mapped reads share the statement connection. Independent scans
             // inside a correlated body remain eligible for SQL pushdown;

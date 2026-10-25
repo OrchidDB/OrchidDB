@@ -306,7 +306,7 @@ impl Cursor {
                 .lock()
                 .map_err(|_| failure("query cost poisoned"))?
                 .sql_executions += 1;
-            self.response = Some(response);
+            self.response = Some(response.record_cost(self.cost.clone()));
             self.row += 1;
             if self.row == self.batch.as_ref().unwrap().num_rows() {
                 self.batch = None;

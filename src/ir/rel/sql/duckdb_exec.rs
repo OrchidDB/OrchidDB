@@ -61,6 +61,7 @@ pub struct DuckDbExecutor {
     scan_clock: u64,
     arrow_registered: bool,
     stream_registered: bool,
+    pub(super) cost_profiling: bool,
     timeout: Option<Duration>,
     setup_timeout: Option<Duration>,
     lost_connection: bool,
@@ -82,6 +83,7 @@ impl Default for DuckDbExecutor {
             scan_clock: 0,
             arrow_registered: false,
             stream_registered: false,
+            cost_profiling: std::env::var_os("ORCHIDDB_PROFILE_SQL").is_some(),
             timeout: None,
             setup_timeout: None,
             lost_connection: false,
@@ -91,6 +93,10 @@ impl Default for DuckDbExecutor {
 }
 
 impl DuckDbExecutor {
+    /// Collect completed DuckDB profiles without rerunning queries. Disabled by default.
+    pub fn cost_profiling_enabled(&self) -> bool { self.cost_profiling }
+    pub fn set_cost_profiling(&mut self,enabled:bool) {self.cost_profiling=enabled;}
+
     /// Control language UDF registration and expanded SQL lowering (default: enabled).
     /// Disabling leaves registered functions available to raw SQL, but stops
     /// the graph planner from emitting new calls to them.
@@ -188,6 +194,7 @@ impl DuckDbExecutor {
             scan_clock: 0,
             arrow_registered: false,
             stream_registered: false,
+            cost_profiling: std::env::var_os("ORCHIDDB_PROFILE_SQL").is_some(),
             timeout: None,
             setup_timeout: None,
             lost_connection: false,
@@ -529,8 +536,13 @@ impl DuckDbExecutor {
         self.clear_query_scans().map_err(|e|e.to_string())?;
         let cache=!self.in_transaction();
         for table in &prepared.tables {self.ensure_scan_table(table, cache).map_err(|e|e.to_string())?;}
-        // The empty query applies setup through the existing transactional/cache lifecycle.
-        self.run_query(&prepared.setup,"SELECT 1",execute_query).map_err(|e|e.to_string())?;
+        // Streaming executes its own statement and deadline. Do not issue a
+        // dummy SELECT (or start a query worker) merely to apply setup.
+        if prepared.setup.is_empty() {
+            self.clear_retired_scans().map_err(|e|e.to_string())?;
+        } else {
+            self.run_query(&prepared.setup,"",|_, _| Ok(())).map_err(|e|e.to_string())?;
+        }
         Ok(())
     }
     pub(crate) fn finish_stream_setup(&mut self)->Result<(),String>{

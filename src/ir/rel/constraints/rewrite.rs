@@ -321,6 +321,25 @@ fn rewrite_node(
             let l = analyze(&j.left);
             let r = analyze(&j.right);
             let lw = j.left.schema().fields().len();
+            // Expansion places the source endpoint on the left of the edge.
+            // The same FK/uniqueness proof used for the target endpoint must
+            // work in this orientation too; a mapping alone is not an FK proof.
+            if j.join_type == JoinType::Inner && l.removable {
+                let reversed = pairs.iter().map(|(a, b)| (*b, *a)).collect::<Vec<_>>();
+                let unused = projection.expr.iter()
+                    .flat_map(|e| referenced(e, projection.input.schema()))
+                    .all(|index| index >= lw);
+                if unused && l.unique_on(&pairs.iter().map(|(a, _)| *a).collect::<Vec<_>>(),
+                    j.null_equality == datafusion::common::NullEquality::NullEqualsNull)
+                    && guaranteed_match(&r, &l, &reversed) {
+                    let result = LogicalPlanBuilder::from(j.right.as_ref().clone())
+                        .project(projection.expr.clone())?.build()?;
+                    let mut evidence = r;
+                    evidence.evidence.extend(l.evidence);
+                    proofs.push(proof("eliminate_source_endpoint", "unused left endpoint has exactly one matching row from a non-null FK", &evidence));
+                    return Ok(Transformed::yes(result));
+                }
+            }
             // Requiring NULL-equal uniqueness also handles null-safe join operators.
             if !r.removable
                 || !r.unique_on(

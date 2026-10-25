@@ -326,16 +326,27 @@ impl<'a> LoweringContext<'a> {
         }
 
         let input = self.lower_node(input)?;
+        // Nested scalar applies contain joined scopes with their own aliases.
+        // Give the collection aggregate one named input so its GROUP BY and
+        // ordering cannot reference an alias hidden inside a derived table.
+        let input = if self.language == Language::Cypher && self.correlate_plan.is_some() {
+            let scope = format!("__w_sql_cte_cypher_collect_input_{}", self.scan_counter);
+            self.scan_counter += 1;
+            let plan = collections::unnest_scope(input.plan.clone(), scope)?;
+            input.with_plan(plan)
+        } else { input };
         let value_expr = self.lower_expr(&input.plan, value)?;
         let value_type = value_expr
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("GraphCollect value type: {err}")))?;
         let correlation_keys = apply_correlation_key_columns(&input.plan);
         let order_exprs = if order.is_empty() {
-            // Keep backend scan order when available. GraphUnwind currently
-            // carries no element ordinal, so ties cannot portably order list
-            // elements; that limitation is reported at the feature boundary.
-            scan_order_keys(&input.plan)
+            // A list comprehension follows element positions, even when the
+            // correlated graph join reorders rows or repeats an element.
+            let ordinals = input.plan.schema().fields().iter()
+                .filter(|field| field.name().starts_with("__orchid_list_ordinal_"))
+                .map(|field| col_exact(field.name()).sort(true, false)).collect::<Vec<_>>();
+            if ordinals.is_empty() { scan_order_keys(&input.plan) } else { ordinals }
         } else {
             order
                 .iter()
@@ -457,6 +468,21 @@ impl<'a> LoweringContext<'a> {
             let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
             return Ok(input.with_plan(plan));
         }
+        // Keep row-local quantification inside the SQL engine's list vector.
+        // The relational fallback remains available for bodies needing joins
+        // or subqueries, which DuckDB cannot execute inside a lambda.
+        if self.options.native_values
+            && !matches!(predicate, IrExpr::Lit(Lit::Bool(_) | Lit::Null))
+            && let Ok(value) = self.lower_sql_lambda(&input.plan, &IrExpr::Quantifier {
+                kind, list: Box::new(input_expr.clone()), item: item_binding.into(),
+                predicate: Box::new(predicate.clone()),
+            })
+        {
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
         let suffix = self.scan_counter;
         self.scan_counter += 1;
         let row_id = format!("__w_quantifier_row_{suffix}");
@@ -525,8 +551,7 @@ impl<'a> LoweringContext<'a> {
             ));
         }
 
-        if !self.options.native_values
-            && matches!(predicate, IrExpr::Lit(Lit::Bool(_) | Lit::Null))
+        if matches!(predicate, IrExpr::Lit(Lit::Bool(_) | Lit::Null))
         {
             // Literal predicates depend only on list cardinality, not its
             // items. Avoid UNNEST, per-row identities and grouped reduction.
@@ -779,7 +804,7 @@ impl<'a> LoweringContext<'a> {
         };
         let list_expr=if self.options.native_values && self.language==Language::Cypher
             && !matches!(list_expr.get_type(input.plan.schema())?,DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
-            native_values::list(list_expr)
+            native_values::typed::call("items", vec![list_expr])
         } else {list_expr};
         let data_type = list_expr
             .get_type(input.plan.schema())
@@ -798,6 +823,18 @@ impl<'a> LoweringContext<'a> {
         } else {
             list_expr
         };
+        let mut unnest_columns = vec![Column::new_unqualified(bind)];
+        if self.language == Language::Cypher && self.correlate_plan.is_some() {
+            let ordinal = unique_internal_alias(&input.plan, &BTreeSet::new(),
+                format!("__orchid_list_ordinal_{}", self.scan_counter));
+            let positions = datafusion::functions_nested::expr_fn::range(
+                lit(1_i64),
+                datafusion::logical_expr::cast(
+                    datafusion::functions_nested::expr_fn::array_length(list_expr.clone()),
+                    DataType::Int64) + lit(1_i64), lit(1_i64));
+            projections.push(positions.alias(&ordinal));
+            unnest_columns.push(Column::new_unqualified(ordinal));
+        }
         projections.push(list_expr.alias(bind));
         let mut options = datafusion::common::UnnestOptions::default();
         options.preserve_nulls = outer;
@@ -812,7 +849,7 @@ impl<'a> LoweringContext<'a> {
             collections::unnest_scope(plan, format!("__w_sql_cte_unwind_input_{barrier_id}"))?;
         let plan = collections::unnest_input(plan)?;
         let plan = LogicalPlanBuilder::from(plan)
-            .unnest_column_with_options(Column::new_unqualified(bind), options)?
+            .unnest_columns_with_options(unnest_columns, options)?
             .build()?;
         let plan = collections::unnest_scope(plan, format!("__w_sql_cte_unwind_{barrier_id}"))?;
         Ok(input.with_plan(plan))

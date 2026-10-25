@@ -292,6 +292,7 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
 }
 
 fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> {
+    if super::lambdas::adapt(expr,dialect)? {return Ok(());}
     if dialect == SqlDialect::Postgres {
         if let ast::Expr::Dictionary(fields) = expr {
             let args = fields.iter().map(|field| field.value.as_ref().clone()).collect::<Vec<_>>();
@@ -433,7 +434,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         function.name = ast::ObjectName::from(vec![ast::Ident::new("first")]);
         return Ok(());
     }
-    if crate::ir::rel::language_functions::supported(name.trim_matches('"')) || matches!(name.trim_matches('"'), super::super::native_values::VALUE | super::super::native_values::PREDICATE | super::super::native_values::ITEMS | super::super::native_values::AGGREGATE | super::super::native_values::SORT | super::super::native_values::PROCEDURE | super::super::native_values::PROJECT | super::super::native_values::KEY) {
+    if super::super::native_values::typed::operation(name.trim_matches('"')).is_some() || crate::ir::rel::language_functions::supported(name.trim_matches('"')) || matches!(name.trim_matches('"'), super::super::native_values::VALUE | super::super::native_values::PREDICATE | super::super::native_values::ITEMS | super::super::native_values::AGGREGATE | super::super::native_values::SORT | super::super::native_values::PROCEDURE | super::super::native_values::PROJECT | super::super::native_values::KEY) {
         return if dialect == SqlDialect::DuckDb { Ok(()) } else {
             Err(SqlError::Unsupported("registered language functions require DuckDB".into()))
         };

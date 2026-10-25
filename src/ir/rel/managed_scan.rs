@@ -91,7 +91,7 @@ impl LoweringContext<'_> {
             lit("__orchiddb_element_v1"),
             df_core::named_struct(descriptor),
         ]);
-        let value = native_values::function(
+        let value = if self.language == Language::Cypher { native_values::typed::call("pack",vec![element]) } else { native_values::function(
             native_values::VALUE,
             native_values::value_type(),
             vec![
@@ -99,7 +99,7 @@ impl LoweringContext<'_> {
                     .map_err(|e| RelError::Unsupported(e.to_string()))?),
                 df_core::named_struct(vec![lit(binding), element]),
             ],
-        );
+        ) };
         let mut columns = vec![
             col_exact("id").alias(id_col(binding)),
             col_exact("name").alias(label_col(binding)),

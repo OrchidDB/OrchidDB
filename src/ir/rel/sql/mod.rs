@@ -24,8 +24,11 @@ pub mod language_functions;
 #[cfg(feature = "duckdb")]
 mod native_language_functions;
 #[cfg(feature = "duckdb")]
+mod typed_language_functions;
+#[cfg(feature = "duckdb")]
 mod language_vectors;
 mod logical_functions;
+mod lambdas;
 mod structured;
 pub(crate) mod json;
 mod json_transform;
@@ -107,6 +110,8 @@ mod database;
 mod duckdb_exec;
 #[cfg(feature = "duckdb")]
 mod duckdb_stream;
+#[cfg(feature = "duckdb")]
+pub(crate) mod duckdb_cost;
 #[cfg(feature = "duckdb")]
 pub use duckdb_stream::DuckDbSession;
 #[cfg(feature = "duckdb")]

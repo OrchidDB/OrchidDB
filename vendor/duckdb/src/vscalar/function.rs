@@ -121,6 +121,11 @@ impl ScalarFunction {
     ///
     /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
     /// them only once. Setting a function as volatile prevents this optimization.
+    pub fn set_special_handling(&self) -> &Self {
+        unsafe { ffi::duckdb_scalar_function_set_special_handling(self.ptr); }
+        self
+    }
+
     pub fn set_volatile(&self) -> &Self {
         unsafe {
             duckdb_scalar_function_set_volatile(self.ptr);

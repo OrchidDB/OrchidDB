@@ -1751,6 +1751,9 @@ SET orchid_cypher_aggregates = 'conformant';
 ```
 
 Conformant semantics may use Orchid's built-in DuckDB language helpers.
+Cypher lowers to native SQL expressions and list lambdas where possible.
+Compatibility helpers implement individual operations over typed Arrow values;
+they do not receive serialized expressions or JSON rows to interpret.
 `CypherAggregatePolicy::SqlNative` (extension setting `sql_native`) opts into
 ordinary SQL aggregate and grouping semantics for representable values. For
 example, an empty `sum` or collection returns SQL NULL, and `stDev` follows the
@@ -1938,6 +1941,23 @@ report preserves catalog order, outcomes, plans, and SQL; merging rejects missin
 or duplicate cases, changed catalogs, and different executable hashes. To resume
 a journal, use `--jobs 1`. `--case-file path.json` accepts a JSON array of case IDs
 for focused runs.
+
+To inspect SQL versus Orchid execution for every Cypher scenario, export a complete
+native DuckDB report:
+
+```sh
+python3 tools/diagnostics/dump_cypher_plans.py \
+  --report target/conformance/orchiddb-opencypher.json \
+  --output target/diagnostics/cypher-duckdb-plans
+```
+
+Open `target/diagnostics/cypher-duckdb-plans/index.html`. It includes searchable
+physical DAGs, SQL regions, Orchid-initiated persistence/source SQL, logical plans,
+original test steps, and individual SQL/JSON downloads. Fixture setup is separate
+from target queries. SQL is captured from execution diagnostics, not recompiled
+by the exporter. Missing plans remain unclassified; Orchid functions called inside
+DuckDB SQL are distinguished from host execution boundaries. The raw records are
+in `plans.jsonl`, with coverage and provenance in `summary.json`.
 
 ### Conformance report page
 
@@ -2255,3 +2275,82 @@ An exact retrieval request is rejected when routed to Weaviate. BM25, hybrid
 search, embedding generation, and general collection scans are not implemented.
 Complex edge bodies continue through the existing relational planner; the
 single-target vector ranking shown above uses the shared ranked-retrieval path.
+
+### Executed query cost diagnostics
+
+Embedded DuckDB diagnostics can enable `ORCHIDDB_PROFILE_SQL=1` (or
+`DuckDbExecutor::set_cost_profiling(true)`). Profiling captures the actual completed
+statement; it never reruns queries with `EXPLAIN ANALYZE`. It includes SQL islands,
+mapped-source requests (including catalog lookups), and persisted writes. Profiling
+is optional and adds overhead. Existing caller profiling settings are preserved.
+Other hosts without an engine profiler report incomplete engine coverage.
+
+Cost metric version 2 separates these components:
+
+- **Engine work:** rows scanned plus the sum of individual operator output rows.
+  Cumulative subtree counters are excluded to avoid counting them twice.
+- **Orchid work:** boundary row visits, SQL-result Arrow memory in KiB, and
+  100 units per SQL/source/write request. This is a ranking heuristic, not dollars
+  or a prediction of elapsed time. Source row payload bytes, write input bytes,
+  connection setup and transaction-control overhead are not measured by this score.
+- **Measured resources:** engine CPU and latency in nanoseconds, peak buffer and
+  spill bytes, SQL text bytes, operator count, and maximum plan depth. Peaks use
+  maxima rather than sums. Engine CPU includes custom SQL functions. Orchid
+  end-to-end elapsed time overlaps engine time; the two are not added together.
+
+Reports expose missing profile counts. Failed/unexecuted queries retain their
+coverage status rather than receiving an invented zero cost. Conformance rankings
+exclude fixture construction and state-observation queries. The internal
+`tools/diagnostics/compare_cypher_cost.py` compares matching reports and separates
+engine work, Orchid work, requests, and resources for every measured test query.
+Volatile queries can legitimately have different row counts on repeated runs.
+
+Prefer a single SQL island for eligible relational work so the engine can optimize
+joins and push filters through the whole plan. Large SQL alone does not justify
+splitting it: another island adds a request and a streaming boundary and may lose
+pushdown. The comparison report flags plans deeper than 64 operators or more than
+256 KiB of SQL per test query for review, rather than automatically fragmenting
+working queries. Reduce intermediate row expansion and duplicate work first;
+mutation, correlation and ordering contracts still determine legal boundaries.
+
+The DuckDB stream adapter obtains its Arrow schema from the actual streaming
+result, avoiding a second schema-only execution and a dummy setup query. It
+retains bounded input/output queues, cancellation and late-error propagation.
+Mapped execution binds each physical table schema once per query and reuses it
+for key/property projections when the names and types match; other projections
+still use host binding. Plans proven read-only skip insert-default discovery.
+Mutation and opaque-extension plans retain it. Row-local Cypher quantifiers use
+native list lambdas where possible, avoiding row expansion and grouped reduction;
+bodies requiring relational work retain the relational lowering.
+
+`tools/diagnostics/bench_cypher_execution.py` compares two local runner binaries
+with profiling disabled, warmups and alternating run order. Its timings include
+server compilation and execution in development builds; they are not production
+throughput estimates. Operator-row scores do not measure individual items visited
+inside vectorized list functions, so use CPU and unprofiled timings alongside them.
+Mapped query and snapshot leases retain the original caller connection and
+transaction. Their temporary placeholder connects to the existing database;
+it does not create and tear down a separate DuckDB database for each request.
+For Cypher mutations, a proven pure, filtered input before the first write can use a
+SQL island to filter source tables before hydrating records. Reads after a write
+retain the live graph overlay. This permission is limited to an ordered unary
+statement prefix with no existing mutations; it does not propagate into
+correlated bodies or uncertain execution branches.
+Unfiltered mutation inputs keep their existing batched source reads, avoiding an
+extra SQL request when there is no predicate to reduce record hydration.
+
+Query-side lowering prunes physical endpoint tables independently of dynamic
+Cypher labels, pushes total predicates through union branches, and removes
+structurally empty branches. Endpoint joins can disappear in either orientation
+only with usable uniqueness and endpoint-existence evidence; mappings alone do
+not prove referential integrity. These proofs run again after output pruning.
+One-hop pattern collections over immutable, unsliced outer inputs can aggregate
+once per distinct anchor and join back to all original occurrences. Null list
+elements and empty collections are retained. Simple pattern cardinality tests
+use SQL count/existence subqueries, including the native-value lowering route.
+List consumers can count predicates or take the head/size of total constant or
+identity mappings without building the mapped payload. Typed integer/boolean
+conversions use native SQL when their input types prove equivalent semantics;
+dynamic values keep their focused helpers. Pure, total list-lambda markers do
+not block unused-column pruning, while volatile and ordered scopes remain
+protected.

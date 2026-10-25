@@ -1,6 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 #include "duckdb.hpp"
 #include "duckdb/common/types/blob.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
@@ -47,6 +48,7 @@
 #include "duckdb/planner/bound_statement.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/execution/column_binding_resolver.hpp"
 #include "duckdb/execution/operator/set/physical_union.hpp"
@@ -68,6 +70,7 @@
 #include <thread>
 
 extern "C" char *orchid_bridge(const char *);
+extern "C" char *orchid_cypher_scalar_v1(const char *, ArrowArray *, const ArrowSchema *, ArrowArrayStream *);
 extern "C" int orchid_cypher_to_float_v1(const uint8_t **, const size_t *, size_t, double *, uint8_t *);
 extern "C" char *orchid_bridge_catalog(const char *, void *, char *(*)(void *, const char *, ArrowSchema *), void (*)(char *));
 extern "C" void orchid_bridge_free(char *);
@@ -755,6 +758,39 @@ struct NativeClock : ClientContextState {
 };
 #include "program.hpp"
 
+struct TypedScalarInfo : ScalarFunctionInfo {
+    string operation;
+    explicit TypedScalarInfo(string operation) : operation(std::move(operation)) {}
+};
+void TypedCypherScalar(DataChunk &args, ExpressionState &state, Vector &result) {
+    auto &context=state.GetContext();
+    auto &expression=state.expr.Cast<BoundFunctionExpression>();
+    auto &info=static_cast<TypedScalarInfo &>(*expression.function.function_info);
+    auto properties=context.GetClientProperties();
+    vector<string> names;
+    for(idx_t column=0;column<args.ColumnCount();column++) {names.push_back("arg"+to_string(column));}
+    ArrowSchemaWrapper schema;
+    ArrowArrayWrapper input;
+    ArrowConverter::ToArrowSchema(&schema.arrow_schema,args.GetTypes(),names,properties);
+    ArrowConverter::ToArrowArray(args,&input.arrow_array,properties,{});
+    ArrowArrayStreamWrapper output;
+    std::unique_ptr<char,decltype(&orchid_bridge_free)> error(
+        orchid_cypher_scalar_v1(info.operation.c_str(),&input.arrow_array,&schema.arrow_schema,&output.arrow_array_stream),orchid_bridge_free);
+    if(error) {
+        auto detail=Json::parse(error.get(),nullptr,false);
+        auto message=detail.is_object() && detail.contains("error") && detail.at("error").is_string()
+            ? detail.at("error").get<string>() : string(error.get());
+        throw InvalidInputException(HostErrorMetadata(error.get()),message);
+    }
+    auto relation=ImportHostRelation(context,output.arrow_array_stream);
+    HostRelationCursor cursor(relation->source);
+    DataChunk chunk;
+    chunk.Initialize(context,{result.GetType()});
+    if(!cursor.Next(context,chunk) || chunk.size()!=args.size()) {throw InternalException("Typed scalar batch cardinality mismatch");}
+    // Copy into DuckDB-owned buffers before releasing the incoming Arrow batch.
+    VectorOperations::Copy(chunk.data[0],result,args.size(),0,0);
+}
+
 void NativeScalar(DataChunk &args, ExpressionState &state, Vector &result, bool predicate, bool json) {
     auto &context=state.GetContext();
     auto clock=context.registered_state->GetOrCreate<NativeClock>("orchid_native_clock");
@@ -999,6 +1035,17 @@ void LoadOrchid(ExtensionLoader &loader) {
     program.named_parameters["base"] = LogicalType::VARCHAR;
     loader.RegisterFunction(program);
     auto native_type = LogicalType::STRUCT({{"__orchiddb_value_v1", LogicalType::VARCHAR}});
+    for(auto &entry:Bridge({{"op","typed_scalar_catalog"}})) {
+        auto kind=entry.at("output").get<string>();
+        auto output=kind=="boolean" ? LogicalType::BOOLEAN : kind=="integer" ? LogicalType::BIGINT :
+            kind=="indices" ? LogicalType::LIST(LogicalType::BIGINT) : kind=="text" ? LogicalType::VARCHAR : kind=="list" ? LogicalType::LIST(native_type) : native_type;
+        ScalarFunction function(entry.at("name").get<string>(),{},output,TypedCypherScalar);
+        function.varargs=LogicalType::ANY;
+        function.null_handling=FunctionNullHandling::SPECIAL_HANDLING;
+        function.function_info=make_shared_ptr<TypedScalarInfo>(entry.at("operation").get<string>());
+        loader.RegisterFunction(function);
+    }
+
     for (auto function : {
         ScalarFunction("__orchiddb_value", {LogicalType::VARCHAR, LogicalType::ANY}, native_type, NativeValue),
         ScalarFunction("__orchiddb_predicate", {LogicalType::VARCHAR, LogicalType::ANY}, LogicalType::BOOLEAN, NativePredicate),

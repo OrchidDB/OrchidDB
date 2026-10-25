@@ -1310,8 +1310,16 @@ pub(super) fn lower_mapped_node_scan(
     binding: &str,
     labels: &LabelExpr,
 ) -> RelResult<LoweredNode> {
+    lower_mapped_node_scan_restricted(ctx, mapping, binding, labels, None)
+}
+
+pub(super) fn lower_mapped_node_scan_restricted(
+    ctx: &mut LoweringContext<'_>, mapping: &GraphMapping, binding: &str,
+    labels: &LabelExpr, physical_labels: Option<&BTreeSet<String>>,
+) -> RelResult<LoweredNode> {
     let mut sources = Vec::new();
     for node in mapping.nodes.values() {
+        if physical_labels.is_some_and(|allowed| !allowed.contains(&node.label)) { continue; }
         if (node.labels_column.is_none() || ctx.language != crate::ir::policy::Language::Cypher)
             && !static_labels_match(labels, &node.label) {
             continue;
@@ -1399,10 +1407,20 @@ pub(super) fn lower_mapped_rel_scan(
     binding: &str,
     types: &LabelExpr,
 ) -> RelResult<LoweredNode> {
+    lower_mapped_rel_scan_restricted(ctx, mapping, binding, types, None, None)
+}
+
+pub(super) fn lower_mapped_rel_scan_restricted(
+    ctx: &mut LoweringContext<'_>, mapping: &GraphMapping, binding: &str,
+    types: &LabelExpr, sources_allowed: Option<&BTreeSet<String>>,
+    targets_allowed: Option<&BTreeSet<String>>,
+) -> RelResult<LoweredNode> {
     let rel_types = resolve_names(types, || mapping.rel_types(), "relationship type")?;
     let mut sources = Vec::new();
     for rel_type in &rel_types {
         for edge in mapping.edge_partitions(rel_type) {
+        if sources_allowed.is_some_and(|allowed| !allowed.contains(&edge.src_label))
+            || targets_allowed.is_some_and(|allowed| !allowed.contains(&edge.dst_label)) { continue; }
         mapping.validate_foreign_keys()?;
         let mut plan = mapping.source_plan(&edge.source)?;
         if let Some((_, _, _, fk)) = edge.foreign_key_columns() {

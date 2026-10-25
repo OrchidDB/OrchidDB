@@ -91,6 +91,39 @@ impl<'a> LoweringContext<'a> {
         Ok(input.with_plan(plan))
     }
 
+    /// Recover a relational node binding from a lossless value (for example an
+    /// element of nodes(path)). Identity equality stays inside SQL; no graph
+    /// lookup or per-row execution boundary is needed to re-enter expansion.
+    pub(super) fn bind_native_node(&mut self, input: LoweredNode, binding: &str) -> RelResult<LoweredNode> {
+        if self.language != Language::Cypher || has_binding_shape(&input.plan, binding).is_some()
+            || !has_exact_col(&input.plan, binding)
+            || !native_values::is_value(&col_exact(binding).get_type(input.plan.schema())?) {
+            return Ok(input);
+        }
+        // Do not introduce scans of external computed sources merely to decode
+        // a value. Those sources retain their explicit execution contract.
+        if self.options.mapping.as_ref().is_some_and(|mapping| mapping.labels().iter()
+            .any(|label| mapping.node(label).is_some_and(|node|
+                !matches!(&node.source, mapping::MappedSource::Table(_))))) {
+            return Ok(input);
+        }
+        let candidate = format!("__orchid_value_node_{}", self.scan_counter);
+        self.scan_counter += 1;
+        let nodes = self.lower_node_scan(&candidate, &LabelExpr::Any)?;
+        let key = native_values::key_expr(col_exact(binding), true);
+        let candidate_key = native_values::key_expr(
+            self.native_expr(&nodes.plan, &IrExpr::Binding(candidate.clone()))?, true);
+        let mut projection = existing_columns(&input.plan, &BTreeSet::new());
+        projection.extend(duplicate_binding_projection_only(&nodes.plan, &candidate, binding)?
+            .into_iter().filter(|expr| expr.schema_name().to_string() != binding));
+        let plan = LogicalPlanBuilder::from(input.plan.clone())
+            .join_on(nodes.plan, JoinType::Inner, vec![key.eq(candidate_key)])?
+            .project(projection)?.build()?;
+        let mut result = input.with_plan(plan);
+        result.islands.merge(nodes.islands);
+        Ok(result)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_expand(
         &mut self,
@@ -111,7 +144,21 @@ impl<'a> LoweringContext<'a> {
         {
             return Err(RelError::Unsupported("Observed Gremlin paths require native traverser values".into()));
         }
-        let input = self.lower_node(input)?;
+        let input = if let Node::GraphNodeScan { binding, labels, .. } = input
+            && binding == source
+            && !self.options.live_graph_reads
+            && let Some(mapping) = self.options.mapping.clone().filter(|m| m.managed_table.is_none()) {
+            let mut endpoints = BTreeSet::new();
+            for kind in mapping::resolve_names(rel_types, || mapping.rel_types(), "relationship")? {
+                for edge in mapping.edge_partitions(&kind) {
+                    if dir != Direction::In { endpoints.insert(edge.src_label.clone()); }
+                    if dir != Direction::Out { endpoints.insert(edge.dst_label.clone()); }
+                }
+            }
+            mapping::lower_mapped_node_scan_restricted(self, &mapping, binding, labels, Some(&endpoints))?
+        } else { self.lower_node(input)? };
+        let input = self.bind_native_node(input, source)?;
+        let input = if target_mode == TargetMode::Existing { self.bind_native_node(input, target)? } else { input };
         let mut input = if target_mode == TargetMode::Existing {
             self.restrict_existing_target(input, target, target_labels)?
         } else { input };
@@ -240,12 +287,10 @@ impl<'a> LoweringContext<'a> {
         if has_previous {
             let ty = trail_input.get_type(input.plan.schema())?;
             if native_values::is_value(&ty) {
-                trail_input = native_values::list(trail_input);
+                trail_input = if self.language == Language::Cypher { native_values::typed::call("items",vec![trail_input]) } else {native_values::list(trail_input)};
             }
             if matches!(trail_input.get_type(input.plan.schema())?, DataType::List(field) if native_values::is_value(field.data_type())) {
-                key = native_values::function("__orchiddb_value", native_values::value_type(), vec![
-                    lit(r#"{"Binding":"value"}"#), df_core::named_struct(vec![lit("value"), key]),
-                ]);
+                key = native_values::typed::call("pack",vec![key]);
             }
         }
         // Fixed hops retain typed edge identities under fresh names. The
@@ -563,7 +608,14 @@ impl<'a> LoweringContext<'a> {
                 }
             }
         };
-        let edge_scan = self.lower_rel_scan(&rel, rel_types)?;
+        let physical_mapping = self.options.mapping.clone().filter(|mapping|
+            !self.options.live_graph_reads && mapping.managed_table.is_none());
+        let source_domain = query_domains::strings(&input.plan, &label_col(source));
+        let edge_scan = if let Some(mapping) = &physical_mapping {
+            mapping::lower_mapped_rel_scan_restricted(self, mapping, &rel, rel_types,
+                if dir == Direction::Out { source_domain.as_ref() } else { None },
+                if dir == Direction::In { source_domain.as_ref() } else { None })?
+        } else { self.lower_rel_scan(&rel, rel_types)? };
 
         let (edge_source_id, edge_source_label, edge_target_id, edge_target_label) = match dir {
             Direction::Out => (
@@ -621,7 +673,11 @@ impl<'a> LoweringContext<'a> {
                     target.to_string()
                 };
                 let labels = self.mapped_endpoint_labels(target_labels, rel_types, dir)?;
-                let target_scan = self.lower_node_scan(&target_scan_binding, &labels)?;
+                let target_domain = query_domains::strings(&edge_scan.plan, &edge_target_label);
+                let target_scan = if let Some(mapping) = &physical_mapping {
+                    mapping::lower_mapped_node_scan_restricted(self, mapping, &target_scan_binding,
+                        target_labels, target_domain.as_ref())?
+                } else { self.lower_node_scan(&target_scan_binding, &labels)? };
                 let target_join = vec![
                     identity_compare(
                         &[&joined, &target_scan.plan],

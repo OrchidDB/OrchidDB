@@ -2,7 +2,7 @@
 //! Arrow reader currently leaves lists, structs and decimals unimplemented.
 use arrow::{
     array::ArrayRef,
-    datatypes::{DataType, Field},
+    datatypes::{DataType, Field, TimeUnit},
 };
 use datafusion::common::ScalarValue;
 use duckdb::{core::DataChunkHandle, ffi};
@@ -37,6 +37,11 @@ unsafe fn data_type(t: ffi::duckdb_logical_type) -> Result<DataType> {
         L::Double => DataType::Float64,
         L::Varchar => DataType::Utf8,
         L::Date => DataType::Date32,
+        L::Timestamp => DataType::Timestamp(TimeUnit::Microsecond,None),
+        L::TimestampS => DataType::Timestamp(TimeUnit::Second,None),
+        L::TimestampMs => DataType::Timestamp(TimeUnit::Millisecond,None),
+        L::TimestampNs => DataType::Timestamp(TimeUnit::Nanosecond,None),
+        L::TimestampTZ => DataType::Timestamp(TimeUnit::Microsecond,Some("UTC".into())),
         L::Decimal => DataType::Decimal128(unsafe { ffi::duckdb_decimal_width(t) }, unsafe {
             ffi::duckdb_decimal_scale(t)
         }
@@ -80,6 +85,12 @@ unsafe fn cell(v: ffi::duckdb_vector, t: &DataType, row: usize) -> Result<Scalar
     }
     Ok(match t {
         DataType::Date32 => ScalarValue::Date32(Some(get!(ffi::duckdb_date).days)),
+        DataType::Timestamp(unit,zone) => match unit {
+            TimeUnit::Second=>ScalarValue::TimestampSecond(Some(get!(i64)),zone.clone()),
+            TimeUnit::Millisecond=>ScalarValue::TimestampMillisecond(Some(get!(i64)),zone.clone()),
+            TimeUnit::Microsecond=>ScalarValue::TimestampMicrosecond(Some(get!(i64)),zone.clone()),
+            TimeUnit::Nanosecond=>ScalarValue::TimestampNanosecond(Some(get!(i64)),zone.clone()),
+        },
         DataType::Boolean => ScalarValue::Boolean(Some(get!(bool))),
         DataType::Int8 => ScalarValue::Int8(Some(get!(i8))),
         DataType::Int16 => ScalarValue::Int16(Some(get!(i16))),

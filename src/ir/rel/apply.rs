@@ -102,6 +102,80 @@ pub(super) fn push_simple_existence(kind: ApplyKind, left: &Node, right: &Node) 
 }
 
 impl LoweringContext<'_> {
+    /// A one-hop collection depending only on graph bindings can be grouped
+    /// once by its anchor identity. Joining that group back preserves every
+    /// outer occurrence, including duplicate anchors and empty collections.
+    pub(super) fn try_grouped_pattern_collect(
+        &mut self, kind: ApplyKind, left: &LoweredNode, right: &Node, outputs: &[String],
+    ) -> RelResult<Option<LoweredNode>> {
+        if self.language != Language::Cypher || kind != ApplyKind::Scalar
+            || self.correlate_plan.is_some() || self.options.live_graph_reads { return Ok(None); }
+        if !super::list_comparison::immutable_source_plan(&left.plan) { return Ok(None); }
+        {
+            use datafusion::common::tree_node::TreeNode;
+            if left.plan.exists(|node| Ok(matches!(node, LogicalPlan::Limit(_) | LogicalPlan::Window(_))))? {
+                return Ok(None);
+            }
+        }
+        let Node::GraphCollect { value, distinct: false, order, alias, input } = right else { return Ok(None); };
+        if !order.is_empty() || outputs != [alias.clone()] { return Ok(None); }
+        let Some(Node::GraphExpand { source, target, target_mode: TargetMode::BindNew,
+            target_labels, rel_binding, rel_types, dir, history, .. }) = simple_expand(input) else { return Ok(None); };
+        if source == target || has_binding_shape(&left.plan, source) != Some(BindingShape::Node)
+            || has_binding_shape(&left.plan, target).is_some()
+            || rel_binding.as_ref().is_some_and(|binding| has_binding_shape(&left.plan, binding).is_some())
+            || history.as_ref().is_some_and(|h| has_exact_col(&left.plan, h)) { return Ok(None); }
+        let local = |binding: &String| binding == target || rel_binding.as_ref() == Some(binding);
+        let simple_value = match value {
+            IrExpr::Lit(_) => true,
+            IrExpr::Binding(binding) | IrExpr::Property { binding, .. } => local(binding),
+            IrExpr::Call { name, args } if name == "cypher_subscript" =>
+                matches!(args.as_slice(), [IrExpr::Binding(binding), IrExpr::Lit(Lit::String(_))] if local(binding)),
+            _ => false,
+        };
+        if !simple_value { return Ok(None); }
+        if self.options.mapping.as_ref().is_some_and(|mapping|
+            mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|node| !matches!(node.source, mapping::MappedSource::Table(_))))
+            || mapping.rel_types().iter().any(|kind| mapping.edge_partitions(kind).iter().any(|edge| !matches!(edge.source, mapping::MappedSource::Table(_))))) { return Ok(None); }
+        let keys = [id_col(source), label_col(source)];
+        let anchors = LogicalPlanBuilder::from(left.plan.clone())
+            .project(keys.iter().map(col_exact).collect::<Vec<_>>())?.distinct()?.build()?;
+        let seed = Node::GraphCorrelate { bindings: vec![source.clone()] };
+        let previous = self.correlate_plan.replace(anchors);
+        let expanded = self.lower_expand(&seed, source, target, TargetMode::BindNew, target_labels,
+            rel_binding.as_ref(), rel_types, *dir, None, None);
+        self.correlate_plan = previous;
+        let expanded = expanded?;
+        let item = self.lower_expr(&expanded.plan, value)?;
+        let ty = item.get_type(expanded.plan.schema())?;
+        let mut reserved = BTreeSet::new();
+        let mut groups = Vec::new();
+        let mut conditions = Vec::new();
+        for key in &keys {
+            let name = unique_internal_alias(&left.plan, &reserved, format!("__pattern_group_{}_{}", self.scan_counter, reserved.len()));
+            reserved.insert(name.clone());
+            groups.push(col_exact(key).alias(&name));
+            conditions.push(col_exact(key).eq(col_exact(name)));
+        }
+        let result = unique_internal_alias(&left.plan, &reserved, format!("__pattern_values_{}", self.scan_counter));
+        self.scan_counter += 1;
+        let ordering = scan_order_keys(&expanded.plan);
+        let aggregate = if ordering.is_empty() { df_array_agg(item) }
+            else { df_array_agg(item).order_by(ordering).build()? };
+        let grouped = LogicalPlanBuilder::from(expanded.plan).aggregate(groups, vec![aggregate.alias(&result)])?
+            .alias(format!("__w_sql_cte_pattern_group_{}", self.scan_counter))?.build()?;
+        let empty = Expr::Cast(Cast::new(Box::new(datafusion::functions_nested::expr_fn::make_array(vec![])),
+            DataType::List(Arc::new(Field::new("item", ty, true)))));
+        let mut projection = existing_columns_by_name(&left.plan, &BTreeSet::new());
+        projection.push(df_core::coalesce(vec![col_exact(result), empty]).alias(alias));
+        let plan = LogicalPlanBuilder::from(left.plan.clone()).join_on(grouped, JoinType::Left, conditions)?
+            .project(projection)?.build()?;
+        let mut result = left.clone();
+        result.plan = plan;
+        result.islands.merge(expanded.islands);
+        Ok(Some(result))
+    }
+
     /// One-hop existence/count has one value per input occurrence. Correlated
     /// EXISTS/COUNT preserves duplicates without occurrence windows or lists.
     pub(super) fn try_simple_expand_cardinality(
@@ -113,7 +187,6 @@ impl LoweringContext<'_> {
     ) -> RelResult<Option<LoweredNode>> {
         if self.language != Language::Cypher
             || kind != ApplyKind::Scalar
-            || self.options.native_values
         {
             return Ok(None);
         }

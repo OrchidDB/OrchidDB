@@ -15,7 +15,7 @@ impl GraphEngine {
             self.refresh()?;
             return observe(&self.graph, None);
         };
-        let placeholder = Connection::open_in_memory().map_err(|e| e.to_string())?;
+        let placeholder = self.storage.try_clone().map_err(|e| e.to_string())?;
         let storage = std::mem::replace(&mut self.storage, placeholder);
         let mut connection_lease = MappedConnectionLease {
             target: &mut self.storage,

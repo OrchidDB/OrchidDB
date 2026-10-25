@@ -235,8 +235,27 @@ pub(super) fn prune_sql_outputs(plan: LogicalPlan) -> Result<LogicalPlan> {
     // relational optimizer still prunes these plans with their full contracts.
     let mut occurrence_sensitive = false;
     plan.apply_with_subqueries(|node| {
+        for expression in node.expressions() {
+            // Lambda markers are marked volatile to prohibit compiler-time
+            // invocation: their implementation belongs to SQL. That marker
+            // alone does not make a pure lambda an occurrence-sensitive value.
+            // This is analysis only; the emitted expression is never replaced.
+            let analyzed = expression.transform_up(|expr| {
+                if let Expr::ScalarFunction(call) = &expr
+                    && let Some(lambda) = super::collection_lambda::definition(&call.func)
+                    && lambda.total_body
+                    // A list-validation helper can throw even with a total
+                    // body. Only transparent source/capture operands qualify.
+                    && call.args.iter().all(|arg| matches!(arg, Expr::Column(_) | Expr::Literal(..))) {
+                    return Ok(Transformed::yes(Expr::Literal(
+                        datafusion::common::ScalarValue::try_from(&lambda.result)?, None)));
+                }
+                Ok(Transformed::no(expr))
+            })?.data;
+            occurrence_sensitive |= analyzed.is_volatile();
+        }
         node.apply_expressions(|expr| expr.apply(|expr| {
-            occurrence_sensitive |= expr.is_volatile() || matches!(expr, Expr::WindowFunction(_));
+            occurrence_sensitive |= matches!(expr, Expr::WindowFunction(_));
             if let Expr::AggregateFunction(a) = expr {
                 occurrence_sensitive |= !a.params.order_by.is_empty();
             }

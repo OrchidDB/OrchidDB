@@ -111,3 +111,64 @@ async fn correlated_degree_does_not_hide_invalid_aggregate_argument() {
     let error=engine.cypher("MATCH(n:S) WITH n,size([(n)-->()|1]) AS deg WHERE deg>2 WITH deg LIMIT 100 RETURN percentileDisc(0.90,deg),deg").await.err().expect("invalid percentile must be evaluated for surviving degree rows");
     assert!(error.to_ascii_lowercase().contains("percentile"), "{error}");
 }
+
+/// Correlation over node-valued lists must not become a host loop. Duplicate
+/// outer rows and reversed/repeated list elements make accidental regrouping or
+/// ordering by node identity observable.
+#[tokio::test]
+async fn nested_pattern_lists_remain_one_sql_region() {
+    use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping, EdgeMapping};
+    use std::sync::Arc;
+    let storage = duckdb::Connection::open_in_memory().unwrap();
+    storage.execute_batch("CREATE TABLE nodes(id BIGINT PRIMARY KEY, n BIGINT, labels VARCHAR[]); INSERT INTO nodes VALUES (1,1,['X']), (2,NULL,['Y']), (3,NULL,['Y']), (4,NULL,['Y']), (5,2,['X']), (6,NULL,[]), (7,NULL,['L']), (8,NULL,['Y']); CREATE TABLE links(id BIGINT PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES (1,1,2),(2,2,3),(3,2,4),(4,5,6),(5,6,7),(6,6,8);").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.map_node(NodeMapping::table("N", "nodes", "id").labels_column("labels").property("n", "n"));
+    mapping.map_edge(EdgeMapping::table("T", "links", "src", "dst", "N", "N").with_id("id"));
+    let mut engine = GraphEngine::mapped(storage, Arc::new(mapping)).unwrap();
+    for (query, expected) in [
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN nodes(p) | size([(x)-->(:Y) | 1])] AS list",
+         vec![json!([1,[1,2]]),json!([2,[0,1]])]),
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN nodes(p) | size([(x)-[:T*1..2]->(:Y) | 1])] AS list",
+         vec![json!([1,[3,2]]),json!([2,[1,1]])]),
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN nodes(p)+[null] | size([(x)-->(:Y) | 1])] AS list",
+         vec![json!([1,[1,2,0]]),json!([2,[0,1,0]])]),
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN reverse(nodes(p)) | size([(x)-->(:Y) | 1])] AS list",
+         vec![json!([1,[2,1]]),json!([2,[1,0]])]),
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN nodes(p)+nodes(p) | size([(x)-->(:Y) | 1])] AS list",
+         vec![json!([1,[1,2,1,2]]),json!([2,[0,1,0,1]])]),
+        ("MATCH p=(n:X)-->() RETURN n.n, [x IN nodes(p) WHERE size([(x)-->(:Y) | 1]) > 9 | x] AS list",
+         vec![json!([1,[]]),json!([2,[]])]),
+    ] {
+        let result = engine.cypher(query).await.unwrap();
+        assert_eq!(values(&result), expected, "{query}");
+        for sql in &result.stats.sql_queries {
+            for forbidden in ["__orchiddb_value(", "__orchiddb_predicate(", "__orchiddb_value_aggregate("] {
+                assert!(!sql.contains(forbidden), "Generic expression interpreter in SQL: {sql}");
+            }
+        }
+        assert_eq!(result.stats.cost.sql_executions, 1);
+        assert_eq!(result.stats.cost.native_kernel_calls, 0);
+        assert_eq!(result.stats.sql_queries.len(), 1, "{query}\n{}",result.stats.physical_plan);
+        assert!(!result.stats.physical_plan.contains("LateralApply"), "{query}\n{}",result.stats.physical_plan);
+        assert!(!result.stats.physical_plan.contains("EncodeSqlBindings"), "{}",result.stats.physical_plan);
+        assert!(result.stats.native_source_queries.is_empty(), "{query}: {:?}",result.stats.native_source_queries);
+    }
+    for count in [1, 64] {
+        let query=format!("UNWIND range(1,{count}) AS i MATCH p=(n:X)-->() RETURN i, n.n, [x IN nodes(p) | size([(x)-->(:Y) | 1])] AS list");
+        let result=engine.cypher(&query).await.unwrap();
+        let mut expected = (1..=count).flat_map(|i| [json!([i,1,[1,2]]), json!([i,2,[0,1]])]).collect::<Vec<_>>();
+        expected.sort_by_key(Value::to_string);
+        assert_eq!(values(&result), expected);
+        for sql in &result.stats.sql_queries {
+            for forbidden in ["__orchiddb_value(", "__orchiddb_predicate(", "__orchiddb_value_aggregate("] {
+                assert!(!sql.contains(forbidden), "Generic expression interpreter in SQL: {sql}");
+            }
+        }
+        assert_eq!(result.stats.cost.sql_executions, 1);
+        assert_eq!(result.stats.cost.native_kernel_calls, 0);
+        assert_eq!(result.stats.sql_queries.len(), 1, "{}",result.stats.physical_plan);
+        assert!(!result.stats.physical_plan.contains("LateralApply"));
+        assert!(!result.stats.physical_plan.contains("EncodeSqlBindings"));
+        assert!(result.stats.native_source_queries.is_empty());
+    }
+}

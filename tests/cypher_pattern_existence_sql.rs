@@ -254,7 +254,7 @@ async fn mapped_physical_columns_cannot_capture_outer_identity() {
                 }).lower(&plan, &PropertyGraph::new()).unwrap();
                 let prepared = sql::prepare_with_external(&lowered, SqlDialect::DuckDb, &mapping.physical_table_names()).await.unwrap();
                 assert_existence(&prepared.query);
-                let result = sql::execute_prepared(&mut executor, &prepared).unwrap();
+                let result = sql::execute_prepared(&mut executor, &prepared).unwrap_or_else(|error| panic!("nofold={nofold}: {error}\n{}", prepared.query));
                 let rows = (0..result.batch.num_rows()).map(|row| result.batch.columns().iter()
                     .map(|column| arrow::util::display::array_value_to_string(column, row).unwrap())
                     .collect::<Vec<_>>().join("|")).collect::<Vec<_>>();

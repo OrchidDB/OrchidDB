@@ -32,11 +32,12 @@ struct PlainCte {
 }
 
 pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let repair_scopes = dialect.requires_scope_repair() || super::unparse::has_rdf_source(&plan);
+    let repair_scopes = dialect.requires_scope_repair() || super::unparse::requires_plan_scope_repair(&plan);
     let plan = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
         restore_quantifier_payload(plan)?
     } else { plan };
-    let (main, plain_ctes, recursive_ctes) = extract_ctes(plan, repair_scopes)?;
+    let (main, plain_ctes, mut recursive_ctes) = extract_ctes(plan, repair_scopes)?;
+    inline_recursive_dependencies(&plain_ctes,&mut recursive_ctes)?;
     let unparser_dialect = dialect.unparser_dialect();
     let unparser = Unparser::new(unparser_dialect.as_ref()).with_extension_unparsers(vec![Arc::new(super::lowering::RelationUnparser::new(dialect))]);
     let main_sql = unparse_one(&main, &unparser, dialect, repair_scopes)?;
@@ -194,6 +195,40 @@ fn restore_quantifier_payload(plan: LogicalPlan) -> datafusion::common::Result<L
         }
         Ok(Transformed::yes(LogicalPlanBuilder::from(joined).project(output)?.build()?))
     })?.data)
+}
+
+// A boundary inside a recursive term can read that term's working table.
+// Hoisting it outside creates R -> boundary -> R. Keep those dependent
+// relations inside R, while retaining independent shared CTEs outside it.
+fn inline_recursive_dependencies(plain:&[PlainCte], recursive:&mut [RecursiveCte])->SqlResult<()> {
+    let names=plain.iter().map(|cte|cte.name.clone()).chain(recursive.iter().map(|cte|cte.name.clone())).collect::<BTreeSet<_>>();
+    let dependencies=plain.iter().map(|cte|(cte.name.clone(),referenced_ctes(&cte.term,&names))).collect::<std::collections::BTreeMap<_,_>>();
+    fn expand(plan:LogicalPlan,dependent:&BTreeSet<String>,plain:&[PlainCte],stack:&mut BTreeSet<String>)->datafusion::common::Result<LogicalPlan> {
+        Ok(plan.transform_up_with_subqueries(|node| {
+            let LogicalPlan::TableScan(scan)=&node else {return Ok(Transformed::no(node));};
+            let name=scan.table_name.table();
+            if !dependent.contains(name) {return Ok(Transformed::no(node));}
+            let Some(cte)=plain.iter().find(|cte|cte.name==name) else {return Ok(Transformed::no(node));};
+            if !stack.insert(name.to_string()) {return Err(datafusion::common::DataFusionError::Plan("Cyclic non-recursive CTE definitions".into()));}
+            let input=expand(cte.term.clone(),dependent,plain,stack)?;
+            stack.remove(name);
+            let input=datafusion::logical_expr::LogicalPlanBuilder::from(input).alias(name)?.build()?;
+            Ok(Transformed::yes(input))
+        })?.data)
+    }
+    for cte in recursive {
+        let mut dependent=BTreeSet::from([cte.name.clone()]);
+        loop {
+            let before=dependent.len();
+            for (name,deps) in &dependencies {
+                if deps.iter().any(|dep|dependent.contains(dep)) {dependent.insert(name.clone());}
+            }
+            if dependent.len()==before {break;}
+        }
+        dependent.remove(&cte.name);
+        cte.recursive_term=expand(cte.recursive_term.clone(),&dependent,plain,&mut BTreeSet::new())?;
+    }
+    Ok(())
 }
 
 fn referenced_ctes(plan: &LogicalPlan, names: &BTreeSet<String>) -> BTreeSet<String> {

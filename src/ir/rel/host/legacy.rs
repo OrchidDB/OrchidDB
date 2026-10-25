@@ -10,7 +10,16 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub(crate) struct ConnectionHost<'a>(pub &'a Connection);
 #[derive(Debug)]
-pub(crate) struct ExecutorHost(pub Arc<Mutex<DuckDbExecutor>>);
+pub(crate) struct ExecutorHost(pub Arc<Mutex<DuckDbExecutor>>, Arc<Mutex<crate::ir::query_cost::EngineCost>>);
+impl ExecutorHost {
+    pub fn new(executor: Arc<Mutex<DuckDbExecutor>>) -> Self { Self(executor, Default::default()) }
+}
+impl ConnectionHost<'_> {
+    pub fn profile(&self, enabled: bool, cost: Arc<Mutex<crate::ir::query_cost::EngineCost>>, sql: &str)
+        -> Result<Option<crate::ir::rel::sql::duckdb_cost::Profile<'_>>, String> {
+        crate::ir::rel::sql::duckdb_cost::Profile::start(self.0, enabled, cost, sql)
+    }
+}
 pub(crate) fn register(connection: &Connection) -> Result<(), String> {
     let exists: i64 = connection
         .query_row(
@@ -96,20 +105,33 @@ impl HostRelational for ConnectionHost<'_> {
     }
 }
 impl HostRelational for ExecutorHost {
+    fn engine_cost(&self) -> crate::ir::query_cost::EngineCost { self.1.lock().unwrap().clone() }
     fn query(&self, request: HostRequest) -> Result<RecordBatch, String> {
         let mut executor = self.0.lock().map_err(|e| e.to_string())?;
-        ConnectionHost(executor.source_query_connection().map_err(|e| e.to_string())?).query(request)
+        let enabled = executor.cost_profiling_enabled();
+        let host = ConnectionHost(executor.source_query_connection().map_err(|e| e.to_string())?);
+        let profile = host.profile(enabled, self.1.clone(), &request.sql)?;
+        let result = host.query(request)?;
+        if let Some(profile) = profile { profile.finish(); }
+        Ok(result)
     }
     fn execute(&self, request: HostRequest) -> Result<(), String> {
         let mut executor = self.0.lock().map_err(|e| e.to_string())?;
-        ConnectionHost(executor.connection().map_err(|e| e.to_string())?).execute(request)
+        let enabled = executor.cost_profiling_enabled();
+        let host = ConnectionHost(executor.connection().map_err(|e| e.to_string())?);
+        let profile = host.profile(enabled, self.1.clone(), &request.sql)?;
+        host.execute(request)?;
+        if let Some(profile) = profile { profile.finish(); }
+        Ok(())
     }
     fn execute_plan(
         &self,
         mapping: &GraphMapping,
         plan: datafusion::logical_expr::LogicalPlan,
     ) -> Result<(RecordBatch, Vec<String>), String> {
-        execute_plan(self.0.clone(), mapping, plan)
+        let (batch, queries, cost) = execute_plan(self.0.clone(), mapping, plan)?;
+        self.1.lock().map_err(|e|e.to_string())?.merge(&cost);
+        Ok((batch, queries))
     }
     fn legacy_executor(&self) -> Option<Arc<Mutex<DuckDbExecutor>>> {
         Some(self.0.clone())
@@ -121,7 +143,7 @@ fn execute_plan(
     executor: Arc<std::sync::Mutex<crate::ir::rel::sql::DuckDbExecutor>>,
     mapping: &GraphMapping,
     plan: datafusion::logical_expr::LogicalPlan,
-) -> Result<(RecordBatch, Vec<String>), String> {
+) -> Result<(RecordBatch, Vec<String>, crate::ir::query_cost::EngineCost), String> {
     let external = mapping.physical_table_names();
     std::thread::scope(|scope| {
         scope
@@ -152,7 +174,9 @@ fn execute_plan(
                     )
                     .await
                     .map_err(|e| e.to_string())?;
-                    Ok((result.batch, stats.sql_queries))
+                    let mut cost = stats.cost.engine;
+                    cost.statements = stats.cost.sql_executions;
+                    Ok((result.batch, stats.sql_queries, cost))
                 })
             })
             .join()

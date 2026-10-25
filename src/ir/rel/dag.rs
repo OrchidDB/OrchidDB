@@ -852,7 +852,7 @@ impl ExecutionPlan for DuckDbExec {
             cost.lock()
                 .map_err(|_| DataFusionError::Execution("Query cost poisoned".into()))?
                 .sql_executions += 1;
-            Ok::<_, DataFusionError>(returned.map(move |batch| {
+            Ok::<_, DataFusionError>(returned.record_cost(cost.clone()).map(move |batch| {
                 let returned = batch.map_err(DataFusionError::Execution)?;
                 let mut cost = cost
                     .lock()

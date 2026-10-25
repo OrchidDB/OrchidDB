@@ -9,6 +9,7 @@ use datafusion::logical_expr::{
 use std::any::Any;
 
 mod elements;
+pub mod typed;
 mod rows;
 pub use rows::{decode_rows, result_batch, result_schema};
 pub(crate) use rows::{decode_boundary_rows, restore_traverser_state};
@@ -207,7 +208,7 @@ pub fn key(input: &serde_json::Value, cypher: bool) -> Result<String, String> {
 }
 
 pub(super) fn key_expr(value: Expr, cypher: bool) -> Expr {
-    function(KEY, DataType::Utf8, vec![value, lit(cypher)])
+    if cypher { typed::call("key", vec![value]) } else { function(KEY, DataType::Utf8, vec![value, lit(cypher)]) }
 }
 
 pub fn evaluate(
@@ -319,14 +320,7 @@ pub fn aggregate(
     Ok(context.wire(&value))
 }
 pub(super) fn predicate(expr: Expr) -> Expr {
-    function(
-        PREDICATE,
-        DataType::Boolean,
-        vec![
-            lit(r#"{"Binding":"value"}"#),
-            df_core::named_struct(vec![lit("value"), expr]),
-        ],
-    )
+    typed::call("boolean",vec![expr])
 }
 pub(super) fn list(expr: Expr) -> Expr {
     function(
@@ -346,6 +340,11 @@ pub(super) fn aggregate_expr(agg: &AggCall, arg: Expr, cypher: bool, ordinal: Op
     }
     if let Some(ordinal) = ordinal {
         collected = collected.order_by(vec![col_exact(ordinal).sort(true, false)]).build()?;
+    }
+    if cypher {
+        let operation=typed::AGGREGATES.iter().find(|(_,kind)|*kind==agg.kind)
+            .map(|(name,_)|*name).ok_or_else(||RelError::Unsupported("Unsupported typed Cypher aggregate".into()))?;
+        return Ok(typed::call(operation,vec![collected,lit(agg.distinct)]));
     }
     let mut spec = agg.clone();
     spec.arg = Some(if matches!(agg.kind, AggKind::PercentileCont | AggKind::PercentileDisc) {
@@ -422,11 +421,37 @@ pub fn sort(specification: &str, input: &serde_json::Value) -> Result<Vec<usize>
         .collect()
 }
 impl LoweringContext<'_> {
+    fn typed_cypher_sort(&mut self,input:LoweredNode,keys:&[SortKey])->RelResult<LoweredNode> {
+        use datafusion::functions_nested::expr_fn::{make_array,array_element};
+        let names=output_fields(&input.plan);
+        let rows=format!("__orchid_sort_rows_{}",self.scan_counter);
+        let order=format!("__orchid_sort_order_{}",self.scan_counter);
+        self.scan_counter+=1;
+        let packed=df_core::named_struct(names.iter().flat_map(|name|[lit(name.clone()),col_exact(name)]).collect());
+        let values=keys.iter().map(|key| {
+            let expr=match &key.expr {IrExpr::Call{name,args} if name=="cypher_order_key" && args.len()==1=>&args[0],expr=>expr};
+            self.lower_expr(&input.plan,expr).map(|value|typed::call("pack",vec![value]))
+        }).collect::<RelResult<Vec<_>>>()?;
+        let plan=LogicalPlanBuilder::from(input.plan.clone()).aggregate(Vec::<Expr>::new(),vec![
+            df_array_agg(packed).alias(&rows),df_array_agg(make_array(values)).alias(&order)])?.build()?;
+        let indices=typed::call("order_indices",vec![col_exact(&order),
+            make_array(keys.iter().map(|key|lit(matches!(key.dir,SortDir::Asc))).collect()),
+            make_array(keys.iter().map(|key|lit(matches!(key.nulls,NullsOrder::First))).collect())]);
+        let plan=LogicalPlanBuilder::from(plan).project(vec![col_exact(&rows),indices.alias(&order)])?.build()?;
+        let plan=collections::unnest_scope(plan,format!("__w_sql_cte_typed_sort_{}",self.scan_counter))?;
+        let plan=collections::unnest_input(plan)?;
+        let plan=LogicalPlanBuilder::from(plan).unnest_column(Column::new_unqualified(&order))?.build()?;
+        let plan=collections::unnest_scope(plan,format!("__w_sql_cte_typed_sorted_{}",self.scan_counter))?;
+        let row=array_element(col_exact(&rows),col_exact(&order));
+        let plan=LogicalPlanBuilder::from(plan).project(names.iter().map(|name|df_core::get_field(row.clone(),name.as_str()).alias(name)).collect::<Vec<_>>())?.build()?;
+        Ok(input.with_plan(plan))
+    }
     pub(super) fn native_sort(
         &mut self,
         input: LoweredNode,
         keys: &[SortKey],
     ) -> RelResult<LoweredNode> {
+        if self.language==Language::Cypher {return self.typed_cypher_sort(input,keys);}
         let names = output_fields(&input.plan);
         let mut packed = names.iter().flat_map(|name| [lit(name.clone()), col_exact(name)]).collect::<Vec<_>>();
         let mut scopes = Vec::new();
@@ -534,6 +559,46 @@ pub fn procedure(
     ))
 }
 impl LoweringContext<'_> {
+    fn typed_table_procedure(&mut self,input:LoweredNode,procedure:&crate::ir::procedures::TableProcedure,args:&[crate::ir::plan::ProcedureArg],yields:&[String])->RelResult<LoweredNode> {
+        if args.len()!=procedure.signature.inputs.len() {return Err(RelError::Unsupported("Invalid procedure arity".into()));}
+        let id=self.scan_counter;self.scan_counter+=1;
+        let mut columns=existing_columns(&input.plan,&BTreeSet::new());
+        let mut arguments=Vec::new();
+        for (i,(arg,field)) in args.iter().zip(&procedure.signature.inputs).enumerate() {
+            let name=format!("__orchid_procedure_arg_{id}_{i}");
+            let value=typed::call("validate_argument",vec![self.lower_expr(&input.plan,&arg.value)?,lit(field.type_name.clone()),lit(field.nullable)]);
+            columns.push(value.alias(&name));arguments.push(name);
+        }
+        let upstream=LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+        let upstream=collections::unnest_scope(upstream,format!("__w_sql_cte_procedure_args_{id}"))?;
+        if procedure.signature.outputs.is_empty() {
+            let mut upstream=upstream;
+            for (arg,field) in args.iter().zip(&procedure.signature.inputs) {
+                let valid=typed::call("argument_valid",vec![self.lower_expr(&input.plan,&arg.value)?,lit(field.type_name.clone()),lit(field.nullable)]);
+                upstream=LogicalPlanBuilder::from(upstream).filter(valid)?.build()?;
+            }
+            let plan=LogicalPlanBuilder::from(upstream).project(existing_columns(&input.plan,&BTreeSet::new()))?.build()?;
+            return Ok(input.with_plan(plan));
+        }
+        let width=procedure.signature.inputs.len()+procedure.signature.outputs.len();
+        let rows=if procedure.rows.is_empty() {vec![vec![Value::Null;width]]} else {procedure.rows.clone()};
+        let rows=rows.iter().map(|row|row.iter().map(literal).collect::<RelResult<Vec<_>>>()).collect::<RelResult<Vec<_>>>()?;
+        let table=LogicalPlanBuilder::values(rows)?.build()?;
+        let table=LogicalPlanBuilder::from(table.clone()).project(table.schema().fields().iter().enumerate().map(|(i,field)|col_exact(field.name()).alias(format!("__orchid_procedure_field_{id}_{i}"))).collect::<Vec<_>>())?.build()?;
+        let table=if procedure.rows.is_empty() {LogicalPlanBuilder::from(table).filter(lit(false))?.build()?} else {table};
+        let mut plan=LogicalPlanBuilder::from(upstream).cross_join(table)?.build()?;
+        for (i,name) in arguments.iter().enumerate() {
+            let a=col_exact(name);let b=col_exact(format!("__orchid_procedure_field_{id}_{i}"));
+            let equal=typed::call("cypher_eq",vec![a.clone(),b.clone()]).or(a.is_null().and(b.is_null()));
+            plan=LogicalPlanBuilder::from(plan).filter(equal)?.build()?;
+        }
+        let mut columns=existing_columns(&input.plan,&yields.iter().cloned().collect());
+        for name in yields {
+            let index=procedure.signature.outputs.iter().position(|field|&field.name==name).ok_or_else(||RelError::Unsupported("Unknown procedure output".into()))?+arguments.len();
+            columns.push(col_exact(format!("__orchid_procedure_field_{id}_{index}")).alias(name));
+        }
+        Ok(input.with_plan(LogicalPlanBuilder::from(plan).project(columns)?.build()?))
+    }
     pub(super) fn native_procedure(
         &mut self,
         name: &str,
@@ -548,6 +613,7 @@ impl LoweringContext<'_> {
             .ok_or_else(|| RelError::Unsupported(format!("Unregistered host procedure {name}")))?
             .clone();
         let input = self.lower_node(input.unwrap_or(&Node::GraphOneRow))?;
+        if self.language==Language::Cypher {return self.typed_table_procedure(input,&procedure,args,yields);}
         let mut packed = Vec::new();
         let mut call_args = Vec::new();
         for (i, arg) in args.iter().enumerate() {
@@ -799,6 +865,7 @@ impl LoweringContext<'_> {
     }
 
     pub(super) fn native_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if self.language == Language::Cypher { return typed::lower(self, plan, expr); }
         let packed = self.native_bindings(plan, expr)?;
         let boolean = matches!(expr,IrExpr::Call{name,..} if matches!(name.as_str(),"gremlin_compare"|"gremlin_within"|"regex_match"|"path_simple"|"path_cyclic"))
             || matches!(
@@ -856,7 +923,11 @@ impl ScalarUDFImpl for NativeFunction {
     fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
         Ok(self.result.clone())
     }
-    fn invoke_with_args(&self, _: ScalarFunctionArgs) -> datafusion::common::Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> datafusion::common::Result<ColumnarValue> {
+        if let Some(operation)=typed::operation(&self.name) {
+            let arrays=args.args.iter().map(|arg|arg.to_array(args.number_rows)).collect::<datafusion::common::Result<Vec<_>>>()?;
+            return typed::evaluate(operation,&arrays,args.number_rows).map(ColumnarValue::Array).map_err(DataFusionError::Execution);
+        }
         Err(DataFusionError::Execution(
             "Native value function requires the registered host implementation".into(),
         ))

@@ -735,6 +735,7 @@ pub struct PreparedGraphQuery {
 /// Immutable, thread-safe catalog bindings retained by physical host operators.
 /// Mutable PropertyGraph state and executable GraphIR are not retained here.
 pub struct PreparedGraphBindings {
+    pub load_insert_defaults: bool,
     pub managed_table: Option<String>,
     pub mapping: Arc<GraphMapping>,
     pub operators: Arc<dyn OperatorTable>,
@@ -743,6 +744,7 @@ pub struct PreparedGraphBindings {
 impl PreparedGraphQuery {
     pub fn bindings(&self) -> PreparedGraphBindings {
         PreparedGraphBindings {
+            load_insert_defaults: crate::ir::analysis::validate_read_only(&self.plan).is_err(),
             managed_table: self.managed_table.clone(),
             mapping: self.mapping.clone(),
             operators: self.operators.clone(),
@@ -760,7 +762,7 @@ impl PreparedGraphBindings {
                 Some(table) => {
                     crate::ir::rel::host::managed::ManagedStore::new(table).attach(host)?
                 }
-                None => crate::ir::rel::host::mapped_source::attach(host, self.mapping.clone())?,
+                None => crate::ir::rel::host::mapped_source::attach_with_insert_defaults(host, self.mapping.clone(), self.load_insert_defaults)?,
             };
             graph.procedures = self.procedures.clone();
             Ok(graph)

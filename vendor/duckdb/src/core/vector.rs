@@ -46,7 +46,7 @@ impl<'a> FlatVector<'a> {
         }
     }
 
-    fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
+    pub(crate) fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             ptr,
             capacity,

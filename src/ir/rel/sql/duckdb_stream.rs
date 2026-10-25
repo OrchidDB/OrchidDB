@@ -255,6 +255,8 @@ impl DuckDbSession {
         let mut pending = Pending(Some(cancel.clone()));
         let (schema_tx, schema_rx) = tokio::sync::oneshot::channel();
         let (tx, rx) = tokio::sync::mpsc::channel(2);
+        let engine_cost=Arc::new(Mutex::new(crate::ir::query_cost::EngineCost::default()));
+        let profile_cost=engine_cost.clone();
         let runtime = tokio::runtime::Handle::try_current().ok();
         std::thread::Builder::new()
             .name("orchid-duckdb-stream".into())
@@ -278,6 +280,7 @@ impl DuckDbSession {
                         );
                         executor.prepare_stream_setup(&prepared)?;
                         let timeout = executor.query_timeout();
+                        let profiling=executor.cost_profiling;
                         let conn = executor
                             .source_query_connection()
                             .map_err(|e| e.to_string())?;
@@ -319,17 +322,10 @@ impl DuckDbSession {
                         .map_err(|e| e.to_string())?;
                                 views.push(name);
                             }
-                            let mut shape = conn
-                                .prepare(&format!(
-                                    "SELECT * FROM ({}) AS __orchid_schema LIMIT 0",
-                                    prepared.query
-                                ))
-                                .map_err(|e| e.to_string())?;
-                            let physical = shape
-                                .query_arrow([])
-                                .map_err(|e| e.to_string())?
-                                .get_schema();
-                            drop(shape);
+                            let profile=super::duckdb_cost::Profile::start(conn,profiling,profile_cost,&prepared.query)?;
+                            let mut statement = conn.prepare(&prepared.query).map_err(|e|e.to_string())?;
+                            let mut reader = statement.stream_arrow_auto([]).map_err(|e|e.to_string())?;
+                            let physical = reader.get_schema();
                             let schema = expected.unwrap_or_else(|| physical.clone());
                             if schema.fields().len() != physical.fields().len() {
                                 return Err("DuckDB output column count mismatch".into());
@@ -337,11 +333,6 @@ impl DuckDbSession {
                             if schema_tx.take().unwrap().send(Ok(schema.clone())).is_err() {
                                 return Ok(());
                             }
-                            let mut statement =
-                                conn.prepare(&prepared.query).map_err(|e| e.to_string())?;
-                            let mut reader = statement
-                                .stream_arrow([], physical)
-                                .map_err(|e| e.to_string())?;
                             while let Some(batch) =
                                 reader.next_result().map_err(|e| e.to_string())?
                             {
@@ -365,6 +356,9 @@ impl DuckDbSession {
                                     return Ok(());
                                 }
                             }
+                            drop(reader);
+                            drop(statement);
+                            if let Some(profile)=&profile {profile.finish();}
                             if let Some(error) = error.lock().unwrap().take() {
                                 return Err(error);
                             }
@@ -396,13 +390,9 @@ impl DuckDbSession {
             .await
             .map_err(|_| "DuckDB worker stopped before publishing schema")??;
         pending.0 = None;
-        Ok(BatchStream::new(
-            schema,
-            Output {
-                rx,
-                cancel: cancellation,
-            },
-        ))
+        let mut stream=BatchStream::new(schema,Output{rx,cancel:cancellation});
+        stream.engine_cost=Some(engine_cost);
+        Ok(stream)
     }
 }
 #[async_trait::async_trait(?Send)]

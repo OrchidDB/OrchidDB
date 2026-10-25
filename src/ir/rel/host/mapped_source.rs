@@ -823,6 +823,7 @@ impl GraphSource for Source {
     fn access_decisions(&self) -> Vec<crate::ir::rel::statistics::OptimizerDecision> {
         self.cache.lock().unwrap().access_decisions.clone()
     }
+    fn engine_cost(&self) -> crate::ir::query_cost::EngineCost { self.host.engine_cost() }
     fn stats(&self) -> (usize, Vec<String>) {
         let cache = self.cache.lock().unwrap();
         (cache.rows, cache.queries.clone())
@@ -908,6 +909,9 @@ impl GraphSource for PartitionSources {
     fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision> {
         self.sources.iter().flat_map(|source|source.access_decisions()).collect()
     }
+    fn engine_cost(&self) -> crate::ir::query_cost::EngineCost {
+        self.sources.first().map(|s| s.engine_cost()).unwrap_or_default()
+    }
     fn stats(&self)->(usize,Vec<String>) {
         let mut total=(0,vec![]); for source in &self.sources {let (rows,queries)=source.stats();total.0+=rows;total.1.extend(queries);} total
     }
@@ -921,6 +925,13 @@ pub fn attach(
     host: Arc<dyn HostRelational + Send + Sync>,
     mapping: Arc<GraphMapping>,
 ) -> Result<PropertyGraph, String> {
+    attach_with_insert_defaults(host, mapping, true)
+}
+pub(crate) fn attach_with_insert_defaults(
+    host: Arc<dyn HostRelational + Send + Sync>,
+    mapping: Arc<GraphMapping>,
+    load_insert_defaults: bool,
+) -> Result<PropertyGraph, String> {
     let mut graph;
     let mut resolved = (*mapping).clone();
     // Runtime statements may write or observe a new snapshot. Only persistent
@@ -929,6 +940,7 @@ pub fn attach(
     resolved.set_constraint_scope(None);
     {
         let connection = host.as_ref();
+        let mut bound_tables = BTreeSet::new();
         // Bind schemas without reading source rows. Query mappings use their
         // explicitly registered dependencies.
         for name in mapping.labels() {
@@ -939,6 +951,7 @@ pub fn attach(
                 {
                     continue;
                 }
+                if !bound_tables.insert(t.clone()) { continue; }
                 resolved.register_table_schema(
                     t,
                     query(
@@ -958,6 +971,7 @@ pub fn attach(
                 {
                     continue;
                 }
+                if !bound_tables.insert(t.clone()) { continue; }
                 resolved.register_table_schema(
                     t,
                     query(
@@ -974,7 +988,7 @@ pub fn attach(
                 .set_statistics(snapshot.clone())
                 .map_err(|e| e.to_string())?;
         }
-        graph = mapped_storage::metadata(connection, Arc::new(resolved))?;
+        graph = mapped_storage::metadata_with_insert_defaults(connection, Arc::new(resolved), load_insert_defaults)?;
     }
     let operators = crate::ir::functions::selected_operator_table().map_err(|e| e.to_string())?;
     let mappings = graph.mapping.as_ref().unwrap().single_partition_mappings();

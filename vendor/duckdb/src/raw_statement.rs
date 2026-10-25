@@ -372,6 +372,31 @@ impl RawStatement {
         }
     }
 
+    /// Read the schema from the actual streaming result without binding or
+    /// executing a second query. Result options preserve timezone/nested types.
+    pub fn streaming_schema(&self) -> Result<SchemaRef> {
+        let mut result = self.duckdb_result.ok_or_else(|| Error::DuckDBFailure(
+            ffi::Error::new(ffi::DuckDBError), Some("No streaming result".into())))?;
+        unsafe {
+            let count = ffi::duckdb_column_count(&mut result);
+            let mut types = (0..count).map(|i| ffi::duckdb_column_logical_type(&mut result, i)).collect::<Vec<_>>();
+            let mut names = (0..count).map(|i| ffi::duckdb_column_name(&mut result, i)).collect::<Vec<_>>();
+            let mut options = ffi::duckdb_result_get_arrow_options(&mut result);
+            let mut schema = FFI_ArrowSchema::empty();
+            let mut error = ffi::duckdb_to_arrow_schema(options, types.as_mut_ptr(), names.as_mut_ptr(), count,
+                (&mut schema as *mut FFI_ArrowSchema).cast());
+            ffi::duckdb_destroy_arrow_options(&mut options);
+            for ty in &mut types { ffi::duckdb_destroy_logical_type(ty); }
+            if !error.is_null() {
+                let failed = ffi::duckdb_error_data_has_error(error);
+                let message = if failed { Some(CStr::from_ptr(ffi::duckdb_error_data_message(error)).to_string_lossy().into_owned()) } else { None };
+                ffi::duckdb_destroy_error_data(&mut error);
+                if let Some(message) = message { return Err(Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(message))); }
+            }
+            Schema::try_from(&schema).map(Arc::new).map_err(|e| Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(e.to_string())))
+        }
+    }
+
     #[inline]
     pub fn reset_result(&mut self) {
         self.schema = None;

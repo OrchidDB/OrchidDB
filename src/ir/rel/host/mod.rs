@@ -53,6 +53,7 @@ impl HostRequest {
     }
 }
 pub trait HostRelational: Debug {
+    fn engine_cost(&self) -> crate::ir::query_cost::EngineCost { Default::default() }
     /// Return a typed empty batch for empty results, retaining the bound schema.
     fn query(&self, request: HostRequest) -> Result<RecordBatch, String>;
     fn execute(&self, request: HostRequest) -> Result<(), String>;

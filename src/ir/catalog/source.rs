@@ -55,6 +55,7 @@ pub(crate) trait GraphSource: std::fmt::Debug + Send + Sync {
     fn access_decisions(&self) -> Vec<crate::ir::rel::statistics::OptimizerDecision> {
         Vec::new()
     }
+    fn engine_cost(&self) -> crate::ir::query_cost::EngineCost { Default::default() }
     fn stats(&self) -> (usize, Vec<String>);
     fn check(&self) -> Result<(), String>;
 }

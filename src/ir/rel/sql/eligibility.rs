@@ -105,7 +105,9 @@ impl SqlEligibility {
                         }
                         return Ok(TreeNodeRecursion::Continue);
                     }
-                    if crate::ir::rel::language_functions::supported(function.func.name())
+                    if super::super::collection_lambda::definition(&function.func).is_some()
+                        || super::super::native_values::typed::operation(function.func.name()).is_some()
+                        || crate::ir::rel::language_functions::supported(function.func.name())
                         || matches!(function.func.name(), super::super::native_values::VALUE | super::super::native_values::PREDICATE | super::super::native_values::ITEMS | super::super::native_values::KEY | super::super::native_values::PROJECT | super::super::native_values::SORT | super::super::native_values::AGGREGATE) {
                         if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb)
                         {

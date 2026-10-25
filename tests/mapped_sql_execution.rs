@@ -55,6 +55,8 @@ async fn selective_write_reads_only_affected_records() {
     assert_eq!(r.returned.batch.num_rows(), 1);
     assert!(r.stats.islands > 0, "{:?}", r.stats);
     assert!(r.stats.native_source_rows <= 2, "{:?}", r.stats);
+    assert!(r.stats.cost.write_engine.statements <= 3, "{:?}", r.stats);
+    assert!(r.stats.sql_queries.iter().any(|sql| sql.contains("people") && sql.contains("WHERE") && sql.contains("p42")), "{:?}", r.stats);
     let r = e
         .cypher("MATCH (p:Person {name:'changed'}) RETURN count(p)")
         .await
@@ -63,6 +65,20 @@ async fn selective_write_reads_only_affected_records() {
         arrow::util::display::array_value_to_string(r.returned.batch.column(0), 0).unwrap(),
         "1"
     );
+}
+#[tokio::test]
+async fn pushed_down_write_prefix_keeps_later_reads_live() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE people(id VARCHAR PRIMARY KEY, name VARCHAR); INSERT INTO people VALUES ('p42','old'),('p43','untouched')").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.map_node(NodeMapping::table("Person", "people", "id").property("id", "id").property("name", "name"));
+    let mut e = GraphEngine::mapped(db, Arc::new(mapping)).unwrap();
+    let r = e.cypher("MATCH (p:Person {id:'p42'}) SET p.name='changed' WITH p MATCH (q:Person {id:'p42'}) SET q.name=q.name+'!' RETURN q.name")
+        .await.unwrap();
+    assert_eq!(r.returned.batch.num_rows(), 1);
+    assert_eq!(arrow::util::display::array_value_to_string(r.returned.batch.column(0), 0).unwrap(), "changed!");
+    let persisted = e.cypher("MATCH (p:Person {id:'p42'}) RETURN p.name").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(persisted.returned.batch.column(0), 0).unwrap(), "changed!");
 }
 #[tokio::test]
 async fn native_repeat_fetches_only_reachable_frontier() {

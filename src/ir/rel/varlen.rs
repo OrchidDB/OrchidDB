@@ -33,8 +33,10 @@ impl LoweringContext<'_> {
         length: &crate::ir::plan::Length,
         history: Option<&str>,
     ) -> RelResult<LoweredNode> {
-        let mut input = self.lower_node(input)?;
+        let input = self.lower_node(input)?;
+        let mut input = self.bind_native_node(input, source)?;
         if target_mode == TargetMode::Existing {
+            input = self.bind_native_node(input, target)?;
             input = self.restrict_existing_target(input, target, target_labels)?;
         }
         if let Some(history) = history {

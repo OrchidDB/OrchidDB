@@ -71,6 +71,10 @@ pub trait VScalar: Sized {
     fn volatile() -> bool {
         false
     }
+
+    /// Invoke the callback for NULL arguments instead of propagating NULL.
+    /// The implementation must explicitly produce validity for every row.
+    fn special_null_handling() -> bool { false }
 }
 
 /// Duckdb scalar function parameters
@@ -172,6 +176,7 @@ impl Connection {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
+            if S::special_null_handling() { scalar_function.set_special_handling(); }
             if S::volatile() {
                 scalar_function.set_volatile();
             }
@@ -194,6 +199,7 @@ impl Connection {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
+            if S::special_null_handling() { scalar_function.set_special_handling(); }
             if S::volatile() {
                 scalar_function.set_volatile();
             }
