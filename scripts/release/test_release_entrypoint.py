@@ -42,11 +42,12 @@ if [ "${FAIL_BUILD:-}" = 1 ] && [ "$2" = build ]; then exit 42; fi''',
     def test_default_builds_and_packages_without_publishing(self):
         result, calls = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([line.split()[0] for line in calls], ['make', 'make', 'python', 'python'])
+        self.assertEqual([line.split()[0] for line in calls], ['make', 'make', 'python', 'python', 'python'])
         self.assertIn('release-prepare', calls[0])
         self.assertIn('release-env', calls[1])
         self.assertIn('release.py build --version 1.2.3', calls[2])
         self.assertIn('release.py package --version 1.2.3', calls[3])
+        self.assertIn('release.py verify --version 1.2.3', calls[4])
         self.assertIn('orchiddb-v1.2.3/abc123/upload/', result.stdout)
 
     def test_failed_build_stops_before_packaging(self):

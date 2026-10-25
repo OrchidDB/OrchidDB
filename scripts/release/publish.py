@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import hashlib
 import json
+import os
+from verify import verify
 from pathlib import Path
 import subprocess
 from urllib.parse import quote
@@ -26,7 +28,7 @@ def completed_assets(version, components=()):
         if any(not manifest.get('components', {}).get(name) for name in components):
             continue
         changed = run('git', 'diff', '--name-only', state['commit'], 'HEAD').splitlines()
-        if any(name not in ('Makefile', 'README.md', 'scripts/release/release.py', 'scripts/release/publish.py') for name in changed):
+        if any(name not in ('scripts/release/test_complete_release.py', 'scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'tools/diagnostics/release/js-smoke.mjs', 'tools/diagnostics/release/adapter.mjs', 'Makefile', 'README.md', 'scripts/release/release.py', 'scripts/release/publish.py') for name in changed):
             continue
         if all((ROOT / name).is_file() and hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == sha for name, sha in state['files'].items()):
             return receipt.parent / 'upload'
@@ -34,6 +36,7 @@ def completed_assets(version, components=()):
 
 
 def publish(assets, version):
+    verify(assets)
     manifest = json.loads((assets / 'release-manifest.json').read_text())
     if manifest['version'] != version:
         raise RuntimeError('Release version does not match the completed assets')
@@ -55,7 +58,7 @@ def publish(assets, version):
             raise RuntimeError('Tag already exists without a release; refusing to change it')
         notes = assets.parent / 'release-notes.md'
         notes.write_text('OrchidDB ' + version + '\n\nDuckDB extension and all language clients for macOS ARM64, Linux ARM64, and Linux x86-64.\n\nThe extension targets DuckDB 1.5.6.\n\nSource: ' + manifest['commit'] + '\n\nSee release-manifest.json and SHA256SUMS for asset details and checksums.\n')
-        payload = {'tag_name': tag, 'target_commitish': manifest['commit'], 'name': 'OrchidDB ' + version, 'body': notes.read_text(), 'draft': True}
+        payload = {'tag_name': tag, 'target_commitish': manifest['commit'], 'name': 'OrchidDB ' + version, 'body': Path(os.environ['RELEASE_NOTES']).read_text() if os.environ.get('RELEASE_NOTES') else notes.read_text(), 'draft': True}
         existing = json.loads(subprocess.check_output(
             ['gh', 'api', '--method', 'POST', 'repos/' + REPO + '/releases', '--input', '-'],
             input=json.dumps(payload), cwd=ROOT, text=True))

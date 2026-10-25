@@ -2033,12 +2033,12 @@ The script builds Linux AMD64, Linux ARM64, and Apple Silicon macOS artifacts
 locally. Rerun the same command to resume after a failure. It includes all eight
 language clients (Python, JavaScript/TypeScript, Java, Rust, C++, Go, Elixir, and
 the native C binding) and the DuckDB extension. It does not run the
-full test suite; run `make release-tools-test` to check the release tooling.
+full conformance suite. Before publication it verifies archive checksums, runs native ABI and real extension queries on all three platforms, checks the packaged runtime copies, and installs and exercises the Python wheel and JavaScript tarball. Successful checks are recorded against artifact hashes and reused on retry. Run `make release-tools-test` to check the release tooling.
 
 The version defaults to the root Cargo.toml. For a new version, run
 `./scripts/release-all.sh --version 0.4.1` (choose an unpublished version).
 From a clean checkout, Make updates the core
-and client manifests and lockfiles, commits the version change, prepares the
+and client manifests and lockfiles (including the standalone Rust examples and conformance runner), validates locked Cargo resolution, commits the version change, prepares the
 Python release environment, and runs the release pipeline. Existing uncommitted
 work is never included in an automatic release commit. With `--publish`, the
 command pushes main, creates the GitHub release, uploads every asset, and
@@ -2057,7 +2057,7 @@ per platform (three total), running concurrently by default (`RELEASE_JOBS=3`),
 building the extension, native library, and JNI library together in the shared
 workspace. Linux wrapper builds include a load and query check using the pinned
 DuckDB Python host in the compiler container. Full client and conformance suites
-are separate from the release build.
+are separate from the release build. Stale SASL objects containing sanitizer references are automatically moved into `target/release-cache-recovery/` with a checksum receipt before rebuilding; completed artifacts and unrelated caches are preserved.
 Rust release binaries are stripped of symbols. Java packaging uses runtime
 dependencies only and skips test compilation; the JavaScript release install
 excludes the test workspace and its database drivers.
@@ -2082,7 +2082,7 @@ Linux packages also bundle Cyrus SASL and Kerberos for cross-platform portabilit
 `./scripts/release-all.sh --publish` (or `make release`) uploads every file
 automatically. `make release-publish` retries
 only publication of completed assets, without rebuilding. Authenticate with
-`gh auth login` before publishing. The manifest maps each
+`gh auth login` before publishing. Set `RELEASE_NOTES=/absolute/path/notes.md` to supply release notes when creating a new draft. To validate completed packages without publishing, run `python3 scripts/release/release.py verify --version <version>`. Docker must be running for Linux checks. The manifest maps each
 client to its assets and records the source commit and checksums. The Rust client
 is under `clients/rust` in the source archive. Language package tools may install
 the downloaded assets or resolve third-party dependencies; this release process

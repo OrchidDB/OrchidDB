@@ -13,7 +13,7 @@ clients and DuckDB extension. Defaults to the version in Cargo.toml.
 --version  Prepare and commit a version bump from an otherwise clean checkout.
 
 Requires Python 3.11+, Rust/rustup, Zig, cargo-zigbuild, Java 21, Maven,
-Node 20+/npm, Go 1.23+, CMake, and Xcode command line tools.
+Node 20+/npm, Go 1.23+, CMake, Docker, and Xcode command line tools.
 Commit your changes before running. Completed builds are reused on retry.
 RELEASE_JOBS controls concurrent platforms (default 3); CARGO_BUILD_JOBS
 controls compiler jobs per platform (default 3).
@@ -43,6 +43,7 @@ if [[ -z "$version" ]]; then
   version=$("$PYTHON" -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
 fi
 export VERSION="$version"
+export CARGO_INCREMENTAL=0
 export RELEASE_PYTHON=${RELEASE_PYTHON:-"$ROOT/target/release-env/bin/python"}
 export RELEASE_JOBS=${RELEASE_JOBS:-3}
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-3}
@@ -61,4 +62,5 @@ elif [[ "$mode" == publish ]]; then
 fi
 "$PYTHON" scripts/release/release.py build --version "$version"
 "$PYTHON" scripts/release/release.py package --version "$version"
+"$PYTHON" scripts/release/release.py verify --version "$version"
 printf '\nRelease artifacts: %s/target/releases/orchiddb-v%s/%s/upload/\n' "$ROOT" "$version" "$(git rev-parse HEAD)"

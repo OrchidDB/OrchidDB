@@ -19,6 +19,8 @@ import zipfile
 
 import matrix
 from publish import completed_assets, publish
+from verify import verify
+from cache_recovery import recover
 from package_extension import package as package_extension
 from publish_extension import bundle as extension_bundle
 
@@ -153,7 +155,7 @@ class Release:
                 changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
                 # TypeScript changes cannot affect native binaries. Rebuild JS,
                 # but retain the completed platform builds and their provenance.
-                if any(name not in ('scripts/release/release.py', 'scripts/release/test_complete_release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') and not (name.startswith('clients/js/src/') and name.endswith('.ts')) for name in changed):
+                if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'tools/diagnostics/release/js-smoke.mjs', 'tools/diagnostics/release/adapter.mjs', 'scripts/release/release.py', 'scripts/release/test_complete_release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') and not (name.startswith('clients/js/src/') and name.endswith('.ts')) for name in changed):
                     continue
                 previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
                 if native_inputs(previous) != current_inputs or not state.get('files'):
@@ -199,7 +201,7 @@ class Release:
             if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or not state.get('files'):
                 continue
             changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-            if any(name not in ('scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
+            if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'tools/diagnostics/release/js-smoke.mjs', 'tools/diagnostics/release/adapter.mjs', 'scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
                 continue
             previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
             if build_method(previous) != current:
@@ -393,22 +395,26 @@ class Release:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=['check', 'build', 'package', 'publish', 'all'])
+    parser.add_argument('stage', choices=['check', 'build', 'package', 'verify', 'publish', 'all'])
     parser.add_argument('--version', required=True)
     args = parser.parse_args()
     release = Release(args.version)
-    if args.stage in ('all', 'publish'):
+    if args.stage in ('all', 'publish', 'verify'):
         assets = completed_assets(args.version, components=COMPONENTS)
         if assets:
-            publish(assets, args.version)
+            verify(assets)
+            if args.stage != 'verify': publish(assets, args.version)
             return
-        if args.stage == 'publish':
+        if args.stage in ('publish', 'verify'):
             raise RuntimeError('No completed matching release assets; run make release')
+    if args.stage in ('all', 'build'):
+        recover(ROOT)
     release.check()
     if args.stage != 'check':
         release.reuse_build()
     if args.stage == 'all':
         release.build(); release.package()
+        verify(release.assets)
         publish(release.assets, release.version)
     elif args.stage != 'check':
         getattr(release, args.stage)()

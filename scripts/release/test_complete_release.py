@@ -29,7 +29,7 @@ class CompleteReleaseTests(unittest.TestCase):
     def test_failure_stops_before_build_packaging_or_upload(self):
         instance = MagicMock()
         instance.build.side_effect = RuntimeError('build failed')
-        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
+        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'verify'), patch.object(release, 'recover'), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
             with self.assertRaisesRegex(RuntimeError, 'build failed'): release.main()
         instance.check.assert_called_once()
         instance.build.assert_called_once()
@@ -39,7 +39,7 @@ class CompleteReleaseTests(unittest.TestCase):
 
     def test_all_stages_run_in_order(self):
         instance = MagicMock()
-        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
+        with patch.object(release, 'Release', return_value=instance), patch.object(release, 'completed_assets', return_value=None), patch.object(release, 'verify'), patch.object(release, 'recover'), patch.object(release, 'publish') as publish, patch('sys.argv', ['release', 'all', '--version', '1.2.3']):
             release.main()
         self.assertEqual([call[0] for call in instance.mock_calls], ['check', 'reuse_build', 'build', 'package'])
         publish.assert_called_once_with(instance.assets, instance.version)

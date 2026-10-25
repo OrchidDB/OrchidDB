@@ -26,14 +26,16 @@ for name in manifests:
     updated = text.replace(old, version)
     if updated != text:
         path.write_text(updated)
-for name in ('Cargo.lock',):
+for name in ('Cargo.lock', 'clients/rust/examples/Cargo.lock', 'conformance/runner/Cargo.lock'):
     path = Path(name)
     text = path.read_text()
     updated = re.sub(r'(name = "orchiddb[^"\n]*"\nversion = ")[^"]+(")', lambda m: m[1] + version + m[2], text)
     if updated != text:
         path.write_text(updated)
+for manifest in ('Cargo.toml', 'clients/rust/examples/Cargo.toml', 'conformance/runner/Cargo.toml'):
+    subprocess.run(['cargo', 'metadata', '--locked', '--format-version', '1', '--manifest-path', manifest], check=True, stdout=subprocess.DEVNULL)
 if subprocess.check_output(['git', 'diff', '--name-only']):
-    subprocess.run(['git', 'add', '--', *manifests, 'Cargo.lock'], check=True)
+    subprocess.run(['git', 'add', '--', *manifests, 'Cargo.lock', 'clients/rust/examples/Cargo.lock', 'conformance/runner/Cargo.lock'], check=True)
     subprocess.run(['git', 'commit', '-m', 'Prepare ' + version + ' release [skip ci]'], check=True)
 endef
 export RELEASE_VERSION_SCRIPT
