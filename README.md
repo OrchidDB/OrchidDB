@@ -1701,8 +1701,9 @@ DuckDB for checkpoint storage, even when Trino executes its SQL regions.
 DuckDB library builds use a supplied `DUCKDB_LIB_DIR` or a system library. To
 download the library during a build, explicitly enable `duckdb-download` together
 with `DUCKDB_DOWNLOAD_LIB=1`. The downloader's HTTP/TLS and archive dependencies
-are absent from normal external-library builds; conformance and release build
-scripts opt in when they request downloads.
+are absent from normal external-library builds; the conformance build script
+opts in when it requests downloads. Release client libraries use caller-owned
+database sessions and do not embed the DuckDB adapter.
 `DuckDbSession` owns a supplied
 `DuckDbExecutor`; `TrinoSession` uses a caller-configured HTTP endpoint and exchange
 registry. Collection is reserved for terminal APIs that explicitly return all
