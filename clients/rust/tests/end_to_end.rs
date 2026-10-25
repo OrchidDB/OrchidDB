@@ -319,6 +319,11 @@ async fn invalid_dialect_and_protocol_never_reach_the_driver() {
     query.dialect = "postgres".into();
     assert!(matches!(
         execute(&mut session, &query).await,
+        Err(ExecutionError::UnsupportedEngine(_))
+    ));
+    query.dialect = "trino".into();
+    assert!(matches!(
+        execute(&mut session, &query).await,
         Err(ExecutionError::Dialect { .. })
     ));
     query.dialect = "duckdb".into();

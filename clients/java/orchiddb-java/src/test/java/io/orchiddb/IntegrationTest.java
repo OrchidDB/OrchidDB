@@ -327,7 +327,7 @@ class IntegrationTest {
   }
 
   @Test
-  void offlinePostgresAndUnsupportedDialect() {
+  void offlineTrinoAndUnsupportedEngines() {
     var schemas =
         Map.of(
             PEOPLE,
@@ -344,23 +344,26 @@ class IntegrationTest {
         compiler.compile(
             new Compilation(
                 "lake",
-                SqlDialect.POSTGRES,
+                SqlDialect.TRINO,
                 MAPPING,
                 schemas,
                 List.of(),
                 Query.cypher("MATCH (p:Person) RETURN p.name")));
     assertTrue(plan.sql().contains("people"));
-    assertThrows(
-        PlanningException.class,
-        () ->
-            compiler.compile(
-                new Compilation(
-                    "lake",
-                    new SqlDialect("clickhouse"),
-                    MAPPING,
-                    schemas,
-                    List.of(),
-                    Query.cypher("RETURN 1"))));
+    for (var unsupported : List.of("postgres", "starrocks", "clickhouse")) {
+      var error = assertThrows(
+          PlanningException.class,
+          () ->
+              compiler.compile(
+                  new Compilation(
+                      "lake",
+                      new SqlDialect(unsupported),
+                      MAPPING,
+                      schemas,
+                      List.of(),
+                      Query.cypher("RETURN 1"))));
+      assertTrue(error.getMessage().contains("unsupported executable engine"));
+    }
   }
 
   @Test

@@ -67,7 +67,7 @@ def location(version, commit, root=ROOT):
 def prerequisites():
     if (platform.system(), platform.machine()) != ('Darwin', 'arm64'):
         raise SystemExit('The complete local release requires a macOS ARM64 host')
-    for tool in ('cargo', 'rustup', 'cargo-zigbuild', 'zig'):
+    for tool in ('cargo', 'rustup', 'cargo-zigbuild', 'zig', 'docker'):
         if not shutil.which(tool, path=environment()['PATH']):
             raise SystemExit(f'Missing release tool: {tool}; see README release prerequisites')
 
@@ -96,6 +96,8 @@ def build_one(version, commit, target):
         cache = ROOT / 'target' / f'release-{target}'
         env = dict(environment(), CARGO_TARGET_DIR=str(cache), ORCHID_BUILD_DIR=str(build),
                    ORCHID_VENDOR_DIR=str(ROOT / 'extension/vendor'))
+        env['CFLAGS'] = env.get('CFLAGS', '') + ' -fno-sanitize=all'
+        env['CXXFLAGS'] = env.get('CXXFLAGS', '') + ' -fno-sanitize=all'
         # Homebrew cargo/rustc may shadow rustup and lack its cross-target std.
         rustc = subprocess.check_output(['rustup', 'which', 'rustc'], cwd=ROOT, text=True).strip()
         env['PATH'] = str(Path(rustc).parent) + os.pathsep + env['PATH']
@@ -104,7 +106,7 @@ def build_one(version, commit, target):
                 'extension/compiler/Cargo.toml', '--target', triple + '.2.28']
         run(rust, env)
         run([sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
-             '--skip-load-check', '--extension-version', version, '--duckdb-platform', target,
+             '--extension-version', version, '--duckdb-platform', target,
              '--rust-target', triple], env)
         # --skip-rust is only for the wrapper step: cargo-zigbuild just built
         # this target above as part of the same release build.

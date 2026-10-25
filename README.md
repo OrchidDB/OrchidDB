@@ -2050,11 +2050,14 @@ target/releases/orchiddb-v<version>/<commit>/upload/
 ```
 
 The pipeline builds and packages optimized artifacts for **macOS ARM64, Linux
-ARM64, and Linux x86-64** using Cargo and Zig locally. There is one Cargo build
+ARM64, and Linux x86-64** using Cargo and Zig locally. Linux C++ extension
+wrappers are compiled in matching manylinux 2.28 containers with `libstdc++`,
+matching the official DuckDB C++ ABI. There is one Cargo build
 per platform (three total), running concurrently by default (`RELEASE_JOBS=3`),
 building the extension, native library, and JNI library together in the shared
-workspace. Release runs no tests, conformance suites, smoke checks, or database
-containers.
+workspace. Linux wrapper builds include a load and query check using the pinned
+DuckDB Python host in the compiler container. Full client and conformance suites
+are separate from the release build.
 Rust release binaries are stripped of symbols. Java packaging uses runtime
 dependencies only and skips test compilation; the JavaScript release install
 excludes the test workspace and its database drivers.
@@ -2086,10 +2089,28 @@ the downloaded assets or resolve third-party dependencies; this release process
 requires no registry publishing accounts or credentials. Extension binaries are
 unsigned and require DuckDB's `allow_unsigned_extensions` setting.
 
+Linux C++ extension hosts must export DuckDB's C++ symbols. The stock Linux
+DuckDB 1.5.6 CLI does not expose those symbols and cannot load this extension;
+a CLI built with `EXPORT_DYNAMIC_SYMBOLS=ON` is required. Native language clients
+use their caller-owned database engines and do not require the extension.
+For a Python host, expose the already-loaded DuckDB module's symbols before
+loading the extension (this does not load a second database engine):
+
+```python
+import ctypes
+import _duckdb
+
+ctypes.CDLL(_duckdb.__file__, mode=ctypes.RTLD_GLOBAL)
+```
+
+The connection must also enable `allow_unsigned_extensions`. The extension and
+host must use the matching DuckDB version and C++ ABI.
+
 ### Prerequisites and retries
 
 Install Python 3.11+, Rust/rustup, Zig, cargo-zigbuild, Java 21, Maven, Node 20+,
-npm, Go 1.23+, CMake, and Xcode command line tools (C++17 compiler).
+npm, Go 1.23+, CMake, Docker with ARM64/x86-64 container support, and Xcode
+command line tools (C++17 compiler).
 Java 21 must be discoverable by `/usr/libexec/java_home -F -v 21`.
 The script prepares
 its Python packaging environment automatically under `target/release-env`.

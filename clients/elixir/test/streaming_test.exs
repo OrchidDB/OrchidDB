@@ -1,5 +1,6 @@
 defmodule OrchidDB.StreamingTest do
   use ExUnit.Case
+  @moduletag skip: is_nil(System.get_env("ORCHIDDB_STREAM_FIXTURE"))
   alias OrchidDB.StreamConnection, as: Stream
   @tag :streaming
   test "Kafka routes insertion and read checks through the application's SpiceDB client" do

@@ -267,7 +267,7 @@ class Release:
             env.update(CC='zig cc -target ' + zig_target, CXX='zig c++ -target ' + zig_target,
                        AR='zig ar', RANLIB='zig ranlib', HOST_CC='cc', HOST_CXX='c++',
                        HOST_AR='ar', HOST_RANLIB='ranlib', HOST_CFLAGS='',
-                       CFLAGS='-std=gnu17',
+                       CFLAGS='-std=gnu17 -fno-sanitize=all', CXXFLAGS='-fno-sanitize=all',
                        CPPFLAGS='', WARN_CFLAGS='-Wall', LDFLAGS='-Wl,--undefined-version',
                        krb5_cv_attr_constructor_destructor='yes', ac_cv_func_regcomp='yes',
                        ac_cv_printf_positional='yes', ac_cv_gssapi_supports_spnego='yes')
@@ -277,9 +277,11 @@ class Release:
         extension_build = matrix.location(self.version, self.commit) / target
         extension_env = dict(env, ORCHID_BUILD_DIR=str(extension_build))
         wrapper = [sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
-                   '--skip-load-check', '--extension-version', self.version, '--duckdb-platform', target]
+                   '--extension-version', self.version, '--duckdb-platform', target]
         if target != 'osx_arm64':
             wrapper += ['--rust-target', triple]
+        else:
+            wrapper += ['--skip-load-check']
         run(wrapper, env=extension_env)
         manifest = read(extension_build / 'build-manifest.json')
         manifest.update(reused_rust=False, rust_build=command)

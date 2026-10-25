@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-def verify(binaries, extension, version, commit):
+def verify(binaries, extension, version, commit, export_host_symbols=False):
     library = next(binaries.glob('liborchiddb_compiler.*'))
     native = ctypes.CDLL(str(library))
     native.orchiddb_abi_version.restype = ctypes.c_uint32
@@ -26,6 +26,10 @@ def verify(binaries, extension, version, commit):
         native.orchiddb_string_free(pointer)
     assert not hasattr(native, 'orchiddb_compile_json')
     import duckdb
+    if export_host_symbols:
+        # Promote the already loaded host; never inject a second DuckDB.
+        import _duckdb
+        ctypes.CDLL(_duckdb.__file__, mode=ctypes.RTLD_GLOBAL)
     with duckdb.connect(config={'allow_unsigned_extensions': 'true'}) as database:
         database.execute("LOAD '" + str(extension).replace("'", "''") + "'")
         database.execute('CALL orchid_register_schema(?, ?)', ['release', '{"tables":[]}'])
@@ -39,5 +43,6 @@ if __name__ == '__main__':
     parser.add_argument('--extension', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--export-host-symbols', action='store_true', help='Expose the existing Python DuckDB C++ symbols for Linux CPP extensions')
     args = parser.parse_args()
-    verify(args.binaries.resolve(), args.extension.resolve(), args.version, args.commit)
+    verify(args.binaries.resolve(), args.extension.resolve(), args.version, args.commit, args.export_host_symbols)

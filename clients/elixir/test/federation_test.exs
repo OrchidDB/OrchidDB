@@ -6,7 +6,7 @@ defmodule OrchidDBFederationTest do
       version: 1,
       dialect: "duckdb",
       execution_engine: "d",
-      engines: %{d: %{dialect: "duckdb"}, p: %{dialect: "postgres"}},
+      engines: %{d: %{dialect: "duckdb"}, p: %{dialect: "trino"}},
       language: "cypher",
       query: "MATCH (p:Person) WHERE p.age > 25 RETURN count(p) AS n",
       tables: [
@@ -23,7 +23,7 @@ defmodule OrchidDBFederationTest do
 
     engines = %{
       "p" => %{
-        dialect: "postgres",
+        dialect: "trino",
         query: fn sql, consume ->
           assert sql =~ "25"
           assert String.downcase(sql) =~ "count("
@@ -44,25 +44,21 @@ defmodule OrchidDBFederationTest do
     }
 
     assert_raise RuntimeError, "consumer failed", fn ->
-      OrchidDB.Internal.Runtime.query_federated(engines, request, fn :result_stream -> raise "consumer failed" end)
+      OrchidDB.Internal.Runtime.query_federated(engines, request, fn :result_stream ->
+        raise "consumer failed"
+      end)
     end
 
     assert_received :source
     assert_received :bound_query
   end
 
-  for {target, source} <- [{"duckdb", "postgres"}, {"postgres", "duckdb"}] do
-    @tag skip: is_nil(System.get_env("ORCHIDDB_TEST_PG_URI"))
+  for {target, source} <- [{"duckdb_a", "duckdb_b"}, {"duckdb_b", "duckdb_a"}] do
     test "ADBC streams cross engines without database objects into #{target}" do
       :ok = Adbc.download_driver(:duckdb)
-      :ok = Adbc.download_driver(:postgresql)
       {:ok, ddb} = Adbc.Database.start_link(driver: :duckdb)
 
-      {:ok, pdb} =
-        Adbc.Database.start_link(
-          driver: :postgresql,
-          uri: System.fetch_env!("ORCHIDDB_TEST_PG_URI")
-        )
+      {:ok, pdb} = Adbc.Database.start_link(driver: :duckdb)
 
       {:ok, d} = Adbc.Connection.start_link(database: ddb)
       {:ok, p} = Adbc.Connection.start_link(database: pdb)
@@ -80,10 +76,10 @@ defmodule OrchidDBFederationTest do
         end
 
         engines =
-          Map.new([{"duckdb", d}, {"postgres", p}], fn {dialect, conn} ->
-            {dialect,
+          Map.new([{"duckdb_a", d}, {"duckdb_b", p}], fn {engine_id, conn} ->
+            {engine_id,
              %{
-               dialect: dialect,
+               dialect: "duckdb",
                query: fn sql, callback ->
                  assert Regex.match?(~r/^\s*(SELECT|WITH)\b/i, sql)
                  Adbc.Connection.query_pointer(conn, sql, callback)
@@ -96,9 +92,9 @@ defmodule OrchidDBFederationTest do
 
         request =
           Map.merge(request, %{
-            dialect: unquote(target),
+            dialect: "duckdb",
             execution_engine: unquote(target),
-            engines: %{duckdb: %{dialect: "duckdb"}, postgres: %{dialect: "postgres"}},
+            engines: %{duckdb_a: %{dialect: "duckdb"}, duckdb_b: %{dialect: "duckdb"}},
             tables: Enum.map(request.tables, &Map.put(&1, :engine, unquote(source)))
           })
 
@@ -113,7 +109,9 @@ defmodule OrchidDBFederationTest do
                  OrchidDB.Internal.Runtime.query_federated(engines, request, consume)
 
         assert_raise RuntimeError, "consumer failed", fn ->
-          OrchidDB.Internal.Runtime.query_federated(engines, request, fn _ -> raise "consumer failed" end)
+          OrchidDB.Internal.Runtime.query_federated(engines, request, fn _ ->
+            raise "consumer failed"
+          end)
         end
 
         {:ok, _} =
@@ -123,12 +121,12 @@ defmodule OrchidDBFederationTest do
           Adbc.Connection.query(d, "INSERT INTO nested_values VALUES (1, [[1],[2,3],NULL,[]])")
 
         {:ok, _} =
-          Adbc.Connection.query(p, "CREATE TEMP TABLE nested_values(id BIGINT, items JSONB[])")
+          Adbc.Connection.query(p, "CREATE TEMP TABLE nested_values(id BIGINT, items BIGINT[][])")
 
         {:ok, _} =
           Adbc.Connection.query(
             p,
-            "INSERT INTO nested_values VALUES (1, ARRAY['[1]'::jsonb,'[2,3]'::jsonb,NULL,'[]'::jsonb])"
+            "INSERT INTO nested_values VALUES (1, [[1],[2,3],NULL,[]])"
           )
 
         nested = %{
@@ -153,13 +151,15 @@ defmodule OrchidDBFederationTest do
           Map.put(nested, :functions, [
             %{
               name: "ncount",
-              target: if(unquote(target) == "postgres", do: "cardinality", else: "len"),
+              target: "len",
               parameters: ["list:list:int64"],
               returns: "int64"
             }
           ])
 
-        assert {:ok, %{"n" => [4]}} = OrchidDB.Internal.Runtime.query_federated(engines, nested, consume)
+        assert {:ok, %{"n" => [4]}} =
+                 OrchidDB.Internal.Runtime.query_federated(engines, nested, consume)
+
         for conn <- [d, p], do: assert({:ok, _} = Adbc.Connection.query(conn, "SELECT 1"))
       after
         GenServer.stop(d)

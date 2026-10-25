@@ -21,6 +21,44 @@ SOURCE_SHA = "1fadcbe9e69e1470f9093b6bcde08daf477d729c449e59a807f45c346622099b"
 JSON_SHA = "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63"
 
 
+
+# Pin the C++ toolchain and its glibc baseline. Zig's libc++ cannot resolve
+# DuckDB's Linux libstdc++ C++11 symbols.
+LINUX_IMAGES = {
+    "arm64": "quay.io/pypa/manylinux_2_28_aarch64@sha256:743e05864cdd8dc63dbf568898abd7ff616d121440770fda36263294c6f711c6",
+    "amd64": "quay.io/pypa/manylinux_2_28_x86_64@sha256:e2808351a165aa85913d79f1f8457b4f6d74047b47fba07b5b9a5e6c0055a017",
+}
+
+
+def linux_container(arch, directories):
+    command = ["docker", "run", "--rm", "--platform", "linux/" + arch]
+    for directory in sorted({str(Path(path).resolve()) for path in directories}):
+        command += ["--volume", directory + ":" + directory]
+    return command + [LINUX_IMAGES[arch]]
+
+
+def linux_load_check(container, vendor, arch, extension):
+    # Use the caller's single DuckDB host, exposing its existing C++ symbols.
+    # Stock Linux CLIs built without EXPORT_DYNAMIC_SYMBOLS cannot load CPP
+    # extensions; loading a second DuckDB library would be incorrect.
+    python = "/opt/python/cp312-cp312/bin/python"
+    host = vendor / ("python-duckdb-" + arch)
+    if not (host / "duckdb").exists():
+        run([*container, python, "-m", "pip", "install", "--disable-pip-version-check",
+             "--target", host, "duckdb==" + VERSION.removeprefix("v")])
+    program = (
+        "import sys;sys.path.insert(0,sys.argv[1]);import ctypes,_duckdb,duckdb;"
+        "assert duckdb.__version__==sys.argv[3];"
+        "ctypes.CDLL(_duckdb.__file__,mode=ctypes.RTLD_GLOBAL);"
+        "db=duckdb.connect(config={'allow_unsigned_extensions':'true'});"
+        "db.execute(\"LOAD '\"+sys.argv[2].replace(\"'\",\"''\")+\"'\");"
+        "db.execute(\"CALL orchid_register_schema('release','{\\\"tables\\\":[]}')\");"
+        "assert db.execute(\"SELECT * FROM orchid_query('release','RETURN 42 AS answer')\").fetchall()==[(42,)];"
+        "print('Linux C++ host validation passed')"
+    )
+    run([*container, python, "-c", program, host, extension, VERSION.removeprefix("v")])
+
+
 def download(url, path, sha=None):
     if not path.exists():
         print(f"Downloading {url}", flush=True)
@@ -95,21 +133,17 @@ def main():
             + (["--target", args.rust_target] if args.rust_target else [])
             + (["--release"] if args.release else []), env=env)
     obj = build / "orchid_extension.o"
-    compiler = [os.environ.get("CXX", "c++")]
+    compiler = shlex.split(os.environ.get("CXX", "c++"))
+    container = None
     if system == 'linux':
-        rust_target = args.rust_target or {"linux_arm64": "aarch64-unknown-linux-gnu",
-                                          "linux_amd64": "x86_64-unknown-linux-gnu"}[target_platform]
-        target = rust_target.replace('-unknown-', '-') + '.2.28'
-        if host_system == 'linux' and host_arch == arch:
-            # Official Linux DuckDB uses libstdc++'s C++11 ABI. Use the host
-            # compiler when packaging in a matching Linux container; Zig's
-            # bundled libc++ produces incompatible DuckDB symbol names.
-            compiler = [os.environ.get('CXX', 'c++')]
-        else:
-            compiler = [os.environ.get('ZIG', 'zig'), 'c++', '-target', target]
+        container = linux_container(arch, [ROOT.parent, vendor, build, archive.parent])
+        compiler = [*container, "g++"]
+        target = args.rust_target or {"linux_arm64": "aarch64-unknown-linux-gnu",
+                                     "linux_amd64": "x86_64-unknown-linux-gnu"}[target_platform]
     else:
         target = None
     run([*compiler, "-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DDUCKDB_BUILD_LOADABLE_EXTENSION",
+         *(["-DNDEBUG"] if args.release else []),
          *shlex.split(os.environ.get("CXXFLAGS", "")),
          "-I" + str(source / "src/include"), "-I" + str(vendor), "-c", ROOT / "src/orchid_extension.cpp", "-o", obj])
     binary = build / "orchid.unfooted"
@@ -117,12 +151,12 @@ def main():
     if system == "osx":
         link += ["-dynamiclib", "-undefined", "dynamic_lookup", "-Wl,-exported_symbol,_orchid_duckdb_cpp_init"]
     else:
-        link += ["-shared"]
+        link += ["-shared", "-static-libstdc++", "-static-libgcc"]
     link += [obj, archive, "-o", binary]
     if system == "osx":
         link += ["-framework", "Security", "-framework", "CoreFoundation", "-liconv", "-lresolv"]
     else:
-        link += ["-ldl", "-lpthread", "-lm"]
+        link += ["-ldl", "-lpthread", "-lm", "-lresolv"]
     run(link)
     duck_platform = target_platform if target is not None else subprocess.check_output(
         [cli, "-csv", "-noheader", "-c", "PRAGMA platform"], text=True).strip()
@@ -135,16 +169,18 @@ def main():
     pending.write_bytes(binary.read_bytes() + b"\0\x93\x04\x10duckdb_signature\x80\x04" + metadata)
     pending.replace(extension)
     if not args.skip_load_check:
-        if cli is None:
-            parser.error("Linux cross builds require --skip-load-check")
-        run([cli, "-unsigned", "-c", f"LOAD '{extension}'; SELECT 'Orchid extension loaded' AS status;"])
+        if container is not None:
+            linux_load_check(container, vendor, arch, extension)
+        else:
+            run([cli, "-unsigned", "-c", f"LOAD '{extension}'; SELECT 'Orchid extension loaded' AS status;"])
     # Record the source at build time, rather than relabeling old binaries with
     # the checkout revision when they are packaged later.
     if source_state() != source_revision:
         source_revision["working_tree_modified"] = True
     receipt = dict(source_revision, sha256=hashlib.sha256(extension.read_bytes()).hexdigest(),
                    profile=profile, reused_rust=args.skip_rust, platform=duck_platform,
-                   extension_version=args.extension_version, duckdb_version=VERSION)
+                   extension_version=args.extension_version, duckdb_version=VERSION,
+                   cpp_compiler=compiler, linux_host_validation=(container is not None and not args.skip_load_check))
     (build / "build-manifest.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"\nBuilt {extension}\nCLI: {cli}")
 
