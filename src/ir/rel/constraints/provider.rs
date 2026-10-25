@@ -1,14 +1,12 @@
 use super::*;
 use arrow::datatypes::SchemaRef;
 use datafusion::{
-    catalog::{Session, TableProvider},
-    common::{Constraints, Result, Statistics},
+    catalog::TableProvider,
+    common::{Constraints, Result},
     logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableType},
-    physical_plan::ExecutionPlan,
 };
 use std::{any::Any, borrow::Cow, sync::Arc};
 
-#[derive(Debug)]
 pub(crate) struct ConstrainedProvider {
     pub inner: Arc<dyn TableProvider>,
     pub table: String,
@@ -58,7 +56,6 @@ pub(crate) fn bind(
         constraints: Constraints::new_unverified(constraints),
     }))
 }
-#[async_trait::async_trait]
 impl TableProvider for ConstrainedProvider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -78,9 +75,6 @@ impl TableProvider for ConstrainedProvider {
         // own row domain and delegate execution to the wrapped provider.
         None
     }
-    fn get_table_definition(&self) -> Option<&str> {
-        self.inner.get_table_definition()
-    }
     fn get_column_default(&self, column: &str) -> Option<&Expr> {
         self.inner.get_column_default(column)
     }
@@ -90,16 +84,10 @@ impl TableProvider for ConstrainedProvider {
     ) -> Result<Vec<TableProviderFilterPushDown>> {
         self.inner.supports_filters_pushdown(filters)
     }
-    fn statistics(&self) -> Option<Statistics> {
-        self.inner.statistics()
-    }
-    async fn scan(
-        &self,
-        state: &dyn Session,
-        projection: Option<&Vec<usize>>,
-        filters: &[Expr],
-        limit: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        self.inner.scan(state, projection, filters, limit).await
+}
+
+impl std::fmt::Debug for ConstrainedProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConstrainedProvider").field("schema", &self.schema()).finish_non_exhaustive()
     }
 }

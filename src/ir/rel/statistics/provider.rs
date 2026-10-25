@@ -1,13 +1,11 @@
 use super::*;
 use arrow::datatypes::SchemaRef;
 use datafusion::{
-    catalog::{Session, TableProvider},
+    catalog::TableProvider,
     common::{Result, Statistics, stats::Precision},
     logical_expr::{Expr, TableProviderFilterPushDown, TableType},
-    physical_plan::ExecutionPlan,
 };
 use std::{any::Any, sync::Arc};
-#[derive(Debug)]
 pub struct StatisticsProvider {
     pub inner: Arc<dyn TableProvider>,
     pub source: SourceRef,
@@ -49,7 +47,6 @@ pub fn statistics_provider(p: &Arc<dyn TableProvider>) -> Option<&StatisticsProv
     }
     None
 }
-#[async_trait::async_trait]
 impl TableProvider for StatisticsProvider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -66,7 +63,10 @@ impl TableProvider for StatisticsProvider {
     ) -> Result<Vec<TableProviderFilterPushDown>> {
         Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
     }
-    fn statistics(&self) -> Option<Statistics> {
+}
+
+impl StatisticsProvider {
+    pub fn statistics(&self) -> Option<Statistics> {
         let mut s = Statistics::new_unknown(self.schema().as_ref());
         s.num_rows = self
             .source
@@ -93,15 +93,10 @@ impl TableProvider for StatisticsProvider {
         }
         Some(s)
     }
-    async fn scan(
-        &self,
-        state: &dyn Session,
-        projection: Option<&Vec<usize>>,
-        _filters: &[Expr],
-        _limit: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        // Cost hints are not a claim that the inner source enforces predicates.
-        // Residual filters remain in the plan. A pushed limit could precede them.
-        self.inner.scan(state, projection, &[], None).await
+}
+
+impl std::fmt::Debug for StatisticsProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StatisticsProvider").field("schema", &self.schema()).finish_non_exhaustive()
     }
 }

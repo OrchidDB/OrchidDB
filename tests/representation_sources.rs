@@ -1,3 +1,5 @@
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use orchiddb::compiler::compile_json;
 use serde_json::{Value, json};
 fn stats(table: &str, column: &str, partitions: Vec<(&str, &str, u64)>) -> Value {
@@ -333,12 +335,13 @@ async fn catalog_round_trip_rebinding_and_dependency_cycles() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn in_process_preserves_duplicates_nulls_and_column_order() {
     use arrow::{
         array::{Int64Array, RecordBatch, StringArray},
         datatypes::{DataType, Field, Schema},
     };
-    use datafusion::{datasource::MemTable, prelude::SessionContext};
+    use datafusion::datasource::MemTable;
     use orchiddb::ir::rel::{mapping::GraphMapping, representation::select};
     use std::sync::Arc;
     let mut m = GraphMapping::new();
@@ -373,13 +376,7 @@ async fn in_process_preserves_duplicates_nulls_and_column_order() {
         selected.representation_selections[0].representation,
         "reordered"
     );
-    let batches = SessionContext::new()
-        .execute_logical_plan(selected.plan)
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap();
+    let batches = compiler_fixture::execute(selected.plan).await;
     assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 3);
     assert_eq!(
         batches

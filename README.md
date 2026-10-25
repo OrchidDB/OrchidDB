@@ -1631,6 +1631,16 @@ projections, and aggregates. Orchid schedules SQL islands and explicit graph
 boundaries; it does not construct DataFusion physical query plans or run its
 execution environment. Unsupported relational lowering fails explicitly.
 
+The Rust dependency graph uses DataFusion's logical expression, analyzer,
+optimizer, and SQL components directly through an internal compiler module.
+It excludes the DataFusion executable session, physical query plan and optimizer,
+catalog services, and file readers. The remaining `datafusion-physical-expr`
+dependency supports scalar expression analysis and constant folding; it does not
+provide relational query execution. Scalar implementations used by folding and
+the SQL compatibility helpers remain available. Small documented vendor patches
+make the function libraries import their registry trait from the expression
+crate instead of pulling in the execution environment.
+
 Engine adapters consume and return schema-known Arrow batch streams. DuckDB
 pulls typed input relations with bounded output buffering. Trino reads authenticated
 Arrow IPC exchanges through the Orchid connector and streams result pages.
@@ -1688,6 +1698,11 @@ Rust integrations use `execution::stream::{BatchStream, BatchSource, InputRelati
 and `federation::Session::query_stream`. A Trino-only transport/compiler build uses
 `--no-default-features --features trino`. The durable `GraphEngine` still uses
 DuckDB for checkpoint storage, even when Trino executes its SQL regions.
+DuckDB library builds use a supplied `DUCKDB_LIB_DIR` or a system library. To
+download the library during a build, explicitly enable `duckdb-download` together
+with `DUCKDB_DOWNLOAD_LIB=1`. The downloader's HTTP/TLS and archive dependencies
+are absent from normal external-library builds; conformance and release build
+scripts opt in when they request downloads.
 `DuckDbSession` owns a supplied
 `DuckDbExecutor`; `TrinoSession` uses a caller-configured HTTP endpoint and exchange
 registry. Collection is reserved for terminal APIs that explicitly return all
@@ -1981,6 +1996,20 @@ per-query SQL budget (default 8 seconds), and
 (default 40 seconds). `ORCHIDDB_JVM_TIMEOUT_SECONDS` adjusts the JVM boundary
 budget (default 30 seconds; a positive integer), which is independent of SQL.
 Longer budgets do not change assertions or capability checks.
+To inspect the active normal/build dependency closure independently of accumulated
+Cargo caches, run:
+
+```sh
+python3 tools/diagnostics/dependency_scope.py \
+  target/diagnostics/dependency-scope.json --assert-compiler-only
+```
+
+The check rejects
+reintroduction of DataFusion execution dependencies. Use `--compare` with a prior
+report and `--artifact`/`--archive` to record comparable build sizes. Registry
+archive totals count vendored packages at their original upstream size, so moving
+source into this repository is not reported as a dependency reduction. Counts
+depend on the target platform and enabled features.
 Fully lowered means one SQL region, no residual operators, and no native source
 fetches or runtime write operations. Historical reports, syntax checks, and requests without execution
 statistics remain explicitly unclassified. `compact_report.py` preserves the

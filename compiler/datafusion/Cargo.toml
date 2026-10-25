@@ -1,0 +1,19 @@
+[package]
+name = "orchid-datafusion-compiler"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Internal DataFusion logical compiler components and non-executable table metadata"
+
+[dependencies]
+arrow = { version = "58.2.0", default-features = false }
+tokio = { version = "1", features = ["sync"] }
+datafusion-common = { version = "=53.1.0", default-features = false, features = ["sql", "recursive_protection"] }
+datafusion-expr = { version = "=53.1.0", default-features = false, features = ["sql", "recursive_protection"] }
+datafusion-optimizer = { version = "=53.1.0", features = ["recursive_protection"] }
+datafusion-sql = { path = "../../vendor/datafusion-sql", version = "=53.1.0", features = ["recursive_protection"] }
+datafusion-functions = { path = "../../vendor/datafusion-functions", version = "=53.1.0", default-features = false, features = ["crypto_expressions", "datetime_expressions", "encoding_expressions", "math_expressions", "regex_expressions", "string_expressions", "unicode_expressions"] }
+datafusion-functions-aggregate = { path = "../../vendor/datafusion-functions-aggregate", version = "=53.1.0" }
+datafusion-functions-nested = { path = "../../vendor/datafusion-functions-nested", version = "=53.1.0" }
+datafusion-functions-window = "=53.1.0"

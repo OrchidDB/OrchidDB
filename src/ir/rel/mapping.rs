@@ -698,7 +698,7 @@ impl GraphMapping {
                 .map_err(|e| DataFusionError::Plan(e.to_string()))?;
             Arc::new(ViewTable::new(source.plan(parent, self).map_err(|e| DataFusionError::Plan(e.to_string()))?, None)) as Arc<dyn TableProvider>
         } else if p.get_logical_plan().is_some() {
-            if let Some(sql) = p.get_table_definition() {
+            if let Some(sql) = p.as_any().downcast_ref::<ViewTable>().and_then(ViewTable::definition) {
                 Arc::new(ViewTable::new(
                     self.plan_sql(sql)
                         .map_err(|e| DataFusionError::Plan(e.to_string()))?,
@@ -1257,7 +1257,7 @@ impl GraphMapping {
         })?.data)
     }
     /// Parse a SQL `SELECT` against the registered tables using datafusion-sql.
-    fn plan_sql(&self, sql: &str) -> RelResult<LogicalPlan> {
+    pub(super) fn plan_sql(&self, sql: &str) -> RelResult<LogicalPlan> {
         Ok(self.plan_sql_with_dependencies(sql)?.0)
     }
     fn plan_sql_with_dependencies(&self, sql: &str) -> RelResult<(LogicalPlan, BTreeSet<String>)> {
@@ -1279,7 +1279,7 @@ impl GraphMapping {
     }
 }
 
-/// Register a schema-only table (an empty `MemTable`). Useful when the data
+/// Register compiler-only table metadata. Useful when the data
 /// lives solely in an external database and only SQL generation is needed.
 pub fn schema_only_provider(schema: arrow::datatypes::SchemaRef) -> Arc<dyn TableProvider> {
     Arc::new(MemTable::try_new(schema, vec![Vec::new()]).expect("empty memtable"))
@@ -1762,6 +1762,7 @@ struct MappingContextProvider<'a> {
     mapping: &'a GraphMapping,
     requested: std::cell::RefCell<BTreeSet<String>>,
     options: ConfigOptions,
+    expr_planners: Vec<Arc<dyn datafusion::logical_expr::planner::ExprPlanner>>,
 }
 
 impl<'a> MappingContextProvider<'a> {
@@ -1770,11 +1771,21 @@ impl<'a> MappingContextProvider<'a> {
             mapping,
             requested: Default::default(),
             options: ConfigOptions::default(),
+            expr_planners: vec![
+                Arc::new(datafusion::functions::core::planner::CoreFunctionPlanner::default()),
+                Arc::new(datafusion::functions_nested::planner::NestedFunctionPlanner),
+                Arc::new(datafusion::functions_nested::planner::FieldAccessPlanner),
+                Arc::new(datafusion::functions::datetime::planner::DatetimeFunctionPlanner),
+                Arc::new(datafusion::functions::unicode::planner::UnicodeFunctionPlanner),
+                Arc::new(datafusion::functions_aggregate::planner::AggregateFunctionPlanner),
+                Arc::new(datafusion::functions_window::planner::WindowFunctionPlanner),
+            ],
         }
     }
 }
 
 impl ContextProvider for MappingContextProvider<'_> {
+    fn get_expr_planners(&self) -> &[Arc<dyn datafusion::logical_expr::planner::ExprPlanner>] { &self.expr_planners }
     fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
         let qualified = name.to_string();
         let table = if self.mapping.tables.contains_key(&qualified) {

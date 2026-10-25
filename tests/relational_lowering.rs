@@ -1,9 +1,12 @@
 //! General relational execution and table functions are independent of search.
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use arrow::{
     array::{Int32Array, Int64Array, RecordBatch},
     datatypes::{DataType, Field, Schema, SchemaRef},
 };
-use datafusion::{common::DFSchema, prelude::SessionContext};
+use datafusion::common::DFSchema;
+use compiler_fixture::CompilerFixture;
 use orchiddb::ir::{
     QueryCost,
     rel::{
@@ -58,7 +61,7 @@ async fn run(
     Vec<String>,
     QueryCost,
 ) {
-    let ctx = SessionContext::new();
+    let ctx = CompilerFixture::new();
     let input = RecordBatch::try_new(
         Arc::new(Schema::new(vec![Field::new(
             "input",
@@ -345,7 +348,7 @@ async fn optimizer_keeps_generated_row_filters_above_table_functions() {
         .unwrap()
         .build()
         .unwrap();
-    let optimized = SessionContext::new().state().optimize(&plan).unwrap();
+    let optimized = CompilerFixture::new().state().optimize(&plan).unwrap();
     let LogicalPlan::Filter(filter) = optimized else {
         panic!("row filter must remain above function: {optimized}");
     };

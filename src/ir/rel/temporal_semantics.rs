@@ -159,7 +159,6 @@ impl Snapshot {
         }
     }
 }
-#[async_trait::async_trait]
 impl datafusion::catalog::TableProvider for Snapshot {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -172,15 +171,6 @@ impl datafusion::catalog::TableProvider for Snapshot {
     }
     fn table_type(&self) -> datafusion::logical_expr::TableType {
         self.inner.table_type()
-    }
-    async fn scan(
-        &self,
-        state: &dyn datafusion::catalog::Session,
-        projection: Option<&Vec<usize>>,
-        filters: &[Expr],
-        limit: Option<usize>,
-    ) -> datafusion::common::Result<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
-        self.inner.scan(state, projection, filters, limit).await
     }
 }
 

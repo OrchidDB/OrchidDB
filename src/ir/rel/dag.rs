@@ -17,7 +17,6 @@ use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
 use datafusion::common::{DFSchemaRef, Result};
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::logical_expr::{Expr, Extension, UserDefinedLogicalNodeCore};
-use datafusion::prelude::{SessionConfig, SessionContext};
 use futures::stream;
 
 mod exchange;
@@ -65,7 +64,7 @@ pub struct DagStats {
 /// graph snapshots are rebuilt for every query.
 pub(crate) struct DagSession {
     rule_template: crate::ir::rules::RuleContext,
-    session: SessionContext,
+    session: super::optimizer::CompilerSession,
     #[cfg(feature = "duckdb")]
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
     external: std::collections::BTreeSet<String>,
@@ -128,27 +127,15 @@ impl DagSession {
         }
     }
     pub(crate) fn new(_timeout: Option<std::time::Duration>) -> Self {
-        let session = super::optimizer::session(SessionConfig::new().with_target_partitions(1));
-        // Removing the last constant grouping key changes empty-input
-        // semantics: a grouped aggregate has zero rows, a global one has one.
-        let rules = session
-            .state()
-            .optimizers()
-            .iter()
-            .filter(|rule| rule.name() != "eliminate_group_by_constant")
-            .cloned()
-            .collect();
-        let state = datafusion::execution::session_state::SessionStateBuilder::new_from_existing(
-            session.state(),
-        )
-        .with_optimizer_rules(rules)
-        .build();
+        // A grouped empty input must not become a global aggregate when the
+        // final constant grouping key is eliminated.
+        let session = super::optimizer::session().without_rule("eliminate_group_by_constant");
         Self {
             rule_template: Default::default(),
             external: Default::default(),
             optimize: true,
             region_session: None,
-            session: SessionContext::new_with_state(state),
+            session,
             #[cfg(feature = "duckdb")]
             executor: Arc::new(Mutex::new(
                 _timeout
@@ -165,7 +152,7 @@ impl DagSession {
     ) -> Self {
         Self {
             rule_template: Default::default(),
-            session: super::optimizer::session(SessionConfig::new().with_target_partitions(1)),
+            session: super::optimizer::session(),
             executor,
             external,
             optimize: false,
@@ -916,14 +903,14 @@ pub(crate) async fn prepare_with_extensions(
     // Optimize while relational scans and expressions remain visible, before
     // DuckDB placement turns each region into an opaque physical source.
     // One state snapshot per query keeps execution time and function metadata
-    // consistent across logical and physical planning without repeated clones.
+    // consistent across compiler passes without any executable environment.
     let query_state = session.state();
     let (initial, mut proofs) = super::pipeline::relational(logical.clone(), rule_context, false)?;
     let optimized = if resources.optimize {
         query_state.optimize(&initial)?
     } else {
         // Mapped SQL placement skips optional optimizer rewrites, but residual
-        // DataFusion operators still require type coercion and function analysis.
+        // logical operators still require type coercion and function analysis.
         query_state.analyzer().execute_and_check(
             initial,
             query_state.config_options(),

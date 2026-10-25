@@ -1,5 +1,7 @@
 //! Semantic and physical-shape checks for the advanced SQL rule batch.
 #![cfg(feature = "duckdb")]
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use orchiddb::ir::plan::{DistinctBulk, DistinctMode, LabelExpr, Node};
 use orchiddb::ir::policy::GraphPlanPolicy;
 use orchiddb::ir::rel::{
@@ -27,8 +29,7 @@ async fn run(query: &str) -> (Vec<Vec<String>>, String) {
         .plan(&parse_query(query).unwrap())
         .unwrap();
     let mut lowered = RelBackend::new().lower(&plan, &graph()).unwrap();
-    lowered.plan = datafusion::prelude::SessionContext::new()
-        .state().optimize(&lowered.plan).unwrap();
+    lowered.plan = compiler_fixture::optimize(&lowered.plan).unwrap();
     let explain = lowered.plan.display_indent().to_string();
     let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered)
         .await

@@ -1,8 +1,10 @@
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use arrow::{
     array::{Float64Array, Int64Array, RecordBatch, StringArray},
     datatypes::{DataType, Field, Schema},
 };
-use datafusion::{datasource::MemTable, prelude::SessionContext};
+use datafusion::datasource::MemTable;
 use orchiddb::ir::rel::{
     constraints::{Constraint, ConstraintCatalog, Evidence, Fact, analyze, optimize},
     mapping::GraphMapping,
@@ -88,14 +90,9 @@ fn fixture(evidence: Evidence) -> GraphMapping {
     mapping.set_constraints(catalog);
     mapping
 }
+#[cfg(feature = "duckdb")]
 async fn rows(plan: datafusion::logical_expr::LogicalPlan) -> Vec<Vec<String>> {
-    let batches = SessionContext::new()
-        .execute_logical_plan(plan)
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap();
+    let batches = compiler_fixture::execute(plan).await;
     let mut rows = Vec::new();
     for b in batches {
         for r in 0..b.num_rows() {
@@ -111,6 +108,7 @@ async fn rows(plan: datafusion::logical_expr::LogicalPlan) -> Vec<Vec<String>> {
     rows
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn benefiting_queries_preserve_results_and_have_proofs() {
     let m = fixture(Evidence::Enforced);
     for (sql, rule) in [
@@ -182,6 +180,7 @@ async fn declarations_estimates_and_expired_scopes_do_not_authorize_rewrites() {
     );
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn fanout_filtered_targets_and_payload_distinct_are_retained() {
     let m = fixture(Evidence::Enforced);
     for sql in [
@@ -289,6 +288,7 @@ fn duckdb_extraction_and_snapshot_validation() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn nullable_unique_and_functional_dependency_do_not_prove_row_uniqueness() {
     let mut m = GraphMapping::new();
     let schema = Arc::new(Schema::new(vec![
@@ -414,6 +414,7 @@ async fn mapped_cypher_executes_optimized_lens_with_supplied_constraints() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn composite_keys_need_all_columns_and_preserve_duplicate_occurrences() {
     let mut m = GraphMapping::new();
     let schema = Arc::new(Schema::new(vec![
@@ -493,6 +494,7 @@ async fn throwing_projection_and_filtered_self_join_cannot_be_discarded() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn containment_keeps_union_output_names_and_never_removes_bag_branches() {
     let m = fixture(Evidence::Enforced);
     let original=m.relational_plan("SELECT id AS first_name FROM people WHERE id>1 UNION SELECT id AS second_name FROM people").unwrap();
@@ -612,6 +614,7 @@ fn rewritten_sql_matches_duckdb_for_benefiting_queries() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn dependency_into_nullable_unique_does_not_prove_join_cardinality() {
     let mut m = GraphMapping::new();
     let schema = Arc::new(Schema::new(vec![
@@ -688,6 +691,7 @@ fn changed_view_schema_rejects_stale_constraint_columns() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn implicit_numeric_coercion_does_not_authorize_join_elimination() {
     let mut m = GraphMapping::new();
     let left_schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Float64, false)]));

@@ -247,7 +247,7 @@ class Release:
         env = dict(self.env)
         env['DUCKDB_DOWNLOAD_LIB'] = '1'
         env['DUCKDB_STATIC'] = '0'
-        command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release']
+        command = ['cargo', 'build' if target == 'osx_arm64' else 'zigbuild', '--locked', '--release', '--features', 'orchiddb/duckdb-download']
         cache = ROOT / 'target' if target == 'osx_arm64' else ROOT / 'target' / ('release-' + target)
         env['CARGO_TARGET_DIR'] = str(cache)
         if target == 'osx_arm64': env['MACOSX_DEPLOYMENT_TARGET'] = '15.0'

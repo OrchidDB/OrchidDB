@@ -3,11 +3,9 @@
 //! strings are explicit catalog configuration, never inferred from SQL text.
 use super::*;
 use datafusion::{
-    catalog::{Session, TableProvider},
-    common::{DataFusionError, Result},
+    catalog::TableProvider,
     datasource::source_as_provider,
     logical_expr::{LogicalPlan, TableType},
-    physical_plan::ExecutionPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -327,7 +325,6 @@ struct ConnectorProvider {
     source: ConnectorSource,
     schema: arrow::datatypes::SchemaRef,
 }
-#[async_trait::async_trait]
 impl TableProvider for ConnectorProvider {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -337,17 +334,6 @@ impl TableProvider for ConnectorProvider {
     }
     fn table_type(&self) -> TableType {
         TableType::Base
-    }
-    async fn scan(
-        &self,
-        _: &dyn Session,
-        _: Option<&Vec<usize>>,
-        _: &[datafusion::logical_expr::Expr],
-        _: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        Err(DataFusionError::Execution(
-            "Trino connector source requires Trino execution".into(),
-        ))
     }
 }
 pub(super) fn provider(

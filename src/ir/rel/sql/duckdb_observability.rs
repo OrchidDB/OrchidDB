@@ -3,14 +3,13 @@
 use super::{SqlDialect, SqlError, SqlResult};
 use arrow::datatypes::{DataType, SchemaRef, TimeUnit};
 use datafusion::{
-    catalog::{Session, TableProvider},
+    catalog::TableProvider,
     common::{
-        DataFusionError, Result,
+        Result,
         tree_node::{Transformed, TreeNode},
     },
     datasource::source_as_provider,
     logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableType},
-    physical_plan::ExecutionPlan,
     sql::{
         sqlparser::{ast, parser::Parser},
         unparser::Unparser,
@@ -135,7 +134,6 @@ pub(crate) fn provider(
         end,
     })))
 }
-#[async_trait::async_trait]
 impl TableProvider for Provider {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -153,17 +151,6 @@ impl TableProvider for Provider {
         // Every predicate is retained above the scan. Pushdown only supplies a
         // sound native prefilter and bounds, never SQL's complete semantics.
         Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
-    }
-    async fn scan(
-        &self,
-        _: &dyn Session,
-        _: Option<&Vec<usize>>,
-        _: &[Expr],
-        _: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        Err(DataFusionError::Execution(
-            "observability extension source requires DuckDB execution".into(),
-        ))
     }
 }
 fn bound(provider: &Arc<dyn TableProvider>) -> Option<&Provider> {

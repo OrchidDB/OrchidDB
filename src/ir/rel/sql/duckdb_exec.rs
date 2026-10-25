@@ -788,8 +788,8 @@ fn load_scan_table(conn: &Connection, key: &str, table: &TableData, atomic: bool
         // is DATE or VARCHAR. DuckDB accepts STRUCT -> VARCHAR by printing the struct,
         // silently corrupting the exact temporal payload instead of failing.
         // Use the domain-aware exchange literal path (including nested lists)
-        // until Arrow ingress recursively unwraps nominal storage envelopes.
-        // Other domain types retain their existing adapter behavior.
+        // for exact temporal encodings that need the domain's literal codec.
+        // Other domains use the same storage projection as streaming inputs.
         if renamed.schema.fields().iter().any(|field| {
             crate::ir::temporal::transport::contains_type(field.data_type())
         }) {
@@ -800,7 +800,8 @@ fn load_scan_table(conn: &Connection, key: &str, table: &TableData, atomic: bool
             }
             return Ok(());
         }
-        let insert = format!("INSERT INTO {quoted} SELECT * FROM {ARROW_SCAN_FUNCTION}(?, ?)");
+        let projection = super::duckdb_stream::input_projection(&renamed.schema)?;
+        let insert = format!("INSERT INTO {quoted} SELECT {projection} FROM {ARROW_SCAN_FUNCTION}(?, ?)");
         for batch in &renamed.batches {
             let mut offset = 0;
             while offset < batch.num_rows() {

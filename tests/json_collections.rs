@@ -1,14 +1,16 @@
 //! JSON row expansion uses the common graph mapping and relational operators.
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use arrow::{
     array::{Int64Array, RecordBatch},
     datatypes::{DataType, Field, Schema},
 };
 use datafusion::{
-    common::ScalarValue, datasource::MemTable, logical_expr::LogicalPlan, prelude::SessionContext,
+    common::ScalarValue, datasource::MemTable, logical_expr::LogicalPlan,
 };
 use orchiddb::ir::{
     functions::domain,
-    rel::{dependent, mapping::GraphMapping},
+    rel::mapping::GraphMapping,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -49,14 +51,9 @@ fn register(mapping: &mut GraphMapping, value: serde_json::Value) {
         .register_collection_source(serde_json::from_value(value).unwrap())
         .unwrap();
 }
+#[cfg(feature = "duckdb")]
 async fn native(plan: LogicalPlan) -> Vec<Vec<String>> {
-    let batches = SessionContext::new()
-        .execute_logical_plan(dependent::native(plan).unwrap())
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap();
+    let batches = compiler_fixture::execute(plan).await;
     let mut rows = Vec::new();
     for batch in batches {
         for row in 0..batch.num_rows() {
@@ -96,6 +93,7 @@ fn sql(plan: LogicalPlan, dialect: orchiddb::ir::rel::sql::SqlDialect) -> String
     .unwrap()
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn json_elements_preserve_parent_null_kind_index_and_outer_ordinality() {
     let mut mapping = mapping(&[Some("[10,null,20]"), Some("[]"), None]);
     register(
@@ -120,6 +118,7 @@ async fn json_elements_preserve_parent_null_kind_index_and_outer_ordinality() {
     );
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn nested_json_sources_can_back_edges_and_roundtrip_config() {
     let mut mapping = mapping(&[Some("[[1,2],[],[3]]")]);
     register(
@@ -152,6 +151,7 @@ async fn nested_json_sources_can_back_edges_and_roundtrip_config() {
     );
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn json_tree_and_entries_have_canonical_paths_and_depth() {
     let mut mapping = mapping(&[Some(r#"{"a.b":[null,{"z":2}],"x":3}"#)]);
     register(
@@ -253,6 +253,7 @@ async fn duckdb_uses_direct_json_row_functions_for_elements_entries_and_tree() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn json_collection_rows_back_ordinary_graph_relationships() {
     use orchiddb::{
         ir::{
@@ -354,6 +355,7 @@ async fn duckdb_row_paths_distinguish_object_fields_and_array_indices_and_keep_l
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn nested_outer_expansions_can_reuse_ordinality_names() {
     let mut mapping = mapping(&[Some("[[1],[]]")]);
     register(

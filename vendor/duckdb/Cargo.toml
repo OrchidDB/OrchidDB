@@ -53,6 +53,7 @@ features = []
 all-features = false
 
 [features]
+download = ["libduckdb-sys/download"]
 appender-arrow = ["vtab-arrow"]
 autocomplete = [
     "libduckdb-sys/autocomplete",
@@ -155,7 +156,6 @@ path = "examples/repl.rs"
 [dependencies.arrow]
 version = "58"
 features = [
-    "prettyprint",
     "ffi",
 ]
 default-features = false
@@ -177,9 +177,6 @@ features = [
 optional = true
 default-features = false
 
-[dependencies.comfy-table]
-version = "~7.1"
-
 [dependencies.duckdb-loadable-macros]
 version = "=1.10502.0"
 optional = true
@@ -194,6 +191,7 @@ version = "0.1"
 version = "0.10"
 
 [dependencies.libduckdb-sys]
+path = "../libduckdb-sys"
 version = "=1.10502.0"
 
 [dependencies.num]
@@ -236,6 +234,11 @@ optional = true
 [dependencies.uuid]
 version = "1.0"
 optional = true
+
+[dev-dependencies.arrow]
+version = "58"
+default-features = false
+features = ["prettyprint"]
 
 [dev-dependencies.doc-comment]
 version = "0.3"

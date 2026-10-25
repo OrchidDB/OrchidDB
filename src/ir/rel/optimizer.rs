@@ -3,10 +3,8 @@ use std::sync::Arc;
 
 use datafusion::common::tree_node::Transformed;
 use datafusion::error::Result;
-use datafusion::execution::session_state::SessionStateBuilder;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
-use datafusion::prelude::{SessionConfig, SessionContext};
 
 mod recursive_projection;
 use recursive_projection::RecursiveProjection;
@@ -93,20 +91,44 @@ impl OptimizerRule for ScopedConstantFolding {
     }
 }
 
-#[derive(Debug)]
-struct CompilerOnlyPlanner;
-#[async_trait::async_trait]
-impl datafusion::execution::context::QueryPlanner for CompilerOnlyPlanner {
-    async fn create_physical_plan(&self,_:&LogicalPlan,_:&datafusion::execution::context::SessionState)->Result<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
-        Err(datafusion::common::DataFusionError::Plan("DataFusion is compiler-only; execute relational plans through DuckDB or Trino".into()))
+/// Logical compiler resources only: no session runtime, catalog, physical
+/// planner, object store, task executor, or memory pool is constructed here.
+pub(super) struct CompilerSession {
+    analyzer: datafusion::optimizer::analyzer::Analyzer,
+    optimizer: datafusion::optimizer::Optimizer,
+    options: Arc<datafusion::common::config::ConfigOptions>,
+    registry: datafusion::logical_expr::registry::MemoryFunctionRegistry,
+}
+impl CompilerSession {
+    pub(super) fn without_rule(mut self, name: &str) -> Self {
+        self.optimizer.rules.retain(|rule| rule.name() != name);
+        self
+    }
+    pub(super) fn state(&self) -> CompilerQuery<'_> {
+        CompilerQuery { session: self, context: datafusion::optimizer::OptimizerContext::new_with_config_options(self.options.clone()) }
     }
 }
-
-pub(super) fn session(config: SessionConfig) -> SessionContext {
-    let session = SessionContext::new_with_config(config);
-    let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = session
-        .state()
-        .optimizers()
+pub(super) struct CompilerQuery<'a> {
+    session: &'a CompilerSession,
+    context: datafusion::optimizer::OptimizerContext,
+}
+impl CompilerQuery<'_> {
+    pub(super) fn analyzer(&self) -> &datafusion::optimizer::analyzer::Analyzer { &self.session.analyzer }
+    pub(super) fn config_options(&self) -> &datafusion::common::config::ConfigOptions { &self.session.options }
+    pub(super) fn optimize(&self, plan: &LogicalPlan) -> Result<LogicalPlan> {
+        let analyzed = self.analyzer().execute_and_check(plan.clone(), self.config_options(), |_, _| {})?;
+        self.session.optimizer.optimize(analyzed, self, |_, _| {})
+    }
+}
+impl OptimizerConfig for CompilerQuery<'_> {
+    fn query_execution_start_time(&self) -> Option<chrono::DateTime<chrono::Utc>> { self.context.query_execution_start_time() }
+    fn alias_generator(&self) -> &Arc<datafusion::common::alias::AliasGenerator> { self.context.alias_generator() }
+    fn options(&self) -> Arc<datafusion::common::config::ConfigOptions> { self.context.options() }
+    fn function_registry(&self) -> Option<&dyn datafusion::logical_expr::registry::FunctionRegistry> { Some(&self.session.registry) }
+}
+pub(super) fn session() -> CompilerSession {
+    let optimizer = datafusion::optimizer::Optimizer::new();
+    let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = optimizer.rules
         .iter()
         .map(|rule| {
             if rule.name() == "simplify_expressions" {
@@ -126,11 +148,19 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
             }
         })
         .collect();
-    let state = SessionStateBuilder::new_from_existing(session.state())
-        .with_optimizer_rules(rules)
-        .with_query_planner(Arc::new(CompilerOnlyPlanner))
-        .build();
-    SessionContext::new_with_state(state)
+    let mut registry = datafusion::logical_expr::registry::MemoryFunctionRegistry::new();
+    datafusion::functions::register_all(&mut registry).expect("builtin scalar registry");
+    datafusion::functions_nested::register_all(&mut registry).expect("builtin nested registry");
+    datafusion::functions_aggregate::register_all(&mut registry).expect("builtin aggregate registry");
+    datafusion::functions_window::register_all(&mut registry).expect("builtin window registry");
+    let mut options = datafusion::common::config::ConfigOptions::default();
+    options.execution.target_partitions = 1;
+    CompilerSession {
+        analyzer: datafusion::optimizer::analyzer::Analyzer::new(),
+        optimizer: datafusion::optimizer::Optimizer::with_rules(rules),
+        options: Arc::new(options),
+        registry,
+    }
 }
 
 pub(super) fn simplify_bound_expressions(plan: LogicalPlan, config: &dyn OptimizerConfig) -> Result<LogicalPlan> {
@@ -182,7 +212,7 @@ mod diagnostic_folding_tests {
     #[tokio::test]
     async fn existing_session_observes_scoped_folding_mode() {
         use datafusion::{logical_expr::LogicalPlanBuilder, prelude::lit};
-        let context = session(SessionConfig::new());
+        let context = session();
         let plan = LogicalPlanBuilder::empty(true).project(vec![(lit(1_i64)+lit(2_i64)).alias("result")]).unwrap().build().unwrap();
         crate::ir::diagnostics::without_constant_folding(async {
             let optimized = context.state().optimize(&plan).unwrap();
@@ -233,12 +263,16 @@ pub(super) fn prune_sql_outputs(plan: LogicalPlan) -> Result<LogicalPlan> {
 }
 
 #[cfg(test)]
-mod executable_environment_tests {
-    #[tokio::test]
-    async fn compiler_session_refuses_datafusion_physical_execution() {
-        let session=super::session(datafusion::prelude::SessionConfig::new());
-        let plan=datafusion::logical_expr::LogicalPlanBuilder::empty(true).build().unwrap();
-        let error=session.state().create_physical_plan(&plan).await.unwrap_err();
-        assert!(error.to_string().contains("DataFusion is compiler-only"),"{error}");
+mod compiler_context_tests {
+    #[test]
+    fn query_clock_is_fixed_without_an_execution_environment() {
+        use datafusion::optimizer::OptimizerConfig;
+        let compiler = super::session();
+        let query = compiler.state();
+        let start = query.query_execution_start_time();
+        assert!(start.is_some());
+        assert_eq!(start, query.query_execution_start_time());
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::empty(true).build().unwrap();
+        assert!(matches!(query.optimize(&plan).unwrap(), datafusion::logical_expr::LogicalPlan::EmptyRelation(_)));
     }
 }

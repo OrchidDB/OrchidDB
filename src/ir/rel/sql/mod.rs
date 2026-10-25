@@ -647,7 +647,23 @@ pub async fn plan_tables_excluding(
         // Lowered graph scans already own immutable Arrow batches. Reading
         // their complete contents needs neither planning nor execution. Scan
         // filters and projections remain in the generated SQL.
-        let provider = datafusion::datasource::source_as_provider(&source).ok();
+        let mut provider = datafusion::datasource::source_as_provider(&source).ok();
+        // These wrappers attach compiler facts only. Preserve the scan's name,
+        // schema, projections and predicates; unwrap only its Arrow storage.
+        loop {
+            let inner = provider.as_ref().and_then(|provider| {
+                if let Some(wrapper) = provider.as_any().downcast_ref::<super::constraints::ConstrainedProvider>() {
+                    Some(wrapper.inner.clone())
+                } else {
+                    provider.as_any().downcast_ref::<super::statistics::StatisticsProvider>()
+                        .map(|wrapper| wrapper.inner.clone())
+                }
+            });
+            match inner {
+                Some(inner) => provider = Some(inner),
+                None => break,
+            }
+        }
         let batches = if let Some(snapshot) = provider.as_ref()
             .and_then(|provider| provider.as_any().downcast_ref::<super::temporal_semantics::Snapshot>()) {
             snapshot.batches().to_vec()

@@ -8,8 +8,8 @@ orchiddb = { path = "../..", features = ["duckdb", "trino", "weaviate", "quickwi
 arrow = { version = "58.2.0", default-features = false, features = ["ipc"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-datafusion = { version = "53.1.0", default-features = false, features = ["nested_expressions", "crypto_expressions", "datetime_expressions", "encoding_expressions", "regex_expressions", "string_expressions", "unicode_expressions", "recursive_protection", "sql"] }
-duckdb = { version = "1.10502.0", features = ["chrono", "vtab-arrow"] }
+datafusion = { package = "orchid-datafusion-compiler", path = "../../compiler/datafusion" }
+duckdb = { version = "1.10502.0", path = "../../vendor/duckdb", features = ["chrono", "vtab-arrow"] }
 
 [[bin]]
 name = "orchiddb-jvm-store"
@@ -20,3 +20,8 @@ resolver = "2"
 
 [patch.crates-io]
 duckdb = { path = "../../vendor/duckdb" }
+datafusion-functions = { path = "../../vendor/datafusion-functions" }
+datafusion-functions-aggregate = { path = "../../vendor/datafusion-functions-aggregate" }
+datafusion-functions-nested = { path = "../../vendor/datafusion-functions-nested" }
+datafusion-sql = { path = "../../vendor/datafusion-sql" }
+libduckdb-sys = { path = "../../vendor/libduckdb-sys" }

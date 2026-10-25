@@ -391,16 +391,39 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
                 || aggregate_scope(&join.left)) {
                 // DF's EXISTS conversion replaces the SELECT's WHERE rather
                 // than combining it with the preserved-side predicate.
-                join.left = Arc::new(hoist_operator(join.left.as_ref().clone(),
-                    "existence_left_filter", &mut plain_ctes, &mut seen)?.data);
+                join.left = Arc::new(hoist_scoped_operator(join.left.as_ref().clone(),
+                    "existence_left_filter", &mut plain_ctes, &mut seen)?);
                 changed = true;
             }
             if (!repair_scopes || join.right.schema().fields().is_empty())
                 && !matches!(join.right.as_ref(), LogicalPlan::TableScan(_) | LogicalPlan::SubqueryAlias(_)) {
                 // A complex RHS can leak its joins/filters into the outer
                 // SELECT during EXISTS conversion. Give it its own SQL scope.
-                join.right = Arc::new(hoist_operator(join.right.as_ref().clone(),
-                    "existence_input", &mut plain_ctes, &mut seen)?.data);
+                let old_columns = join.right.schema().columns();
+                let input = hoist_operator(join.right.as_ref().clone(),
+                    "existence_input", &mut plain_ctes, &mut seen)?.data;
+                let new_columns = input.schema().columns();
+                let rebind = |expression: Expr| expression.transform_up(|node| {
+                    if let Expr::Column(column) = &node {
+                        if let Some(index) = old_columns.iter().position(|old| old == column)
+                            .or_else(|| {
+                                // Aggregate normalization can drop the RHS
+                                // field qualifier while its join predicate
+                                // still names the original input relation.
+                                if join.left.schema().has_column(column) { return None; }
+                                let matches = old_columns.iter().enumerate()
+                                    .filter(|(_, old)| old.name == column.name).collect::<Vec<_>>();
+                                (matches.len() == 1).then(|| matches[0].0)
+                            }) {
+                            return Ok(Transformed::yes(Expr::Column(new_columns[index].clone())));
+                        }
+                    }
+                    Ok(Transformed::no(node))
+                }).map(|result| result.data);
+                join.on = join.on.into_iter().map(|(left, right)| Ok((rebind(left)?, rebind(right)?)))
+                    .collect::<datafusion::common::Result<Vec<_>>>()?;
+                join.filter = join.filter.map(rebind).transpose()?;
+                join.right = Arc::new(input);
                 changed = true;
             }
             if changed {
@@ -518,6 +541,29 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
         other => Ok(Transformed::no(other)),
     })?;
     Ok((transformed.data, plain_ctes, recursive_ctes))
+}
+
+// EXISTS predicates refer to the original input scope. A CTE changes the
+// storage name, but must not change those references or the output schema.
+fn hoist_scoped_operator(
+    term: LogicalPlan,
+    kind: &str,
+    plain_ctes: &mut Vec<PlainCte>,
+    seen: &mut BTreeSet<String>,
+) -> datafusion::common::Result<LogicalPlan> {
+    let schema = term.schema().clone();
+    let scan = hoist_operator(term, kind, plain_ctes, seen)?.data;
+    if let Some((Some(qualifier), _)) = schema.iter().next() {
+        if schema.iter().all(|(q, _)| q == Some(qualifier)) {
+            return datafusion::logical_expr::LogicalPlanBuilder::from(scan)
+                .alias(qualifier.clone())?.build();
+        }
+    }
+    let expressions = scan.schema().columns().into_iter().zip(schema.iter())
+        .map(|(column, (qualifier, field))| Expr::Column(column)
+            .alias_qualified(qualifier.cloned(), field.name())).collect();
+    Ok(LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(
+        expressions, Arc::new(scan), schema)?))
 }
 
 fn hoist_operator(

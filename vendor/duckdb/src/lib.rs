@@ -4,7 +4,6 @@
 //! ```rust
 //! use duckdb::{params, Connection, Result};
 //! use duckdb::arrow::record_batch::RecordBatch;
-//! use duckdb::arrow::util::pretty::print_batches;
 //!
 //! #[derive(Debug)]
 //! struct Person {
@@ -49,7 +48,9 @@
 //!
 //!     // query table by arrow
 //!     let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
-//!     print_batches(&rbs);
+//!     for batch in rbs {
+//!         println!("{batch:?}");
+//!     }
 //!     Ok(())
 //! }
 //! ```

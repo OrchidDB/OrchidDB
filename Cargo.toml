@@ -12,9 +12,9 @@ documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = ["clients/rust", "clients/native", "clients/java/native", "extension/compiler"]
+members = ["clients/rust", "clients/native", "clients/java/native", "extension/compiler", "compiler/datafusion"]
 default-members = ["."]
-exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo"]
+exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo", "vendor/duckdb", "vendor/libduckdb-sys", "vendor/datafusion-functions", "vendor/datafusion-functions-aggregate", "vendor/datafusion-functions-nested", "vendor/datafusion-sql"]
 resolver = "2"
 
 [[bin]]
@@ -29,6 +29,7 @@ sep-0006 = []
 sparql-12 = ["oxrdf/rdf-12"]
 standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
+duckdb-download = ["duckdb", "duckdb/download"]
 trino = ["dep:reqwest"]
 weaviate = ["dep:reqwest"]
 quickwit = ["dep:reqwest"]
@@ -50,14 +51,9 @@ arrow = { version = "58.2.0", default-features = false, features = ["ipc"] }
 arrow-json = "58.2.0"
 arrow-select = "58.2.0"
 bigdecimal = "0.4"
-# Logical compilation does not need DataFusion file readers or its executor.
-datafusion = { version = "53.1.0", default-features = false, features = [
-    "nested_expressions", "crypto_expressions", "datetime_expressions",
-    "encoding_expressions", "regex_expressions", "string_expressions",
-    "unicode_expressions", "recursive_protection", "sql",
-] }
-datafusion-sql = "53.1.0"
-duckdb = { version = "1.10502.0", features = ["chrono", "vtab-arrow", "vscalar", "vscalar-arrow"], optional = true }
+# Internal composition of DataFusion logical compiler components, without its executor.
+datafusion = { package = "orchid-datafusion-compiler", path = "compiler/datafusion" }
+duckdb = { version = "1.10502.0", path = "vendor/duckdb", features = ["chrono", "vtab-arrow", "vscalar", "vscalar-arrow"], optional = true }
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -85,7 +81,8 @@ rdkafka = { version = "0.39", features = ["ssl-vendored", "sasl"], optional = tr
 rdkafka = { version = "0.39", features = ["gssapi-vendored"], optional = true }
 
 [dev-dependencies]
-parquet = { version = "58.2.0", features = ["arrow"] }
+# Independent scalar-expression oracle; no DataFusion physical query executor.
+datafusion-physical-expr = { version = "53.1.0", default-features = false }
 
 [[example]]
 name = "collection_table_plans"
@@ -153,3 +150,8 @@ required-features = ["duckdb"]
 # Pinned driver fix: fallible Arrow streaming must not report late errors as EOF.
 [patch.crates-io]
 duckdb = { path = "vendor/duckdb" }
+datafusion-functions = { path = "vendor/datafusion-functions" }
+datafusion-functions-aggregate = { path = "vendor/datafusion-functions-aggregate" }
+datafusion-functions-nested = { path = "vendor/datafusion-functions-nested" }
+datafusion-sql = { path = "vendor/datafusion-sql" }
+libduckdb-sys = { path = "vendor/libduckdb-sys" }

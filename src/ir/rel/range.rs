@@ -1,7 +1,6 @@
 //! Compiler-only integer range metadata. DuckDB and Trino execute the SQL table function.
 use super::*;
-use datafusion::catalog::{Session, TableProvider};
-use datafusion::common::DataFusionError;
+use datafusion::catalog::TableProvider;
 use datafusion::logical_expr::TableType;
 use std::any::Any;
 
@@ -29,7 +28,6 @@ impl IntegerRange {
         }
     }
 }
-#[async_trait::async_trait]
 impl TableProvider for IntegerRange {
     fn as_any(&self) -> &dyn Any {
         self
@@ -39,18 +37,6 @@ impl TableProvider for IntegerRange {
     }
     fn table_type(&self) -> TableType {
         TableType::Temporary
-    }
-    async fn scan(
-        &self,
-        _state: &dyn Session,
-        _projection: Option<&Vec<usize>>,
-        _filters: &[Expr],
-        _limit: Option<usize>,
-    ) -> datafusion::common::Result<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
-        Err(DataFusionError::Plan(
-            "Integer ranges are compiler metadata and must execute in a DuckDB or Trino SQL island"
-                .into(),
-        ))
     }
 }
 

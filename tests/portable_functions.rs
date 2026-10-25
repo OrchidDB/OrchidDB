@@ -1,11 +1,13 @@
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use arrow::{
     array::{Array, ArrayRef, Float64Array, RecordBatch, StringArray},
     util::display::array_value_to_string,
 };
 use datafusion::{
     logical_expr::{Expr, col, lit},
-    prelude::SessionContext,
 };
+use compiler_fixture::CompilerFixture;
 use orchiddb::ir::{
     functions::{logical::definition, portable},
     policy::ResultForm,
@@ -78,8 +80,8 @@ fn catalog_covers_every_native_scalar_and_alias_without_engine_dependencies() {
     );
 }
 
-async fn fixture(name: &str, strings: bool, extra: Vec<Expr>) -> (SessionContext, LoweredPlan) {
-    let ctx = SessionContext::new();
+async fn fixture(name: &str, strings: bool, extra: Vec<Expr>) -> (CompilerFixture, LoweredPlan) {
+    let ctx = CompilerFixture::new();
     let array: ArrayRef = if strings {
         Arc::new(StringArray::from(vec![
             Some(""),
@@ -138,7 +140,7 @@ async fn fixture(name: &str, strings: bool, extra: Vec<Expr>) -> (SessionContext
 
 #[tokio::test]
 async fn arity_mappings_coexist_and_variadic_arguments_remain_expressions() {
-    let ctx = SessionContext::new();
+    let ctx = CompilerFixture::new();
     ctx.register_batch(
         "input",
         RecordBatch::try_from_iter(vec![(
@@ -179,6 +181,7 @@ async fn arity_mappings_coexist_and_variadic_arguments_remain_expressions() {
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn portable_functions_are_available_in_cypher_without_an_engine_catalog() {
     use orchiddb::{
         ir::{
@@ -204,6 +207,7 @@ async fn portable_functions_are_available_in_cypher_without_an_engine_catalog() 
 }
 
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn sql_constant_projection_preserves_source_cardinality() {
     use arrow::datatypes::{DataType, Field, Schema};
     use orchiddb::ir::rel::execute_lowered;
@@ -215,7 +219,7 @@ async fn sql_constant_projection_preserves_source_cardinality() {
             Arc::new(Schema::new(vec![Field::new("unused", DataType::Float64, false)])),
             vec![Arc::new(Float64Array::from(vec![1.0; rows]))],
         ).unwrap();
-        let plan = SessionContext::new().read_batch(batch).unwrap()
+        let plan = CompilerFixture::new().read_batch(batch).unwrap()
             .select(vec![lit(7_i64).alias("constant")]).unwrap()
             .into_unoptimized_plan();
         let result = execute_lowered(LoweredPlan {
@@ -232,7 +236,7 @@ async fn sql_constant_projection_preserves_source_cardinality() {
                 Arc::new(Schema::new(vec![Field::new("unused", DataType::Float64, false)])),
                 vec![Arc::new(Float64Array::from(vec![1.0; rows]))],
             ).unwrap();
-            let mut plan = SessionContext::new().read_batch(batch).unwrap()
+            let mut plan = CompilerFixture::new().read_batch(batch).unwrap()
                 .select(Vec::<Expr>::new()).unwrap();
             if distinct { plan = plan.distinct().unwrap(); }
             let result = execute_lowered(LoweredPlan {
@@ -315,12 +319,7 @@ async fn native_duckdb_and_postgres_agree_on_scalar_edge_cases() {
     for (name, strings, extra) in cases {
         let arity = extra.len() + 1;
         let (ctx, plan) = fixture(name, strings, extra).await;
-        let batches = ctx
-            .execute_logical_plan(plan.plan.clone())
-            .await
-            .unwrap()
-            .collect()
-            .await
+        let batches = ctx.evaluate_projection(&plan.plan.clone())
             .unwrap();
         let expected = batches
             .iter()
@@ -563,7 +562,7 @@ async fn portable_coalesce_keeps_lazy_argument_evaluation() {
         Volatility::Volatile,
         Arc::new(|_| panic!("unused coalesce branch ran")),
     );
-    let ctx = SessionContext::new();
+    let ctx = CompilerFixture::new();
     ctx.register_batch(
         "input",
         RecordBatch::try_from_iter(vec![(
@@ -573,15 +572,14 @@ async fn portable_coalesce_keeps_lazy_argument_evaluation() {
         .unwrap(),
     )
     .unwrap();
-    let result = ctx
+    let plan = ctx
         .table("input")
         .await
         .unwrap()
         .select(vec![call("coalesce", vec![col("x"), fail.call(vec![])])])
         .unwrap()
-        .collect()
-        .await
-        .unwrap();
+        .into_unoptimized_plan();
+    let result = ctx.evaluate_projection(&plan).unwrap();
     assert_eq!(
         array_value_to_string(result[0].column(0), 0).unwrap(),
         "safe"
@@ -616,7 +614,7 @@ async fn expanded_catalog_matches_native_columns() {
         Some("\\x'"),
         None,
     ]));
-    let ctx = SessionContext::new();
+    let ctx = CompilerFixture::new();
     let timestamps: ArrayRef = Arc::new(arrow::array::TimestampMicrosecondArray::from(vec![
         Some(-1_234_567),
         Some(0),
@@ -871,12 +869,7 @@ async fn expanded_catalog_matches_native_columns() {
                 |_, _| {},
             )
             .unwrap();
-        let native = ctx
-            .execute_logical_plan(plan.clone())
-            .await
-            .unwrap()
-            .collect()
-            .await;
+        let native = ctx.evaluate_projection(&plan.clone());
         let expect_error = native.is_err();
         let native_type = plan.schema().field(0).data_type().clone();
         let batches = native.unwrap_or_default();
@@ -1068,7 +1061,7 @@ fn portable_results_round_trip_through_duckdb() {
         array::{BinaryArray, Int64Array, ListArray},
         datatypes::Int64Type,
     };
-    let ctx = SessionContext::new();
+    let ctx = CompilerFixture::new();
     use arrow::buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
     use arrow::datatypes::{DataType, Field, UnionFields};
     let union: ArrayRef = Arc::new(
@@ -1296,12 +1289,7 @@ fn portable_results_round_trip_through_duckdb() {
                     |_, _| {},
                 )
                 .unwrap();
-            let expected = ctx
-                .execute_logical_plan(plan.clone())
-                .await
-                .unwrap()
-                .collect()
-                .await
+            let expected = ctx.evaluate_projection(&plan.clone())
                 .unwrap();
             let plan = LoweredPlan {
                 rule_context: Default::default(),
@@ -1392,12 +1380,7 @@ async fn integer_option_guards_do_not_accept_fractional_casts() {
         ))],
     )
     .await;
-    let native = ctx
-        .execute_logical_plan(plan.plan.clone())
-        .await
-        .unwrap()
-        .collect()
-        .await
+    let native = ctx.evaluate_projection(&plan.plan.clone())
         .unwrap();
     assert_eq!(
         array_value_to_string(native[0].column(0), 1).unwrap(),

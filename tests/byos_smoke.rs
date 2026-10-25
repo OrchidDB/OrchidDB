@@ -11,6 +11,8 @@
 //! * DuckDB, where the same tables/views exist in the database and the
 //!   generated SQL references them directly (query-backed labels are inlined
 //!   as derived tables; nothing user-owned is re-materialized).
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -20,7 +22,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
-use datafusion::prelude::SessionContext;
+
 
 use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::PropertyGraph;
@@ -375,12 +377,7 @@ async fn optimizer_pushes_filters_and_projections_through_the_mapping() {
     // the unused mapped column `city` must be pruned from the scan.
     let plan = cypher_plan("MATCH (p:Person) WHERE p.age > 29 RETURN p.name");
     let lowered = lower(&plan);
-    let ctx = SessionContext::new();
-    let optimized = ctx
-        .execute_logical_plan(lowered.plan)
-        .await
-        .expect("logical plan")
-        .into_optimized_plan()
+    let optimized = compiler_fixture::optimize(&lowered.plan)
         .expect("optimize");
     let display = format!("{}", optimized.display_indent());
     assert!(
@@ -400,11 +397,7 @@ async fn optimizer_pushes_filters_and_projections_through_the_mapping() {
     // base `customers` scan (merged with the view's own `age >= 30`).
     let plan = cypher_plan("MATCH (v:Vip) WHERE v.age > 29 RETURN v.name");
     let lowered = lower(&plan);
-    let optimized = ctx
-        .execute_logical_plan(lowered.plan)
-        .await
-        .expect("logical plan")
-        .into_optimized_plan()
+    let optimized = compiler_fixture::optimize(&lowered.plan)
         .expect("optimize");
     let display = format!("{}", optimized.display_indent());
     let filter_line = display

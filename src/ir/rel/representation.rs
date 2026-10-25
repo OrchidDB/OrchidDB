@@ -5,14 +5,13 @@
 use super::layout::{LayoutDecision, LayoutProvider, TableLayout};
 use arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::{
-    catalog::{Session, TableProvider},
+    catalog::TableProvider,
     common::{
         DataFusionError, Result,
         tree_node::{Transformed, TreeNodeRecursion},
     },
     datasource::{provider_as_source, source_as_provider},
     logical_expr::{Expr, LogicalPlan, LogicalPlanBuilder, TableProviderFilterPushDown, TableType},
-    physical_plan::ExecutionPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -236,7 +235,6 @@ impl RepresentationProvider {
         })
     }
 }
-#[async_trait::async_trait]
 impl TableProvider for RepresentationProvider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -252,17 +250,6 @@ impl TableProvider for RepresentationProvider {
         filters: &[&Expr],
     ) -> Result<Vec<TableProviderFilterPushDown>> {
         Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
-    }
-    async fn scan(
-        &self,
-        _: &dyn Session,
-        _: Option<&Vec<usize>>,
-        _: &[Expr],
-        _: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        Err(invalid(
-            "resolve representation sources with representation::select before physical execution",
-        ))
     }
 }
 pub(crate) fn provider(p: &Arc<dyn TableProvider>) -> Option<&RepresentationProvider> {

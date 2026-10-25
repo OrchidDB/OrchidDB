@@ -888,10 +888,10 @@ mod tests {
 
     #[cfg(feature = "duckdb")]
     #[tokio::test]
-    async fn standard_expressions_match_datafusion_results_in_duckdb() {
+    async fn standard_expressions_match_constant_folded_reference_in_duckdb() {
         use datafusion::common::ScalarValue;
-        use datafusion::prelude::SessionContext;
-        let ctx = SessionContext::new();
+        let mapping = crate::ir::rel::mapping::GraphMapping::new();
+        let compiler = crate::ir::rel::optimizer::session();
         let conn = duckdb::Connection::open_in_memory().unwrap();
         let queries = [
             "SELECT log(2.0, 8.0), log(100.0), trunc(-12.345, 2), trunc(123.4, -1), 2.0 / log(2.0, 8.0)",
@@ -905,8 +905,7 @@ mod tests {
             "SELECT regexp_like('alphabet', 'pha'), regexp_like('ABC', 'abc', 'i'), regexp_like(CAST(NULL AS VARCHAR), 'x')",
         ];
         for query in queries {
-            let frame = ctx.sql(query).await.unwrap();
-            let plan = frame.logical_plan();
+            let plan = mapping.plan_sql(query).unwrap();
             let dialect = SqlDialect::DuckDb.unparser_dialect();
             // DF53 cannot unparse explicit list casts. Exercise those
             // boundary cases directly through the identical SQL AST adapter.
@@ -915,23 +914,34 @@ mod tests {
                     .unwrap()
                     .remove(0)
             } else {
-                Unparser::new(dialect.as_ref()).plan_to_sql(plan).unwrap()
+                Unparser::new(dialect.as_ref()).plan_to_sql(&plan).unwrap()
             };
             prepare_ast(&mut statement, SqlDialect::DuckDb).unwrap();
             let sql = statement.to_string();
-            let expected = frame.collect().await.unwrap();
+            // Invoke the compiler's real constant-folding implementations as
+            // an independent scalar oracle, with no physical plan or executor.
+            let reference = compiler.state().optimize(&plan).unwrap();
+            let datafusion::logical_expr::LogicalPlan::Projection(projection) = reference else { panic!("expected constant projection: {reference:?}") };
+            fn constant(expr: &datafusion::logical_expr::Expr) -> ScalarValue {
+                match expr {
+                    datafusion::logical_expr::Expr::Alias(alias) => constant(&alias.expr),
+                    datafusion::logical_expr::Expr::Literal(value, _) => value.clone(),
+                    other => panic!("constant oracle did not fold {other:?}"),
+                }
+            }
+            let expected = projection.expr.iter().map(constant).collect::<Vec<_>>();
             let mut prepared = conn
                 .prepare(&sql)
                 .unwrap_or_else(|err| panic!("{query}\n{sql}\n{err}"));
             let actual: Vec<_> = prepared.query_arrow([]).unwrap().collect();
-            for col in 0..expected[0].num_columns() {
+            for col in 0..expected.len() {
                 let actual_column = arrow::compute::cast(
                     actual[0].column(col),
-                    expected[0].column(col).data_type(),
+                    &expected[col].data_type(),
                 )
                 .unwrap();
                 let a = ScalarValue::try_from_array(&actual_column, 0).unwrap();
-                let e = ScalarValue::try_from_array(expected[0].column(col), 0).unwrap();
+                let e = &expected[col];
                 // SQL engines choose different integer widths for constants;
                 // displayed scalar values compare values including list order.
                 assert_eq!(a.to_string(), e.to_string(), "{query}\n{sql}\ncolumn {col}");

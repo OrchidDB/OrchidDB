@@ -139,7 +139,6 @@ impl LoweringContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion::prelude::SessionContext;
     use datafusion::common::{Constraint, Constraints};
 
     fn table(name: &str, values: Vec<Option<i64>>, primary: bool) -> LogicalPlan {
@@ -218,13 +217,7 @@ mod tests {
             let optimized = simplify_existence(joined.clone()).unwrap();
             assert!(!optimized.display_indent().to_string().contains("Distinct"));
             for plan in [joined, optimized] {
-                let result = SessionContext::new()
-                    .execute_logical_plan(plan)
-                    .await
-                    .unwrap()
-                    .collect()
-                    .await
-                    .unwrap();
+                let result = crate::ir::rel::execute_test_plan(plan).await.unwrap();
                 assert_eq!(
                     result.iter().map(|batch| batch.num_rows()).sum::<usize>(),
                     expected

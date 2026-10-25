@@ -4,7 +4,7 @@
 //! never removes a query predicate and never reads data to discover statistics.
 use arrow::datatypes::SchemaRef;
 use datafusion::{
-    catalog::{Session, TableProvider},
+    catalog::TableProvider,
     common::{
         DataFusionError, Result, ScalarValue,
         tree_node::{Transformed, TreeNodeRecursion},
@@ -13,7 +13,6 @@ use datafusion::{
     logical_expr::{
         Expr, LogicalPlan, LogicalPlanBuilder, Operator, TableProviderFilterPushDown, TableType,
     },
-    physical_plan::ExecutionPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::{any::Any, collections::BTreeMap, sync::Arc};
@@ -114,7 +113,6 @@ pub struct LayoutCandidate {
     pub estimated_bytes: Option<u64>,
     pub estimated_files: Option<u64>,
 }
-#[derive(Debug)]
 pub(crate) struct LayoutProvider {
     pub definition: LogicalSource,
     providers: BTreeMap<String, Arc<dyn TableProvider>>,
@@ -540,7 +538,6 @@ fn murmur3(bytes: &[u8]) -> u32 {
     hash ^ (hash >> 16)
 }
 
-#[async_trait::async_trait]
 impl TableProvider for LayoutProvider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -557,20 +554,6 @@ impl TableProvider for LayoutProvider {
     ) -> Result<Vec<TableProviderFilterPushDown>> {
         // Retain every original predicate above the selected physical scan.
         Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
-    }
-    async fn scan(
-        &self,
-        state: &dyn Session,
-        projection: Option<&Vec<usize>>,
-        filters: &[Expr],
-        limit: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        // The shared pass resolves providers before execution. Fail closed if a
-        // caller bypasses it; forwarding filters to arbitrary providers is unsafe.
-        let _ = (state, projection, filters, limit);
-        Err(invalid(
-            "logical source must be resolved with layout::select before execution",
-        ))
     }
 }
 pub(crate) fn layout_provider(provider: &Arc<dyn TableProvider>) -> Option<&LayoutProvider> {
@@ -710,7 +693,7 @@ mod execution_tests {
     };
     use datafusion::{
         datasource::MemTable,
-        prelude::{SessionContext, col, lit},
+        prelude::{col, lit},
     };
     #[tokio::test]
     async fn selected_scan_preserves_duplicates_and_nulls() {
@@ -742,13 +725,7 @@ mod execution_tests {
             .unwrap();
         let (plan, choices) = select(original).unwrap();
         assert_eq!(choices[0].table, "second");
-        let batches = SessionContext::new()
-            .execute_logical_plan(plan)
-            .await
-            .unwrap()
-            .collect()
-            .await
-            .unwrap();
+        let batches = crate::ir::rel::execute_test_plan(plan).await.unwrap();
         assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 3);
         assert_eq!(
             batches
@@ -757,5 +734,11 @@ mod execution_tests {
                 .sum::<usize>(),
             1
         );
+    }
+}
+
+impl std::fmt::Debug for LayoutProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LayoutProvider").field("schema", &self.schema()).finish_non_exhaustive()
     }
 }

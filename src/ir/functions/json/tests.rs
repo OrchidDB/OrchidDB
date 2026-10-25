@@ -364,33 +364,27 @@ fn path_fields_do_not_coerce_to_indices_and_filters_group_correctly() {
     );
 }
 
-#[tokio::test]
-async fn ordered_aggregates_execute_with_declared_order_and_last_key_wins() {
-    let context = datafusion::prelude::SessionContext::new();
-    for name in aggregate_names() {
-        context.register_udaf(aggregate(name).unwrap().as_ref().clone());
-    }
-    let batches = context.sql("SELECT __orchiddb_json_array_agg(value ORDER BY ordering) AS a, __orchiddb_json_object_agg('key', value ORDER BY ordering) AS o FROM (VALUES (3,30), (1,10), (2,20)) AS t(ordering,value)").await.unwrap().collect().await.unwrap();
-    assert_eq!(
-        doc(ScalarValue::try_from_array(batches[0].column(0), 0).unwrap()),
-        serde_json::json!([10, 20, 30])
-    );
-    assert_eq!(
-        doc(ScalarValue::try_from_array(batches[0].column(1), 0).unwrap()),
-        serde_json::json!({"key":30})
-    );
+#[test]
+fn ordered_aggregates_execute_with_declared_order_and_last_key_wins() {
+    use datafusion::logical_expr::Accumulator;
+    use arrow::array::{ArrayRef, Int64Array, StringArray};
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![30, 10, 20]));
+    let ordering: ArrayRef = Arc::new(Int64Array::from(vec![3, 1, 2]));
+    let mut array = super::aggregate::JsonAccumulator { sort_options: vec![arrow::compute::SortOptions::default()], order_types: vec![DataType::Int64], ..Default::default() };
+    array.update_batch(&[values.clone(), ordering.clone()]).unwrap();
+    assert_eq!(doc(array.evaluate().unwrap()), serde_json::json!([10, 20, 30]));
+    let mut object = super::aggregate::JsonAccumulator { object: true, sort_options: vec![arrow::compute::SortOptions::default()], order_types: vec![DataType::Int64], ..Default::default() };
+    object.update_batch(&[Arc::new(StringArray::from(vec!["key", "key", "key"])), values, ordering]).unwrap();
+    assert_eq!(doc(object.evaluate().unwrap()), serde_json::json!({"key":30}));
 }
 
-#[tokio::test]
-async fn distinct_aggregate_keeps_sql_null_and_json_null_as_distinct_inputs() {
-    let context = datafusion::prelude::SessionContext::new();
-    context.register_udaf(aggregate("json.array_agg").unwrap().as_ref().clone());
-    context.register_udf(function("json.parse").unwrap().as_ref().clone());
-    let batches = context.sql("SELECT __orchiddb_json_array_agg(DISTINCT __orchiddb_json_parse(v)) FROM (VALUES (CAST(NULL AS VARCHAR)), ('null'), ('null')) AS t(v)").await.unwrap().collect().await.unwrap();
-    assert_eq!(
-        doc(ScalarValue::try_from_array(batches[0].column(0), 0).unwrap()),
-        serde_json::json!([null, null])
-    );
+#[test]
+fn distinct_aggregate_keeps_sql_null_and_json_null_as_distinct_inputs() {
+    use datafusion::logical_expr::Accumulator;
+    let mut accumulator = super::aggregate::JsonAccumulator { distinct: true, ..Default::default() };
+    let values = ScalarValue::iter_to_array([null(&domain::json_type()).unwrap(), j("null"), j("null")]).unwrap();
+    accumulator.update_batch(&[values]).unwrap();
+    assert_eq!(doc(accumulator.evaluate().unwrap()), serde_json::json!([null, null]));
 }
 
 #[test]

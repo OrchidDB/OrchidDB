@@ -1,3 +1,5 @@
+#[path = "support/compiler.rs"]
+mod compiler_fixture;
 use arrow::array::Array;
 
 use orchiddb::compiler::compile_json;
@@ -67,12 +69,13 @@ async fn struct_elements_and_rdf() {
     );
 }
 #[tokio::test]
+#[cfg(feature = "duckdb")]
 async fn in_process_preserves_collection_rows() {
     use arrow::{
         array::{Int64Array, ListArray, RecordBatch},
         datatypes::{DataType, Field, Int64Type, Schema},
     };
-    use datafusion::{datasource::MemTable, prelude::SessionContext};
+    use datafusion::datasource::MemTable;
     use orchiddb::ir::rel::mapping::GraphMapping;
     use std::sync::Arc;
     let lists = ListArray::from_iter_primitive::<Int64Type, _, _>([
@@ -96,13 +99,7 @@ async fn in_process_preserves_collection_rows() {
     );
     mapping.register_collection_source(serde_json::from_value(json!({"name":"items","table":"parents","column":"items","parent_columns":{"parent":"id"},"element":"value"})).unwrap()).unwrap();
     let plan = mapping.relational_plan("SELECT * FROM items").unwrap();
-    let result = SessionContext::new()
-        .execute_logical_plan(plan)
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap();
+    let result = compiler_fixture::execute(plan).await;
     assert_eq!(result.iter().map(|b| b.num_rows()).sum::<usize>(), 3);
     assert_eq!(
         result

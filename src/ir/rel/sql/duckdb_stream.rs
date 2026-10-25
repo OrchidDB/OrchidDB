@@ -1,7 +1,7 @@
 //! Bounded Arrow exchange for the embedded executable engine.
 use super::{DuckDbExecutor, PreparedSql};
 use crate::execution::stream::{BatchSource, BatchStream, InputRelation};
-use arrow::{array::RecordBatch, datatypes::SchemaRef};
+use arrow::{array::RecordBatch, datatypes::{DataType, SchemaRef}};
 use duckdb::{
     core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
@@ -16,6 +16,65 @@ use std::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
+
+fn contains_domain(kind: &DataType) -> bool {
+    if crate::ir::functions::domain::descriptor(kind).is_some() { return true; }
+    match kind {
+        DataType::Struct(fields) => fields.iter().any(|f| contains_domain(f.data_type())),
+        DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _)
+            | DataType::Map(field, _) => contains_domain(field.data_type()),
+        DataType::Dictionary(_, value) => contains_domain(value),
+        DataType::Union(fields, _) => fields.iter().any(|(_, f)| contains_domain(f.data_type())),
+        _ => false,
+    }
+}
+
+/// Arrow carries nominal types in named storage envelopes. A SQL relation must
+/// expose the declared SQL type, not serialize that envelope as a JSON object.
+/// Perform this conversion in the streaming view, including nested containers.
+fn domain_input(expression: &str, kind: &DataType, depth: usize) -> Result<String, String> {
+    if !contains_domain(kind) { return Ok(expression.into()); }
+    let dialect = super::SqlDialect::DuckDb;
+    if let Some((_, storage)) = crate::ir::functions::domain::descriptor(kind) {
+        let DataType::Struct(fields) = kind else { unreachable!() };
+        let field = dialect.quote_ident(fields[0].name());
+        let value = domain_input(&format!("({expression}).{field}"), storage, depth + 1)?;
+        let target = dialect.sql_type(kind).map_err(|e| e.to_string())?;
+        return Ok(format!("CAST({value} AS {target})"));
+    }
+    match kind {
+        DataType::Struct(fields) => {
+            let members = fields.iter().map(|field| {
+                let name = dialect.quote_ident(field.name());
+                Ok(format!("{name} := {}", domain_input(&format!("({expression}).{name}"), field.data_type(), depth + 1)?))
+            }).collect::<Result<Vec<_>, String>>()?.join(", ");
+            Ok(format!("CASE WHEN ({expression}) IS NULL THEN NULL ELSE struct_pack({members}) END"))
+        }
+        DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _) => {
+            let item = format!("__orchid_domain_item_{depth}");
+            let converted = domain_input(&item, field.data_type(), depth + 1)?;
+            let target = dialect.sql_type(kind).map_err(|e| e.to_string())?;
+            Ok(format!("CAST(list_transform({expression}, {item} -> {converted}) AS {target})"))
+        }
+        DataType::Map(field, _) => {
+            let DataType::Struct(fields) = field.data_type() else { return Err("invalid Arrow map storage".into()); };
+            let item = format!("__orchid_domain_entry_{depth}");
+            let key = domain_input(&format!("{item}.key"), fields[0].data_type(), depth + 1)?;
+            let value = domain_input(&format!("{item}.value"), fields[1].data_type(), depth + 1)?;
+            Ok(format!("map_from_entries(list_transform(map_entries({expression}), {item} -> struct_pack(key := {key}, value := {value})))"))
+        }
+        DataType::Dictionary(_, value) => domain_input(expression, value, depth),
+        _ => Err(format!("unsupported nominal-domain Arrow input: {kind}")),
+    }
+}
+
+pub(super) fn input_projection(schema: &SchemaRef) -> Result<String, String> {
+    if !schema.fields().iter().any(|field| contains_domain(field.data_type())) { return Ok("*".into()); }
+    schema.fields().iter().map(|field| {
+        let name = super::SqlDialect::DuckDb.quote_ident(field.name());
+        Ok(format!("{} AS {name}", domain_input(&name, field.data_type(), 0)?))
+    }).collect::<Result<Vec<_>, String>>().map(|fields| fields.join(", "))
+}
 pub(super) struct Cancellation {
     cancelled: AtomicBool,
     notify: tokio::sync::Notify,
@@ -243,6 +302,7 @@ impl DuckDbSession {
                         };
                         let run = (|| -> Result<(), String> {
                             for input in inputs {
+                                let projection = input_projection(&input.source.schema())?;
                                 let key = NEXT.fetch_add(1, Ordering::Relaxed).to_string();
                                 registry()
                                     .lock()
@@ -254,7 +314,7 @@ impl DuckDbSession {
                                 keys.push(key.clone());
                                 let name = super::SqlDialect::DuckDb.quote_ident(&input.name);
                                 conn.execute_batch(&format!(
-                            "CREATE TEMP VIEW {name} AS SELECT * FROM __orchid_stream_scan('{key}')"
+                            "CREATE TEMP VIEW {name} AS SELECT {projection} FROM __orchid_stream_scan('{key}')"
                         ))
                         .map_err(|e| e.to_string())?;
                                 views.push(name);

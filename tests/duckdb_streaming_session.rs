@@ -12,6 +12,51 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+
+#[tokio::test]
+async fn nominal_json_inputs_preserve_nested_values_and_sql_nulls() {
+    use arrow::{array::{Array, ArrayRef, MapArray, StringArray, StructArray}, buffer::{OffsetBuffer, ScalarBuffer}};
+    use datafusion::common::ScalarValue;
+    use orchiddb::ir::functions::domain;
+    let json_null = domain::json_scalar("null").unwrap();
+    let sql_null = ScalarValue::try_from(&domain::json_type()).unwrap();
+    let nested = ScalarValue::Struct(Arc::new(StructArray::from(vec![
+        (Arc::new(Field::new("doc", domain::json_type(), true)), json_null.to_array().unwrap()),
+        (Arc::new(Field::new("missing", domain::json_type(), true)), sql_null.to_array().unwrap()),
+    ])));
+    let list = ScalarValue::List(ScalarValue::new_list(
+        &[json_null, sql_null, domain::json_scalar("{\"x\":7}").unwrap()], &domain::json_type(), true,
+    ));
+    let entries = StructArray::from(vec![
+        (Arc::new(Field::new("key", DataType::Utf8, false)), Arc::new(StringArray::from(vec!["doc"])) as ArrayRef),
+        (Arc::new(Field::new("value", domain::json_type(), true)), domain::json_scalar("{\"x\":9}").unwrap().to_array().unwrap()),
+    ]);
+    let map = ScalarValue::Map(Arc::new(MapArray::new(
+        Arc::new(Field::new("entries", entries.data_type().clone(), false)),
+        OffsetBuffer::new(ScalarBuffer::from(vec![0i32, 1])), entries, None, false,
+    )));
+    let values = [domain::json_scalar("[1]").unwrap(), nested, list, map];
+    let names = ["doc", "nested", "items", "mapping"];
+    let schema = Arc::new(Schema::new(names.iter().zip(&values).map(|(name, value)| Field::new(*name, value.data_type(), true)).collect::<Vec<_>>()));
+    let columns = values.into_iter().map(|value| {
+        let null = ScalarValue::try_from(&value.data_type()).unwrap();
+        ScalarValue::iter_to_array([value, null]).unwrap()
+    }).collect();
+    let batch = RecordBatch::try_new(schema.clone(), columns).unwrap();
+    let source = BatchSource::once(BatchStream::new(schema, futures::stream::iter([Ok(batch)])));
+    let mut session = DuckDbSession::default();
+    let batches = session.query_stream(
+        "SELECT json_array_length(doc), nested.doc IS NULL, nested.missing IS NULL, json_type(items[1]), items[2] IS NULL, json_extract_string(items[3], '$.x'), json_extract_string(mapping['doc'], '$.x'), nested IS NULL FROM input",
+        vec![InputRelation { name: "input".into(), source }],
+    ).await.unwrap().collect_batches().await.unwrap();
+    let batch = &batches[0];
+    let row = (0..batch.num_columns()).map(|column| arrow::util::display::array_value_to_string(batch.column(column).as_ref(), 0).unwrap()).collect::<Vec<_>>();
+    assert_eq!(row, ["1", "false", "true", "NULL", "true", "7", "9", "false"]);
+    assert!(batch.column(0).is_null(1));
+    assert!(batch.column(5).is_null(1));
+    assert!(batch.column(6).is_null(1));
+    assert_eq!(arrow::util::display::array_value_to_string(batch.column(7).as_ref(), 1).unwrap(), "true");
+}
 #[tokio::test]
 async fn arrow_input_and_output_are_streamed_and_typed() {
     let schema = Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, false)]));

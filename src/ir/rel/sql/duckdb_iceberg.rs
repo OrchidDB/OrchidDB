@@ -2,10 +2,9 @@
 use super::*;
 use arrow::datatypes::SchemaRef;
 use datafusion::{
-    catalog::{Session, TableProvider},
+    catalog::TableProvider,
     datasource::source_as_provider,
     logical_expr::{TableProviderFilterPushDown, TableType},
-    physical_plan::ExecutionPlan,
 };
 use serde::Deserialize;
 
@@ -23,7 +22,6 @@ struct Provider {
     schema: SchemaRef,
     relation: String,
 }
-#[async_trait::async_trait]
 impl TableProvider for Provider {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -42,17 +40,6 @@ impl TableProvider for Provider {
             TableProviderFilterPushDown::Unsupported;
             filters.len()
         ])
-    }
-    async fn scan(
-        &self,
-        _: &dyn Session,
-        _: Option<&Vec<usize>>,
-        _: &[Expr],
-        _: Option<usize>,
-    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-        Err(datafusion::common::DataFusionError::Execution(
-            "Iceberg source requires DuckDB SQL execution".into(),
-        ))
     }
 }
 fn invalid(message: impl std::fmt::Display) -> SqlError {

@@ -693,6 +693,40 @@ pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, 
                     *counts.entry(field.name().clone()).or_default() += 1;
                 }
             }
+            // Projection pushdown prunes logical scan fields, not the SQL
+            // table's columns. A flattened FROM still exposes those omitted
+            // columns, which can make an otherwise unique name ambiguous.
+            fn physical_names(plan: &LogicalPlan, counts: &mut BTreeMap<String, usize>) {
+                match plan {
+                    LogicalPlan::TableScan(scan) => {
+                        for field in scan.source.schema().fields() {
+                            *counts.entry(field.name().clone()).or_default() += 1;
+                        }
+                    }
+                    LogicalPlan::Join(join) if matches!(join.join_type,
+                        datafusion::logical_expr::JoinType::LeftSemi |
+                        datafusion::logical_expr::JoinType::LeftAnti) => {
+                        // EXISTS exposes only the preserved side to parents.
+                        physical_names(&join.left, counts);
+                    }
+                    LogicalPlan::Projection(_) | LogicalPlan::Filter(_) |
+                    LogicalPlan::Sort(_) | LogicalPlan::Limit(_) |
+                    LogicalPlan::SubqueryAlias(_) | LogicalPlan::Join(_) => {
+                        for input in plan.inputs() { physical_names(input, counts); }
+                    }
+                    _ => {
+                        for field in plan.schema().fields() {
+                            *counts.entry(field.name().clone()).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            let mut physical = BTreeMap::new();
+            for input in node.inputs() { physical_names(input, &mut physical); }
+            for (name, count) in physical {
+                let logical = counts.entry(name).or_default();
+                *logical = (*logical).max(count);
+            }
         }
         let unique = |name: &str| counts.get(name).copied().unwrap_or(0) <= 1;
         // Aggregate/projection expression names are referenced by parent nodes.
