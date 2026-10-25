@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(OrchidDB VERSION 0.4.3 LANGUAGES CXX)
+project(OrchidDB VERSION 0.4.4 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 option(ORCHIDDB_BUILD_TESTS "Build integration tests (requires caller DuckDB library)" OFF)

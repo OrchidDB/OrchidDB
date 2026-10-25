@@ -29,7 +29,7 @@ for name in manifests:
 for name in ('Cargo.lock', 'clients/rust/examples/Cargo.lock', 'conformance/runner/Cargo.lock'):
     path = Path(name)
     text = path.read_text()
-    updated = re.sub(r'(name = "orchiddb[^"\n]*"\nversion = ")[^"]+(")', lambda m: m[1] + version + m[2], text)
+    updated = re.sub(r'(name = "orchiddb[^"\n]*"\nversion = ")' + re.escape(old) + r'(")', lambda m: m[1] + version + m[2], text)
     if updated != text:
         path.write_text(updated)
 for manifest in ('Cargo.toml', 'clients/rust/examples/Cargo.toml', 'conformance/runner/Cargo.toml'):

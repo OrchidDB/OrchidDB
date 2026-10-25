@@ -1862,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "antlr4rust",
  "arrow",
