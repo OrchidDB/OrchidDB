@@ -10,6 +10,7 @@ export VERSION
 define RELEASE_VERSION_SCRIPT
 import os, re, subprocess, tomllib
 from pathlib import Path
+from scripts.release.versions import update_manifest
 version = os.environ['VERSION']
 if len(version) > 31 or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
     raise SystemExit('VERSION must be a semantic version, for example 0.4.0')
@@ -23,7 +24,7 @@ manifests = [name for name in names if name == 'Cargo.toml' or
 for name in manifests:
     path = Path(name)
     text = path.read_text()
-    updated = text.replace(old, version)
+    updated = update_manifest(name, text, old, version)
     if updated != text:
         path.write_text(updated)
 for name in ('Cargo.lock', 'clients/rust/examples/Cargo.lock', 'conformance/runner/Cargo.lock'):
