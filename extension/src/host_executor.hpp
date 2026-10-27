@@ -122,7 +122,6 @@ unique_ptr<QueryResult> HostExecuteStream(ClientContext &context, unique_ptr<SQL
     if (statement->type != StatementType::SELECT_STATEMENT) {
         return HostExecute(context, std::move(statement), params);
     }
-    ValidateProtectedFunctions(context, statement->Cast<SelectStatement>());
     auto profiler = make_shared_ptr<QueryProfiler>(context);
     HostProfilerScope scope(context, profiler);
     Planner planner(context);

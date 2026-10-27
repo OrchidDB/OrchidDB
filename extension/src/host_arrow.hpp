@@ -323,7 +323,6 @@ char *TypedHostQueryImpl(void *state, const char *sql, ArrowArrayStream *paramet
         unique_ptr<QueryResult> result;
         if (describe) {
             if(statement->type!=StatementType::SELECT_STATEMENT) {throw BinderException("Federation output must be a SELECT");}
-            ValidateProtectedFunctions(context,statement->Cast<SelectStatement>());
             Planner planner(context);
             for(idx_t i=0;i<params.size();i++) {planner.parameter_data[std::to_string(i+1)]=BoundParameterData(params[i]);}
             planner.CreatePlan(std::move(statement));

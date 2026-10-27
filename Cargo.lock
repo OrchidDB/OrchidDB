@@ -2119,7 +2119,6 @@ dependencies = [
  "async-trait",
  "futures",
  "orchiddb",
- "reqwest",
  "serde",
  "serde_json",
  "sqlparser",

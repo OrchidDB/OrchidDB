@@ -1,6 +1,5 @@
 //! Language bridge with caller-owned DuckDB binding and execution.
 mod syntax;
-mod authorization;
 mod catalog;
 mod update;
 mod host;
@@ -21,7 +20,6 @@ fn request(input: Value) -> Result<Value, String> {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e|e.to_string())?;
             serde_json::to_value(runtime.block_on(schema.resolve())?).map_err(|e|e.to_string())
         }
-        Some("spicedb_check") => authorization::check(&input),
         Some("typed_scalar_catalog") => Ok(Value::Array(orchiddb::ir::rel::native_values::typed::operations().map(|operation| {
             use orchiddb::ir::rel::native_values::typed::{self,Output};
             let output=match typed::output(operation) {Output::Value=>"value",Output::Boolean=>"boolean",Output::Integer=>"integer",Output::Text=>"text",Output::List=>"list",Output::Indices=>"indices"};
@@ -109,10 +107,7 @@ fn request(input: Value) -> Result<Value, String> {
                 return compile(json!({"version":1,"dialect":"duckdb","language":input.get("language").cloned().unwrap_or(json!("cypher")),
                     "query":input["query"],"parameters":input.get("parameters").cloned().unwrap_or(json!({})),"tables":[],"managed_table":table}),false);
             }
-            let (mut nodes, mut edges) = graph.mappings(tables)?;
-            if let Some(policy) = &graph.authorization {
-                authorization::apply(policy, &graph, tables, &mut nodes, &mut edges)?;
-            }
+            let (nodes, edges) = graph.mappings(tables)?;
             let request = json!({
                 "version": 1, "dialect": "duckdb", "language": input.get("language").cloned().unwrap_or(json!("cypher")),
                 "query": input.get("query").cloned().unwrap_or(json!("RETURN 1")),
@@ -128,11 +123,6 @@ fn request(input: Value) -> Result<Value, String> {
                         prepared.mapping.validate_computed_relationships()).map_err(|e| e.to_string())?;
                 }
                 return Ok(json!({"valid": true}));
-            }
-            if graph.authorization.is_some() {
-                let parsed = serde_json::from_value(request.clone()).map_err(|e|e.to_string())?;
-                let prepared = orchiddb::compiler::prepare_graph(&parsed)?;
-                if orchiddb::ir::exec::contains_mutation(&prepared.plan.root) { return Err("authorized graphs are read-only".into()); }
             }
             compile(request, false)
         }

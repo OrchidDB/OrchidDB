@@ -117,7 +117,6 @@ string Path(const Json &parts) {
     return out;
 }
 
-void ValidateProtectedFunctions(ClientContext &, SelectStatement &);
 
 unique_ptr<SelectStatement> Select(ClientContext &context, const string &sql) {
     Parser parser(context.GetParserOptions());
@@ -125,7 +124,6 @@ unique_ptr<SelectStatement> Select(ClientContext &context, const string &sql) {
     if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
         throw BinderException("Orchid expected one read-only SQL query");
     }
-    ValidateProtectedFunctions(context,parser.statements[0]->Cast<SelectStatement>());
     return unique_ptr_cast<SQLStatement, SelectStatement>(std::move(parser.statements[0]));
 }
 unique_ptr<TableRef> Subquery(ClientContext &context, const string &sql) {
@@ -181,6 +179,9 @@ struct BoundGraph {
 BoundGraph BindGraph(ClientContext &context, Json definition, const string &catalog, const string &schema) {
     BoundGraph graph;
     graph.definition = std::move(definition);
+    if (graph.definition.contains("authorization") && !graph.definition.at("authorization").is_null()) {
+        throw BinderException("Built-in graph authorization was removed; enforce access in the source or application table hooks");
+    }
     if (graph.definition.contains("managed_table") && !graph.definition.at("managed_table").is_null()) {
         auto source=graph.definition.at("managed_table").get<string>();
         auto statement=Select(context,"SELECT * FROM "+source+" LIMIT 0");
@@ -210,12 +211,6 @@ BoundGraph BindGraph(ClientContext &context, Json definition, const string &cata
                     return false;
                 };
                 needed = needed || includes(element.at("key"));
-                if (graph.definition.contains("authorization") && !graph.definition.at("authorization").is_null()) {
-                    for (const auto &rule : graph.definition.at("authorization").at("vertices")) {
-                        if (rule.at("label")==element.at("label") && !rule.at("key").is_null() &&
-                            StringUtil::CIEquals(rule.at("key").get<string>(),bound.names[i])) {needed=true;}
-                    }
-                }
                 if (!element.at("properties").is_null()) { needed = needed || includes(element.at("properties")); }
                 for (auto endpoint : {"from", "to"}) {
                     if (!element.at(endpoint).is_null()) { needed = needed || includes(element.at(endpoint).at("columns")); }
@@ -265,7 +260,6 @@ unique_ptr<TableRef> DefinitionBind(ClientContext &context, TableFunctionBindInp
     return Subquery(context, "SELECT " + Literal(definition.dump()) + " AS definition");
 }
 
-#include "authorization.hpp"
 
 Json Parameter(const Value &value, bool native = false) {
     if (value.IsNull()) { return nullptr; }
@@ -332,7 +326,6 @@ Json Parameter(const Value &value, bool native = false) {
 // Execute generated program stages using DuckDB's planner and pipeline executor
 // in the caller's transaction. No Connection or independent transaction is made.
 unique_ptr<QueryResult> HostExecute(ClientContext &context, unique_ptr<SQLStatement> statement, const vector<Value> &params, unique_ptr<PreparedStatementData> *cached=nullptr) {
-    if (statement->type==StatementType::SELECT_STATEMENT) {ValidateProtectedFunctions(context,statement->Cast<SelectStatement>());}
     auto statement_type = statement->type;
     auto &client = ClientData::Get(context);
     struct ProfilerGuard {
@@ -447,15 +440,6 @@ char *CatalogQuery(void *state, const char *input, ArrowSchema *schema) {
             auto statement=Select(context,request.at("sql").get<string>());
             auto binder=Binder::CreateBinder(context);
             auto bound=binder->Bind(static_cast<SQLStatement &>(*statement));
-            if (Authorization(context)->protected_depth) {
-                std::function<void(LogicalOperator &)> validate = [&](LogicalOperator &op) {
-                    if (op.type!=LogicalOperatorType::LOGICAL_PROJECTION && op.type!=LogicalOperatorType::LOGICAL_DUMMY_SCAN && op.type!=LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
-                        throw BinderException("Functions in protected graphs cannot read additional relations");
-                    }
-                    for(auto &child:op.children){validate(*child);}
-                };
-                validate(*bound.plan);
-            }
             if (bound.types.size()!=1) {throw BinderException("Function binding expected one output");}
             auto properties=context.GetClientProperties();
             ArrowConverter::ToArrowSchema(schema,bound.types,bound.names,properties);
@@ -655,8 +639,6 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
     // mappings or parameter-specialized SQL.
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
     auto graph = LoadGraph(context, input.inputs[0].GetValue<string>());
-    RequireAuthorization(context,graph.definition);
-    ProtectedBinding protection(context,graph.definition.contains("authorization"));
     auto parameters = Json::object();
     auto found = input.named_parameters.find("parameters");
     if (found != input.named_parameters.end()) {
@@ -667,8 +649,6 @@ unique_ptr<TableRef> LanguageBind(ClientContext &context, TableFunctionBindInput
     }
     auto compiled = Bridge(context, {{"op", "compile"}, {"graph", graph.definition}, {"tables", graph.tables},
                             {"query", input.inputs[1].GetValue<string>()}, {"parameters", parameters}, {"language", language}});
-    if (compiled.contains("program_request")) {Authorization(context)->authorized_programs.insert(compiled.at("program_request").dump());}
-    if (compiled.contains("transfers") && !compiled.at("transfers").empty()) {Authorization(context)->authorized_programs.insert(compiled.dump());}
     return CompiledSubquery(context, compiled);
 }
 
@@ -684,11 +664,9 @@ unique_ptr<TableRef> GremlinBind(ClientContext &context, TableFunctionBindInput 
 Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
     if (input.binder) { input.binder->GetStatementProperties().always_require_rebind = true; }
     Json request;
-    auto auth=Authorization(context);
     if (input.table_function.name == "__orchid_program") {
         request = Json::parse(input.inputs[0].GetValue<string>());
     } else {
-        if (!auth->subject.empty()) { throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled"); }
         auto schemas = context.registered_state->GetOrCreate<RegisteredSchemas>("orchid_schemas");
         auto name = input.inputs[0].GetValue<string>();
         auto found = schemas->schemas.find(name);
@@ -702,9 +680,6 @@ Json BoundRequest(ClientContext &context, TableFunctionBindInput &input) {
             auto option = input.named_parameters.find(key);
             if (option != input.named_parameters.end()) { request[key] = Parameter(option->second); }
         }
-    }
-    if (!auth->subject.empty() && !(input.table_function.name=="__orchid_program" && auth->authorized_programs.count(request.dump()))) {
-        throw BinderException("Authorized sessions require named property graphs; advanced mappings and SPARQL updates are disabled");
     }
     ValidateHostEngines(request);
     if (request.value("dialect", "duckdb") != "duckdb") {
@@ -991,7 +966,6 @@ ParserOverrideResult Rewrite(ParserExtensionInfo *, const string &query, ParserO
 } // namespace
 
 void LoadOrchid(ExtensionLoader &loader) {
-    RegisterAuthorization(loader);
     for (auto operation : {"create","reset","snapshot","import"}) {
         vector<LogicalType> arguments={LogicalType::VARCHAR};
         if (string(operation)=="import") {arguments.push_back(LogicalType::VARCHAR);}

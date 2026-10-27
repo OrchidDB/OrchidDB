@@ -36,10 +36,6 @@ void RegisterSourceExecute(ClientContext &context, TableFunctionInput &input, Da
 unique_ptr<FunctionData> FederationBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &types, vector<string> &names) {
     if (input.inputs[0].IsNull()) { throw BinderException("Missing federation plan"); }
     auto plan=input.inputs[0].GetValue<string>();
-    auto authorization=Authorization(context);
-    if(!authorization->subject.empty() && !authorization->authorized_programs.count(plan)) {
-        throw BinderException("Authorized sessions require a named property graph federation plan");
-    }
     ArrowArrayStreamWrapper schema;
     FederationCheck(orchid_federation_schema(plan.c_str(),&context,TypedHostSchema,UpdateHostFree,&schema.arrow_array_stream));
     auto relation=ImportHostRelation(context,schema.arrow_array_stream);

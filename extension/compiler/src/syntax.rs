@@ -433,46 +433,6 @@ impl Parser<'_> {
         self.expect(")")?;
         Ok(rules)
     }
-    fn authorization(&mut self) -> Result<crate::authorization::Policy, String> {
-        self.expect("(")?;
-        self.expect("PROVIDER")?;
-        let provider = self.name()?;
-        self.expect(",")?; self.expect("DEFAULT")?; self.expect("DENY")?;
-        let mut vertices = Vec::new();
-        while self.take(",") {
-            self.expect("VERTEX")?;
-            let label = self.name()?;
-            let rule = if self.take("PUBLIC") {
-                crate::authorization::Rule { label, resource: None, key: None, permission: None }
-            } else {
-                self.expect("RESOURCE")?; let resource = self.name()?;
-                self.expect("KEY")?; let keys = self.keys()?;
-                if keys.len() != 1 { return Err("authorization requires one canonical resource ID column".into()); }
-                self.expect("REQUIRE")?; let permission = self.name()?;
-                crate::authorization::Rule { label, resource: Some(resource), key: Some(keys[0].clone()), permission: Some(permission) }
-            };
-            vertices.push(rule);
-        }
-        self.expect(")")?;
-        Ok(crate::authorization::Policy { provider, vertices })
-    }
-    fn authorization_context(&mut self) -> Result<Value, String> {
-        self.expect("(")?;
-        let mut context = serde_json::Map::new();
-        loop {
-            let key = self.name()?.to_ascii_lowercase();
-            if !["subject_type", "subject_id", "context", "at_least_as_fresh"].contains(&key.as_str()) || context.contains_key(&key) {
-                return Err("invalid or duplicate authorization context option".into());
-            }
-            let token = self.tokens.get(self.pos).ok_or("expected authorization string")?;
-            if token.kind != 's' { return Err("authorization context values must be string literals; use orchid_set_authorization for parameters".into()); }
-            let value = if key == "context" { serde_json::from_str(&token.value).map_err(|e|format!("invalid caveat context: {e}"))? } else { json!(token.value) };
-            context.insert(key, value); self.pos += 1;
-            if !self.take(",") { break; }
-        }
-        self.expect(")")?;
-        Ok(Value::Object(context))
-    }
     fn end(&self) -> Result<(), String> {
         if self.pos == self.tokens.len() {
             Ok(())
@@ -495,8 +455,8 @@ pub struct Graph {
     pub edges: Vec<Element>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub computed_relationships: Vec<ComputedRelationship>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<crate::authorization::Policy>,
+    #[serde(default, rename = "authorization", skip_serializing, deserialize_with = "reject_authorization")]
+    _removed_authorization: (),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Element {
@@ -681,22 +641,15 @@ fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> 
         return Ok(None);
     }
     p.pos = 0;
-    if p.take("SET") && p.take("GRAPH") {
-        p.expect("AUTHORIZATION")?;
-        let context = p.authorization_context()?; p.end()?;
-        return Ok(Some(format!("CALL orchid_set_authorization({})", literal(&context.to_string()))));
+    if (p.take("SET") || p.take("RESET")) && p.take("GRAPH") && p.take("AUTHORIZATION") {
+        return Err("Built-in graph authorization was removed; enforce access in the source or application table hooks".into());
     }
     p.pos = 0;
-    if p.take("RESET") && p.take("GRAPH") {
-        p.expect("AUTHORIZATION")?; p.end()?;
-        return Ok(Some("CALL orchid_set_authorization('{}')".into()));
-    }
-    p.pos = 0;
-    if p.take("ALTER") && p.take("PROPERTY") {
-        p.expect("GRAPH")?; let name = p.path()?;
-        p.expect("SET")?; p.expect("AUTHORIZATION")?;
-        let policy = p.authorization()?; p.end()?;
-        return Ok(Some(format!("PRAGMA orchid_graph_authorization({}, {})", literal(&qualified(&name)), literal(&serde_json::to_string(&policy).unwrap()))));
+    if p.take("ALTER") && p.take("PROPERTY") && p.take("GRAPH") {
+        let _name = p.path()?;
+        if p.take("SET") && p.take("AUTHORIZATION") {
+            return Err("Built-in graph authorization was removed; enforce access in the source or application table hooks".into());
+        }
     }
     p.pos = 0;
     if p.take("CREATE") {
@@ -748,7 +701,9 @@ fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> 
             p.expect("EDGES")?;
             p.computed_edges()?
         } else { vec![] };
-        let authorization = if p.take("AUTHORIZATION") { Some(p.authorization()?) } else { None };
+        if p.take("AUTHORIZATION") {
+            return Err("Built-in graph authorization was removed; enforce access in the source or application table hooks".into());
+        }
         p.end()?;
         let graph = Graph {
             version: 1,
@@ -757,7 +712,7 @@ fn rewrite_statement(sql: &str, ts: &[Token]) -> Result<Option<String>, String> 
             vertices,
             edges,
             computed_relationships,
-            authorization,
+            _removed_authorization: (),
         };
         return Ok(Some(format!(
             "CREATE {}VIEW {}{} AS SELECT * FROM orchid_graph_definition({})",
@@ -875,5 +830,40 @@ mod tests {
                 .unwrap_err()
                 .contains("explicit KEY")
         );
+    }
+}
+
+// Reject persisted policies instead of silently opening formerly protected graphs.
+fn reject_authorization<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    if value.is_null() { Ok(()) } else {
+        Err(serde::de::Error::custom("Built-in graph authorization was removed; enforce access in the source or application table hooks"))
+    }
+}
+
+#[cfg(test)]
+mod removed_authorization_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_removed_policy_syntax() {
+        for sql in [
+            "SET GRAPH AUTHORIZATION (subject_type 'user', subject_id 'alice')",
+            "RESET GRAPH AUTHORIZATION",
+            "ALTER PROPERTY GRAPH g SET AUTHORIZATION (PROVIDER auth, DEFAULT DENY)",
+            "CREATE PROPERTY GRAPH g VERTEX TABLES (users KEY (id)) AUTHORIZATION (PROVIDER auth, DEFAULT DENY)",
+        ] {
+            assert!(rewrite(sql).unwrap_err().contains("authorization was removed"), "{sql}");
+        }
+    }
+
+    #[test]
+    fn rejects_persisted_policy_without_rejecting_unprotected_graphs() {
+        let mut graph = json!({"version":1,"name":["g"],"vertices":[],"edges":[]});
+        assert!(serde_json::from_value::<Graph>(graph.clone()).is_ok());
+        graph["authorization"] = Value::Null;
+        assert!(serde_json::from_value::<Graph>(graph.clone()).is_ok());
+        graph["authorization"] = json!({"provider":"auth","vertices":[]});
+        assert!(serde_json::from_value::<Graph>(graph).unwrap_err().to_string().contains("authorization was removed"));
     }
 }
