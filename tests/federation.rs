@@ -155,6 +155,10 @@ async fn binding_is_a_query_scoped_cte_with_typed_empty_rows() {
         } else {
             "trino"
         });
+        if dialect == "trino" {
+            assert!(plan(r).await.unwrap_err().contains("Trino is a source"));
+            continue;
+        }
         let p = plan(r).await.unwrap();
         let command =
             json!({"op":"bind", "plan":p, "relation":p.transfers[0].target_relation, "rows":[]});

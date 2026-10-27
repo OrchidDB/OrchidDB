@@ -38,6 +38,7 @@ impl Schema {
                         | "engines"
                         | "sources"
                         | "execution_engine"
+                        | "engine"
                 )
             })
         {
@@ -82,7 +83,7 @@ impl Schema {
         for (name, value) in bindings {
             if !matches!(
                 name.as_str(),
-                "functions" | "procedures" | "engines" | "sources" | "execution_engine"
+                "functions" | "procedures" | "engines" | "sources" | "execution_engine" | "engine"
             ) {
                 return Err(format!("unsupported host catalog binding `{name}`"));
             }

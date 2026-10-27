@@ -3,7 +3,7 @@
 //! Cypher, Gremlin, and SPARQL lower through shared Graph IR and relational/kernel
 //! programs. Compile to SQL using [`compiler`], execute through caller-owned
 //! sessions using [`execution`], or integrate an engine through [`ir::rel::sql`].
-//! DuckDB (enabled by default) and optional `trino` execute SQL islands.
+//! DuckDB is an optional relational completion engine. Trino is a SQL source.
 //! DataFusion supplies logical compilation only; remote adapters remain sources.
 //! The DuckDB extension is built separately from `extension/` using this core.
 

@@ -36,7 +36,12 @@ fn dispatch(input: &str, command: Command) -> Result<String, String> {
             match command {
                 Command::Statistics => orchiddb::ir::rel::statistics::command(&input).await,
                 Command::Compile => orchiddb::compiler::compile_json(&input).await,
-                Command::Remote => orchiddb::remote::transport::command(&input).await,
+                Command::Remote => {
+                    #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
+                    { orchiddb::remote::transport::command(&input).await }
+                    #[cfg(not(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki")))]
+                    { Err("remote source support is disabled in this runtime".into()) }
+                },
             }
         }))
         .map_err(|_| match command {

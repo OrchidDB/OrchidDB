@@ -5,10 +5,10 @@ import sys
 import urllib.request
 
 
-def query(sql, endpoint=None):
+def query(sql, endpoint=None, user="orchiddb-tests"):
     endpoint = endpoint or os.environ.get('ORCHIDDB_TEST_TRINO_URL', 'http://127.0.0.1:18080')
     request = urllib.request.Request(endpoint + '/v1/statement', data=sql.encode(),
-                                     headers={'X-Trino-User': 'orchiddb-tests'})
+                                     headers={'X-Trino-User': user})
     rows, columns = [], []
     while True:
         with urllib.request.urlopen(request, timeout=120) as response:
@@ -19,7 +19,7 @@ def query(sql, endpoint=None):
         rows.extend(page.get('data', []))
         if 'nextUri' not in page:
             return [dict(zip((c['name'] for c in columns), row)) for row in rows]
-        request = urllib.request.Request(page['nextUri'], headers={'X-Trino-User': 'orchiddb-tests'})
+        request = urllib.request.Request(page['nextUri'], headers={'X-Trino-User': user})
 
 
 if __name__ == '__main__':

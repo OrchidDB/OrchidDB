@@ -399,6 +399,7 @@ namespace detail {
 inline ArrowResult query(const detail::Compiler& compiler, const Json& request, ExecutionEngine& engine) {
   if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("detail::Compiler and engine SQL dialects differ");
   auto plan = compiler.compile(request);
+  if (plan.diagnostics.contains("execution_plan")) throw std::invalid_argument("Use SourceConnection for source-first execution");
   if (!plan.diagnostics.value("transfers", Json::array()).empty()) throw std::invalid_argument("Use query_federated for a multi-engine plan");
   return engine.execute(plan);
 }
@@ -409,6 +410,7 @@ inline void generate_statistics(detail::Statistics& statistics, const Json& requ
 inline ArrowResult query(const detail::Statistics& statistics, const Json& request, ExecutionEngine& engine) {
   if (request.at("dialect") != engine.dialect()) throw std::invalid_argument("detail::Compiler and engine SQL dialects differ");
   auto plan = statistics.compile(request);
+  if (plan.diagnostics.contains("execution_plan")) throw std::invalid_argument("Use SourceConnection for source-first execution");
   if (!plan.diagnostics.value("transfers", Json::array()).empty()) throw std::invalid_argument("Use query_federated for a multi-engine plan");
   return engine.execute(plan);
 }
@@ -629,3 +631,5 @@ public:
 };
 
 } // namespace orchiddb
+
+#include "source_connection.hpp"

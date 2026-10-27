@@ -5,7 +5,7 @@ from threading import Lock
 from .execution import _logical_arrow_type, _postgres_json_value
 
 
-class TrinoEngine:
+class TrinoSource:
     dialect = "trino"
 
     def __init__(self, connection):
@@ -61,3 +61,6 @@ class TrinoEngine:
                         cursor.close()
                 finally:
                     self._lease.release()
+
+# Compatibility name; this adapter is a source, never a completion engine.
+TrinoEngine = TrinoSource

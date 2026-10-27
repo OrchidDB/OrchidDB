@@ -33,6 +33,7 @@ impl SqlSession for Session {
 }
 fn query() -> CompiledSql {
     CompiledSql {
+        execution_plan: None,
         rule_trace: Default::default(),
         result_form: "RowSet".into(),
         execution_engine: None,

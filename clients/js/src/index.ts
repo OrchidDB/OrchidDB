@@ -143,3 +143,28 @@ export class Catalog {
 
 export {StreamConnection} from "./streaming.js";
 export type {StreamOptions, StreamAuthorizer, PermissionCheck, StreamQueryOptions} from "./streaming.js";
+
+
+export type { SqlSource, CompletionEngine, LocalFunction, RelationalEngine } from './source-plan.js';
+/** Source-first execution with an optional relational completion binding. */
+export class SourceConnection {
+  private readonly runtime: Runtime;
+  private readonly schema: Schema;
+  private closed = false;
+  constructor(schema: Schema | Catalog,
+      private readonly engine: import('./source-plan.js').RelationalEngine,
+      private readonly sources: ReadonlyMap<string, import('./source-plan.js').SqlSource>,
+      private readonly functions: ReadonlyMap<string, import('./source-plan.js').LocalFunction> = new Map(),
+      private readonly duckdb?: import('./source-plan.js').CompletionEngine, library?: string) {
+    this.runtime = new Runtime(library ?? (schema instanceof Catalog ? schema.library : undefined));
+    this.schema = this.runtime.operationCommand({op:'validate_schema', schema:schema instanceof Catalog ? schema.configuration() : schema});
+  }
+  async query(text:string, options:QueryOptions={}):Promise<ArrowResult> {
+    if(this.closed) throw new Error('Connection closed');
+    const work=this.runtime.compile({...this.schema,version:1,dialect:'duckdb',engine:this.engine,
+      language:options.language??'cypher',query:text,parameters:options.parameters,authorization:options.authorization});
+    const {executeSourcePlan}=await import('./source-plan.js');
+    return executeSourcePlan(work.execution_plan as import('./source-plan.js').SourcePlan,this.sources,this.functions,this.duckdb);
+  }
+  close(){this.closed=true;this.runtime.close();}
+}

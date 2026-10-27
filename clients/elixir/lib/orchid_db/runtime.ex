@@ -76,10 +76,10 @@ defmodule OrchidDB.Internal.Runtime do
   @doc "Borrow a connection. The Arrow stream must be consumed inside callback."
   def query_arrow(connection, request, callback, opts \\ []) when is_function(callback, 1) do
     with {:ok, plan} <- compile(request, opts) do
-      if Map.get(plan, "transfers", []) != [] do
-        {:error, "Use query_federated for a multi-engine plan"}
-      else
-        Adbc.Connection.query_pointer(connection, plan["sql"], callback)
+      cond do
+        Map.has_key?(plan, "execution_plan") -> {:error, "Use OrchidDB.SourceConnection for source-first execution"}
+        Map.get(plan, "transfers", []) != [] -> {:error, "Use query_federated for a multi-engine plan"}
+        true -> Adbc.Connection.query_pointer(connection, plan["sql"], callback)
       end
     end
   end

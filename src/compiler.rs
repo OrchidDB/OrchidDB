@@ -43,9 +43,12 @@ pub struct CompileRequest {
     #[serde(default)]
     pub statistics: Option<std::sync::Arc<crate::ir::rel::statistics::StatisticsSnapshot>>,
     pub dialect: String,
+    /// Optional relational completion engine; source dialects remain independent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<crate::execution::plan::Engine>,
     #[serde(default)]
     pub engines: BTreeMap<String, crate::federation::Engine>,
-    /// Remote request sources, distinct from relational execution engines.
+    /// SQL and request sources, distinct from the relational completion engine.
     #[serde(default)]
     pub sources: BTreeMap<String, crate::federation::Source>,
     #[serde(default)]
@@ -272,6 +275,8 @@ pub struct Function {
     pub returns: String,
     #[serde(default)]
     pub aggregate: bool,
+    #[serde(default)]
+    pub local: bool,
 }
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -338,6 +343,8 @@ fn procedure_catalog(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompiledSql {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<crate::execution::plan::ExecutionPlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[serde(skip_deserializing)]
     pub rule_trace: Vec<crate::ir::rules::RuleTrace>,
@@ -680,7 +687,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
 }
 
 pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<CompileRequest, String> {
-    crate::execution::ExecutableEngine::parse(&request.dialect)?;
+    SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     if let Some(catalog) = request.catalog.take() {
         let snapshot = catalog.resolve().await?;
         let query = crate::session::Query {
@@ -690,6 +697,9 @@ pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<Compi
             authorization: request.authorization,
         };
         let mut resolved = snapshot.schema.request(&request.dialect, &query)?;
+        if request.engine.is_some() {
+            resolved.engine = request.engine;
+        }
         resolved.rule_context = request.rule_context;
         resolved.version = request.version;
         resolved.bindings = request.bindings;
@@ -1022,10 +1032,21 @@ fn prepare_graph_parsed(
             .unwrap_or_else(|| Arc::new(DeclaredCatalog(request.dialect.clone()))),
     );
     for f in &request.functions {
+        if f.local && request.engine.is_none() {
+            return Err("local UDFs require explicit engine none or duckdb and source bindings".into());
+        }
+        if f.local && f.aggregate {
+            return Err("local aggregate functions require an explicit batch pipeline".into());
+        }
+        let target = if f.local {
+            format!("__orchid_local_{}", f.target)
+        } else {
+            f.target.clone()
+        };
         registry
             .register_typed_mapping(
                 &f.name,
-                &f.target,
+                &target,
                 if f.aggregate {
                     FunctionKind::Aggregate
                 } else {
@@ -1249,23 +1270,33 @@ async fn compile_parsed(
     lowered.plan = crate::ir::rel::search::bind_seeds(lowered.plan).map_err(|e| e.to_string())?;
     lowered.plan =
         crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e| e.to_string())?;
-    let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
+    let execution_plan = request.engine
+        .map(|engine| crate::execution::plan::build(&request, &lowered.plan, engine))
+        .transpose()?;
+    let (plan, transfers) = if execution_plan.is_some() {
+        (lowered.plan, vec![])
+    } else {
+        crate::federation::route(&request, lowered.plan)?
+    };
     lowered.plan = plan;
     crate::ir::rules::RuleSession::new(lowered.rule_context.clone()).invalidate();
-    let sql = unparse(&lowered, dialect).map_err(|e| {
-        if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
-            eprintln!(
-                "Failed SQL emission: {e}\n{}",
-                lowered.plan.display_indent()
-            );
-        }
-        e.to_string()
-    })?;
+    let sql = if execution_plan.is_some() {
+        String::new()
+    } else {
+        unparse(&lowered, dialect).map_err(|e| {
+            if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
+                eprintln!("Failed SQL emission: {e}\n{}", lowered.plan.display_indent());
+            }
+            e.to_string()
+        })?
+    };
+    let version = if execution_plan.is_some() { 2 } else { 1 };
     Ok(CompiledSql {
+        execution_plan,
         rule_trace: lowered.rule_context.trace(),
         execution_engine: request.execution_engine,
         transfers,
-        version: 1,
+        version,
         dialect: request.dialect,
         sql,
         logical_plan: lowered.plan.display_indent().to_string(),

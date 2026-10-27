@@ -113,9 +113,9 @@ class _Runtime:
 
     def prepare(self, request: Mapping[str, Any]) -> CompiledQuery:
         result = self.statistics_command(dict(op="compile", catalog_id=self._catalog_id, request=dict(request))) if self._catalog_id else self._call(self._lib.orchiddb_execution_command, request)
-        if result["version"] != 1:
+        if result["version"] not in (1, 2) or (result["version"] == 2 and "execution_plan" not in result):
             raise RuntimeError("Unsupported compiled query protocol")
-        return CompiledQuery(result["sql"], tuple(result["fields"]), result["dialect"], diagnostics={k: v for k, v in result.items() if k not in ("sql", "fields", "dialect", "version")})
+        return CompiledQuery(result["sql"], tuple(result["fields"]), result["dialect"], version=result["version"], diagnostics={k: v for k, v in result.items() if k not in ("sql", "fields", "dialect", "version")})
 
     def _retain(self, result):
         old = self._catalog_id

@@ -4,6 +4,7 @@
 //! then calls [`execute`]. Use the same schema/session snapshot across those steps.
 //! Connection pools, transactions, UDFs, cancellation, and cache policy belong to
 //! the adapter. This is a single-engine boundary, not a federated coordinator.
+pub mod plan;
 pub mod exchange;
 pub mod stream;
 #[cfg(feature = "trino")]
@@ -15,22 +16,20 @@ pub mod trino;
 pub enum ExecutableEngine {
     #[serde(rename = "duckdb")]
     DuckDb,
-    Trino,
 }
 impl ExecutableEngine {
     pub fn parse(name: &str) -> Result<Self, String> {
         match name {
             "duckdb" => Ok(Self::DuckDb),
-            "trino" => Ok(Self::Trino),
+            "trino" => Err("Trino is a source; register it under sources and select engine none or duckdb".into()),
             _ => Err(format!(
-                "unsupported executable engine {name:?}; expected duckdb or trino"
+                "unsupported executable engine {name:?}; expected duckdb"
             )),
         }
     }
     pub fn name(self) -> &'static str {
         match self {
             Self::DuckDb => "duckdb",
-            Self::Trino => "trino",
         }
     }
 }
@@ -77,7 +76,7 @@ pub enum ExecutionError<E> {
     Driver(E),
     #[error("query requires federated execution")]
     Federation,
-    #[error("unsupported executable engine: {0}; expected duckdb or trino")]
+    #[error("unsupported executable engine: {0}; expected duckdb")]
     UnsupportedEngine(String),
 }
 
@@ -88,7 +87,8 @@ pub async fn execute<'session, S: SqlSession>(
     session: &'session mut S,
     query: &CompiledSql,
 ) -> Result<S::Output<'session>, ExecutionError<S::Error>> {
-    ExecutableEngine::parse(&query.dialect)
+    if query.execution_plan.is_some() { return Err(ExecutionError::Federation); }
+    SqlDialect::resolve(&query.dialect)
         .map_err(|_| ExecutionError::UnsupportedEngine(query.dialect.clone()))?;
     if query.version != 1 {
         return Err(ExecutionError::Version(query.version));

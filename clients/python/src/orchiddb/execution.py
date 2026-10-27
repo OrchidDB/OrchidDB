@@ -43,6 +43,28 @@ class DuckDBEngine:
                 self._lease.release()
 
     @contextmanager
+    def query_inputs(self, query, inputs, batch_size=65536):
+        """Register inputs only when a residual DuckDB operation actually runs."""
+        if not self._lease.acquire(blocking=False):
+            raise RuntimeError("An Arrow reader is already active on this engine")
+        registered = []
+        result = None
+        try:
+            for name, reader in inputs.items():
+                self.connection.register(name, reader)
+                registered.append(name)
+            result = self.connection.execute(query.sql).to_arrow_reader(batch_size)
+            yield result
+        finally:
+            try:
+                if result is not None:
+                    result.close()
+                for name in reversed(registered):
+                    self.connection.unregister(name)
+            finally:
+                self._lease.release()
+
+    @contextmanager
     def statistics_arrow(self, request):
         """Bounded statistics reader on the same transaction, with interruption."""
         from threading import Timer
@@ -64,9 +86,26 @@ class DuckDBEngine:
             finally:
                 self._lease.release()
 
+class LazyDuckDBEngine:
+    """Application-owned factory, invoked only for relational completion."""
+    dialect = "duckdb"
+    def __init__(self, factory):
+        self._factory = factory
+        self._adapter = None
+
+    @contextmanager
+    def query_inputs(self, query, inputs, batch_size=65536):
+        if self._adapter is None:
+            adapter = self._factory()
+            if adapter.dialect != "duckdb" or not callable(getattr(adapter, "query_inputs", None)):
+                raise ValueError("Completion factory must return a DuckDB adapter")
+            self._adapter = adapter
+        with self._adapter.query_inputs(query, inputs, batch_size) as reader:
+            yield reader
+
 class Connection:
     """Retains a graph schema and executes on caller-owned engine connections."""
-    def __init__(self, engine, schema=None, *, catalog=None, engines=None, library=None):
+    def __init__(self, engine, schema=None, *, catalog=None, engines=None, sources=None, functions=None, duckdb=None, library=None):
         import copy
         from .catalog import Catalog
         if catalog is not None:
@@ -81,6 +120,13 @@ class Connection:
             library = library or schema._library
             schema = schema._schema()
         self.engine = engine
+        self._source_mode = engine is None or isinstance(engine, str) or sources is not None or functions is not None
+        self._engine_selection = (engine or "none") if engine is None or isinstance(engine, str) else getattr(engine, "dialect", None)
+        if self._source_mode and self._engine_selection not in ("none", "duckdb"):
+            raise ValueError("engine must be none or duckdb; register Trino as a source")
+        self._sources = dict(sources or {})
+        self._functions = dict(functions or {})
+        self._duckdb = duckdb if duckdb is not None else (engine if self._source_mode and not isinstance(engine, str) else None)
         self._runtime = _Runtime(library)
         try:
             self._schema = self._runtime.operation_command(
@@ -96,14 +142,20 @@ class Connection:
             raise RuntimeError("Connection is closed")
         if not isinstance(query, str):
             raise TypeError("query must be text, separate from the registered schema")
-        request = dict(self._schema, version=1, dialect=self.engine.dialect,
+        request = dict(self._schema, version=1, dialect="duckdb" if self._source_mode else self.engine.dialect,
                        language=language, query=query, parameters=parameters or {})
+        if self._source_mode:
+            request["engine"] = self._engine_selection
         if authorization is not None:
             request["authorization"] = authorization.to_dict() if hasattr(authorization, "to_dict") else dict(authorization)
         return request
 
     def query(self, query: str, *, language="cypher", parameters=None, authorization=None, batch_size=65536):
         request = self._request(query, language, parameters, authorization)
+        if self._source_mode:
+            from .plan import execute_plan
+            plan = self._runtime.prepare(request).diagnostics["execution_plan"]
+            return execute_plan(plan, self._sources, self._functions, self._duckdb, batch_size)
         if self._engines:
             from .federation import _query_federated
             return _query_federated(self._runtime, request, self._engines, batch_size)

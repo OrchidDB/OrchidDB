@@ -22,7 +22,7 @@ name = "orchiddb-jvm-store"
 path = "src/bin/orchiddb-jvm-store.rs"
 
 [features]
-default = ["duckdb"]
+default = []
 # Optional syntax extensions of the embedded SPARQL parser.
 sep-0002 = []
 sep-0006 = []

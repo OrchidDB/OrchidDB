@@ -17,7 +17,7 @@ pub struct Engine {
     pub dialect: String,
 }
 
-/// A remote request adapter. It cannot execute relational SQL islands.
+/// A SQL or service-request source, distinct from a relational completion engine.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
@@ -36,11 +36,14 @@ impl Engine {
         if let Ok(engine) = crate::execution::ExecutableEngine::parse(&self.dialect) {
             return Ok(EndpointKind::Engine(engine));
         }
+        if self.dialect == "trino" {
+            return Ok(EndpointKind::Source(self.dialect.clone()));
+        }
         if crate::operations::resolve(&self.dialect)?.is_some() {
             return Ok(EndpointKind::Source(self.dialect.clone()));
         }
         Err(format!(
-            "unsupported executable engine {:?}; expected duckdb or trino",
+            "unsupported executable engine {:?}; expected duckdb; register SQL services such as Trino under sources",
             self.dialect
         ))
     }
@@ -87,7 +90,10 @@ pub struct TransferColumn {
 }
 
 pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
-    crate::execution::ExecutableEngine::parse(&request.dialect)?;
+    if request.engine.is_some() {
+        return crate::execution::plan::validate_request(request);
+    }
+    crate::execution::SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     for (name, source) in &request.sources {
         if name.is_empty() || request.engines.contains_key(name) {
             return Err(format!("duplicate or empty source name `{name}`"));
@@ -154,8 +160,7 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
     {
         return Err("execution_engine dialect does not match request dialect".into());
     }
-    crate::execution::SqlDialect::resolve(&request.dialect)
-        .map_err(|_| "execution_engine must be a SQL engine".to_owned())?;
+    crate::execution::ExecutableEngine::parse(&request.dialect)?;
     let mut names = BTreeSet::new();
     for table in &request.tables {
         let normalized = parts(&table.name)?
@@ -176,7 +181,7 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
     Ok(())
 }
 
-fn parts(name: &str) -> Result<Vec<ast::Ident>, String> {
+pub(crate) fn parts(name: &str) -> Result<Vec<ast::Ident>, String> {
     let mut parser = Parser::new(&GenericDialect)
         .try_with_sql(name)
         .map_err(|e| e.to_string())?;
@@ -1282,8 +1287,8 @@ pub trait Session {
     }
 
     /// Stream a SQL island with typed input relations. Implementations must not
-    /// collect inputs or substitute rows into SQL text. Only DuckDB and Trino
-    /// may implement this executable-engine operation.
+    /// collect inputs or substitute rows into SQL text. SQL sources execute
+    /// without inputs; only the DuckDB completion adapter consumes relations.
     async fn query_stream(
         &mut self,
         _sql: &str,
@@ -1427,7 +1432,7 @@ pub async fn execute_stream_with_options(
             }
         }
         if let Some(operation) = &transfer.operation {
-            ExecutableEngine::parse(&operation.template.dialect)?;
+            crate::execution::SqlDialect::resolve(&operation.template.dialect).map_err(|e| e.to_string())?;
             if sessions
                 .get(&operation.engine)
                 .ok_or_else(|| format!("missing engine `{}`", operation.engine))?
@@ -1438,7 +1443,7 @@ pub async fn execute_stream_with_options(
             }
         }
         if !transfer.sql.is_empty() {
-            ExecutableEngine::parse(&transfer.source_dialect)?;
+            crate::execution::SqlDialect::resolve(&transfer.source_dialect).map_err(|e| e.to_string())?;
         }
     }
     let mut uses = BTreeMap::<String, usize>::new();

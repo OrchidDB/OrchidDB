@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_PASSWORD: orchid-fixture
+      POSTGRES_DB: orchid
+    ports: ["127.0.0.1:15439:5432"]
+    volumes:
+      - ./postgres.sql:/docker-entrypoint-initdb.d/fixture.sql:ro
+      - ../../trino/iceberg-jdbc.sql:/docker-entrypoint-initdb.d/iceberg.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orchid"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  opa:
+    image: openpolicyagent/opa:1.4.2
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policy.rego"]
+    volumes: ["./policy.rego:/policy.rego:ro"]
+  trino:
+    image: trinodb/trino:484
+    ports: ["127.0.0.1:18089:8080"]
+    volumes:
+      - warehouse:/tmp/orchid-integration-warehouse
+      - ./trino/config.properties:/etc/trino/config.properties:ro
+      - ./trino/jvm.config:/etc/trino/jvm.config:ro
+      - ./trino/access-control.properties:/etc/trino/access-control.properties:ro
+      - ./trino/catalog/postgresql.properties:/etc/trino/catalog/postgresql.properties:ro
+      - ./trino/catalog/memory.properties:/etc/trino/catalog/memory.properties:ro
+      - ./trino/catalog/iceberg.properties:/etc/trino/catalog/iceberg.properties:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opa:
+        condition: service_started
+
+volumes:
+  warehouse:

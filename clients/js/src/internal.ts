@@ -9,7 +9,7 @@ export type Dialect = 'duckdb' | 'postgres' | 'starrocks' | 'trino';
 export type EngineDialect = Dialect | 'quickwit' | 'elasticsearch' | 'weaviate' | (string & {});
 export type Language = 'cypher' | 'gremlin' | 'sparql';
 export interface Column { name: string; data_type: string; nullable?: boolean }
-export interface Table { engine?: string; name: string; columns: readonly Column[] }
+export interface Table { source?: string; engine?: string; name: string; columns: readonly Column[] }
 export interface Authorization { subject_type: string; subject_id: string }
 export interface PermissionRelation {
   table: string; resource_type: string; permission: string;
@@ -38,7 +38,7 @@ export interface NodeMapping {
   permission_scopes?: readonly PermissionScope[];
 }
 export interface EdgeMapping extends NodeMapping { source: string; target: string; source_label: string; target_label: string }
-export interface FunctionSignature { name: string; target: string; parameters: readonly string[]; returns: string; aggregate?: boolean }
+export interface FunctionSignature { name: string; target: string; parameters: readonly string[]; returns: string; aggregate?: boolean; local?: boolean }
 export interface Ontology {
   classes?: readonly { iri: string; label: string; identity?: string }[];
   properties?: readonly { iri: string; label: string; property: string }[];
@@ -57,6 +57,8 @@ export interface RdfMapping {
 /** Shared compilation metadata and optional generated statistics. */
 export interface CompileRequest {
   version: 1; dialect: Dialect; language: Language; query: string;
+  engine?: "none" | "duckdb";
+  sources?: Readonly<Record<string, {adapter: EngineDialect}>>;
   engines?: Readonly<Record<string, {dialect: EngineDialect}>>; execution_engine?: string;
   parameters?: Readonly<Record<string, unknown>>;
   authorization?: Authorization;
@@ -69,7 +71,7 @@ export interface CompileRequest {
   representation_sources?: readonly unknown[]; statistics?: unknown;
   source_metadata?: readonly unknown[]; computed_relationships?: readonly unknown[]; search_indexes?: readonly unknown[];
 }
-export interface CompiledQuery { version: 1; dialect: Dialect; sql: string; fields: readonly string[]; readonly [diagnostic: string]: unknown }
+export interface CompiledQuery { version: 1 | 2; dialect: Dialect; sql: string; fields: readonly string[]; readonly [diagnostic: string]: unknown }
 
 /** A caller-owned lease. close() releases result resources, never the parent engine. */
 export interface ArrowResult extends AsyncIterable<RecordBatch> {
@@ -155,7 +157,7 @@ export class Compiler {
     const result = this.catalogId
       ? this.statisticsCommand({ op: 'compile', catalog_id: this.catalogId, request })
       : this.callNative(this.compileNative, request);
-    if (result?.version !== 1 || result?.dialect !== request.dialect || typeof result?.sql !== 'string' ||
+    if ((result?.version !== 1 && !(result?.version === 2 && result.execution_plan)) || result?.dialect !== request.dialect || typeof result?.sql !== 'string' ||
         !Array.isArray(result?.fields) || !result.fields.every((f: unknown) => typeof f === 'string')) {
       throw new Error('Invalid compiled query response');
     }
@@ -246,6 +248,7 @@ export class Compiler {
   async query(request: CompileRequest, engine: ExecutionEngine): Promise<ArrowResult> {
     if (request.dialect !== engine.dialect) throw new Error('Compiler and engine SQL dialects differ');
     const plan = this.compile(request);
+    if (plan.execution_plan) throw new Error("Use SourceConnection for source-first execution");
     if ((plan.transfers as unknown[] | undefined)?.length) throw new Error("Use queryFederated for a multi-engine plan");
     return engine.execute(plan);
   }

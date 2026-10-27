@@ -42,10 +42,10 @@ defmodule OrchidDB do
 
   def query(connection, text, opts \\ []) when is_binary(text) do
     with {:ok, work} <- Runtime.compile(request(connection, text, opts), connection.opts) do
-      if Map.get(work, "transfers", []) != [] do
-        {:error, "Use query_federated on this connection for multiple engines"}
-      else
-        Adbc.Connection.query(connection.engine, work["sql"])
+      cond do
+        Map.has_key?(work, "execution_plan") -> {:error, "Use OrchidDB.SourceConnection for source-first execution"}
+        Map.get(work, "transfers", []) != [] -> {:error, "Use query_federated on this connection for multiple engines"}
+        true -> Adbc.Connection.query(connection.engine, work["sql"])
       end
     end
   end

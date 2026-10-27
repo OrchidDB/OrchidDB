@@ -119,3 +119,45 @@ impl FederatedConnection {
 pub mod engines {
     pub use orchiddb::remote::transport::HttpSession;
 }
+
+/// Source-first connection. SQL adapters and function implementations remain
+/// application-owned; no database driver is opened or bundled by this client.
+pub struct SourceConnection {
+    catalog: Arc<dyn Catalog>,
+    engine: orchiddb::execution::plan::Engine,
+    sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>,
+    functions: orchiddb::execution::plan::Functions,
+    duckdb: Option<Box<dyn EngineSession>>,
+}
+pub use orchiddb::execution::plan::{Engine, LocalFunction, LazyDuckdb};
+impl SourceConnection {
+    pub fn new(schema: Schema, engine: Engine, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
+        Self::with_catalog(Arc::new(InMemoryCatalog::new(schema)), engine, sources)
+    }
+    pub fn with_catalog(catalog: Arc<dyn Catalog>, engine: Engine, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
+        Self { catalog, engine, sources, functions: Default::default(), duckdb: None }
+    }
+    pub fn register_function(&mut self, name: impl Into<String>, function: Arc<dyn LocalFunction>) {
+        self.functions.insert(name.into(), function);
+    }
+    /// Supply a lazy application-owned completion adapter. Its query method is
+    /// invoked only for a residual DuckDB operation.
+    pub fn set_duckdb(&mut self, adapter: Box<dyn EngineSession>) -> Result<(), String> {
+        if self.engine != Engine::Duckdb || adapter.dialect() != "duckdb" { return Err("DuckDB binding requires engine duckdb".into()); }
+        self.duckdb = Some(adapter);
+        Ok(())
+    }
+    pub async fn query(&mut self, query: Query) -> Result<orchiddb::execution::stream::BatchStream, String> {
+        let snapshot = self.catalog.snapshot().await?;
+        // Dialect is a frontend compatibility context; per-source SQL emission
+        // is selected by the source-first planner, never by this default.
+        let mut request = snapshot.schema.resolve().await?.request("duckdb", &query)?;
+        request.engine = Some(self.engine);
+        let work = orchiddb::compiler::compile(request).await?;
+        let plan = work.execution_plan.as_ref().ok_or("missing execution plan")?;
+        match self.duckdb.as_mut() {
+            Some(engine) => orchiddb::execution::plan::execute(plan, &mut self.sources, &self.functions, Some(engine.as_mut())).await,
+            None => orchiddb::execution::plan::execute(plan, &mut self.sources, &self.functions, None).await,
+        }
+    }
+}

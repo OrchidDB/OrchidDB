@@ -1,7 +1,6 @@
-//! Trino executable-engine session. SQL executes remotely; results and input
-//! exchanges are consumed incrementally without a DataFusion execution context.
+//! Trino source session. SQL executes remotely; results stream back to Orchid.
 use super::{
-    exchange::{ExchangeLease, ExchangeRegistry},
+    exchange::ExchangeRegistry,
     stream::{BatchStream, InputRelation},
 };
 use arrow::datatypes::SchemaRef;
@@ -18,7 +17,7 @@ pub struct TrinoOptions {
     pub bearer_token: Option<String>,
     pub catalog: Option<String>,
     pub schema: Option<String>,
-    /// Catalog where the Orchid Arrow connector is installed.
+    /// Legacy compatibility field; source execution does not use an exchange catalog.
     pub exchange_catalog: String,
     pub connect_timeout: Duration,
     pub request_timeout: Duration,
@@ -55,10 +54,14 @@ pub struct TrinoSession {
     client: Client,
     options: Arc<TrinoOptions>,
     endpoint: Url,
-    exchanges: ExchangeRegistry,
 }
 impl TrinoSession {
-    pub fn new(options: TrinoOptions, exchanges: ExchangeRegistry) -> Result<Self, String> {
+    /// Compatibility constructor; intermediate exchanges are no longer used.
+    pub fn new(options: TrinoOptions, _exchanges: ExchangeRegistry) -> Result<Self, String> {
+        Self::source(options)
+    }
+    /// Construct a Trino source without an Orchid exchange server or connector.
+    pub fn source(options: TrinoOptions) -> Result<Self, String> {
         let endpoint = Url::parse(&options.endpoint).map_err(|_| "invalid Trino endpoint")?;
         if !matches!(endpoint.scheme(), "http" | "https")
             || endpoint.host_str().is_none()
@@ -67,7 +70,6 @@ impl TrinoSession {
             || endpoint.query().is_some()
             || endpoint.fragment().is_some()
             || options.user.is_empty()
-            || options.exchange_catalog.is_empty()
             || options.result_batch_rows == 0
             || options.max_response_bytes == 0
             || options.connect_timeout.is_zero()
@@ -85,7 +87,6 @@ impl TrinoSession {
             client,
             options: Arc::new(options),
             endpoint,
-            exchanges,
         })
     }
     pub async fn execute(
@@ -93,8 +94,10 @@ impl TrinoSession {
         sql: &str,
         inputs: Vec<InputRelation>,
     ) -> Result<BatchStream, String> {
-        let (sql, leases) =
-            bind_inputs(sql, inputs, &self.options.exchange_catalog, &self.exchanges)?;
+        if !inputs.is_empty() {
+            return Err("Trino sources cannot consume intermediate relations; select DuckDB for relational completion".into());
+        }
+        let sql = sql.to_owned();
         let url = self
             .endpoint
             .join("/v1/statement")
@@ -104,7 +107,6 @@ impl TrinoSession {
             options: self.options.clone(),
             endpoint: self.endpoint.clone(),
             next: None,
-            _leases: leases,
         };
         let mut page = request(&guard, Method::POST, url, Some(sql)).await?;
         loop {
@@ -241,7 +243,6 @@ struct QueryGuard {
     options: Arc<TrinoOptions>,
     endpoint: Url,
     next: Option<Url>,
-    _leases: Vec<ExchangeLease>,
 }
 impl Drop for QueryGuard {
     fn drop(&mut self) {
@@ -352,82 +353,6 @@ fn take_rows(page: &mut Value) -> Result<VecDeque<Value>, String> {
         _ => Err("unsupported Trino result encoding; direct row protocol required".into()),
     }
 }
-fn bind_inputs(
-    sql: &str,
-    inputs: Vec<InputRelation>,
-    catalog: &str,
-    registry: &ExchangeRegistry,
-) -> Result<(String, Vec<ExchangeLease>), String> {
-    if inputs.is_empty() {
-        return Ok((sql.into(), vec![]));
-    }
-    use datafusion::sql::sqlparser::{ast, parser::Parser};
-    let dialect = crate::ir::rel::sql::SqlDialect::resolve("trino").map_err(|e| e.to_string())?;
-    let parser_dialect = dialect.parser_dialect();
-    let mut statements = Parser::parse_sql(parser_dialect.as_ref(), sql).map_err(|e| e.to_string())?;
-    if statements.len() != 1 {
-        return Err("exchange binding requires one SQL statement".into());
-    }
-    let ast::Statement::Query(query) = &mut statements[0] else {
-        return Err("exchange binding requires a query".into());
-    };
-    let quote = |value: &str| format!("\"{}\"", value.replace('"', "\"\""));
-    let mut names = query
-        .with
-        .as_ref()
-        .map(|w| {
-            w.cte_tables
-                .iter()
-                .map(|c| c.alias.name.value.to_lowercase())
-                .collect::<std::collections::BTreeSet<_>>()
-        })
-        .unwrap_or_default();
-    let mut bindings = Vec::new();
-    let mut leases = Vec::new();
-    for input in inputs {
-        if !names.insert(input.name.to_lowercase()) {
-            return Err("duplicate exchange binding".into());
-        }
-        let projection = if input.source.schema().fields().is_empty() {
-            "TRUE AS __orchid_unit"
-        } else {
-            "*"
-        };
-        // Trino requires column aliases on every CTE in a recursive WITH,
-        // including nonrecursive exchange relations prepended by the host.
-        let columns = if input.source.schema().fields().is_empty() {
-            "__orchid_unit".to_string()
-        } else {
-            input.source.schema().fields().iter().map(|field| quote(field.name())).collect::<Vec<_>>().join(", ")
-        };
-        let estimate = input.source.estimated_rows();
-        let lease = registry.register(vec![input.source], estimate)?;
-        let binding = format!(
-            "WITH {} ({columns}) AS (SELECT {projection} FROM {}.exchange.{}) SELECT 1",
-            quote(&input.name),
-            quote(catalog),
-            quote(lease.id())
-        );
-        let mut parsed = Parser::parse_sql(parser_dialect.as_ref(), &binding).map_err(|e| e.to_string())?;
-        let ast::Statement::Query(binding) = parsed.remove(0) else {
-            unreachable!()
-        };
-        bindings.push(binding.with.unwrap().cte_tables.remove(0));
-        leases.push(lease);
-    }
-    if let Some(existing) = &mut query.with {
-        bindings.append(&mut existing.cte_tables);
-        existing.cte_tables = bindings;
-    } else {
-        query.with = Some(ast::With {
-            with_token: ast::helpers::attached_token::AttachedToken::empty(),
-            recursive: false,
-            cte_tables: bindings,
-        });
-    }
-    Ok((statements.remove(0).to_string(), leases))
-}
-
 impl std::fmt::Debug for TrinoSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TrinoSession")
