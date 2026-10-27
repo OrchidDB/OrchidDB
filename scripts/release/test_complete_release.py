@@ -64,6 +64,7 @@ class CompleteReleaseTests(unittest.TestCase):
         source = Path(release.__file__).read_text()
         for changed, corrupt, expected in [
             ('clients/js/src/internal.ts', False, True),
+            ('clients/js/test/source-plan.test.mjs', False, True),
             ('src/catalog.rs', False, False),
             ('clients/js/src/internal.ts', True, False),
         ]:

@@ -36,7 +36,9 @@ def verify(assets):
         raise RuntimeError('Missing release clients')
     # Receipt also changes when validation code changes.
     inputs = {'assets': actual, 'verifier': sha(Path(__file__)),
-              'smoke': sha(ROOT / 'scripts/release/platform_smoke.py')}
+              'smoke': sha(ROOT / 'scripts/release/platform_smoke.py'),
+              'javascript_smoke': sha(ROOT / 'tools/diagnostics/release/js-smoke.mjs'),
+              'javascript_adapter': sha(ROOT / 'tools/diagnostics/release/adapter.mjs')}
     receipt = assets.parent / 'verified.json'
     if receipt.exists() and json.loads(receipt.read_text()).get('inputs') == inputs:
         print('Reusing verified package receipts', flush=True)

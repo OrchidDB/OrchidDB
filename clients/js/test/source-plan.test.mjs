@@ -22,3 +22,17 @@ test('local UDF preflight and result',async()=>{
  const functions=new Map([['double',(args,rows)=>{assert.equal(rows,2);return a.vectorFromArray([...args[0]].map(v=>v*2n),new a.Int64());}]]);
  const result=await executeSourcePlan(plan('none',true),new Map([['db',db]]),functions);const rows=[];for await(const b of result)rows.push(...b.getChildAt(0));assert.deepEqual(rows,[2n,4n]);
 });
+
+for(const one_row of [true,false]) test(`column-free input preserves cardinality ${one_row}`,async()=>{
+ const empty=new a.Schema([]);
+ const emptyIPC=Array.from(a.tableToIPC(new a.Table(empty),'stream'));
+ const node={kind:'input',columns:[],schema_ipc:emptyIPC,one_row};
+ const bare=await executeSourcePlan({version:1,engine:'none',nodes:[node],result:0},new Map(),new Map());
+ let count=0;for await(const batch of bare){assert.equal(batch.numCols,0);count+=batch.numRows;}
+ assert.equal(count,one_row?1:0);
+ const local={kind:'local_project',input:0,columns,schema_ipc,expressions:[{kind:'call',function:'answer',arguments:[],returns:'int64'}]};
+ const functions=new Map([['answer',(_,rows)=>a.vectorFromArray(Array(rows).fill(42n),new a.Int64())]]);
+ const result=await executeSourcePlan({version:1,engine:'none',nodes:[node,local],result:1},new Map(),functions);
+ const got=[];for await(const batch of result)got.push(...batch.getChildAt(0));
+ assert.deepEqual(got,one_row?[42n]:[]);
+});

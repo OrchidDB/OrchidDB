@@ -24,6 +24,16 @@ export interface SourcePlan {version:number;engine:RelationalEngine;nodes:Node[]
 export async function executeSourcePlan(plan:SourcePlan, sources:ReadonlyMap<string,SqlSource>,
     functions:ReadonlyMap<string,LocalFunction>, duckdb?:CompletionEngine):Promise<ArrowResult> {
   const a = await import('apache-arrow');
+  // Arrow JS 17 infers RecordBatch length from its children, losing the one
+  // logical row of a column-free input. Preserve the explicit struct data.
+  class InputBatch extends a.RecordBatch {
+    override readonly data: import('apache-arrow').Data<import('apache-arrow').Struct>;
+    constructor(schema: import('apache-arrow').Schema, rows: number) {
+      const data = a.makeData({type:new a.Struct(schema.fields),length:rows,nullCount:0,children:[]});
+      super(schema,data);
+      this.data = data;
+    }
+  }
   if(plan.version!==1 || !plan.nodes[plan.result]) throw new Error('Invalid source plan');
   const schemas=plan.nodes.map(n=>a.tableFromIPC(Uint8Array.from(n.schema_ipc)).schema);
   const logicalType=(name:string):import('apache-arrow').DataType|undefined=>{
@@ -131,7 +141,7 @@ export async function executeSourcePlan(plan:SourcePlan, sources:ReadonlyMap<str
         const input=n.input===undefined?undefined:outputs.get(n.input)!;
         result={schema,close(){},async *[Symbol.asyncIterator](){
           if(n.kind==='input') {
-            yield new a.RecordBatch(schema,a.makeData({type:new a.Struct(schema.fields),length:n.one_row?1:0,children:[]}));
+            yield new InputBatch(schema,n.one_row?1:0);
           } else {
             for await(const batch of input!) {
               const vectors=n.expressions!.map(e=>evaluate(e,batch));
