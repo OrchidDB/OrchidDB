@@ -185,6 +185,10 @@ fn scalar(value: ScalarValue, context: &mut Context) -> Result<Value, String> {
         return Ok(Value::Null);
     }
     match value {
+        value @ (ScalarValue::Binary(_)
+        | ScalarValue::LargeBinary(_)
+        | ScalarValue::BinaryView(_)
+        | ScalarValue::FixedSizeBinary(..)) => Ok(Value::Scalar(value)),
         ScalarValue::Decimal256(Some(n), 39, 0) => {
             let text = n.to_string();
             Ok(match text.parse::<i64>() {

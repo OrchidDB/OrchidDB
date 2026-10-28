@@ -169,7 +169,7 @@ func (c *SourceConnection) checkExpr(e sourceExpr, width int) error {
 		}
 		_, err := decodeSourceLiteral(e)
 		return err
-	case "cast":
+	case "cast", "graph_element":
 		if e.Input == nil {
 			return errors.New("missing cast argument")
 		}
@@ -221,6 +221,19 @@ func (c *SourceConnection) eval(ctx context.Context, e sourceExpr, row []any) (a
 		return decodeSourceLiteral(e)
 	case "cast":
 		return c.eval(ctx, *e.Input, row)
+	case "graph_element":
+		value, err := c.eval(ctx, *e.Input, row)
+		if err != nil {
+			return nil, err
+		}
+		var decoded []any
+		if err = c.command(map[string]any{"op": "decode_graph_values", "data_type": e.DataType, "values": []any{value}}, &decoded); err != nil {
+			return nil, err
+		}
+		if len(decoded) != 1 {
+			return nil, errors.New("invalid graph decoder row count")
+		}
+		return decoded[0], nil
 	case "call":
 		args := make([]any, len(e.Arguments))
 		for i, a := range e.Arguments {
@@ -441,6 +454,11 @@ func (r *deferredSourceRows) Next() bool {
 	}
 	if r.rows == nil {
 		r.rows, r.err = r.open()
+		// database/sql returns a typed nil *Rows on failure. Clear that
+		// interface before cleanup so the original source error is retained.
+		if r.rows != nil && reflect.ValueOf(r.rows).Kind() == reflect.Ptr && reflect.ValueOf(r.rows).IsNil() {
+			r.rows = nil
+		}
 		if r.err == nil && r.rows == nil {
 			r.err = errors.New("source returned a nil cursor")
 		}

@@ -691,6 +691,30 @@ community binary, and a local Loki build from upstream revision
 
 ## Trino
 
+For source-only execution, register a caller-owned Trino connection under
+`sources` and select `engine: "none"`. In Python use `TrinoSource(connection)`;
+in Go use `NewSourceConnection` with a `SQLSource{Dialect: "trino"}`. The source
+connection retains its authentication, session properties, and catalog access
+rules. OrchidDB does not create a DuckDB completion engine for this route.
+
+Filters, grouping, optional joins, numeric string conversion, list transforms,
+and supported recursive traversals execute in Trino. Whole nodes, relationships,
+and paths use typed source descriptors; the shared native runtime restores their
+standard graph-value encoding at the cursor boundary. This decoding performs no
+joins, filtering, aggregation, or traversal. Unsupported scalar operations report
+the failing function and dialect before execution.
+
+Map timezone-aware source columns as `timestamptz`, and local timestamps as
+`timestamp`; the schema must describe the actual source type. Graph transport
+preserves integer and decimal text, binary bytes, and timestamp precision rather
+than passing those values through JSON floating-point numbers.
+
+Trino recursive queries require an explicit finite upper bound and remain
+subject to the caller's server recursion and resource limits. Unbounded traversal
+reports an unsupported-operation error before execution; source-backed
+orchestration for arbitrary depth is not implemented. OrchidDB does not insert
+an implicit traversal cap or return a truncated result when a source limit fails.
+
 Select the `trino` SQL dialect. The shared adapter targets Trino **484** and
 supports typed projections, joins, filters, aggregation, ordering, pagination,
 arrays, and explicit scalar-function mappings. Python's `TrinoEngine` borrows a

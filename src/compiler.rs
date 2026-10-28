@@ -1446,6 +1446,9 @@ pub async fn compile_json(input: &str) -> Result<String, String> {
         )?)
         .map_err(|e| e.to_string());
     }
+    if message["op"] == "decode_graph_values" {
+        return crate::execution::graph_values::decode(&message).map(|v| v.to_string());
+    }
     let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
     if command
         .get("op")

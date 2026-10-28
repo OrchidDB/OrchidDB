@@ -74,6 +74,12 @@ pub struct Relation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LocalExpr {
+    /// Decode a typed graph descriptor into the standard native value carrier.
+    /// This is representation conversion only; source SQL owns row selection.
+    GraphElement {
+        input: Box<LocalExpr>,
+        data_type: String,
+    },
     Column {
         index: usize,
     },
@@ -284,6 +290,19 @@ struct Builder<'a> {
     plan: ExecutionPlan,
 }
 impl Builder<'_> {
+    fn source_sql(&mut self, plan: &LogicalPlan, source: String, dialect: String, sql: String) -> Result<usize, String> {
+        let id = self.push(plan, Operation::SourceSql { source, dialect: dialect.clone(), sql })?;
+        if dialect != "trino" || !plan.schema().fields().iter().any(|f| crate::ir::rel::native_values::is_value(f.data_type())) {
+            return Ok(id);
+        }
+        let expressions = plan.schema().fields().iter().enumerate().map(|(index, field)| {
+            let column = LocalExpr::Column { index };
+            Ok(if crate::ir::rel::native_values::is_value(field.data_type()) {
+                LocalExpr::GraphElement { input: Box::new(column), data_type: crate::federation::type_name(field.data_type())? }
+            } else { column })
+        }).collect::<Result<Vec<_>, String>>()?;
+        self.push(plan, Operation::LocalProject { input: id, expressions })
+    }
     fn push(&mut self, plan: &LogicalPlan, operation: Operation) -> Result<usize, String> {
         let id = self.plan.nodes.len();
         self.plan.nodes.push(Node {
@@ -300,8 +319,20 @@ impl Builder<'_> {
             }
         }
         let mut owners = BTreeSet::new();
+        let mut recursive_tables = BTreeSet::new();
+        plan.apply_with_subqueries(|p| {
+            if let LogicalPlan::RecursiveQuery(query) = p { recursive_tables.insert(query.name.clone()); }
+            Ok(TreeNodeRecursion::Continue)
+        }).map_err(|e| e.to_string())?;
         plan.apply_with_subqueries(|p| {
             if let LogicalPlan::TableScan(scan) = p {
+                // Recursive work tables are internal dependencies of their
+                // owning query, not an independent completion-engine source.
+                if datafusion::datasource::source_as_provider(&scan.source)?
+                    .as_any().is::<datafusion::datasource::cte_worktable::CteWorkTable>()
+                    && recursive_tables.contains(&scan.table_name.to_string()) {
+                    return Ok(TreeNodeRecursion::Continue);
+                }
                 let table = self
                     .request
                     .tables
@@ -317,19 +348,16 @@ impl Builder<'_> {
         })
         .map_err(|e| e.to_string())?;
         let local = has_local(plan)?;
+        let mut source_error = None;
         if !local && owners.len() == 1 && !owners.contains("") {
             let source = owners.first().unwrap();
             let adapter = &self.request.sources[source].adapter;
             if let Ok(dialect) = super::SqlDialect::resolve(adapter) {
-                if let Ok(sql) = crate::ir::rel::sql::unparse_plan(plan.clone(), dialect) {
-                    return self.push(
-                        plan,
-                        Operation::SourceSql {
-                            source: source.clone(),
-                            dialect: adapter.clone(),
-                            sql,
-                        },
-                    );
+                match crate::ir::rel::sql::unparse_plan(plan.clone(), dialect) {
+                    Ok(sql) => {
+                    return self.source_sql(plan, source.clone(), adapter.clone(), sql);
+                    }
+                    Err(error) => source_error = Some(format!("source {source} ({adapter}): {error}")),
                 }
             }
         }
@@ -508,6 +536,21 @@ impl Builder<'_> {
             }
         }
         if self.plan.engine == Engine::None {
+            // Keep trivial constants on the engine-independent path above.
+            // More involved source-free expressions can use the sole registered
+            // SQL session, retaining its authorization and cancellation context.
+            if !local && owners.is_empty() && self.request.sources.len() == 1 {
+                let (source, binding) = self.request.sources.iter().next().unwrap();
+                if let Ok(dialect) = super::SqlDialect::resolve(&binding.adapter) {
+                    match crate::ir::rel::sql::unparse_plan(plan.clone(), dialect) {
+                        Ok(sql) => return self.source_sql(plan, source.clone(), binding.adapter.clone(), sql),
+                        Err(error) => source_error = Some(format!("source {source} ({}): {error}", binding.adapter)),
+                    }
+                }
+            }
+            if let Some(error) = source_error {
+                return Err(format!("engine none cannot lower query to {error}"));
+            }
             return Err(format!(
                 "engine none cannot execute residual operation {}; push it to a source or select engine duckdb",
                 plan.display()
@@ -559,8 +602,16 @@ impl Builder<'_> {
             );
             relations.push(Relation { name, node: id });
         }
+        // DataFusion exposes UNNEST's dependency columns as expressions, but
+        // with_new_exprs reconstructs those from exec_columns and requires an
+        // empty expression list. Its builder recomputes the output schema.
+        let expressions = if matches!(plan, LogicalPlan::Unnest(_)) {
+            vec![]
+        } else {
+            plan.expressions()
+        };
         let residual = plan
-            .with_new_exprs(plan.expressions(), replaced)
+            .with_new_exprs(expressions, replaced)
             .map_err(|e| e.to_string())?;
         let sql = crate::ir::rel::sql::unparse_plan(residual, super::SqlDialect::DuckDb)
             .map_err(|e| e.to_string())?;
@@ -600,7 +651,7 @@ fn validate_expr(expr: &LocalExpr, functions: &Functions, width: usize) -> Resul
             }
             Ok(())
         }
-        LocalExpr::Cast { input, data_type } => {
+        LocalExpr::Cast { input, data_type } | LocalExpr::GraphElement { input, data_type } => {
             crate::compiler::data_type(data_type)?;
             validate_expr(input, functions, width)
         }
@@ -630,6 +681,13 @@ fn evaluate(
 ) -> Result<ArrayRef, String> {
     match expr {
         LocalExpr::Column { index } => Ok(batch.column(*index).clone()),
+        LocalExpr::GraphElement { input, data_type } => {
+            let values = evaluate(input, batch, functions)?;
+            if values.data_type() != &crate::compiler::data_type(data_type)? {
+                return Err("graph descriptor schema mismatch".into());
+            }
+            crate::execution::graph_values::decode_array(values)
+        }
         LocalExpr::Cast { input, data_type } => arrow::compute::cast(
             &evaluate(input, batch, functions)?,
             &crate::compiler::data_type(data_type)?,

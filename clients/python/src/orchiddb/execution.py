@@ -155,7 +155,7 @@ class Connection:
         if self._source_mode:
             from .plan import execute_plan
             plan = self._runtime.prepare(request).diagnostics["execution_plan"]
-            return execute_plan(plan, self._sources, self._functions, self._duckdb, batch_size)
+            return execute_plan(plan, self._sources, self._functions, self._duckdb, batch_size, self._runtime.operation_command)
         if self._engines:
             from .federation import _query_federated
             return _query_federated(self._runtime, request, self._engines, batch_size)
@@ -280,6 +280,7 @@ def _logical_arrow_type(name, pa):
     if name == 'boolean': return pa.bool_()
     if name == 'date': return pa.date32()
     if name == 'timestamp': return pa.timestamp('us')
+    if name == 'timestamptz': return pa.timestamp('us', tz='UTC')
     return pa.type_for_alias(name)
 
 

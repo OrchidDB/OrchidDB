@@ -16,6 +16,8 @@ use datafusion::{
 };
 
 pub mod connectors;
+mod typed;
+pub(super) use typed::specialize;
 
 #[derive(Debug)]
 pub struct TrinoAdapter;
@@ -41,7 +43,12 @@ impl DialectAdapter for TrinoAdapter {
         // The shared structural codec can introduce casts after expression
         // adaptation; normalize their type ASTs at the final boundary too.
         let mut statements =
-            datafusion::sql::sqlparser::parser::Parser::parse_sql(&TrinoParser, &sql)
+            datafusion::sql::sqlparser::parser::Parser::new(&TrinoParser)
+                // Typed path descriptors nest casts, JSON arrays and ROW fields.
+                // This bounds parser depth, not graph traversal depth.
+                .with_recursion_limit(512)
+                .try_with_sql(&sql)
+                .and_then(|mut parser| parser.parse_statements())
                 .map_err(|e| SqlError::Unsupported(e.to_string()))?;
         let _ = ast::visit_expressions_mut(&mut statements, |expr| {
             if let ast::Expr::Cast { data_type, .. } = expr {
@@ -276,6 +283,7 @@ impl DialectAdapter for TrinoAdapter {
         args: &[ast::Expr],
     ) -> SqlResult<Option<ast::Expr>> {
         let template = match (name, args.len()) {
+            ("btrim", 2) => "trim(BOTH __arg1 FROM __arg0)",
             ("array_append", 2) => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])",
             ("array_prepend", 2) => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))",
             ("contains", 2) => "strpos(__arg0, __arg1) > 0",
@@ -371,7 +379,8 @@ impl DialectAdapter for TrinoAdapter {
                     "isnan" => "is_nan",
                     "isfinite" => "is_finite",
                     "first_value" if f.over.is_none() => "arbitrary",
-                    "row"
+                    "chr"
+                    | "row"
                     | "count"
                     | "sum"
                     | "avg"

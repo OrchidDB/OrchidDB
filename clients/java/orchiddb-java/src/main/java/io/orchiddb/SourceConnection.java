@@ -107,7 +107,7 @@ public final class SourceConnection {
         if (i < 0 || i >= width) throw new SQLException("Column out of bounds");
       }
       case "literal" -> literal(expr);
-      case "cast" -> checkExpr(expr.path("input"), width);
+      case "cast", "graph_element" -> checkExpr(expr.path("input"), width);
       case "call" -> {
         if (!functions.containsKey(expr.path("function").asText()))
           throw new SQLException("Missing local function " + expr.path("function").asText());
@@ -138,6 +138,23 @@ public final class SourceConnection {
       case "column" -> input.get(expr.path("index").asInt() + 1);
       case "literal" -> literal(expr);
       case "cast" -> eval(expr.path("input"), input);
+      case "graph_element" -> {
+        try {
+          var command =
+              JSON.createObjectNode()
+                  .put("op", "decode_graph_values")
+                  .put("data_type", expr.path("data_type").asText());
+          command
+              .putArray("values")
+              .add(JSON.valueToTree(graphDescriptor(eval(expr.path("input"), input))));
+          var values = JSON.readTree(runtime.command(command.toString()));
+          if (!values.isArray() || values.size() != 1)
+            throw new SQLException("Invalid graph decoder row count");
+          yield JSON.convertValue(values.get(0), Object.class);
+        } catch (Exception e) {
+          throw new SQLException("Graph descriptor decoding failed", e);
+        }
+      }
       case "call" -> {
         var arguments = new ArrayList<Object>();
         for (var arg : expr.path("arguments")) arguments.add(eval(arg, input));
@@ -150,6 +167,20 @@ public final class SourceConnection {
       }
       default -> throw new SQLException("Unsupported local expression");
     };
+  }
+
+  private static Object graphDescriptor(Object value)
+      throws ReflectiveOperationException, SQLException {
+    if (value instanceof java.sql.Struct row) return Arrays.asList(row.getAttributes());
+    // Keep the JDBC driver optional. Trino's ROW facade is not java.sql.Struct;
+    // its ordered fields correspond to the shared descriptor schema.
+    if (value != null && value.getClass().getName().equals("io.trino.jdbc.Row")) {
+      var fields = (List<?>) value.getClass().getMethod("getFields").invoke(value);
+      var result = new ArrayList<Object>();
+      for (var field : fields) result.add(field.getClass().getMethod("getValue").invoke(field));
+      return result;
+    }
+    return value;
   }
 
   private static void validateValue(Object value, String kind) throws SQLException {

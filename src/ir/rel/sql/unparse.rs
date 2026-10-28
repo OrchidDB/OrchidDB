@@ -19,6 +19,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     // Keep the complete Arrow type in the UDF, rather than serializing it into
     // a default-engine SQL spelling during language lowering.
     let plan = resolve_declared_casts(plan, dialect)?;
+    let plan = if dialect.name() == "trino" { super::trino::specialize(plan)? } else { plan };
     super::super::pipeline::validate_sql_contract(&plan, dialect, context)?;
     let plan = super::correlation::preserve_scopes(plan)?;
     // Compact emission is an implementation alternative, after the same required

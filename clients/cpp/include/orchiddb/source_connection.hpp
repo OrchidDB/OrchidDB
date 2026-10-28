@@ -80,13 +80,18 @@ class SourceConnection {
     }
     if(!valid)throw std::runtime_error("Local function returned an invalid value for "+type);
   }
-  static Json evaluate(const Json& expr,const Json& row,const std::map<std::string,LocalFunction>& functions) {
+  static Json evaluate(const Json& expr,const Json& row,const std::map<std::string,LocalFunction>& functions,const detail::Compiler& runtime) {
     const auto kind=expr.at("kind").get<std::string>();
     if(kind=="column")return row.at(expr.at("index").get<std::size_t>());
     if(kind=="literal")return expr.at("json");
-    if(kind=="cast")return evaluate(expr.at("input"),row,functions);
+    if(kind=="cast")return evaluate(expr.at("input"),row,functions,runtime);
+    if(kind=="graph_element") {
+      auto decoded=runtime.command({{"op","decode_graph_values"},{"data_type",expr.at("data_type")},{"values",Json::array({evaluate(expr.at("input"),row,functions,runtime)})}});
+      if(!decoded.is_array()||decoded.size()!=1)throw std::runtime_error("Invalid graph decoder row count");
+      return decoded.at(0);
+    }
     if(kind=="call") {
-      std::vector<Json> args; for(const auto& a:expr.at("arguments"))args.push_back(evaluate(a,row,functions));
+      std::vector<Json> args; for(const auto& a:expr.at("arguments"))args.push_back(evaluate(a,row,functions,runtime));
       Json value=functions.at(expr.at("function").get<std::string>())(args);
       validate_value(value,expr.at("returns").get<std::string>());return value;
     }
@@ -107,7 +112,7 @@ class SourceConnection {
     const auto kind=expr.at("kind").get<std::string>();
     if(kind=="column") {if(expr.at("index").get<std::size_t>()>=width)throw std::runtime_error("Column out of bounds");}
     else if(kind=="literal") {if(!expr.contains("json"))throw std::runtime_error("Literal requires an Arrow-capable adapter");}
-    else if(kind=="cast")check_expression(expr.at("input"),width);
+    else if(kind=="cast"||kind=="graph_element")check_expression(expr.at("input"),width);
     else if(kind=="call") {
       const auto name=expr.at("function").get<std::string>();
       if(!functions_.count(name)||!functions_.at(name))throw std::runtime_error("Missing local function "+name);
@@ -174,8 +179,8 @@ public:
       } else if(kind=="input") {
         rows=std::make_shared<detail::FunctionRows>([once=n.at("one_row").get<bool>()](Json& row)mutable{if(!once)return false;once=false;row=Json::array();return true;});
       } else if(kind=="local_project") {
-        rows=std::make_shared<detail::FunctionRows>([input=outputs.at(n.at("input").get<std::size_t>()),n,functions=functions_](Json& row){
-          Json source;if(!input->next(source))return false;row=Json::array();for(const auto& expr:n.at("expressions"))row.push_back(evaluate(expr,source,functions));return true;
+        rows=std::make_shared<detail::FunctionRows>([input=outputs.at(n.at("input").get<std::size_t>()),n,functions=functions_,runtime=runtime_](Json& row){
+          Json source;if(!input->next(source))return false;row=Json::array();for(const auto& expr:n.at("expressions"))row.push_back(evaluate(expr,source,functions,runtime));return true;
         });
       } else {
         std::map<std::string,std::shared_ptr<SourceRows>> inputs;

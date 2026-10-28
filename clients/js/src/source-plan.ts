@@ -14,6 +14,7 @@ export interface CompletionEngine extends SqlSource {
 export type LocalFunction = (arguments_: readonly Vector[], rows: number) => Vector;
 type Expr = {kind:'column';index:number} | {kind:'literal';ipc:number[]} |
   {kind:'cast';input:Expr;data_type:string} |
+  {kind:'graph_element';input:Expr;data_type:string} |
   {kind:'call';function:string;arguments:Expr[];returns:string};
 type Node = {kind:string; columns:{name:string;data_type:string;nullable:boolean}[]; schema_ipc:number[];
   source?:string;dialect?:Dialect;sql?:string;input?:number;expressions?:Expr[];one_row?:boolean;
@@ -22,7 +23,7 @@ export interface SourcePlan {version:number;engine:RelationalEngine;nodes:Node[]
 
 /** Interpret the shared plan with application-owned adapters. No SQL driver. */
 export async function executeSourcePlan(plan:SourcePlan, sources:ReadonlyMap<string,SqlSource>,
-    functions:ReadonlyMap<string,LocalFunction>, duckdb?:CompletionEngine):Promise<ArrowResult> {
+    functions:ReadonlyMap<string,LocalFunction>, duckdb?:CompletionEngine, decode?:(command:unknown)=>any):Promise<ArrowResult> {
   const a = await import('apache-arrow');
   // Arrow JS 17 infers RecordBatch length from its children, losing the one
   // logical row of a column-free input. Preserve the explicit struct data.
@@ -48,7 +49,10 @@ export async function executeSourcePlan(plan:SourcePlan, sources:ReadonlyMap<str
     if(e.kind==='call') {
       if(!functions.has(e.function)) throw new Error(`Missing local function ${e.function}`);
       e.arguments.forEach(x=>check(x,width));
-    } else if(e.kind==='cast') check(e.input,width);
+    } else if(e.kind==='cast'||e.kind==='graph_element') {
+      if(e.kind==='graph_element'&&!decode)throw new Error('Graph representation decoder is required');
+      check(e.input,width);
+    }
     else if(e.kind==='literal') {
       const t=a.tableFromIPC(Uint8Array.from(e.ipc));
       if(t.numRows!==1 || t.numCols!==1) throw new Error('Invalid literal');
@@ -97,6 +101,13 @@ export async function executeSourcePlan(plan:SourcePlan, sources:ReadonlyMap<str
     // Declared-argument casts are type checks: compiler overload binding already
     // requires exact argument types. No implicit host-language numeric coercion.
     if(e.kind==='cast') {const value=evaluate(e.input,b);const type=logicalType(e.data_type);if(value.type instanceof a.Null && type)return a.vectorFromArray(Array(b.numRows).fill(null),type);return value;}
+    if(e.kind==='graph_element') {
+      const descriptor=evaluate(e.input,b);
+      const ipc=Array.from(a.tableToIPC(new a.Table({descriptor}),'stream'));
+      const result=decode!({op:'decode_graph_values',data_type:e.data_type,ipc});
+      if(!Array.isArray(result)||result.length!==b.numRows)throw new Error('Invalid graph decoder row count');
+      return a.vectorFromArray(result,new a.Struct([new a.Field('__orchiddb_value_v1',new a.Utf8(),true)]));
+    }
     const value=functions.get(e.function)!(e.arguments.map(x=>evaluate(x,b)),b.numRows);
     const expected=logicalType(e.returns);
     if(value.length!==b.numRows || (expected&&expected.toString()!==value.type.toString())) throw new Error(`Invalid type or row count from ${e.function}`);

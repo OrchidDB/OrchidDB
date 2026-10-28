@@ -2,10 +2,22 @@ package orchiddb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
 )
+
+func TestSourceOpenErrorWithTypedNilCursor(t *testing.T) {
+	want := errors.New("source unavailable")
+	rows := &deferredSourceRows{open: func() (RowCursor, error) { return (*sql.Rows)(nil), want }}
+	if rows.Next() || !errors.Is(rows.Err(), want) {
+		t.Fatalf("source error lost: %v", rows.Err())
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func sourceFixture(local bool) sourcePlan {
 	col := exchangeColumn{Name: "id", DataType: json.RawMessage(`"int64"`), Nullable: true}

@@ -45,9 +45,9 @@ pub(super) fn adapt(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<bool
     }) else {
         return Ok(false);
     };
-    if dialect != SqlDialect::DuckDb {
+    if dialect != SqlDialect::DuckDb && dialect.name() != "trino" {
         return Err(SqlError::Unsupported(
-            "Typed list lambdas require DuckDB".into(),
+            format!("Typed list lambdas have no {} lowering", dialect.name()),
         ));
     }
     let ast::FunctionArguments::List(arguments) = &function.args else {
@@ -81,6 +81,18 @@ pub(super) fn adapt(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<bool
         ControlFlow::Continue(())
     }) {
         return Err(error);
+    }
+    if dialect.name() == "trino" {
+        let method = match lambda.kind.as_str() {
+            "filter" => "filter", "transform" => "transform",
+            "any" => "any_match", "all" => "all_match", "none" => "none_match",
+            _ => return Err(SqlError::Unsupported(format!("Trino list lambda {} is unsupported", lambda.kind))),
+        };
+        *expr = super::functions::portable_template(
+            &format!("{method}(__arg0, \"{}\" -> __arg1)", lambda.parameter),
+            &[args[0].clone(), body], dialect,
+        )?;
+        return Ok(true);
     }
     let method = if lambda.kind == "filter" {
         "list_filter"

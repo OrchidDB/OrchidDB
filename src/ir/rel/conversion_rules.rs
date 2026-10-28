@@ -123,7 +123,11 @@ impl LoweringContext<'_> {
                 super::language_functions::cypher_to_float(typed_text(value)),
             ),
             StringToFloatPolicy::Orchid => {
-                if !super::scalar_semantics::stable_scalar_input(arg) {
+                // Aggregate normalization may spell a mapped property as a
+                // subscript. Once binding resolves it to a column, rereading
+                // that value cannot repeat evaluation of the original syntax.
+                if !matches!(value, Expr::Column(_) | Expr::Literal(..))
+                    && !super::scalar_semantics::stable_scalar_input(arg) {
                     return Err(RelError::Unsupported("conformant string-to-float SQL requires a repeatable operand when a typed helper is unavailable".into()));
                 }
                 super::scalar_semantics::conformant_string_to_float(value)

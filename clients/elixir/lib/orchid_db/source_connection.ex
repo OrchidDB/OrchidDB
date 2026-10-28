@@ -156,7 +156,7 @@ defmodule OrchidDB.SourceConnection do
         if not Map.has_key?(e, "json"),
           do: raise(ArgumentError, "Literal needs an Arrow-capable client")
 
-      "cast" ->
+      kind when kind in ["cast", "graph_element"] ->
         check_expression(c, e["input"], width)
 
       "call" ->
@@ -180,6 +180,13 @@ defmodule OrchidDB.SourceConnection do
 
       "cast" ->
         evaluate(c, e["input"], row)
+
+      "graph_element" ->
+        command = %{op: "decode_graph_values", data_type: e["data_type"], values: [evaluate(c, e["input"], row)]}
+        case Runtime.compile(command, c.opts) do
+          {:ok, [value]} -> value
+          other -> raise ArgumentError, "Graph descriptor decoding failed: #{inspect(other)}"
+        end
 
       "call" ->
         value = c.functions[e["function"]].(Enum.map(e["arguments"], &evaluate(c, &1, row)))

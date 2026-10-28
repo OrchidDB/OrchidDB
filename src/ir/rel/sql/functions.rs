@@ -436,7 +436,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     }
     if super::super::native_values::typed::operation(name.trim_matches('"')).is_some() || crate::ir::rel::language_functions::supported(name.trim_matches('"')) || matches!(name.trim_matches('"'), super::super::native_values::VALUE | super::super::native_values::PREDICATE | super::super::native_values::ITEMS | super::super::native_values::AGGREGATE | super::super::native_values::SORT | super::super::native_values::PROCEDURE | super::super::native_values::PROJECT | super::super::native_values::KEY) {
         return if dialect == SqlDialect::DuckDb { Ok(()) } else {
-            Err(SqlError::Unsupported("registered language functions require DuckDB".into()))
+            Err(SqlError::Unsupported(format!("language function {name} has no {} lowering", dialect.name())))
         };
     }
     if let Some(lowered) = dialect.lower_function(function)? {

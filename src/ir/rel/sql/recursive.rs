@@ -56,6 +56,28 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         .collect();
     let mut pending = Vec::with_capacity(plain_ctes.len() + recursive_ctes.len());
     for cte in recursive_ctes {
+        if dialect.name() == "trino" && cte.name.starts_with("__graph_varlen_") {
+            // Only the compiler's explicit recursive-step upper bound establishes
+            // bounded traversal. A final LIMIT or minimum length does not.
+            let mut upper_bound = None;
+            cte.recursive_term.apply_with_subqueries(|plan| {
+                if let LogicalPlan::Filter(filter) = plan {
+                    filter.predicate.apply(|expr| {
+                        if let Expr::BinaryExpr(binary) = expr
+                            && binary.op == datafusion::logical_expr::Operator::Lt
+                            && matches!(binary.left.as_ref(), Expr::Column(c) if c.name == "__w_depth")
+                            && let Expr::Literal(datafusion::common::ScalarValue::Int64(Some(upper)), _) = binary.right.as_ref() {
+                            upper_bound = Some(*upper);
+                        }
+                        Ok(TreeNodeRecursion::Continue)
+                    })?;
+                }
+                Ok(TreeNodeRecursion::Continue)
+            })?;
+            if upper_bound.is_none() {
+                return Err(SqlError::Unsupported("Trino unbounded traversal requires source-backed orchestration; specify an explicit finite upper bound".into()));
+            }
+        }
         let mut deps = referenced_ctes(&cte.static_term, &names);
         deps.extend(referenced_ctes(&cte.recursive_term, &names));
         deps.remove(&cte.name);

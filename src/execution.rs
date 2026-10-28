@@ -5,6 +5,7 @@
 //! Connection pools, transactions, UDFs, cancellation, and cache policy belong to
 //! the adapter. This is a single-engine boundary, not a federated coordinator.
 pub mod plan;
+pub(crate) mod graph_values;
 pub mod exchange;
 pub mod stream;
 #[cfg(feature = "trino")]

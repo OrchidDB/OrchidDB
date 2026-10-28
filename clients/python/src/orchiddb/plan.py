@@ -4,7 +4,7 @@ from ._runtime import CompiledQuery
 
 
 @contextmanager
-def execute_plan(plan, sources, functions, duckdb=None, batch_size=65536):
+def execute_plan(plan, sources, functions, duckdb=None, batch_size=65536, decode=None):
     import pyarrow as pa
     from .execution import _logical_arrow_type
     if plan.get('version') != 1 or batch_size <= 0:
@@ -18,7 +18,9 @@ def execute_plan(plan, sources, functions, duckdb=None, batch_size=65536):
         if kind == 'column':
             if not 0 <= expr['index'] < width:
                 raise ValueError('Local column out of bounds')
-        elif kind == 'cast':
+        elif kind in ('cast', 'graph_element'):
+            if kind == 'graph_element' and decode is None:
+                raise ValueError('Graph representation decoder is required')
             expressions(expr['input'], width)
             _logical_arrow_type(expr['data_type'], pa)
         elif kind == 'literal':
@@ -70,6 +72,16 @@ def execute_plan(plan, sources, functions, duckdb=None, batch_size=65536):
             return batch.column(expr['index'])
         if kind == 'cast':
             return evaluate(expr['input'], batch).cast(_logical_arrow_type(expr['data_type'], pa), safe=True)
+        if kind == 'graph_element':
+            values = evaluate(expr['input'], batch)
+            encoded = pa.RecordBatch.from_arrays([values], names=['descriptor'])
+            sink = pa.BufferOutputStream()
+            with pa.ipc.new_stream(sink, encoded.schema) as writer:
+                writer.write_batch(encoded)
+            result = decode({'op':'decode_graph_values', 'data_type':expr['data_type'], 'ipc':list(sink.getvalue().to_pybytes())})
+            if len(result) != batch.num_rows:
+                raise ValueError('Invalid graph decoder row count')
+            return pa.array(result, type=pa.struct([pa.field('__orchiddb_value_v1', pa.string())]))
         if kind == 'literal':
             with pa.ipc.open_stream(bytes(expr['ipc'])) as reader:
                 value = reader.read_all().column(0)[0]

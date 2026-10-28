@@ -164,7 +164,7 @@ export class SourceConnection {
     const work=this.runtime.compile({...this.schema,version:1,dialect:'duckdb',engine:this.engine,
       language:options.language??'cypher',query:text,parameters:options.parameters,authorization:options.authorization});
     const {executeSourcePlan}=await import('./source-plan.js');
-    return executeSourcePlan(work.execution_plan as import('./source-plan.js').SourcePlan,this.sources,this.functions,this.duckdb);
+    return executeSourcePlan(work.execution_plan as import('./source-plan.js').SourcePlan,this.sources,this.functions,this.duckdb,command=>this.runtime.operationCommand(command));
   }
   close(){this.closed=true;this.runtime.close();}
 }
