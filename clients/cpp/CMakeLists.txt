@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(OrchidDB VERSION 0.5.0 LANGUAGES CXX)
+project(OrchidDB VERSION 0.5.1 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 option(ORCHIDDB_BUILD_SOURCE_TESTS "Build driver-free source execution tests" OFF)
