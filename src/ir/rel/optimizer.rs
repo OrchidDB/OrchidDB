@@ -126,6 +126,12 @@ impl OptimizerConfig for CompilerQuery<'_> {
     fn options(&self) -> Arc<datafusion::common::config::ConfigOptions> { self.context.options() }
     fn function_registry(&self) -> Option<&dyn datafusion::logical_expr::registry::FunctionRegistry> { Some(&self.session.registry) }
 }
+pub(crate) fn projection_rule() -> Arc<dyn OptimizerRule + Send + Sync> {
+    Arc::new(RecursiveProjection {
+        inner: Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
+    })
+}
+
 pub(super) fn session() -> CompilerSession {
     let optimizer = datafusion::optimizer::Optimizer::new();
     let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = optimizer.rules
