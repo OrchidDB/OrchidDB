@@ -235,14 +235,24 @@ pub(crate) fn relationship_plan(
 fn mapped_plan(
     mapping: &GraphMapping,
     rule: &CypherRelationship,
-    mut right: Node,
+    right: Node,
 ) -> Result<LogicalPlan, String> {
     let mut input_name = "catalog_source".to_string();
     while input_name == rule.returns.target || rule.returns.properties.contains_key(&input_name) {
         input_name.push('_');
     }
-    correlate_source(&mut right, &input_name);
-    let source = Node::node_scan("default", &input_name, LabelExpr::label(&rule.source));
+    // Bind the relationship's public source once at the boundary. Rewriting
+    // every nested GraphCorrelate would make later MATCH clauses refer to an
+    // outer name that a WITH projection has already removed from their scope.
+    let source = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem {
+            alias: "source".into(),
+            expr: IrExpr::Binding(input_name.clone()),
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: Node::node_scan("default", &input_name, LabelExpr::label(&rule.source)).boxed(),
+    };
     let outputs = std::iter::once(rule.returns.target.clone())
         .chain(rule.returns.properties.keys().cloned())
         .collect();

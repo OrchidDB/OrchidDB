@@ -343,6 +343,7 @@ pub fn functions() -> &'static BTreeMap<String, Arc<ScalarUDF>> {
 }
 pub fn function(name: &str) -> Option<Arc<ScalarUDF>> {
     functions().get(&name.to_ascii_lowercase()).cloned()
+        .or_else(|| super::fulltext::function(name))
 }
 
 fn bm25_sql(dialect: &str) -> String {

@@ -125,6 +125,11 @@ pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
 
 /// PostgreSQL has no unsigned integer or anonymous struct SQL argument types.
 pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
+    if let Some((name @ ("tsvector" | "tsquery"), storage)) = super::domain::descriptor(data_type) {
+        if matches!(storage, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+            return Ok(name.to_uppercase());
+        }
+    }
     if super::domain::descriptor(data_type) == Some(("cypher_integer", &DataType::Decimal128(38,0))) { return Ok("NUMERIC(38,0)".into()); }
     if super::domain::is_json(data_type) { return Ok("JSONB".into()); }
     if crate::ir::temporal::transport::is_date_type(data_type) { return Ok("DATE".into()); }

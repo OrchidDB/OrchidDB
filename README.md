@@ -131,6 +131,33 @@ Go's final SQL query returns driver-native `*sql.Rows`; streaming Kafka queries
 return Arrow IPC payloads. Statistics collection and catalog management helpers
 are not yet exposed as Go convenience methods.
 
+## PostgreSQL text search without a completion engine
+
+Register PostgreSQL under `sources` and use `engine: "none"` (Go:
+`NewSourceConnection` with `SourceConfig{Engine: "none"}`). Source-only queries
+execute directly on the caller's PostgreSQL connection. No DuckDB instance is
+needed. Map stored search vectors as `domain:tsvector:string`; queries use
+`domain:tsquery:string`. These nominal types remain native inside source SQL.
+
+```cypher
+MATCH (query:Document {id: $document_id}), (document:Document)
+RETURN document.id AS id,
+       text.rank(document.vector,
+                 text.queryFromVector(query.vector), 32) AS score
+ORDER BY score DESC
+LIMIT 20
+```
+
+`text.vector(text, config)` lowers to `to_tsvector`, and
+`text.query(text, config)` lowers to `plainto_tsquery`, with an explicit PostgreSQL
+text-search configuration such as `'english'`. `text.queryFromVector(vector)`
+ORs the vector's escaped lexemes; an empty vector produces SQL NULL.
+`text.rank(vector, query, normalization)` lowers to `ts_rank` and returns a
+double-precision score. Stored vector weights and positions are preserved.
+These functions require PostgreSQL and are rejected for unsupported sources;
+they do not emulate PostgreSQL dictionaries in the local runtime. Ranking alone
+does not add an `@@` filter or promise an index scan.
+
 ## Optional Orchid Catalog
 
 Connections use an `InMemoryCatalog` by default. It retains the complete schema,

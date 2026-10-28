@@ -16,6 +16,7 @@ pub mod domain;
 pub mod cypher_float;
 pub mod scalar_union;
 pub mod search;
+mod fulltext;
 pub mod json;
 mod mappings;
 pub use mappings::FunctionRegistry;

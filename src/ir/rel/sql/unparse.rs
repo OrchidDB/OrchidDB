@@ -15,6 +15,10 @@ pub(crate) fn unparse_plan_with_context(plan: LogicalPlan, dialect: SqlDialect, 
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect, context))
 }
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
+    // Resolve declared argument types only after the source dialect is known.
+    // Keep the complete Arrow type in the UDF, rather than serializing it into
+    // a default-engine SQL spelling during language lowering.
+    let plan = resolve_declared_casts(plan, dialect)?;
     super::super::pipeline::validate_sql_contract(&plan, dialect, context)?;
     let plan = super::correlation::preserve_scopes(plan)?;
     // Compact emission is an implementation alternative, after the same required
@@ -1041,4 +1045,26 @@ mod ordering_repair_tests {
         }
     }
 
+}
+
+fn resolve_declared_casts(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    use datafusion::logical_expr::expr_rewriter::NamePreserver;
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let names = NamePreserver::new(&node);
+        node.map_expressions(|expr| {
+            let saved = names.save(&expr);
+            Ok(expr.transform_up(|expr| {
+                if let Expr::ScalarFunction(call) = &expr
+                    && call.name() == crate::ir::functions::ENGINE_CAST_FUNCTION
+                    && matches!(call.args.get(1), Some(Expr::Literal(ScalarValue::Utf8(Some(value)), _)) if value.is_empty())
+                {
+                    let ty = call.func.return_type(&[])?;
+                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                        call.args[0].clone(), ty, dialect.name(),
+                    )?));
+                }
+                Ok(Transformed::no(expr))
+            })?.map_data(|expr| Ok(saved.restore(expr)))?)
+        })
+    })?.data)
 }

@@ -5,6 +5,10 @@ use datafusion::common::{DFSchema, DataFusionError, Result};
 use datafusion::logical_expr::{Expr, ExprSchemable};
 use std::{collections::BTreeMap, sync::Arc};
 
+fn is_string(ty: &DataType) -> bool {
+    matches!(ty, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)
+}
+
 struct Mapping {
     target: String,
     kind: FunctionKind,
@@ -30,6 +34,7 @@ impl Mapping {
                     parameters.len() == actual.len()
                         && parameters.iter().zip(&actual).all(|(expected, actual)| {
                             actual == expected || *actual == DataType::Null
+                                || (is_string(actual) && is_string(expected))
                         })
                 })
                 .collect();
@@ -217,9 +222,7 @@ impl OperatorTable for FunctionRegistry {
         args.into_iter()
             .zip(parameters)
             .map(|(arg, expected)| {
-                super::typed_cast::typed_argument_cast_for_engine(arg, expected.clone(),
-                    self.engine(),
-                )
+                super::typed_cast::typed_argument_cast(arg, expected.clone())
             })
             .collect()
     }

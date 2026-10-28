@@ -49,3 +49,12 @@ pub(crate) fn typed_argument_cast_for_engine(
     })
     .call(vec![expr, lit(sql_type)]))
 }
+
+/// A declared signature is logical until the final SQL source is selected.
+/// In source-only plans the caller's default dialect is not an execution engine.
+pub(crate) fn typed_argument_cast(expr: Expr, data_type: DataType) -> Result<Expr> {
+    Ok(ScalarUDF::new_from_impl(DeclaredCast {
+        data_type,
+        signature: Signature::any(2, Volatility::Volatile),
+    }).call(vec![expr, lit("")]))
+}
