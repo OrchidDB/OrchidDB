@@ -68,3 +68,30 @@ def test_graph_connection_search(engine):
     with Connection(engine,schema,library=library) as graph:
         with graph.query('MATCH (d:Document) WITH d, vector.cosine_similarity($embedding,d.embedding) AS score RETURN d.title AS title,score ORDER BY score DESC', parameters={'embedding':[1.0,0.0]}) as reader:
             assert reader.read_all().to_pylist() == [{'title':'Orchid','score':1.0},{'title':'Gardening','score':0.0}]
+
+
+def test_source_error_survives_failed_cancellation_and_releases_lease():
+    original = RuntimeError('source connection lost')
+    class Cursor:
+        description = [('n',)]
+        def __init__(self, fail): self.fail, self.done = fail, False
+        def execute(self, sql):
+            if self.fail: raise original
+        def fetchmany(self, size):
+            if self.done: return []
+            self.done = True
+            return [[1]]
+        def close(self):
+            if self.fail: raise RuntimeError('cancellation connection also lost')
+    class Connection:
+        fail = True
+        def cursor(self):
+            result = Cursor(self.fail)
+            self.fail = False
+            return result
+    engine = TrinoEngine(Connection())
+    with pytest.raises(RuntimeError) as caught:
+        with engine.query_arrow(compiled('SELECT 1', ['int64'])): pass
+    assert caught.value is original
+    with engine.query_arrow(compiled('SELECT 1', ['int64'])) as reader:
+        assert reader.read_all().to_pylist() == [{'n':1}]

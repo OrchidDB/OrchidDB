@@ -24,6 +24,7 @@ class TrinoSource:
         if not self._lease.acquire(blocking=False):
             raise RuntimeError("An Arrow reader is already active on this engine")
         reader = cursor = None
+        primary_error = None
         try:
             cursor = self.connection.cursor()
             cursor.execute(query.sql)
@@ -51,16 +52,24 @@ class TrinoSource:
 
             reader = pa.RecordBatchReader.from_batches(schema, batches())
             yield reader
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
-            try:
-                if reader is not None:
-                    reader.close()
-            finally:
-                try:
-                    if cursor is not None:
-                        cursor.close()
-                finally:
-                    self._lease.release()
+            cleanup_errors = []
+            for resource in (reader, cursor):
+                if resource is not None:
+                    try:
+                        resource.close()
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+            self._lease.release()
+            if cleanup_errors:
+                if primary_error is None:
+                    raise cleanup_errors[0]
+                if hasattr(primary_error, 'add_note'):
+                    for error in cleanup_errors:
+                        primary_error.add_note(f'Trino cleanup also failed: {error}')
 
 # Compatibility name; this adapter is a source, never a completion engine.
 TrinoEngine = TrinoSource
