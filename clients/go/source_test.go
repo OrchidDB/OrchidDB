@@ -96,3 +96,18 @@ func TestLocalRowsPreserveNull(t *testing.T) {
 		t.Fatalf("NULL lost: %v %v", nullable, err)
 	}
 }
+
+type privateDriverRow struct{ values []any }
+
+func (r privateDriverRow) Len() int                { return len(r.values) }
+func (r privateDriverRow) Value(i int) interface{} { return r.values[i] }
+func TestGraphDescriptorUsesDriverRowFields(t *testing.T) {
+	value := graphDescriptor(privateDriverRow{values: []any{"opaque é", privateDriverRow{values: []any{int64(9007199254740993)}}}})
+	encoded, err := json.Marshal(value)
+	if err != nil || string(encoded) != `["opaque é",[9007199254740993]]` {
+		t.Fatalf("lost ROW fields: %s %v", encoded, err)
+	}
+	if graphDescriptor(privateDriverRow{}) != nil {
+		t.Fatal("null ROW lost")
+	}
+}

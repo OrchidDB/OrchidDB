@@ -227,7 +227,7 @@ func (c *SourceConnection) eval(ctx context.Context, e sourceExpr, row []any) (a
 			return nil, err
 		}
 		var decoded []any
-		if err = c.command(map[string]any{"op": "decode_graph_values", "data_type": e.DataType, "values": []any{value}}, &decoded); err != nil {
+		if err = c.command(map[string]any{"op": "decode_graph_values", "data_type": e.DataType, "values": []any{graphDescriptor(value)}}, &decoded); err != nil {
 			return nil, err
 		}
 		if len(decoded) != 1 {
@@ -253,6 +253,26 @@ func (c *SourceConnection) eval(ctx context.Context, e sourceExpr, row []any) (a
 		return value, nil
 	}
 	return nil, errors.New("unsupported local expression")
+}
+
+// Drivers such as Trino expose ROW fields through methods, not exported struct
+// fields. Pass their positional values to the shared codec without depending
+// on a particular SQL driver or serializing its private implementation.
+func graphDescriptor(value any) any {
+	if row, ok := value.(interface {
+		Len() int
+		Value(int) interface{}
+	}); ok {
+		if row.Len() == 0 {
+			return nil
+		}
+		fields := make([]any, row.Len())
+		for i := range fields {
+			fields[i] = graphDescriptor(row.Value(i))
+		}
+		return fields
+	}
+	return value
 }
 func (c *SourceConnection) execute(ctx context.Context, plan sourcePlan) (RowCursor, error) {
 	if plan.Version != 1 || plan.Result < 0 || plan.Result >= len(plan.Nodes) {
