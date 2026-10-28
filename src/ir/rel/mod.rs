@@ -16,7 +16,7 @@ pub mod representation;
 pub mod runtime;
 mod stack;
 mod island_planner;
-mod optimizer;
+pub(crate) mod optimizer;
 mod rules;
 mod scans;
 mod managed_scan;

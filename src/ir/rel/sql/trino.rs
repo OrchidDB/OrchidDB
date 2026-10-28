@@ -158,6 +158,14 @@ impl DialectAdapter for TrinoAdapter {
                     "X'{}'",
                     b.iter().map(|x| format!("{x:02x}")).collect::<String>()
                 ),
+                ScalarValue::Struct(a) => format!(
+                    "ROW({})",
+                    a.columns().iter().map(|column| {
+                        self.exchange_literal(
+                            &ScalarValue::try_from_array(column, 0)?, column.data_type(),
+                        )
+                    }).collect::<SqlResult<Vec<_>>>()?.join(", ")
+                ),
                 ScalarValue::List(a) => self.array_literal(a.value(0))?,
                 ScalarValue::LargeList(a) => self.array_literal(a.value(0))?,
                 ScalarValue::FixedSizeList(a) => self.array_literal(a.value(0))?,

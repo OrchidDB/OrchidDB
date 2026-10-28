@@ -1259,9 +1259,7 @@ async fn compile_parsed(
         rules.push(Arc::new(
             datafusion::optimizer::push_down_filter::PushDownFilter::new(),
         ));
-        rules.push(Arc::new(
-            datafusion::optimizer::optimize_projections::OptimizeProjections::new(),
-        ));
+        rules.push(crate::ir::rel::optimizer::projection_rule());
         let optimizer = Optimizer::with_rules(rules);
         lowered.plan = optimizer
             .optimize(lowered.plan, &OptimizerContext::new(), |_, _| {})

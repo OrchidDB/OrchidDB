@@ -492,7 +492,7 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::no(inner));
         };
         let encode_nul = dialect == SqlDialect::DuckDb && value.contains('\0');
-        let encode_quote = value.contains("''") || value.contains("\\'");
+        let encode_quote = value.contains('\'');
         if !encode_nul && !encode_quote {
             return Ok(Transformed::no(inner));
         }
