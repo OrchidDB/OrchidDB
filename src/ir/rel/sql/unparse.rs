@@ -79,8 +79,14 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
         Ok(Transformed::no(LogicalPlan::TableScan(scan)))
     })?.data;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.shared_partition_scans", false, super::shared_scans::rewrite)?;
+    let plan = if dialect == SqlDialect::Postgres {
+        super::super::pipeline::typed_sql(plan, context, "adapter.source_scalar", false, super::source_scalar::rewrite)?
+    } else { plan };
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
+    let plan = if dialect == SqlDialect::Postgres {
+        super::super::pipeline::typed_sql(plan, context, "adapter.postgres_top_one", false, super::postgres_top_one::rewrite)?
+    } else { plan };
     let plan = plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Projection(projection) = &node else { return Ok(Transformed::no(node)); };
         if !projection.expr.is_empty() { return Ok(Transformed::no(node)); }
@@ -90,6 +96,11 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
             projection.input.as_ref().clone())
             .project(vec![lit(1_i64).alias("__orchid_cardinality")])?.build()?))
     })?.data;
+    let plan = if dialect == SqlDialect::Postgres {
+        let plan = super::super::pipeline::typed_sql(plan, context, "adapter.top_one_output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
+        let plan = super::super::pipeline::relational(plan, context, true).map_err(|e| SqlError::Unsupported(e.to_string()))?.0;
+        plan
+    } else { plan };
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;

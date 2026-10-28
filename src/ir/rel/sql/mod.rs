@@ -47,6 +47,8 @@ pub mod search;
 pub mod lowering;
 mod functions;
 mod postgres_functions;
+mod postgres_top_one;
+mod source_scalar;
 mod postgres_lists;
 pub mod region;
 pub use region::RegionSession;

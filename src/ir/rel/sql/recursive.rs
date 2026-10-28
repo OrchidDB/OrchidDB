@@ -96,6 +96,7 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         let materialized = if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres)
             && (cte.name.starts_with("__w_sql_cte_weighted_repeat_")
             || cte.name.starts_with("__w_sql_cte_apply_row_")
+            || cte.name.starts_with("__w_sql_cte_source_scalar_")
             || cte.name.starts_with("__w_sql_cte_quantifier_base_")
             || cte.name.starts_with("__w_sql_cte_sparql_blank_namespace_")) {
             " MATERIALIZED"

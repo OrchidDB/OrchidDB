@@ -84,10 +84,14 @@ pub(super) fn function(name: &str) -> Option<Arc<ScalarUDF>> {
             ("text.queryfromvector", 1, "(SELECT CAST(string_agg(quote_literal(__local0.term), ' | ') AS tsquery) FROM unnest(tsvector_to_array(__arg0)) AS __local0(term))"),
             ("text.rank", 3, "CAST(ts_rank(__arg0, __arg1, CAST(__arg2 AS INTEGER)) AS DOUBLE PRECISION)"),
         ].into_iter().map(|(name, arity, sql)| {
-            // Do not constant-fold database-owned dictionary semantics locally.
-            let native = Arc::new(ScalarUDF::new_from_impl(FullText { name, signature: Signature::any(arity, Volatility::Volatile) }));
+            // Explicit dictionaries are statement-stable; vector conversion
+            // and ranking depend only on their arguments. None may fold locally.
+            let volatility = if matches!(name, "text.vector" | "text.query") { Volatility::Stable } else { Volatility::Immutable };
+            let native = Arc::new(ScalarUDF::new_from_impl(FullText { name, signature: Signature::any(arity, volatility) }));
             let mapping = SqlFunctionMapping { value: sql.into(), ordering: None };
-            (name.into(), LogicalFunction::new(name, native, BTreeMap::from([("postgres".into(), mapping)])).into_udf())
+            let mut function = LogicalFunction::new(name, native, BTreeMap::from([("postgres".into(), mapping)])).with_source_evaluation();
+            function.precompute_before_join = name == "text.queryfromvector";
+            (name.into(), function.into_udf())
         }).collect()
     });
     FUNCTIONS.get(&name.to_ascii_lowercase()).cloned()

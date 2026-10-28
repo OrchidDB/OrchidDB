@@ -260,13 +260,24 @@ pub(super) fn prune_sql_outputs(plan: LogicalPlan) -> Result<LogicalPlan> {
             })?.data;
             occurrence_sensitive |= analyzed.is_volatile();
         }
-        node.apply_expressions(|expr| expr.apply(|expr| {
-            occurrence_sensitive |= matches!(expr, Expr::WindowFunction(_));
+        node.apply_expressions(|expr| {
+            // Catalog edge ordinals are ordinary deterministic window outputs,
+            // not shared input-occurrence identities. Projection pruning may
+            // discard them when no edge identity/path/history consumer survives.
+            // When observed, OptimizeProjections retains the window and its keys.
+            let edge_ordinal = matches!(expr, Expr::Alias(a) if a.name == "__edge_id"
+                && matches!(a.expr.as_ref(), Expr::WindowFunction(w)
+                    if matches!(&w.fun, datafusion::logical_expr::WindowFunctionDefinition::WindowUDF(f)
+                        if f.inner().as_any().is::<datafusion::functions_window::row_number::RowNumber>())
+                    && w.params.order_by.iter().all(|s| matches!(s.expr, Expr::Column(_)))
+                    && w.params.partition_by.is_empty()));
+            expr.apply(|expr| {
+            occurrence_sensitive |= matches!(expr, Expr::WindowFunction(_)) && !edge_ordinal;
             if let Expr::AggregateFunction(a) = expr {
                 occurrence_sensitive |= !a.params.order_by.is_empty();
             }
             Ok(TreeNodeRecursion::Continue)
-        }))?;
+        })})?;
         Ok(TreeNodeRecursion::Continue)
     })?;
     if occurrence_sensitive {

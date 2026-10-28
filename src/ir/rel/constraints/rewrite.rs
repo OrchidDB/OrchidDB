@@ -128,7 +128,7 @@ fn join_pairs(j: &datafusion::logical_expr::Join) -> Option<Vec<(usize, usize)>>
         // Raw key uniqueness need not survive implicit comparison coercion
         // (e.g. distinct Int64 values can collapse to the same Float64).
         // Explicit casts must also pass input_column's injectivity check.
-        if a.get_type(j.left.schema()).ok()? != b.get_type(j.right.schema()).ok()? {
+        if !super::properties::same_value_type(&a.get_type(j.left.schema()).ok()?, &b.get_type(j.right.schema()).ok()?) {
             return None;
         }
         Some((

@@ -89,6 +89,11 @@ pub(crate) fn input_column(expr: &Expr, schema: &DFSchema) -> Option<usize> {
         _ => None,
     }
 }
+pub(super) fn same_value_type(from: &arrow::datatypes::DataType, to: &arrow::datatypes::DataType) -> bool {
+    use arrow::datatypes::DataType::{Utf8, LargeUtf8, Utf8View};
+    // Arrow string storage layout does not change value identity or equality.
+    from == to || (matches!(from, Utf8 | LargeUtf8 | Utf8View) && matches!(to, Utf8 | LargeUtf8 | Utf8View))
+}
 fn injective_cast(from: &arrow::datatypes::DataType, to: &arrow::datatypes::DataType) -> bool {
     use arrow::datatypes::DataType::*;
     let integer = |t: &arrow::datatypes::DataType| match t {
@@ -102,7 +107,7 @@ fn injective_cast(from: &arrow::datatypes::DataType, to: &arrow::datatypes::Data
         UInt64 => Some((false, 64)),
         _ => None,
     };
-    from == to
+    same_value_type(from, to)
         || match (integer(from), integer(to)) {
             (Some((a, x)), Some((b, y))) => (a == b && x <= y) || (!a && b && x < y),
             _ => false,
@@ -133,8 +138,7 @@ pub(crate) fn harmless(expr: &Expr, schema: &DFSchema) -> bool {
             let right = b.right.get_type(schema).ok();
             // Implicit coercion (e.g. integer = 'bad') can throw even though
             // the parsed expression has no explicit Cast yet.
-            left.is_some()
-                && left == right
+            left.as_ref().zip(right.as_ref()).is_some_and(|(a,b)| same_value_type(a,b))
                 && harmless(&b.left, schema)
                 && harmless(&b.right, schema)
         }
@@ -457,6 +461,23 @@ fn analyze_node(plan: &LogicalPlan) -> PlanProperties {
                 }
             }
             p.removable=false;
+            p
+        }
+        LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(n)) => {
+            let map = n.select_expr.iter().map(|e| input_column(e, n.input.schema())).collect::<Vec<_>>();
+            p = remap(analyze(&n.input), &map);
+            // Selecting one representative preserves a key on the ON columns,
+            // but does not preserve coverage of the original source rows.
+            p.complete_sources.clear();
+            p.removable = false;
+            if let Some(key) = n.on_expr.iter().map(|e| {
+                let input = input_column(e, n.input.schema())?;
+                map.iter().position(|i| *i == Some(input))
+            }).collect::<Option<Vec<_>>>() {
+                p.unique_keys.push(key.clone());
+                p.equality_keys.push(key.clone());
+                p.dependencies.push((key, (0..width).collect()));
+            }
             p
         }
         LogicalPlan::Distinct(datafusion::logical_expr::Distinct::All(n)) => {

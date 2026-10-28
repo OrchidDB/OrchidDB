@@ -158,6 +158,29 @@ These functions require PostgreSQL and are rejected for unsupported sources;
 they do not emulate PostgreSQL dictionaries in the local runtime. Ranking alone
 does not add an `@@` filter or promise an index scan.
 
+For source-backed computed relationships, register actual unique and non-null
+keys in the schema's `constraints` catalog. Node identity mappings alone do not
+certify database constraints. Usable key proofs let the compiler avoid synthetic
+occurrence numbering and redundant endpoint joins. PostgreSQL lowers eligible
+ordered per-source `LIMIT 1` selections to `DISTINCT ON`; offsets, larger limits,
+and effectful inputs retain the general implementation. Source-only text
+functions are never evaluated locally, even with constant arguments; eligible
+vector-to-query expressions are shared before candidate joins.
+
+For example, a caller that guarantees a `documents(id PRIMARY KEY)` table can
+supply these facts alongside its table and node mappings:
+
+```json
+{"constraints":{"tables":{"documents":[
+  {"name":"documents_pk","fact":{"kind":"unique","columns":["id"],"nulls_equal":true},"evidence":{"kind":"enforced"}},
+  {"name":"documents_id_not_null","fact":{"kind":"non_null","columns":["id"]},"evidence":{"kind":"enforced"}}
+]}}}
+```
+
+`enforced` is the caller's integrity guarantee. Declared keys or estimates do not
+authorize these rewrites; source filtering and duplicate outer rows retain their
+original semantics.
+
 ## Optional Orchid Catalog
 
 Connections use an `InMemoryCatalog` by default. It retains the complete schema,

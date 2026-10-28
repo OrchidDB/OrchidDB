@@ -784,3 +784,27 @@ fn implicit_throwing_comparisons_are_not_removed_with_unused_join_sides() {
     let p=m.relational_plan("SELECT o.id FROM orders o LEFT JOIN (SELECT id FROM people WHERE id='not_an_integer') p ON o.person=p.id").unwrap();
     assert!(optimize(p).unwrap().1.is_empty());
 }
+
+#[test]
+fn string_storage_cast_preserves_key_lineage() {
+    use datafusion::logical_expr::{col, LogicalPlanBuilder, ExprSchemable};
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("documents", Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8View, false),
+        Field::new("body", DataType::Utf8, true),
+    ])));
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert("documents", Constraint::enforced("pk", Fact::Unique { columns: names(&["id"]), nulls_equal: true }));
+    catalog.insert("documents", Constraint::enforced("nonnull", Fact::NonNull { columns: names(&["id"]) }));
+    mapping.set_constraints(catalog);
+    let base = mapping.relational_plan("SELECT id,body FROM documents").unwrap();
+    for ty in [DataType::Utf8, DataType::LargeUtf8, DataType::Utf8View] {
+        let projected = LogicalPlanBuilder::from(base.clone()).project(vec![
+            col("id").cast_to(&ty, base.schema()).unwrap().alias("key"), col("body")
+        ]).unwrap().build().unwrap();
+        let facts = analyze(&projected);
+        assert!(facts.unique_on(&[0], true), "{ty:?}: {facts:?}");
+        assert_eq!(facts.origins[0].as_ref().unwrap().column, "id");
+        assert!(facts.removable);
+    }
+}

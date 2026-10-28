@@ -50,7 +50,9 @@ pub(crate) fn can_fold_plan(plan: &LogicalPlan) -> bool {
     let _ = plan.apply_with_subqueries(|node| {
         for expr in node.expressions() {
             expr.apply(|expr| {
-                if matches!(expr, Expr::ScalarFunction(call) if call.func.inner().as_any().is::<NativeFloat>()) {
+                if matches!(expr, Expr::ScalarFunction(call) if call.func.inner().as_any().is::<NativeFloat>()
+                    || call.func.inner().as_any().downcast_ref::<crate::ir::functions::logical::LogicalFunction>()
+                        .is_some_and(|f| f.source_evaluation_only)) {
                     allowed = false;
                     return Ok(TreeNodeRecursion::Stop);
                 }

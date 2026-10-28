@@ -725,6 +725,7 @@ pub(super) fn prepare_apply_join_inputs(
     let right = LogicalPlanBuilder::from(right)
         .project(right_projections)?
         .build()?;
+    let proven_non_null = constraints::analyze(&left).non_null;
     let join_exprs = key_pairs
         .into_iter()
         .map(|(left_key, right_key)| {
@@ -732,7 +733,9 @@ pub(super) fn prepare_apply_join_inputs(
             // even when other correlations require null-safe matching.
             // In particular the per-occurrence row number is never null.
             let non_null = left.schema().field_with_unqualified_name(&left_key)
-                .is_ok_and(|field| !field.is_nullable());
+                .is_ok_and(|field| !field.is_nullable())
+                || left.schema().index_of_column(&datafusion::common::Column::new_unqualified(&left_key))
+                    .is_ok_and(|index| proven_non_null.contains(&index));
             let left = col_exact(left_key);
             let right = col_exact(right_key);
             if non_null {

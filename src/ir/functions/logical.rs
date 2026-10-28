@@ -39,6 +39,11 @@ pub struct LogicalFunction {
     /// Arity-specific mappings take precedence over a dialect-wide mapping.
     pub sql_overloads: BTreeMap<(String, usize), SqlFunctionMapping>,
     pub(crate) portable_builtin: bool,
+    /// Evaluation belongs to the source even for constant arguments. This is
+    /// independent of determinism: SQL optimizers may still share the result.
+    pub(crate) source_evaluation_only: bool,
+    /// Total, deterministic scalar eligible for evaluation before join fanout.
+    pub(crate) precompute_before_join: bool,
     /// Optional indexed-access contract. The function's first two arguments
     /// must be query and document, and its ordering must match this metric.
     /// Additional arguments may carry native corpus statistics.
@@ -64,11 +69,17 @@ impl LogicalFunction {
             sql,
             sql_overloads: BTreeMap::new(),
             portable_builtin: false,
+            source_evaluation_only: false,
+            precompute_before_join: false,
             search_metric: None,
         }
     }
     pub fn with_search_metric(mut self, metric: crate::ir::rel::search::SearchMetric) -> Self {
         self.search_metric = Some(metric);
+        self
+    }
+    pub(crate) fn with_source_evaluation(mut self) -> Self {
+        self.source_evaluation_only = true;
         self
     }
     pub fn logical_name(&self) -> &str {

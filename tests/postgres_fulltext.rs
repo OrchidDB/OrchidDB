@@ -85,3 +85,91 @@ async fn computed_edge_keeps_source_scope_across_multiple_matches() {
     let plan = compile(r).await.unwrap();
     assert!(source_sql(&plan).contains("links"));
 }
+
+fn latest_request(limit: &str, constrained: bool) -> Value {
+    let mut r = request("MATCH (d:Document)-[:LATEST]->(n:Document) RETURN d.id AS source,n.id AS target ORDER BY source");
+    r["tables"].as_array_mut().unwrap().push(json!({"name":"links","source":"db","columns":[{"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"}]}));
+    r["edges"] = json!([{"label":"NEXT","table":"links","id":"id","source":"src","target":"dst","source_label":"Document","target_label":"Document"}]);
+    r["cypher_relationships"] = json!([{"name":"LATEST","source":"Document","target":"Document","cypher":format!("WITH source MATCH (source)-[:NEXT]->(target:Document) RETURN target ORDER BY target.id DESC {limit}"),"returns":{"target":"target","properties":{}}}]);
+    if constrained {
+        let facts = json!([
+            {"name":"pk","fact":{"kind":"unique","columns":["id"],"nulls_equal":true},"evidence":{"kind":"enforced"}},
+            {"name":"nonnull","fact":{"kind":"non_null","columns":["id"]},"evidence":{"kind":"enforced"}}
+        ]);
+        r["constraints"] = json!({"tables":{"documents":facts,"links":facts}});
+    }
+    r
+}
+
+#[tokio::test]
+async fn postgres_top_one_uses_distinct_on_and_proven_source_keys() {
+    let plan = compile(latest_request("LIMIT 1", true)).await.unwrap();
+    let sql = source_sql(&plan);
+    assert!(sql.contains("DISTINCT ON"), "{sql}");
+    assert!(!sql.contains("__apply_corr_key_row"), "{sql}");
+    assert!(!sql.contains("\"__apply_corr_key_0\" IS NULL"), "{sql}");
+}
+
+#[tokio::test]
+async fn postgres_top_one_does_not_rewrite_offsets_or_larger_limits() {
+    for slice in ["SKIP 1 LIMIT 1", "LIMIT 2"] {
+        let plan = compile(latest_request(slice, true)).await.unwrap();
+        assert!(!source_sql(&plan).contains("DISTINCT ON"), "{}", source_sql(&plan));
+    }
+}
+
+#[tokio::test]
+async fn unproved_source_uniqueness_keeps_occurrence_identity() {
+    let plan = compile(latest_request("LIMIT 1", false)).await.unwrap();
+    assert!(source_sql(&plan).contains("__apply_corr_key_row"));
+}
+
+#[tokio::test]
+async fn constant_native_text_expressions_never_evaluate_locally() {
+    let plan = compile(request("MATCH (d:Document) RETURN d.id AS id, text.rank(text.vector('some words','english'),text.queryFromVector(text.vector('words','english')),32) AS score")).await.unwrap();
+    let sql = source_sql(&plan);
+    assert!(sql.contains("to_tsvector"), "{sql}");
+}
+
+#[tokio::test]
+async fn source_vector_query_is_shared_before_candidate_fanout() {
+    let plan = compile(request("MATCH (d:Document), (q:Document) WHERE q.id=1 RETURN d.id AS id, text.rank(d.vector,text.queryFromVector(q.vector),32) AS score")).await.unwrap();
+    let sql = source_sql(&plan);
+    assert!(sql.contains("__w_sql_cte_source_scalar_"), "{sql}");
+    assert!(sql.contains("MATERIALIZED"), "{sql}");
+}
+
+#[tokio::test]
+async fn source_vector_without_fanout_does_not_materialize() {
+    let plan = compile(request("MATCH (d:Document) RETURN d.id AS id, text.queryFromVector(d.vector) AS query")).await.unwrap();
+    assert!(!source_sql(&plan).contains("__w_sql_cte_source_scalar_"));
+}
+
+#[tokio::test]
+async fn untrusted_keys_do_not_remove_occurrence_identity() {
+    let mut r = latest_request("LIMIT 1", true);
+    for facts in r["constraints"]["tables"].as_object_mut().unwrap().values_mut() {
+        for fact in facts.as_array_mut().unwrap() { fact["evidence"] = json!({"kind":"declared"}); }
+    }
+    let plan = compile(r).await.unwrap();
+    assert!(source_sql(&plan).contains("__apply_corr_key_row"));
+}
+
+#[tokio::test]
+async fn volatile_relationship_selection_retains_window_fallback() {
+    let mut r = latest_request("LIMIT 1", true);
+    r["cypher_relationships"][0]["cypher"] = json!("WITH source MATCH (source)-[:NEXT]->(target:Document) RETURN target ORDER BY rand() LIMIT 1");
+    // Some catalog implementations reject volatile relationship definitions;
+    // neither rejection nor the fallback may silently select DISTINCT ON.
+    if let Ok(plan) = compile(r).await {
+        assert!(!source_sql(&plan).contains("DISTINCT ON"));
+    }
+}
+
+#[tokio::test]
+async fn observing_computed_edge_identity_keeps_its_ordinal() {
+    let mut r = latest_request("LIMIT 1", true);
+    r["query"] = json!("MATCH (d:Document)-[edge:LATEST]->(n:Document) RETURN d.id AS source,n.id AS target,id(edge) AS edge_id");
+    let plan = compile(r).await.unwrap();
+    assert!(source_sql(&plan).contains("row_number()"), "{}", source_sql(&plan));
+}
