@@ -115,7 +115,9 @@ fn prepare_region(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::r
     let plan = if dialect == SqlDialect::Postgres {
         let plan = super::super::pipeline::typed_sql(plan, context, "adapter.top_one_output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
         let plan = super::super::pipeline::relational(plan, context, true).map_err(|e| SqlError::Unsupported(e.to_string()))?.0;
-        plan
+        // Late endpoint removal and selected-row payload propagation create
+        // fresh rename projections after the earlier cleanup passes.
+        super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?
     } else { plan };
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
