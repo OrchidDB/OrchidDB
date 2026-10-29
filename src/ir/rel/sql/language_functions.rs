@@ -135,7 +135,9 @@ function!(
     arguments()
 );
 
-/// Register the pure Cypher, Gremlin and SPARQL language functions. Applications
+const REGISTRATION_PROBE: &str = "SELECT __orchiddb_cypher_list_compare('gte', [1], [1]), __orchiddb_cypher_collect_distinct(CAST(NULL AS BIGINT[])), __orchiddb_cypher_node_text(NULL, NULL, NULL, NULL), __orchiddb_lang_cypher_key(NULL), __orchiddb_lang_text(NULL, NULL), __orchiddb_lang_texts(NULL, NULL), __orchiddb_lang_int(NULL, NULL), __orchiddb_lang_ints(NULL, NULL) WHERE false";
+
+/// Register the pure Cypher language functions for generated SQL. Applications
 /// compiling SQL themselves must also opt in via RelBackendOptions.
 /// Registration is idempotent on connections sharing a DuckDB catalog.
 pub fn register(connection: &Connection) -> duckdb::Result<()> {
@@ -145,7 +147,7 @@ pub fn register(connection: &Connection) -> duckdb::Result<()> {
     // Bind null calls without evaluating kernels. This is much cheaper than
     // enumerating DuckDB's full function catalog on every borrowed connection.
     // A missing function is a binder error; it does not abort a transaction.
-    if connection.prepare("SELECT __orchiddb_cypher_list_compare('gte', [1], [1]), __orchiddb_cypher_collect_distinct(CAST(NULL AS BIGINT[])), __orchiddb_cypher_node_text(NULL, NULL, NULL, NULL), __orchiddb_lang_cypher_key(NULL), __orchiddb_lang_text(NULL, NULL), __orchiddb_lang_texts(NULL, NULL), __orchiddb_lang_int(NULL, NULL), __orchiddb_lang_ints(NULL, NULL), __orchiddb_lang_sparql(NULL, NULL, NULL, NULL, NULL) WHERE false").is_ok() {
+    if connection.prepare(REGISTRATION_PROBE).is_ok() {
         return Ok(());
     }
     fn present(c: &Connection, name: &str) -> duckdb::Result<bool> {
@@ -176,6 +178,20 @@ pub fn register(connection: &Connection) -> duckdb::Result<()> {
 #[cfg(test)]
 mod float_tests {
     use super::*;
+
+    #[test]
+    fn current_helpers_satisfy_the_registration_probe() {
+        let connection = Connection::open_in_memory().unwrap();
+        assert!(connection.prepare(REGISTRATION_PROBE).is_err());
+        register(&connection).unwrap();
+        connection.prepare(REGISTRATION_PROBE).unwrap();
+        // Borrowed connections share installed functions and must also take
+        // the fast path rather than enumerating the catalog for each helper.
+        let clone = connection.try_clone().unwrap();
+        clone.prepare(REGISTRATION_PROBE).unwrap();
+        register(&clone).unwrap();
+        clone.prepare(REGISTRATION_PROBE).unwrap();
+    }
 
     #[test]
     fn typed_nullable_helper_matches_reference_and_verifies_registration() {
