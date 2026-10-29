@@ -26,6 +26,27 @@ type RowCursor interface {
 }
 type SourceColumn = exchangeColumn
 
+// SourceColumns returns the compiler-declared result schema without opening the
+// cursor. Completion bindings need this even for empty or entirely null inputs.
+func SourceColumns(rows RowCursor) ([]SourceColumn, error) {
+	if typed, ok := rows.(interface{ sourceColumns() []SourceColumn }); ok {
+		columns := typed.sourceColumns()
+		copy := append([]SourceColumn(nil), columns...)
+		for i := range copy {
+			copy[i].DataType = append(json.RawMessage(nil), copy[i].DataType...)
+		}
+		return copy, nil
+	}
+	return nil, errors.New("cursor has no declared source schema")
+}
+
+type typedSourceRows struct {
+	RowCursor
+	columns []SourceColumn
+}
+
+func (r *typedSourceRows) sourceColumns() []SourceColumn { return r.columns }
+
 type SQLSource struct {
 	Dialect        string
 	Query          func(context.Context, string, ...any) (RowCursor, error)
@@ -447,9 +468,9 @@ func (c *SourceConnection) execute(ctx context.Context, plan sourcePlan) (RowCur
 		if reentry {
 			cursor = spoolSourceRows(cursor)
 		}
-		outputs = append(outputs, cursor)
+		outputs = append(outputs, &typedSourceRows{RowCursor: cursor, columns: n.Columns})
 	}
-	return &ownedSourceRows{RowCursor: outputs[plan.Result], all: outputs}, nil
+	return &typedSourceRows{RowCursor: &ownedSourceRows{RowCursor: outputs[plan.Result], all: outputs}, columns: plan.Nodes[plan.Result].Columns}, nil
 }
 
 type deferredSourceRows struct {

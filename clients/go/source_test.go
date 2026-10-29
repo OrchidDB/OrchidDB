@@ -187,3 +187,43 @@ func TestGraphDescriptorUsesDriverRowFields(t *testing.T) {
 		t.Fatal("null ROW lost")
 	}
 }
+
+func TestSourceColumnsPreserveEmptyCompletionInputs(t *testing.T) {
+	opened := 0
+	col := exchangeColumn{Name: "value", DataType: json.RawMessage(`"list:timestamptz"`), Nullable: true}
+	plan := sourcePlan{Version: 1, Result: 1, Nodes: []sourceNode{
+		{Kind: "source_sql", Source: "db", Dialect: "postgres", SQL: "SELECT value FROM empty", Columns: []exchangeColumn{col}},
+		{Kind: "duckdb", SQL: "SELECT * FROM incoming", Columns: []exchangeColumn{col}},
+	}}
+	plan.Nodes[1].Inputs = append(plan.Nodes[1].Inputs, struct {
+		Name string `json:"name"`
+		Node int    `json:"node"`
+	}{"incoming", 0})
+	c := &SourceConnection{config: SourceConfig{Sources: map[string]SQLSource{"db": {Dialect: "postgres", Query: func(context.Context, string, ...any) (RowCursor, error) {
+		opened++
+		return &localRows{columns: []string{"value"}, next: func() ([]any, bool, error) { return nil, false, nil }}, nil
+	}}}, Completion: func(_ context.Context, _ string, inputs map[string]RowCursor) (RowCursor, error) {
+		cols, err := SourceColumns(inputs["incoming"])
+		if err != nil || len(cols) != 1 || string(cols[0].DataType) != `"list:timestamptz"` || !cols[0].Nullable || opened != 0 {
+			t.Fatalf("empty input schema lost or opened early: %+v, %v, opened=%d", cols, err, opened)
+		}
+		return inputs["incoming"], nil
+	}}}
+	rows, err := c.execute(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	cols, err := SourceColumns(rows)
+	if err != nil || cols[0].Name != "value" {
+		t.Fatal(cols, err)
+	}
+	cols[0].DataType[1] = 'X'
+	original, _ := SourceColumns(rows)
+	if string(original[0].DataType) != `"list:timestamptz"` {
+		t.Fatal("schema aliased caller memory")
+	}
+	if rows.Next() || rows.Err() != nil || opened != 1 {
+		t.Fatal("empty cursor failed", rows.Err(), opened)
+	}
+}
