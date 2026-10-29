@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSourceOpenErrorWithTypedNilCursor(t *testing.T) {
@@ -225,5 +227,30 @@ func TestSourceColumnsPreserveEmptyCompletionInputs(t *testing.T) {
 	}
 	if rows.Next() || rows.Err() != nil || opened != 1 {
 		t.Fatal("empty cursor failed", rows.Err(), opened)
+	}
+}
+
+func TestSourceSpoolPreservesTemporalAndNestedValues(t *testing.T) {
+	stamp := time.Date(2026, 10, 29, 1, 2, 3, 123456000, time.UTC)
+	expected := []any{stamp, []any{nil, stamp}, map[string]any{"exact": json.Number("9007199254740993")}}
+	first := true
+	input := &localRows{columns: []string{"stamp", "list", "map"}, next: func() ([]any, bool, error) {
+		if !first {
+			return nil, false, nil
+		}
+		first = false
+		return expected, true, nil
+	}}
+	rows := spoolSourceRows(input)
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal(rows.Err())
+	}
+	actual, err := readSourceRow(rows)
+	if err != nil || !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("spool changed typed values: %#v, %v", actual, err)
+	}
+	if rows.Next() || rows.Err() != nil {
+		t.Fatal(rows.Err())
 	}
 }

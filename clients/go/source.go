@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // RowCursor is the common cursor contract of database/sql and local UDF results.
@@ -704,6 +705,14 @@ func bindSourceRequest(template sourceTemplate, row []any) (json.RawMessage, err
 	}
 	return json.Marshal(request)
 }
+func init() {
+	// Disk-spooled SQL rows retain standard temporal and nested scalar values.
+	gob.Register(time.Time{})
+	gob.Register(json.Number(""))
+	gob.Register([]any{})
+	gob.Register(map[string]any{})
+}
+
 func spoolSourceRows(input RowCursor) RowCursor {
 	columns, _ := input.Columns()
 	var file *os.File
