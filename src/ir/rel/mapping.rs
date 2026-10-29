@@ -45,7 +45,7 @@ use datafusion::common::{DFSchema, TableReference};
 use datafusion::datasource::{MemTable, provider_as_source};
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{
-    AggregateUDF, Cast, Expr, LogicalPlan, LogicalPlanBuilder, ScalarUDF, TableSource, WindowUDF,
+    AggregateUDF, Cast, Expr, ExprSchemable, LogicalPlan, LogicalPlanBuilder, ScalarUDF, TableSource, WindowUDF,
 };
 use datafusion::prelude::lit;
 use datafusion::scalar::ScalarValue;
@@ -1587,10 +1587,7 @@ fn endpoint_expr(
         .map_err(RelError::Unsupported)?;
     // Endpoint columns may have different source widths. Normalize each tuple
     // to its node mapping before joins or heterogeneous identity widening.
-    Ok(Expr::Cast(Cast::new(
-        Box::new(id_expr(plan, columns, what)?),
-        kind,
-    )))
+    Ok(id_expr(plan, columns, what)?.cast_to(&kind, plan.schema())?)
 }
 
 fn is_integer_type(data_type: &DataType) -> bool {

@@ -49,6 +49,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     })?;
     let plan = specialize_portable_calls(plan, dialect)?;
     crate::ir::rules::RuleSession::new(context.clone()).invalidate();
+    let plan = super::super::pipeline::typed_sql(plan, context, "adapter.constant_join", false, super::constant_join::rewrite)?;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.output_demand", false, |p| Ok(super::super::optimizer::prune_sql_outputs(p)?))?;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.predicate_scopes", false, super::predicate_scope::rewrite)?;
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.optional_presence", false, super::optional_filter::rewrite)?;

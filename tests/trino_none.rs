@@ -102,3 +102,56 @@ async fn bounded_path_output_stays_on_source() {
             .any(|sql| sql.contains("orchid.graph.p1:"))
     );
 }
+
+fn traversal_request(query: &str) -> Value {
+    let mut input = request(query);
+    input["tables"][0]["columns"][0]["data_type"] = json!("int64");
+    input["tables"].as_array_mut().unwrap().push(json!({"name":"links","source":"db","columns":[
+        {"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"}]}));
+    input["edges"] = json!([{"label":"LINK","table":"links","id":"id","source_label":"Person",
+        "target_label":"Person","source":"src","target":"dst","properties":{}}]);
+    input
+}
+
+fn source_sql(result: &Value) -> String {
+    result["execution_plan"]["nodes"].as_array().unwrap().iter()
+        .filter_map(|node| node["sql"].as_str()).collect::<Vec<_>>().join("\n")
+}
+
+#[tokio::test]
+async fn fixed_label_traversals_do_not_compare_labels_or_cast_matching_keys() {
+    for query in [
+        "MATCH(a:Person)-[:LINK]->(b:Person) RETURN a.name,b.name",
+        "MATCH(a:Person) OPTIONAL MATCH(a)-[:LINK]->(b:Person) RETURN a.name,b.name",
+    ] {
+        let sql = source_sql(&compile(traversal_request(query)).await.unwrap());
+        assert!(!sql.contains("__label") && !sql.contains("_label"), "{sql}");
+        assert!(!sql.contains("CAST("), "{sql}");
+        assert!(!sql.to_lowercase().contains("row_number"), "{sql}");
+        assert!(sql.contains("JOIN"), "endpoint existence must still be checked: {sql}");
+    }
+}
+
+#[tokio::test]
+async fn endpoint_width_conversion_is_retained() {
+    let mut input = traversal_request("MATCH(a:Person)-[:LINK]->(b:Person) RETURN a.name,b.name");
+    input["tables"][1]["columns"][1]["data_type"] = json!("int32");
+    let sql = source_sql(&compile(input).await.unwrap());
+    assert!(sql.contains("CAST(\"links\".\"src\" AS BIGINT)"), "{sql}");
+    assert!(!sql.contains("CAST(\"links\".\"dst\" AS BIGINT)"), "{sql}");
+}
+
+#[tokio::test]
+async fn terminal_native_distinct_does_not_number_rows() {
+    for query in [
+        "MATCH(p:Person) RETURN DISTINCT p.name",
+        "MATCH(p:Person) RETURN DISTINCT p.name ORDER BY p.name LIMIT 5",
+    ] {
+        let sql = source_sql(&compile(request(query)).await.unwrap());
+        assert!(!sql.to_lowercase().contains("row_number"), "{sql}");
+        assert!(sql.contains("GROUP BY") || sql.contains("DISTINCT"), "{sql}");
+        if query.contains("ORDER BY") {
+            assert!(sql.contains("ORDER BY") && sql.contains("LIMIT 5"), "{sql}");
+        }
+    }
+}

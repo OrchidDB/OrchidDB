@@ -636,7 +636,14 @@ impl LoweringContext<'_> {
                 let plan = if self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin) {
                     let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
                         .map(|e| native_values::key_expr(e, self.language == Language::Cypher)).collect();
-                    keyed_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                    let order_rule = pipeline::descriptor("rel.distinct.order_demand", crate::ir::rules::Stage::RelationalOptimize,
+                        crate::ir::rules::RuleKind::EquivalentRewrite, false);
+                    let mut order_session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+                    if self.unordered_distincts.contains(&(node as *const Node as usize))
+                        && order_session.visit(order_rule).map_err(RelError::RulePipeline)? {
+                        order_session.changed(order_rule, || "native values retain query-root order demand across SQL island placement".into());
+                        unordered_distinct_partition(input.plan.clone(), partition, barrier_id)?
+                    } else { keyed_distinct_partition(input.plan.clone(), partition, barrier_id)? }
                 } else if self.options.language_functions && self.language == Language::Cypher {
                     let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
                         .map(|e| language_functions::key(e, &input.plan)).collect::<RelResult<Vec<_>>>()?;

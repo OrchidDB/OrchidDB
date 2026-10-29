@@ -129,6 +129,7 @@ mod compact_unwind;
 mod literal_case;
 mod aggregate_scan;
 mod cleanup;
+mod constant_join;
 mod count_filter;
 
 #[cfg(feature = "duckdb")]

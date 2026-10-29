@@ -85,6 +85,10 @@ rdkafka = { version = "0.39", features = ["gssapi-vendored"], optional = true }
 datafusion-physical-expr = { version = "53.1.0", default-features = false }
 
 [[example]]
+name = "trino_sql_plans"
+path = "tools/diagnostics/trino_sql_plans.rs"
+
+[[example]]
 name = "collection_table_plans"
 path = "tools/diagnostics/collection_table_plans.rs"
 
