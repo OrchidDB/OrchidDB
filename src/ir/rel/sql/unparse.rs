@@ -199,11 +199,13 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
     };
     // WHERE belongs outside an earlier LIMIT. The upstream unparser can merge
     // these clauses into one SELECT, filtering before selecting the top rows.
-    // Introduce a SQL block after optimization so this semantic fence survives.
+    // A rewritten projection also needs a block: WHERE must read its output
+    // aliases, not the columns below the projection. Introduce the block after
+    // optimization so the semantic fence survives.
     let mut limit_scope = 0;
     let plan = plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Filter(mut filter) = node else { return Ok(Transformed::no(node)); };
-        if matches!(filter.input.as_ref(), LogicalPlan::Limit(_)) {
+        if matches!(filter.input.as_ref(), LogicalPlan::Limit(_) | LogicalPlan::Projection(_)) {
             limit_scope += 1;
             filter.input = Arc::new(sort_scope(filter.input.as_ref().clone(),
                 format!("__w_sql_cte_limit_filter_{limit_scope}"))?);
@@ -438,12 +440,14 @@ pub(super) fn encode_expression_literals(
                     lit(storage), value.data_type(), dialect.name(),
                 )?));
             }
-            if matches!(value.data_type(), DataType::Timestamp(_, Some(_)))
-                && matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) {
+            if matches!(value.data_type(), DataType::Timestamp(_, Some(_))) {
                 // DF53 renders zoned timestamp literals as plain TIMESTAMP,
                 // which silently reinterprets the instant in the session zone.
                 let text = if value.is_null() { None } else {
-                    Some(arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?)
+                    let text = arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?;
+                    // Use SQL timestamp text accepted by all source adapters;
+                    // Trino CAST rejects the ISO 8601 T/Z spelling.
+                    Some(text.replace('T', " ").replace('Z', " +00:00"))
                 };
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(ScalarValue::Utf8(text)), value.data_type(), dialect.name(),

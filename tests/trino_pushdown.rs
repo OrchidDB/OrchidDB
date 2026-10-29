@@ -170,3 +170,18 @@ async fn terminal_native_distinct_does_not_number_rows() {
         }
     }
 }
+
+#[tokio::test]
+async fn zoned_datetime_literals_keep_precision_and_timezone() {
+    for cutoff in ["2026-01-02T03:04:05.123457Z", "2026-01-01T19:04:05.123457-08:00"] {
+        let mut input = request("MATCH(p:Person) WHERE p.created < datetime($cutoff) RETURN p.id");
+        input["tables"][0]["columns"].as_array_mut().unwrap().push(json!({"name":"created","data_type":"timestamptz"}));
+        input["nodes"][0]["properties"]["created"] = json!("created");
+        input["parameters"] = json!({"cutoff":cutoff});
+        let plan = compile(input).await.unwrap();
+        let sql = source_sql(&plan);
+        assert!(sql.contains("TIMESTAMP(6) WITH TIME ZONE"), "{sql}");
+        assert!(sql.contains("2026-01-02 03:04:05.123457 +00:00"), "{sql}");
+        assert!(!sql.contains("duckdb"), "{sql}");
+    }
+}

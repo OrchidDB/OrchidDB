@@ -173,3 +173,24 @@ async fn observing_computed_edge_identity_keeps_its_ordinal() {
     let plan = compile(r).await.unwrap();
     assert!(source_sql(&plan).contains("row_number()"), "{}", source_sql(&plan));
 }
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn selected_endpoint_and_filter_survive_sql_lowering() {
+    // These PostgreSQL statements also execute in DuckDB. Exercise the emitted
+    // SQL, including scopes introduced after the logical optimizer finishes.
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE documents(id BIGINT PRIMARY KEY,body VARCHAR,vector VARCHAR); INSERT INTO documents VALUES(1,'one',NULL),(2,'two',NULL),(3,'three',NULL); CREATE TABLE links(id BIGINT PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES(1,1,2),(2,1,3),(3,2,3),(4,3,1);").unwrap();
+    for (query, expected) in [
+        ("MATCH (d:Document)-[:LATEST]->(n:Document) RETURN d.id AS source,n.id AS target ORDER BY source", vec![(1,3),(2,3),(3,1)]),
+        ("MATCH (d:Document)-[:LATEST]->(n:Document) WHERE n.id=1 RETURN d.id AS source,n.id AS target ORDER BY source", vec![(3,1)]),
+    ] {
+        let mut request = latest_request("LIMIT 1", true);
+        request["query"] = json!(query);
+        let plan = compile(request).await.unwrap();
+        let sql = source_sql(&plan);
+        let mut statement = db.prepare(sql).unwrap_or_else(|e| panic!("{e}\n{sql}"));
+        let actual: Vec<(i64,i64)> = statement.query_map([], |row| Ok((row.get(0)?,row.get(1)?))).unwrap().collect::<Result<_,_>>().unwrap();
+        assert_eq!(actual, expected, "{sql}");
+    }
+}

@@ -370,6 +370,19 @@ fn rewrite_node(
                         return None;
                     }
                     let origin = r.origins.get(i - lw)?.as_ref()?;
+                    // A table/column origin does not identify a row occurrence.
+                    // A traversal can carry both source.id and target.id from
+                    // the same table. Anchor replacement to this join's key,
+                    // including aliases of that key on the right side.
+                    if let Some((left, _)) = pairs.iter().find(|(_, right)| {
+                        r.origins.get(*right).and_then(|o| o.as_ref()) == Some(origin)
+                    }) {
+                        return Some((*i, *left));
+                    }
+                    // Non-key payload is interchangeable only when the left
+                    // input is a single-row-source lens, not a join carrying
+                    // multiple occurrences of that physical table.
+                    domain(&j.left)?;
                     let left = l.origins.iter().position(|o| o.as_ref() == Some(origin))?;
                     Some((*i, left))
                 })
