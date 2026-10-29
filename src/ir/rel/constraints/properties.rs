@@ -10,6 +10,35 @@ use datafusion::{
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Safe equijoin determinants, independent of whether lowering placed the
+/// equality in `on` or in a conjunctive filter. Residual predicates can reduce
+/// matches but cannot multiply them; removal rewrites require exact predicates.
+pub(super) fn equijoin_pairs(j: &datafusion::logical_expr::Join, allow_residual: bool) -> Option<Vec<(usize, usize)>> {
+    if j.null_aware { return None; }
+    fn pair(a: &Expr, b: &Expr, j: &datafusion::logical_expr::Join) -> Option<(usize, usize)> {
+        if !same_value_type(&a.get_type(j.left.schema()).ok()?, &b.get_type(j.right.schema()).ok()?) { return None; }
+        Some((input_column(a, j.left.schema())?, input_column(b, j.right.schema())?))
+    }
+    fn extract(e: &Expr, j: &datafusion::logical_expr::Join, pairs: &mut Vec<(usize, usize)>, allow_residual: bool) -> Option<()> {
+        if let Expr::BinaryExpr(b) = e {
+            if b.op == Operator::And {
+                extract(&b.left, j, pairs, allow_residual)?;
+                return extract(&b.right, j, pairs, allow_residual);
+            }
+            if b.op == Operator::Eq {
+                if let Some(p) = pair(&b.left, &b.right, j).or_else(|| pair(&b.right, &b.left, j)) {
+                    pairs.push(p);
+                    return Some(());
+                }
+            }
+        }
+        allow_residual.then_some(())
+    }
+    let mut pairs = j.on.iter().map(|(a,b)| pair(a,b,j)).collect::<Option<Vec<_>>>()?;
+    if let Some(filter) = &j.filter { extract(filter, j, &mut pairs, allow_residual)?; }
+    Some(pairs)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Origin {
     pub table: String,
@@ -513,15 +542,7 @@ fn analyze_node(plan: &LogicalPlan) -> PlanProperties {
             let l = analyze(&n.left);
             let r = analyze(&n.right);
             let lw = n.left.schema().fields().len();
-            let pairs: Option<Vec<_>> =
-                n.on.iter()
-                    .map(|(a, b)| {
-                        Some((
-                            input_column(a, n.left.schema())?,
-                            input_column(b, n.right.schema())?,
-                        ))
-                    })
-                    .collect();
+            let pairs = equijoin_pairs(n, true);
             let (lk, rk): (Vec<_>, Vec<_>) = pairs.unwrap_or_default().into_iter().unzip();
             let lu = l.unique_on(&lk, true);
             let ru = r.unique_on(&rk, true);
@@ -544,6 +565,7 @@ fn analyze_node(plan: &LogicalPlan) -> PlanProperties {
             p.origins = l.origins.iter().chain(&r.origins).cloned().collect();
             p.evidence = l.evidence.union(&r.evidence).cloned().collect();
             if matches!(n.join_type, JoinType::Inner | JoinType::Left) {
+                p.constants.extend(l.constants.clone());
                 p.non_null.extend(&l.non_null);
                 p.foreign_keys.extend(l.foreign_keys.clone());
                 if ru {
@@ -553,6 +575,7 @@ fn analyze_node(plan: &LogicalPlan) -> PlanProperties {
                 p.dependencies.extend(l.dependencies.clone());
             }
             if matches!(n.join_type, JoinType::Inner | JoinType::Right) {
+                p.constants.extend(r.constants.iter().map(|(index, value)| (index + lw, value.clone())));
                 p.non_null.extend(r.non_null.iter().map(|i| i + lw));
                 p.foreign_keys
                     .extend(r.foreign_keys.iter().map(|f| ForeignKey {

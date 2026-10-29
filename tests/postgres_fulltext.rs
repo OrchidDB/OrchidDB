@@ -194,3 +194,96 @@ async fn selected_endpoint_and_filter_survive_sql_lowering() {
         assert_eq!(actual, expected, "{sql}");
     }
 }
+
+#[tokio::test]
+async fn unused_computed_relationship_does_not_disable_physical_optionals() {
+    for count in [1, 2, 4] {
+        let mut query = "MATCH(d:Document) ".to_string();
+        for i in 0..count { query.push_str(&format!("OPTIONAL MATCH(d)-[:NEXT]->(n{i}:Document) ")); }
+        query.push_str("RETURN d.id");
+        for i in 0..count { query.push_str(&format!(",n{i}.id")); }
+        let mut request = latest_request("LIMIT 1", true);
+        request["query"] = json!(query);
+        let plan = compile(request).await.unwrap();
+        let sql = source_sql(&plan);
+        assert!(!sql.contains("__apply_corr_key_row"), "{sql}");
+        assert!(sql.len() < 5000 * count, "{} bytes for {count} optionals", sql.len());
+    }
+}
+
+#[tokio::test]
+async fn target_text_query_crosses_preserved_side_of_optional_join() {
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("MATCH(d:Document),(q:Document) WHERE q.id=1 OPTIONAL MATCH(d)-[:NEXT]->(n:Document) RETURN d.id,n.id,text.rank(d.vector,text.queryFromVector(q.vector),32) AS score");
+    let plan = compile(request).await.unwrap();
+    let sql = source_sql(&plan);
+    assert!(sql.contains("__w_sql_cte_source_scalar_"), "{sql}");
+    assert!(sql.contains("MATERIALIZED"), "{sql}");
+    assert_eq!(sql.matches("tsvector_to_array").count(), 1, "{sql}");
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn physical_optionals_keep_duplicate_anchors_parallel_edges_and_missing_targets() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE documents(id BIGINT PRIMARY KEY,body VARCHAR,vector VARCHAR); INSERT INTO documents VALUES(1,'one',NULL),(2,'two',NULL),(3,'three',NULL); CREATE TABLE links(id BIGINT PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES(1,1,2),(2,1,2),(3,1,3);").unwrap();
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("UNWIND [1,1,3] AS k MATCH(d:Document {id:k}) OPTIONAL MATCH(d)-[:NEXT]->(n:Document) OPTIONAL MATCH(d)-[:NEXT]->(m:Document) RETURN d.id AS source,n.id AS first,m.id AS second ORDER BY source,first,second");
+    let plan = compile(request).await.unwrap();
+    let sql = source_sql(&plan);
+    assert!(!sql.contains("__apply_corr_key_row"), "{sql}");
+    let mut statement = db.prepare(sql).unwrap_or_else(|e| panic!("{e}\n{sql}"));
+    let actual: Vec<(i64,Option<i64>,Option<i64>)> = statement.query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    let mut expected = vec![(3,None,None)];
+    for _ in 0..2 { for first in [2,2,3] { for second in [2,2,3] { expected.push((1,Some(first),Some(second))); } } }
+    expected.sort();
+    assert_eq!(actual,expected,"{sql}");
+}
+
+#[tokio::test]
+async fn optional_right_text_query_is_not_hoisted_before_null_extension() {
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("MATCH(d:Document) OPTIONAL MATCH(d)-[:NEXT]->(n:Document) RETURN d.id,text.queryFromVector(n.vector) AS query");
+    let plan = compile(request).await.unwrap();
+    assert!(!source_sql(&plan).contains("__w_sql_cte_source_scalar_"), "{}", source_sql(&plan));
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn optional_computed_relationship_keeps_per_source_top_one() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE documents(id BIGINT PRIMARY KEY,body VARCHAR,vector VARCHAR); INSERT INTO documents VALUES(1,'one',NULL),(2,'two',NULL),(3,'three',NULL); CREATE TABLE links(id BIGINT PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES(1,1,2),(2,1,3);").unwrap();
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("MATCH(d:Document) OPTIONAL MATCH(d)-[:LATEST]->(n:Document) RETURN d.id AS source,n.id AS target ORDER BY source");
+    let plan = compile(request).await.unwrap();
+    let sql = source_sql(&plan);
+    let mut statement = db.prepare(sql).unwrap_or_else(|e| panic!("{e}\n{sql}"));
+    let actual: Vec<(i64,Option<i64>)> = statement.query_map([], |r| Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(actual, vec![(1,Some(3)),(2,None),(3,None)], "{sql}");
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn endpoint_payload_follows_the_selected_row_occurrence() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE documents(id BIGINT PRIMARY KEY,body VARCHAR,vector VARCHAR); INSERT INTO documents VALUES(1,'one',NULL),(2,'two',NULL),(3,'three',NULL); CREATE TABLE links(id BIGINT PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES(1,1,2),(2,1,3),(3,2,3),(4,3,1);").unwrap();
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("MATCH(d:Document)-[:LATEST]->(n:Document) RETURN d.id AS source,d.body AS source_body,n.body AS target_body ORDER BY source");
+    let plan = compile(request).await.unwrap();
+    let sql = source_sql(&plan);
+    let mut statement = db.prepare(sql).unwrap_or_else(|e| panic!("{e}\n{sql}"));
+    let actual: Vec<(i64,String,String)> = statement.query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(actual, vec![(1,"one".into(),"three".into()),(2,"two".into(),"three".into()),(3,"three".into(),"one".into())], "{sql}");
+}
+
+#[tokio::test]
+async fn top_one_with_optional_metadata_shares_history_and_target_query() {
+    let mut request = latest_request("LIMIT 1", true);
+    request["query"] = json!("MATCH(q:Document {id:1}),(d:Document)-[:LATEST]->(n:Document) OPTIONAL MATCH(n)-[:NEXT]->(a:Document) OPTIONAL MATCH(n)-[:NEXT]->(b:Document) RETURN d.id,a.id,b.id,text.rank(n.vector,text.queryFromVector(q.vector),32) AS score ORDER BY score DESC,d.id LIMIT 20");
+    let plan = compile(request).await.unwrap();
+    let sql = source_sql(&plan);
+    assert_eq!(sql.matches("DISTINCT ON").count(),1,"{sql}");
+    assert!(!sql.contains("__apply_corr_key_row"),"{sql}");
+    assert_eq!(sql.matches("tsvector_to_array").count(),1,"{sql}");
+    assert!(sql.contains("__w_sql_cte_source_scalar_"),"{sql}");
+}

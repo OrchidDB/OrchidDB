@@ -424,14 +424,6 @@ impl LoweringContext<'_> {
         {
             return Ok(None);
         }
-        // Sharing an independently expanded relation must not change effects
-        // of computed sources. Ordinary mapped tables are statement snapshots.
-        if self.options.mapping.as_ref().is_some_and(|mapping| {
-            mapping.labels().iter().any(|label| mapping.node(label).is_some_and(|node|
-                !matches!(&node.source, mapping::MappedSource::Table(_))))
-            || mapping.rel_types().iter().any(|kind| mapping.edge_partitions(kind).iter().any(|edge|
-                !matches!(&edge.source, mapping::MappedSource::Table(_))))
-        }) { return Ok(None); }
         let Some(right) = simple_expand(right) else {
             return Ok(None);
         };
@@ -475,10 +467,28 @@ impl LoweringContext<'_> {
         {
             return Ok(None);
         }
+        // Only dependencies of this hop determine whether it may be shared.
+        // Unrelated computed mappings must not disable physical optional joins.
+        if self.options.live_graph_reads { return Ok(None); }
+        let reverse = match dir { Direction::Out => Direction::In, Direction::In => Direction::Out, Direction::Both => Direction::Both };
+        let source_labels = self.mapped_endpoint_labels(&LabelExpr::Any, rel_types, reverse)?;
+        let endpoint_labels = self.mapped_endpoint_labels(target_labels, rel_types, *dir)?;
+        if let Some(mapping) = &self.options.mapping {
+            for kind in mapping::resolve_names(rel_types, || mapping.rel_types(), "relationship")? {
+                if mapping.edge_partitions(&kind).iter().any(|edge|
+                    !matches!(&edge.source, mapping::MappedSource::Table(_))) { return Ok(None); }
+            }
+            for labels in [&source_labels, &endpoint_labels] {
+                for label in mapping::resolve_names(labels, || mapping.labels(), "label")? {
+                    if mapping.node(&label).is_some_and(|node|
+                        !matches!(&node.source, mapping::MappedSource::Table(_))) { return Ok(None); }
+                }
+            }
+        }
         let seed = Node::GraphNodeScan {
             graph: "default".into(),
             binding: source.clone(),
-            labels: LabelExpr::Any,
+            labels: source_labels,
         };
         let right = self.lower_expand(
             &seed,

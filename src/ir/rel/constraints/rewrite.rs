@@ -10,7 +10,7 @@ use datafusion::{
         Result,
         tree_node::{Transformed, TreeNode},
     },
-    logical_expr::{Expr, ExprSchemable, JoinType, LogicalPlan, LogicalPlanBuilder},
+    logical_expr::{Expr, JoinType, LogicalPlan, LogicalPlanBuilder},
     optimizer::{OptimizerConfig, OptimizerRule},
 };
 use serde::Serialize;
@@ -117,60 +117,122 @@ fn contained(a: &LogicalPlan, b: &LogicalPlan) -> bool {
         && x.removable
         && y.removable
 }
-fn join_pairs(j: &datafusion::logical_expr::Join) -> Option<Vec<(usize, usize)>> {
-    if j.null_aware {
-        return None;
+// Find a payload column belonging to this particular key occurrence. A
+// physical origin alone cannot distinguish two aliases of the same table.
+fn occurrence_column(plan: &LogicalPlan, key: usize, origin: &super::properties::Origin) -> Option<usize> {
+    match plan {
+        LogicalPlan::TableScan(_) => {
+            let facts = analyze(plan);
+            if facts.origins.get(key)?.as_ref()?.table != origin.table { return None; }
+            facts.origins.iter().position(|candidate| candidate.as_ref() == Some(origin))
+        }
+        LogicalPlan::Projection(p) => {
+            let key = input_column(p.expr.get(key)?, p.input.schema())?;
+            let value = occurrence_column(&p.input, key, origin)?;
+            p.expr.iter().position(|expr| input_column(expr, p.input.schema()) == Some(value))
+        }
+        LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(p)) => {
+            let key = input_column(p.select_expr.get(key)?, p.input.schema())?;
+            let value = occurrence_column(&p.input, key, origin)?;
+            p.select_expr.iter().position(|expr| input_column(expr, p.input.schema()) == Some(value))
+        }
+        LogicalPlan::SubqueryAlias(p) => occurrence_column(&p.input, key, origin),
+        LogicalPlan::Filter(p) => occurrence_column(&p.input, key, origin),
+        LogicalPlan::Sort(p) => occurrence_column(&p.input, key, origin),
+        LogicalPlan::Limit(p) => occurrence_column(&p.input, key, origin),
+        LogicalPlan::Window(p) if key < p.input.schema().fields().len() => occurrence_column(&p.input, key, origin),
+        LogicalPlan::Join(j) => {
+            let width = j.left.schema().fields().len();
+            if key < width { occurrence_column(&j.left, key, origin) }
+            else { occurrence_column(&j.right, key - width, origin).map(|index| index + width) }
+        }
+        _ => None,
     }
+}
+
+// Restore a pruned payload on the specific row occurrence identified by key.
+// Existing columns retain their qualified names. Never cross aggregates,
+// unions or other operators that merge distinct physical row occurrences.
+fn expose_occurrence_column(plan: &LogicalPlan, key: usize, origin: &super::properties::Origin) -> Result<Option<(LogicalPlan, usize)>> {
+    if let Some(index) = occurrence_column(plan, key, origin) {
+        return Ok(Some((plan.clone(), index)));
+    }
+    let mut name = "__constraint_payload".to_string();
+    while plan.schema().fields().iter().any(|f| f.name() == &name) { name.push('_'); }
+    expose_named_occurrence_column(plan, key, origin, &name)
+}
+fn expose_named_occurrence_column(plan: &LogicalPlan, key: usize, origin: &super::properties::Origin, name: &str) -> Result<Option<(LogicalPlan, usize)>> {
+    if let Some(index) = occurrence_column(plan, key, origin) { return Ok(Some((plan.clone(), index))); }
+    let width = plan.schema().fields().len();
+    let (expanded, value) = match plan {
+        LogicalPlan::TableScan(scan) => {
+            let facts = analyze(plan);
+            if !facts.origins.get(key).and_then(|o| o.as_ref()).is_some_and(|o| o.table == origin.table) { return Ok(None); }
+            let Ok(index) = scan.source.schema().index_of(&origin.column) else { return Ok(None); };
+            let mut projection = scan.projection.clone().unwrap_or_else(|| (0..scan.source.schema().fields().len()).collect());
+            projection.push(index);
+            let scan = datafusion::logical_expr::TableScan::try_new(scan.table_name.clone(), scan.source.clone(), Some(projection), scan.filters.clone(), scan.fetch)?;
+            let expanded = LogicalPlan::TableScan(scan);
+            let value = Expr::Column(expanded.schema().columns()[width].clone());
+            (expanded, value)
+        }
+        LogicalPlan::Projection(p) => {
+            let Some(key) = input_column(&p.expr[key], p.input.schema()) else { return Ok(None); };
+            let Some((input, index)) = expose_named_occurrence_column(&p.input, key, origin, name)? else { return Ok(None); };
+            let mut expressions = p.expr.clone();
+            expressions.push(Expr::Column(input.schema().columns()[index].clone()).alias(name));
+            return Ok(Some((LogicalPlanBuilder::from(input).project(expressions)?.build()?, width)));
+        }
+        LogicalPlan::SubqueryAlias(_) | LogicalPlan::Filter(_) | LogicalPlan::Sort(_) | LogicalPlan::Limit(_) => {
+            let input = plan.inputs()[0];
+            let Some((input, index)) = expose_named_occurrence_column(input, key, origin, name)? else { return Ok(None); };
+            let expanded = plan.with_new_exprs(plan.expressions(), vec![input])?;
+            // Keep the alias as the outer boundary of this input. Wrapping it
+            // in an unaliased projection would hide qualified columns in SQL.
+            return Ok(Some((expanded, index)));
+        }
+        LogicalPlan::Distinct(datafusion::logical_expr::Distinct::On(selected)) => {
+            let Some(key) = input_column(&selected.select_expr[key], selected.input.schema()) else { return Ok(None); };
+            let Some((input, index)) = expose_named_occurrence_column(&selected.input, key, origin, name)? else { return Ok(None); };
+            // ON and ORDER BY still select the same input row. Extending its
+            // payload cannot affect selection (unlike DISTINCT over all fields).
+            let mut expressions = selected.select_expr.clone();
+            expressions.push(Expr::Column(input.schema().columns()[index].clone()).alias(name));
+            let expanded = LogicalPlanBuilder::from(input)
+                .distinct_on(selected.on_expr.clone(), expressions, selected.sort_expr.clone())?.build()?;
+            return Ok(Some((expanded, width)));
+        }
+        LogicalPlan::Window(window) if key < window.input.schema().fields().len() => {
+            let Some((input, index)) = expose_named_occurrence_column(&window.input, key, origin, name)? else { return Ok(None); };
+            let expanded = plan.with_new_exprs(plan.expressions(), vec![input])?;
+            return Ok(Some((expanded, index)));
+        }
+        LogicalPlan::Join(j) => {
+            let lw = j.left.schema().fields().len();
+            // Semi/anti/mark joins do not expose both input schemas.
+            if !matches!(j.join_type, JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full) { return Ok(None); }
+            let (input, local_key, offset) = if key < lw { (&j.left, key, 0) } else { (&j.right, key-lw, lw) };
+            let Some((input, index)) = expose_named_occurrence_column(input, local_key, origin, name)? else { return Ok(None); };
+            let children = if key < lw { vec![input, j.right.as_ref().clone()] } else { vec![j.left.as_ref().clone(), input] };
+            let expanded = plan.with_new_exprs(plan.expressions(), children)?;
+            // Do not wrap a join in a payload-only projection: that hides
+            // qualified duplicate field names from dialect SQL emission.
+            return Ok(Some((expanded, offset+index)));
+        }
+        _ => return Ok(None),
+    };
+    let mut expressions = plan.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
+    expressions.push(value.alias(name));
+    Ok(Some((LogicalPlanBuilder::from(expanded).project(expressions)?.build()?, width)))
+}
+
+fn join_pairs(j: &datafusion::logical_expr::Join) -> Option<Vec<(usize, usize)>> {
     let l = analyze(&j.left);
     let r = analyze(&j.right);
-    fn pair(
-        a: &Expr,
-        b: &Expr,
-        j: &datafusion::logical_expr::Join,
-    ) -> Option<(usize, usize)> {
-        // Raw key uniqueness need not survive implicit comparison coercion
-        // (e.g. distinct Int64 values can collapse to the same Float64).
-        // Explicit casts must also pass input_column's injectivity check.
-        if !super::properties::same_value_type(&a.get_type(j.left.schema()).ok()?, &b.get_type(j.right.schema()).ok()?) {
-            return None;
-        }
-        Some((
-            input_column(a, j.left.schema())?,
-            input_column(b, j.right.schema())?,
-        ))
-    }
-    let mut pairs = j
-        .on
-        .iter()
-        .map(|(a, b)| pair(a, b, j))
-        .collect::<Option<Vec<_>>>()?;
-    fn extract(
-        e: &Expr,
-        j: &datafusion::logical_expr::Join,
-        pairs: &mut Vec<(usize, usize)>,
-    ) -> Option<()> {
-        if let Expr::BinaryExpr(b) = e {
-            if b.op == datafusion::logical_expr::Operator::And {
-                extract(&b.left, j, pairs)?;
-                extract(&b.right, j, pairs)?;
-                return Some(());
-            }
-            if b.op == datafusion::logical_expr::Operator::Eq {
-                let columns = pair(&b.left, &b.right, j)
-                    .or_else(|| pair(&b.right, &b.left, j))?;
-                pairs.push(columns);
-                return Some(());
-            }
-        }
-        None
-    }
-    if let Some(f) = &j.filter {
-        extract(f, j, &mut pairs)?;
-    }
+    let mut pairs = super::properties::equijoin_pairs(j, false)?;
     pairs.retain(|(a, b)| {
-        !l.constants
-            .get(a)
-            .is_some_and(|v| r.constants.get(b) == Some(v))
+        !(l.non_null.contains(a) && r.non_null.contains(b)
+            && l.constants.get(a).is_some_and(|v| r.constants.get(b) == Some(v)))
     });
     Some(pairs)
 }
@@ -329,18 +391,46 @@ fn rewrite_node(
             // work in this orientation too; a mapping alone is not an FK proof.
             if j.join_type == JoinType::Inner && l.removable {
                 let reversed = pairs.iter().map(|(a, b)| (*b, *a)).collect::<Vec<_>>();
-                let unused = projection.expr.iter()
-                    .flat_map(|e| referenced(e, projection.input.schema()))
-                    .all(|index| index >= lw);
-                if unused && l.unique_on(&pairs.iter().map(|(a, _)| *a).collect::<Vec<_>>(),
+                if l.unique_on(&pairs.iter().map(|(a, _)| *a).collect::<Vec<_>>(),
                     j.null_equality == datafusion::common::NullEquality::NullEqualsNull)
                     && guaranteed_match(&r, &l, &reversed) {
-                    let result = LogicalPlanBuilder::from(j.right.as_ref().clone())
-                        .project(projection.expr.clone())?.build()?;
-                    let mut evidence = r;
-                    evidence.evidence.extend(l.evidence);
-                    proofs.push(proof("eliminate_source_endpoint", "unused left endpoint has exactly one matching row from a non-null FK", &evidence));
-                    return Ok(Transformed::yes(result));
+                    // A surviving FK/key value also supplies an observed left
+                    // key. Keep the row-owning relation rather than scanning
+                    // its node identity again just to project that same key.
+                    let replacements: Option<Vec<_>> = projection.expr.iter()
+                        .flat_map(|e| referenced(e, projection.input.schema()))
+                        .filter(|index| *index < lw)
+                        .map(|index| {
+                            let origin = l.origins.get(index)?.as_ref()?;
+                            let (_, right) = pairs.iter().find(|(left, _)|
+                                l.origins.get(*left).and_then(|o| o.as_ref()) == Some(origin))?;
+                            // Substitution must preserve the exposed type as
+                            // well as the equality used to prove the join.
+                            (j.left.schema().field(index).data_type() == j.right.schema().field(*right).data_type())
+                                .then_some((index, *right))
+                        }).collect();
+                    if let Some(replacements) = replacements.filter(|replacements| replacements.is_empty() || r.removable) {
+                        let self_join = !replacements.is_empty() && same_rows(&r, &l, &reversed);
+                        let expressions = projection.expr.iter().zip(projection.schema.iter())
+                            .map(|(expression, (qualifier, field))| {
+                                expression.clone().transform_up(|expr| {
+                                    if let Expr::Column(column) = &expr {
+                                        if let Ok(index) = projection.input.schema().index_of_column(column) {
+                                            if let Some((_, right)) = replacements.iter().find(|(left, _)| *left == index) {
+                                                return Ok(Transformed::yes(Expr::Column(j.right.schema().columns()[*right].clone())));
+                                            }
+                                        }
+                                    }
+                                    Ok(Transformed::no(expr))
+                                }).map(|result| result.data.alias_qualified(qualifier.cloned(), field.name()))
+                            }).collect::<Result<Vec<_>>>()?;
+                        let result = LogicalPlanBuilder::from(j.right.as_ref().clone())
+                            .project(expressions)?.build()?;
+                        let mut evidence = r;
+                        evidence.evidence.extend(l.evidence);
+                        proofs.push(proof(if self_join { "eliminate_self_join" } else { "eliminate_source_endpoint" }, "left endpoint has exactly one matching row; observed keys come from the surviving join keys", &evidence));
+                        return Ok(Transformed::yes(result));
+                    }
                 }
             }
             // Requiring NULL-equal uniqueness also handles null-safe join operators.
@@ -362,6 +452,7 @@ fn rewrite_node(
                 .flat_map(|e| referenced(e, projection.input.schema()))
                 .collect::<Vec<_>>();
             let self_join = exists && same_rows(&l, &r, &pairs);
+            let mut surviving = j.left.as_ref().clone();
             let replacements: Option<Vec<_>> = used
                 .iter()
                 .filter(|i| **i >= lw)
@@ -377,14 +468,27 @@ fn rewrite_node(
                     if let Some((left, _)) = pairs.iter().find(|(_, right)| {
                         r.origins.get(*right).and_then(|o| o.as_ref()) == Some(origin)
                     }) {
-                        return Some((*i, *left));
+                        return Some((*i, j.left.schema().columns()[*left].clone()));
+                    }
+                    // A single joined key identifies the same physical row.
+                    // Follow its occurrence through the left tree instead of
+                    // borrowing the first payload with the same table origin.
+                    if let [(key, _)] = pairs.as_slice() {
+                        let key = surviving.schema().index_of_column(&j.left.schema().columns()[*key]).ok()?;
+                        if let Ok(Some((expanded, left))) = expose_occurrence_column(&surviving, key, origin) {
+                            if expanded.schema().field(left).data_type() == j.right.schema().field(i - lw).data_type() {
+                                let column = expanded.schema().columns()[left].clone();
+                                surviving = expanded;
+                                return Some((*i, column));
+                            }
+                        }
                     }
                     // Non-key payload is interchangeable only when the left
                     // input is a single-row-source lens, not a join carrying
                     // multiple occurrences of that physical table.
                     domain(&j.left)?;
                     let left = l.origins.iter().position(|o| o.as_ref() == Some(origin))?;
-                    Some((*i, left))
+                    Some((*i, j.left.schema().columns()[left].clone()))
                 })
                 .collect();
             if let Some(replacements) = replacements {
@@ -400,7 +504,7 @@ fn rewrite_node(
                                             replacements.iter().find(|(right, _)| *right == i)
                                         {
                                             return Ok(Transformed::yes(Expr::Column(
-                                                j.left.schema().columns()[*left].clone(),
+                                                left.clone(),
                                             )));
                                         }
                                     }
@@ -416,7 +520,7 @@ fn rewrite_node(
                     .zip(projection.schema.iter())
                     .map(|(e, (q, f))| e.alias_qualified(q.cloned(), f.name()))
                     .collect::<Vec<_>>();
-                let result = LogicalPlanBuilder::from(j.left.as_ref().clone())
+                let result = LogicalPlanBuilder::from(surviving)
                     .project(expressions)?
                     .build()?;
                 let mut combined = l;
@@ -477,8 +581,26 @@ pub fn optimize(plan: LogicalPlan) -> Result<(LogicalPlan, Vec<RewriteProof>)> {
     if !supplied && analyze(&plan).evidence.is_empty() {
         return Ok((plan, Vec::new()));
     }
+    // Removing an endpoint join can expose another one directly beneath the
+    // surviving projection. Revisit those newly adjacent operators. Every
+    // rewrite removes a join/set operator or at least one grouping key, so
+    // their initial count is a structural bound on the number of passes.
+    let mut budget = 1;
+    plan.apply(|node| {
+        budget += match node {
+            LogicalPlan::Join(_) | LogicalPlan::Distinct(_) => 1,
+            LogicalPlan::Aggregate(a) => a.group_expr.len(),
+            _ => 0,
+        };
+        Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+    })?;
     let mut proofs = Vec::new();
-    let result = plan.transform_up(|p| rewrite_node(p, &mut proofs))?.data;
+    let mut result = plan;
+    for _ in 0..budget {
+        let before = proofs.len();
+        result = result.transform_up(|p| rewrite_node(p, &mut proofs))?.data;
+        if proofs.len() == before { break; }
+    }
     Ok((result, proofs))
 }
 #[derive(Debug)]

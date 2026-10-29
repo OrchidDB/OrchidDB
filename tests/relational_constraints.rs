@@ -197,7 +197,12 @@ async fn fanout_filtered_targets_and_payload_distinct_are_retained() {
     ] {
         let original = m.relational_plan(sql).unwrap();
         let (optimized, proofs) = optimize(original.clone()).unwrap();
-        assert!(proofs.is_empty(), "{sql}: {proofs:?}");
+        if sql.starts_with("SELECT DISTINCT p.id") {
+            // Replacing the endpoint key with its FK is safe; the fanout
+            // still requires DISTINCT on that surviving FK value.
+            assert!(matches!(optimized, datafusion::logical_expr::LogicalPlan::Distinct(_)), "{optimized:?}");
+            assert!(proofs.iter().all(|p| p.rule == "eliminate_source_endpoint"));
+        } else { assert!(proofs.is_empty(), "{sql}: {proofs:?}"); }
         assert_eq!(rows(original).await, rows(optimized).await);
     }
 }
@@ -493,8 +498,15 @@ async fn throwing_projection_and_filtered_self_join_cannot_be_discarded() {
         "SELECT a.id FROM people a JOIN (SELECT id,CAST(name AS BIGINT) AS bad FROM people) b ON a.id=b.id",
         "SELECT a.id FROM people a JOIN (SELECT id FROM people WHERE name='Ada') b ON a.id=b.id",
     ] {
-        let (_, proofs) = optimize(m.relational_plan(sql).unwrap()).unwrap();
-        assert!(proofs.is_empty(), "{sql}: {proofs:?}");
+        let (optimized, proofs) = optimize(m.relational_plan(sql).unwrap()).unwrap();
+        if sql.contains("CAST") {
+            assert!(proofs.is_empty(), "{sql}: {proofs:?}");
+        } else {
+            // The unfiltered identity scan may disappear, but the target
+            // predicate must remain on the surviving source.
+            assert!(optimized.display_indent().to_string().contains("Filter:"), "{optimized:?}");
+            assert!(proofs.iter().all(|p| p.rule == "eliminate_self_join"));
+        }
     }
 }
 
@@ -807,4 +819,115 @@ fn string_storage_cast_preserves_key_lineage() {
         assert_eq!(facts.origins[0].as_ref().unwrap().column, "id");
         assert!(facts.removable);
     }
+}
+
+#[test]
+fn filter_equalities_preserve_only_proven_join_keys() {
+    use datafusion::logical_expr::{col, LogicalPlanBuilder, JoinType};
+    let mapping = fixture(Evidence::Enforced);
+    let left = mapping.relational_plan("SELECT id,name FROM people").unwrap();
+    let left = LogicalPlanBuilder::from(left).alias("a").unwrap().build().unwrap();
+    let right = mapping.relational_plan("SELECT id,name FROM people").unwrap();
+    let right = LogicalPlanBuilder::from(right).alias("b").unwrap().build().unwrap();
+    for (predicate, unique) in [
+        (col("a.id").eq(col("b.id")), true),
+        (col("a.id").eq(col("b.id")).and(col("b.name").eq(datafusion::prelude::lit("Ada"))), true),
+        (col("a.name").eq(col("b.name")), false),
+        (col("a.id").eq(col("b.id")).or(col("a.name").eq(col("b.name"))), false),
+    ] {
+        let plan = LogicalPlanBuilder::from(left.clone()).join_on(right.clone(), JoinType::Left, vec![predicate]).unwrap().build().unwrap();
+        assert_eq!(analyze(&plan).unique_on(&[0], true), unique, "{plan:?}");
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn observed_source_endpoint_keys_use_the_surviving_fk() {
+    let mapping = fixture(Evidence::Enforced);
+    for sql in [
+        "SELECT p.id AS person,o.id AS order_id FROM people p JOIN orders o ON p.id=o.person",
+        "SELECT p.id AS person,p.id+1 AS next_id,o.id AS order_id FROM people p JOIN orders o ON p.id=o.person",
+    ] {
+        let original = mapping.relational_plan(sql).unwrap();
+        let (optimized, proofs) = optimize(original.clone()).unwrap();
+        assert!(proofs.iter().any(|p|p.rule=="eliminate_source_endpoint"), "{optimized:?}");
+        assert_eq!(rows(original).await, rows(optimized).await, "{sql}");
+    }
+}
+
+#[test]
+fn joins_preserve_constants_only_on_non_null_extended_sides() {
+    use datafusion::logical_expr::{col, LogicalPlanBuilder, JoinType};
+    let mapping = fixture(Evidence::Enforced);
+    let left = mapping.relational_plan("SELECT id, 'left' AS tag FROM people").unwrap();
+    let left = LogicalPlanBuilder::from(left).alias("a").unwrap().build().unwrap();
+    let right = mapping.relational_plan("SELECT id, 'right' AS tag FROM people").unwrap();
+    let right = LogicalPlanBuilder::from(right).alias("b").unwrap().build().unwrap();
+    for (kind, expected) in [(JoinType::Inner,vec![1,3]),(JoinType::Left,vec![1]),(JoinType::Right,vec![3]),(JoinType::Full,vec![])] {
+        let plan = LogicalPlanBuilder::from(left.clone()).join_on(right.clone(),kind,vec![col("a.id").eq(col("b.id"))]).unwrap().build().unwrap();
+        assert_eq!(analyze(&plan).constants.keys().copied().collect::<Vec<_>>(),expected,"{kind:?}");
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn pruned_payload_is_restored_on_the_matching_row_occurrence() {
+    let mapping = fixture(Evidence::Enforced);
+    for (case, sql) in [
+        "SELECT a.id,b.name FROM (SELECT id FROM people) a JOIN people b ON a.id=b.id",
+        "SELECT x.id,a.id,b.name FROM people x CROSS JOIN (SELECT id FROM people) a JOIN people b ON a.id=b.id",
+        "SELECT a.id,x.id,b.name FROM (SELECT id FROM people) a CROSS JOIN people x JOIN people b ON a.id=b.id",
+        "SELECT a.id,b.name FROM (SELECT id FROM people WHERE id>1) a LEFT JOIN people b ON a.id=b.id",
+        "SELECT a.id,x.id,p.name,q.name FROM (SELECT id FROM people) a CROSS JOIN (SELECT id FROM people) x JOIN people p ON a.id=p.id JOIN people q ON x.id=q.id",
+    ].into_iter().enumerate() {
+        let original = mapping.relational_plan(sql).unwrap();
+        let (optimized, proofs) = optimize(original.clone()).unwrap();
+        assert!(proofs.iter().any(|p| p.rule=="eliminate_self_join"),"{sql}\n{optimized:?}\n{proofs:?}");
+
+        let people = [("1", "Ada"), ("2", "Bob"), ("3", "Bob")];
+        let mut expected = Vec::new();
+        for (id, name) in people {
+            if case == 0 || (case == 3 && id != "1") {
+                expected.push(vec![id.to_string(), name.to_string()]);
+            } else if case != 3 {
+                for (other, other_name) in people {
+                    let row = match case {
+                        1 => vec![other, id, name],
+                        2 => vec![id, other, name],
+                        4 => vec![id, other, name, other_name],
+                        _ => unreachable!(),
+                    };
+                    expected.push(row.into_iter().map(str::to_string).collect());
+                }
+            }
+        }
+        expected.sort();
+        assert_eq!(rows(optimized).await, expected, "optimized: {sql}");
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn selected_row_payload_survives_windows_and_limits() {
+    let mapping = fixture(Evidence::Enforced);
+    for sql in [
+        "SELECT a.id,b.name FROM (SELECT id FROM people ORDER BY id DESC LIMIT 1) a JOIN people b ON a.id=b.id",
+        "SELECT a.id,b.name FROM (SELECT id FROM (SELECT id,row_number() OVER(ORDER BY id DESC) AS rn FROM people) ranked WHERE rn=1) a JOIN people b ON a.id=b.id",
+    ] {
+        let (optimized, proofs) = optimize(mapping.relational_plan(sql).unwrap()).unwrap();
+        assert!(proofs.iter().any(|p| p.rule=="eliminate_self_join"),"{sql}\n{proofs:?}");
+        assert_eq!(optimized.display_indent().to_string().matches("TableScan: people").count(),1,"{optimized:?}");
+        assert_eq!(rows(optimized).await, vec![vec!["3".to_string(),"Bob".to_string()]],"{sql}");
+    }
+}
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn distinct_on_payload_comes_from_the_selected_row() {
+    let mapping = fixture(Evidence::Enforced);
+    let sql="SELECT a.id,b.name FROM (SELECT DISTINCT ON(name) id FROM people ORDER BY name,id DESC) a JOIN people b ON a.id=b.id";
+    let (optimized, proofs)=optimize(mapping.relational_plan(sql).unwrap()).unwrap();
+    assert!(proofs.iter().any(|p|p.rule=="eliminate_self_join"),"{proofs:?}");
+    assert_eq!(optimized.display_indent().to_string().matches("TableScan: people").count(),1,"{optimized:?}");
+    assert_eq!(rows(optimized).await,vec![vec!["1".to_string(),"Ada".to_string()],vec!["3".to_string(),"Bob".to_string()]]);
 }

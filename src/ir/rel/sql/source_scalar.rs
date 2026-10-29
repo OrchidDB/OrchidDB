@@ -80,9 +80,11 @@ fn push(
                 ));
             }
         }
-        LogicalPlan::Join(j) if j.join_type == JoinType::Inner => {
+        LogicalPlan::Join(j) if matches!(j.join_type, JoinType::Inner | JoinType::Left) => {
             let inputs = [&j.left, &j.right];
-            for side in 0..2 {
+            // A left-only total expression is unchanged by null extension.
+            // Never move a right-side expression below an outer join here.
+            for side in 0..if j.join_type == JoinType::Left { 1 } else { 2 } {
                 if available(&expr, inputs[side]) && !available(&expr, inputs[1 - side]) {
                     if let Some(input) =
                         push(inputs[side].as_ref().clone(), expr.clone(), name, true)?
