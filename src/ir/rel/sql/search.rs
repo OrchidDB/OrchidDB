@@ -1,4 +1,7 @@
 //! Backend SQL for a first-class ranked search join.
+//!
+//! SQL audit [L25](../../../../tools/diagnostics/sql-lowering-audit.md#l25-ranked-search-and-connector-rewrites): Source format and index facts select indexed or relational scoring.
+//! Ownership and output schema remain mandatory even when a rewrite absorbs a score.
 use super::*;
 use crate::ir::rel::search::{RankedJoin, SCORE_COLUMN, SearchMetric};
 use datafusion::sql::{

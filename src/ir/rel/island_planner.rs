@@ -215,7 +215,9 @@ impl LoweringContext<'_> {
             cache.attempts += 1;
         }
         let result = self.lower_node_inner(node);
-        if matches!(&result, Err(RelError::RulePipeline(_))) { return result; }
+        // Semantic failures are fatal to the query. Caching them as a capability
+        // miss could turn the next attempt into a different execution path.
+        if matches!(&result, Err(RelError::RulePipeline(_) | RelError::Semantic(_))) { return result; }
         if let (Some(memo), Some(key)) = (memo, key) {
             memo.lock()
                 .unwrap()

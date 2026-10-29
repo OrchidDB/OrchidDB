@@ -36,6 +36,7 @@ unsafe fn data_type(t: ffi::duckdb_logical_type) -> Result<DataType> {
         L::Float => DataType::Float32,
         L::Double => DataType::Float64,
         L::Varchar => DataType::Utf8,
+        L::Blob => DataType::Binary,
         L::Date => DataType::Date32,
         L::Timestamp => DataType::Timestamp(TimeUnit::Microsecond,None),
         L::TimestampS => DataType::Timestamp(TimeUnit::Second,None),
@@ -102,13 +103,14 @@ unsafe fn cell(v: ffi::duckdb_vector, t: &DataType, row: usize) -> Result<Scalar
         DataType::UInt64 => ScalarValue::UInt64(Some(get!(u64))),
         DataType::Float32 => ScalarValue::Float32(Some(get!(f32))),
         DataType::Float64 => ScalarValue::Float64(Some(get!(f64))),
-        DataType::Utf8 => {
+        DataType::Utf8 | DataType::Binary => {
             let mut s = get!(ffi::duckdb_string_t);
             let len = unsafe { ffi::duckdb_string_t_length(s) } as usize;
             let bytes = unsafe {
                 std::slice::from_raw_parts(ffi::duckdb_string_t_data(&mut s).cast::<u8>(), len)
             };
-            ScalarValue::Utf8(Some(std::str::from_utf8(bytes)?.into()))
+            if *t == DataType::Binary { ScalarValue::Binary(Some(bytes.to_vec())) }
+            else { ScalarValue::Utf8(Some(std::str::from_utf8(bytes)?.into())) }
         }
         DataType::Decimal256(39, 0) => {
             let n = get!(ffi::duckdb_hugeint);

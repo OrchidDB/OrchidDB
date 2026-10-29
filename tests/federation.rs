@@ -208,23 +208,6 @@ async fn executable_engine_registry_is_closed() {
     );
 }
 
-#[cfg(feature = "weaviate")]
-#[tokio::test]
-async fn request_sources_are_distinct_from_executable_engines() {
-    let mut r = request();
-    r["sources"] = json!({"vectors":{"adapter":"weaviate"}});
-    assert!(plan(r.clone()).await.is_ok());
-    r["execution_engine"] = json!("vectors");
-    assert!(
-        plan(r)
-            .await
-            .unwrap_err()
-            .contains("unknown execution_engine")
-    );
-    let mut r = request();
-    r["sources"] = json!({"remote":{"adapter":"weaviate"}});
-    assert!(plan(r).await.unwrap_err().contains("duplicate"));
-}
 
 #[cfg(feature = "duckdb")]
 #[tokio::test]

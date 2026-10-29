@@ -142,7 +142,7 @@ pub fn to_duckdb_type_id(
         DataType::UInt16 => USmallint,
         DataType::UInt32 => UInteger,
         DataType::UInt64 => UBigint,
-        DataType::Float32 => Float,
+        DataType::Float16 | DataType::Float32 => Float,
         DataType::Float64 => Double,
         DataType::Timestamp(unit, None) => match unit {
             TimeUnit::Second => TimestampS,
@@ -154,7 +154,11 @@ pub fn to_duckdb_type_id(
         DataType::Date32 => Date,
         DataType::Date64 => Date,
         DataType::Time32(_) => Time,
+        DataType::Time64(TimeUnit::Nanosecond) => TimeNs,
         DataType::Time64(_) => Time,
+        DataType::Duration(TimeUnit::Nanosecond) | DataType::Interval(IntervalUnit::MonthDayNano) => {
+            return Err("DuckDB INTERVAL cannot losslessly represent nanosecond precision".into());
+        }
         DataType::Duration(_) => Interval,
         DataType::Interval(_) => Interval,
         DataType::Binary
@@ -166,8 +170,11 @@ pub fn to_duckdb_type_id(
         DataType::Struct(_) => Struct,
         DataType::Union(_, _) => Union,
         // DataType::Dictionary(_, _) => todo!(),
-        DataType::Decimal128(_, _) => Decimal,
-        DataType::Decimal256(_, _) => Double,
+        DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) => Decimal,
+        DataType::Decimal256(precision, _) if *precision > 38 => {
+            return Err("DuckDB cannot losslessly represent decimal precision above 38".into());
+        }
+        DataType::Decimal256(_, _) => Decimal,
         DataType::Map(_, _) => Map,
         _ => {
             return Err(format!("Unsupported data type: {data_type:?}").into());
@@ -219,7 +226,8 @@ pub fn to_duckdb_logical_type(
             &to_duckdb_logical_type(child.data_type())?,
             *array_size as u64,
         )),
-        DataType::Decimal128(width, scale) => {
+        DataType::Decimal32(width, scale) | DataType::Decimal64(width, scale) | DataType::Decimal128(width, scale) | DataType::Decimal256(width, scale) => {
+            if *width > 38 { return Err("DuckDB cannot losslessly represent decimal precision above 38".into()); }
             if *scale < 0 {
                 return Err(
                     format!("Unsupported data type: {data_type}, negative decimal scale is not supported").into(),
@@ -543,7 +551,13 @@ pub fn flat_vector_to_arrow_array(
         LogicalTypeId::SqlNull => todo!(),
         LogicalTypeId::StringLiteral => todo!(),
         LogicalTypeId::IntegerLiteral => todo!(),
-        LogicalTypeId::TimeNs => todo!(),
+        LogicalTypeId::TimeNs => {
+            let data = vector.as_slice_with_len::<i64>(len);
+            Ok(Arc::new(PrimitiveArray::<Time64NanosecondType>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| !vector.row_is_null(row as u64)))),
+            )))
+        },
     }
 }
 
@@ -864,11 +878,18 @@ fn primitive_array_to_vector(
         DataType::Int64 => {
             primitive_array_to_flat_vector::<Int64Type>(as_primitive_array(array), out);
         }
+        DataType::Float16 => {
+            primitive_array_to_flat_vector_cast::<Float32Type>(DataType::Float32, array, out);
+        }
         DataType::Float32 => {
             primitive_array_to_flat_vector::<Float32Type>(as_primitive_array(array), out);
         }
         DataType::Float64 => {
             primitive_array_to_flat_vector::<Float64Type>(as_primitive_array(array), out);
+        }
+        DataType::Decimal32(width, scale) | DataType::Decimal64(width, scale) | DataType::Decimal256(width, scale) => {
+            let widened = cast(array, &DataType::Decimal128(*width, *scale))?;
+            decimal_array_to_vector(as_primitive_array(widened.as_ref()), out, *width);
         }
         DataType::Decimal128(width, _) => {
             decimal_array_to_vector(as_primitive_array(array), out, *width);
@@ -927,6 +948,7 @@ fn primitive_array_to_vector(
             array,
             out,
         ),
+        DataType::Time64(TimeUnit::Nanosecond) => primitive_array_to_flat_vector::<Time64NanosecondType>(as_primitive_array(array), out),
         DataType::Time64(_) => primitive_array_to_flat_vector_cast::<Time64MicrosecondType>(
             Time64MicrosecondType::DATA_TYPE,
             array,

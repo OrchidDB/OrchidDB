@@ -46,7 +46,6 @@ func TestNativeDuckDB(t *testing.T) {
 	}
 	for _, query := range []struct{ language, text string }{
 		{"cypher", "MATCH (p:Person) WHERE p.name = $name RETURN p.name AS name"},
-		{"sparql", `SELECT ("O'Reilly" AS ?name) WHERE {}`},
 	} {
 		options := orchiddb.QueryOptions{Language: query.language}
 		if query.language == "cypher" {

@@ -1,3 +1,6 @@
+//! SQL lowering audit
+//! SQL audit [L26](../../../../tools/diagnostics/sql-lowering-audit.md#l26-constraint-backed-simplification): Remove relational work only from usable integrity facts and lineage.
+//! Cardinality estimates and matching column names cannot establish these proofs.
 use super::{
     PlanProperties, analyze,
     properties::{harmless, input_column, referenced},

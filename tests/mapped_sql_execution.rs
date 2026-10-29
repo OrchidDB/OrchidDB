@@ -80,52 +80,9 @@ async fn pushed_down_write_prefix_keeps_later_reads_live() {
     let persisted = e.cypher("MATCH (p:Person {id:'p42'}) RETURN p.name").await.unwrap();
     assert_eq!(arrow::util::display::array_value_to_string(persisted.returned.batch.column(0), 0).unwrap(), "changed!");
 }
-#[tokio::test]
-async fn native_repeat_fetches_only_reachable_frontier() {
-    let mut e = engine();
-    let r = e
-        .gremlin(
-            "g.V().hasLabel('Person').has('id','p42').repeat(out('LINK')).times(3).values('name')",
-        )
-        .await
-        .unwrap();
-    assert_eq!(r.returned.batch.num_rows(), 1);
-    assert!(r.stats.islands > 0, "{:?}", r.stats);
-    assert!(r.stats.native_source_rows < 20, "{:?}", r.stats);
-    assert!(
-        r.stats
-            .native_source_queries
-            .iter()
-            .all(|s| s.contains("WHERE") && !s.contains("unrelated")),
-        "{:?}",
-        r.stats
-    );
-}
-#[tokio::test]
-async fn native_frontier_lookups_are_batched() {
-    let mut e = engine();
-    let r=e.gremlin("g.V().hasLabel('Person').has('id',within('p42','p142','p242','p342')).repeat(out('LINK')).times(2).values('name')").await.unwrap();
-    assert_eq!(r.returned.batch.num_rows(), 4);
-    assert!(r.stats.native_source_queries.len() <= 8, "{:?}", r.stats);
-    assert!(r.stats.native_source_rows < 40, "{:?}", r.stats);
-}
-#[tokio::test]
-async fn mixed_width_keys_keep_their_types_across_native_boundaries() {
-    let db = duckdb::Connection::open_in_memory().unwrap();
-    db.execute_batch("CREATE TABLE a(id BIGINT PRIMARY KEY,name VARCHAR); INSERT INTO a VALUES (-1,'signed'); CREATE TABLE b(id UBIGINT PRIMARY KEY,name VARCHAR); INSERT INTO b VALUES (18446744073709551615,'unsigned');").unwrap();
-    let mut m = GraphMapping::new();
-    m.map_node(NodeMapping::table("A", "a", "id").property("name", "name"));
-    m.map_node(NodeMapping::table("B", "b", "id").property("name", "name"));
-    let mut e = GraphEngine::mapped(db, Arc::new(m)).unwrap();
-    let r = e.gremlin("g.V().valueMap('name')").await.unwrap();
-    assert_eq!(r.returned.batch.num_rows(), 2);
-    let output = format!("{:?}", r.returned.batch);
-    assert!(
-        output.contains("signed") && output.contains("unsigned"),
-        "{output}"
-    );
-    assert!(r.stats.islands > 0, "{:?}", r.stats);
-}
+
+
+
 #[tokio::test]
 async fn dropping_a_query_restores_the_original_connection() {
     use std::{future::Future, task::Poll};

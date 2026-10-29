@@ -17,3 +17,10 @@ __pycache__/
 /conformance/adapters/sqlg/target-relational-fk/
 /tools/diagnostics/sqlg-duckpgq-audit/manifest.json
 /tools/diagnostics/sqlg-duckpgq-audit/results.json
+
+# Preserve local caches belonging to retired clients.
+/clients/python/
+/clients/js/
+/clients/java/
+/clients/cpp/
+/clients/elixir/

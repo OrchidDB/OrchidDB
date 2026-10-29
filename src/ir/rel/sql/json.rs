@@ -1,5 +1,8 @@
 //! SQL implementations of typed JSON operations. Each operation may produce a
 //! complete scalar subquery; adapters are not restricted to function renaming.
+//!
+//! SQL audit [L24](../../../../tools/diagnostics/sql-lowering-audit.md#l24-json-scalar-and-relational-transformations): JSON operations can expand to scalar subqueries or recursive SQL;
+//! nominal JSON null and SQL null must remain distinct across these rewrites.
 use super::{SqlDialect, SqlError, SqlResult};
 use datafusion::sql::sqlparser::ast;
 

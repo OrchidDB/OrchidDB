@@ -1,4 +1,7 @@
 //! Relational contracts for per-row apply and scalar subqueries.
+//!
+//! SQL audit [L07](../../../tools/diagnostics/sql-lowering-audit.md#l07-correlated-apply-and-existence-shortcuts): Try grouped collection, scalar cardinality, and simple endpoint joins
+//! before numbering occurrences. Duplicate outer rows are the critical guard.
 
 use super::*;
 use datafusion::common::ExprSchema;

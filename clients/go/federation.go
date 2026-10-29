@@ -8,84 +8,21 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 )
 
-// Engine borrows either a SQL session or a RemoteEngine (exactly one).
-// Dialect is required for SQL sessions; remote adapters supply their own dialect.
+// Engine borrows a caller-owned SQL session or a custom request extension.
 type Engine struct {
 	Dialect string
 	Session Session
-	Remote  *RemoteEngine
+	Request RequestEngine
 }
 
-// RemoteEngine uses the shared typed HTTP transport, including batched Weaviate
-// function calls. Options include endpoint, authentication and batch_size.
-// Native HTTP calls use request_timeout_ms; contexts are checked between calls.
-type RemoteEngine struct {
-	mu          sync.Mutex
-	command     commandFunc
-	id, adapter string
-}
-
-func NewRemoteEngine(adapter string, options map[string]any, library string) (*RemoteEngine, error) {
-	command, err := loadRemoteRuntime(library)
-	if err != nil {
-		return nil, err
-	}
-	var opened struct {
-		ID string `json:"id"`
-	}
-	if err = command(map[string]any{"op": "open", "adapter": adapter, "options": options}, &opened); err != nil {
-		return nil, err
-	}
-	if opened.ID == "" {
-		return nil, errors.New("orchiddb: missing remote handle")
-	}
-	return &RemoteEngine{command: command, id: opened.ID, adapter: adapter}, nil
-}
-func (r *RemoteEngine) call(op string, values map[string]any, result any) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.id == "" {
-		return ErrClosed
-	}
-	values["op"], values["id"] = op, r.id
-	return r.command(values, result)
-}
-func (r *RemoteEngine) ClearMetadataCache() error {
-	var v json.RawMessage
-	return r.call("clear_metadata_cache", map[string]any{}, &v)
-}
-func (r *RemoteEngine) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.id == "" {
-		return nil
-	}
-	var v json.RawMessage
-	if err := r.command(map[string]any{"op": "close", "id": r.id}, &v); err != nil {
-		return err
-	}
-	r.id = ""
-	return nil
-}
-func (r *RemoteEngine) execute(ctx context.Context, requests json.RawMessage, columns []exchangeColumn) (json.RawMessage, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var result struct {
-		Rows json.RawMessage `json:"rows"`
-	}
-	err := r.call("execute", map[string]any{"requests": requests, "columns": columns, "format": "rows"}, &result)
-	if err != nil {
-		return nil, err
-	}
-	if err = ctx.Err(); err != nil {
-		return nil, err
-	}
-	return result.Rows, nil
+// RequestEngine is implemented by an application-owned extension.
+// OrchidDB does not bundle HTTP source transports.
+type RequestEngine interface {
+	Adapter() string
+	ExecuteRequests(context.Context, json.RawMessage, json.RawMessage) (json.RawMessage, error)
 }
 
 type exchangeColumn struct {
@@ -130,7 +67,7 @@ func (c *Connection) federate(ctx context.Context, raw json.RawMessage) (string,
 	engine := func(name, dialect string, remote bool) (Engine, error) {
 		e, ok := c.engines[name]
 		if name == target {
-			if ok && (e.Remote != nil || e.Dialect != c.dialect || e.Session == nil) {
+			if ok && (e.Request != nil || e.Dialect != c.dialect || e.Session == nil) {
 				return e, errors.New("orchiddb: execution engine must use the primary SQL session dialect")
 			}
 			e = Engine{Dialect: c.dialect, Session: c.session}
@@ -139,8 +76,8 @@ func (c *Connection) federate(ctx context.Context, raw json.RawMessage) (string,
 		if !ok {
 			return e, fmt.Errorf("orchiddb: missing engine %q", name)
 		}
-		if e.Remote != nil {
-			if e.Session != nil || !remote || e.Remote.adapter != dialect {
+		if e.Request != nil {
+			if e.Session != nil || !remote || e.Request.Adapter() != dialect {
 				return e, fmt.Errorf("orchiddb: engine %q capability/dialect mismatch", name)
 			}
 		} else if e.Session == nil || (reflect.ValueOf(e.Session).Kind() == reflect.Ptr && reflect.ValueOf(e.Session).IsNil()) || remote || e.Dialect != dialect {
@@ -214,7 +151,11 @@ func (c *Connection) federate(ctx context.Context, raw json.RawMessage) (string,
 				if err != nil {
 					return "", err
 				}
-				rows, err = e.Remote.execute(ctx, bound.Requests, t.Columns)
+				columns, encodeErr := json.Marshal(t.Columns)
+				if encodeErr != nil {
+					return "", encodeErr
+				}
+				rows, err = e.Request.ExecuteRequests(ctx, bound.Requests, columns)
 				if err != nil {
 					return "", err
 				}

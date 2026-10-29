@@ -71,10 +71,12 @@ pub(crate) fn matching_labels(labels: &LabelExpr, graph: &PropertyGraph) -> Vec<
         LabelExpr::Any => all,
         LabelExpr::AnyOf(names) => all
             .into_iter()
-            .filter(|label| names.iter().any(|n| n == label))
+            .filter(|label| names.iter().any(|n| n == label)
+                || graph.mapping.as_ref().and_then(|m| m.node(label)).is_some_and(|node| node.labels_column.is_some()))
             .collect(),
         LabelExpr::AllOf(names) if graph.mapping.is_some() => all.into_iter()
-            .filter(|label| names.iter().all(|name| name == label)).collect(),
+            .filter(|label| names.iter().all(|name| name == label)
+                || graph.mapping.as_ref().and_then(|m| m.node(label)).is_some_and(|node| node.labels_column.is_some())).collect(),
         LabelExpr::AllOf(_) => all,
         // Candidate tables are only a superset of matches, particularly for
         // logical AllOf labels. Complementing that superset loses valid nodes.

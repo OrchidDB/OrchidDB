@@ -86,11 +86,8 @@ fn request(language: &str, query: &str) -> Value {
         ],
         "nodes": [{"label": "Person", "table": "people", "id": "id", "properties": {"name": "name"}}],
         "edges": [{"label": "FOLLOWS", "table": "follows", "id": "id", "source": "src", "target": "dst",
-                   "source_label": "Person", "target_label": "Person"}],
-        "ontology": {
-            "classes": [{"iri": "http://example.org/Person", "label": "Person"}],
-            "properties": [{"iri": "http://example.org/name", "label": "Person", "property": "name"}]
-        }
+                   "source_label": "Person", "target_label": "Person"}]
+
     })
 }
 async fn plan(request: Value) -> CompiledSql {
@@ -204,22 +201,7 @@ async fn permission_scopes_filter_direct_and_project_grants() {
     assert!(error.contains("requires a principal"));
 }
 
-#[tokio::test]
-async fn gremlin_traverses_mapped_relationships() {
-    let db = database();
-    let query = plan(request("gremlin", "g.V(1).out('FOLLOWS').values('name')")).await;
-    assert_eq!(names(&mut Session::new(&db), &query).await, ["Grace"]);
-}
 
-#[tokio::test]
-async fn sparql_ontology_returns_actual_expected_rows() {
-    let db = database();
-    let query = plan(request("sparql", "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . } ORDER BY ?name")).await;
-    assert_eq!(
-        names(&mut Session::new(&db), &query).await,
-        ["Ada", "Grace", ADVERSARIAL_NAME]
-    );
-}
 
 #[tokio::test]
 async fn parameters_are_data_and_specialized_plans_remain_distinct() {
@@ -319,7 +301,7 @@ async fn invalid_dialect_and_protocol_never_reach_the_driver() {
     query.dialect = "postgres".into();
     assert!(matches!(
         execute(&mut session, &query).await,
-        Err(ExecutionError::UnsupportedEngine(_))
+        Err(ExecutionError::Dialect { .. })
     ));
     query.dialect = "trino".into();
     assert!(matches!(
@@ -513,32 +495,10 @@ async fn failed_statistics_generation_keeps_the_previous_snapshot() {
 #[path = "../examples/support/duckdb_statistics.rs"]
 mod statistics_adapter;
 
-#[tokio::test]
-async fn client_gremlin_string_values_skip_nulls_with_and_without_filtering() {
-    use orchiddb_client::{Connection as GraphConnection, Query, Schema};
-    let db = database();
-    db.execute("INSERT INTO people VALUES (4, NULL)", []).unwrap();
-    let config = request("gremlin", "g.V()");
-    let schema = Schema::from_value(json!({
-        "tables": config["tables"], "nodes": config["nodes"], "edges": config["edges"]
-    })).unwrap();
-    let mut graph = GraphConnection::new(Session::new(&db), schema);
-    for (query, expected) in [
-        ("g.V().hasLabel('Person').values('name').order()", vec!["Ada", "Grace", ADVERSARIAL_NAME]),
-        ("g.V().hasLabel('Person').values('name').is(neq('Grace')).order()", vec!["Ada", ADVERSARIAL_NAME]),
-    ] {
-        let mut names = Vec::new();
-        for batch in graph.query(Query::gremlin(query)).await.unwrap() {
-            let batch = batch.unwrap();
-            let column = batch.column(0).as_any().downcast_ref::<StringArray>().unwrap();
-            names.extend(column.iter().map(|value| value.unwrap().to_owned()));
-        }
-        assert_eq!(names, expected, "{query}");
-    }
-}
+
 
 #[tokio::test]
-async fn generated_statistics_use_the_existing_session_and_keep_all_languages_correct() {
+async fn generated_statistics_use_the_existing_session_for_cypher() {
     use statistics::Statistics;
     let db = database();
     let base = request(
@@ -571,11 +531,6 @@ async fn generated_statistics_use_the_existing_session_and_keep_all_languages_co
         (
             "cypher",
             "MATCH (p:Person) RETURN p.name AS name ORDER BY name",
-        ),
-        ("gremlin", "g.V().hasLabel('Person').values('name').order()"),
-        (
-            "sparql",
-            "SELECT ?name WHERE { ?p a <http://example.org/Person> ; <http://example.org/name> ?name . } ORDER BY ?name",
         ),
     ] {
         let plan = statistics.compile(request(language, query)).await.unwrap();

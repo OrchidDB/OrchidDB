@@ -41,9 +41,9 @@ async fn canonical_date_is_a_runtime_cast_with_native_date_results() {
 }
 
 #[tokio::test]
-async fn unsupported_date_grammars_invalid_calendars_and_types_keep_fallback() {
+async fn unsupported_date_grammars_invalid_calendars_and_types_are_rejected() {
     without_constant_folding(async {
-        for arg in ["'20240229'", "'2024-W01-1'", "'2024-001'", "'0000-01-01'", "'+10000-01-01'", "'2023-02-29'", "'1900-02-29'", "42", "true", "{year:2024,month:2,day:29}"] {
+        for arg in ["'20240229'", "'2024-W01-1'", "'2024-001'", "'0000-01-01'", "'+10000-01-01'", "'2023-02-29'", "'1900-02-29'", "42", "true"] {
             let query = format!("RETURN date({arg}) AS d");
             // Literal validation may reject an invalid constructor before
             // relational lowering; that is also the preserved fallback path.

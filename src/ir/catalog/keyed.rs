@@ -19,6 +19,13 @@ pub(super) fn validate_keys(keys: &[ElementId], rows: usize) -> CatalogResult<()
 impl PropertyGraph {
     pub fn add_keyed_nodes(&mut self, table: NodeTable, keys: Vec<ElementId>) -> CatalogResult<()> {
         validate_keys(&keys, table.batch.num_rows())?;
+        if let Some(key) = keys.first() {
+            let kind = key.scalar().data_type();
+            if keys.iter().any(|key| key.scalar().data_type() != kind) {
+                return Err(CatalogError::Schema("primary keys must have one declared Arrow type".into()));
+            }
+            self.key_types.insert((false, table.label.clone()), kind);
+        }
         self.source_keys |= keys
             .iter()
             .enumerate()

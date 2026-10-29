@@ -1,5 +1,8 @@
 //! Resume relational lowering after an executable boundary. The adapter only
 //! encodes values; SQL continues to own projection, filtering and aggregation.
+//!
+//! SQL audit [L32](../../../../tools/diagnostics/sql-lowering-audit.md#l32-arrow-execution-and-reentry-after-boundaries): Reentry restores a typed SQL interface after a boundary; mutation or
+//! throwing producers may require eager materialization instead of streaming.
 use super::*;
 
 impl Compiler<'_> {
@@ -10,7 +13,8 @@ impl Compiler<'_> {
         let keys = children.iter().map(|child| *child as *const Node as usize).collect::<Vec<_>>();
         let inputs = keys.iter().map(|key| self.lowered.borrow().get(key).cloned()).collect::<Option<Vec<_>>>();
         let Some(inputs) = inputs else { return Ok(None); };
-        let mut fields = vec!["current".to_string()];
+        let cypher = self.policy.language == crate::ir::policy::Language::Cypher;
+        let mut fields = if cypher { Vec::new() } else { vec!["current".to_string()] };
         for child in children {
             for field in crate::ir::df::boundary_fields(child)? {
                 if field != "__gremlin_group_members" && !fields.contains(&field) { fields.push(field); }
@@ -18,7 +22,7 @@ impl Compiler<'_> {
         }
         let output = SqlOutput {
             implicit_fields: fields.clone(), fields, nodes: Vec::new(), edges: Vec::new(),
-            policy: self.policy.clone(), preserve_bulk: true, transport_state: true, identity_type: source_identity_type(self.graph),
+            policy: self.policy.clone(), preserve_bulk: !cypher, transport_state: !cypher, identity_type: source_identity_type(self.graph),
         };
         let mut encoded = Vec::new();
         for input in inputs {
@@ -31,7 +35,14 @@ impl Compiler<'_> {
             encoded.push(LogicalPlan::Extension(Extension { node: Arc::new(bridge) }));
         }
         let right = encoded.pop().unwrap();
-        let union = datafusion::logical_expr::LogicalPlanBuilder::from(encoded.pop().unwrap()).union(right)?.build()?;
+        let mut union = datafusion::logical_expr::LogicalPlanBuilder::from(encoded.pop().unwrap()).union(right)?.build()?;
+        if matches!(node, Node::GraphUnion { all: false, .. }) {
+            let columns = union.schema().columns();
+            let groups = columns.iter().map(|c| super::super::native_values::key_expr(Expr::Column(c.clone()), true)).collect::<Vec<_>>();
+            let representatives = columns.into_iter().map(|c| datafusion::functions_aggregate::first_last::first_value(
+                Expr::Column(c.clone()), vec![]).alias(c.name)).collect::<Vec<_>>();
+            union = datafusion::logical_expr::LogicalPlanBuilder::from(union).aggregate(groups, representatives)?.build()?;
+        }
         let fields = super::super::output_fields(&union);
         let LogicalPlan::Extension(extension) = kernel("DecodeTraversers", vec![union], |mut rows, _| Ok(rows.remove(0))) else { unreachable!() };
         let mut decode = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
@@ -45,8 +56,9 @@ impl Compiler<'_> {
         if !self.sql || policy::boundary(node).is_some() {
             return Ok(None);
         }
-        if matches!(node, Node::GraphUnion { all: true, .. })
-            && self.policy.language == crate::ir::policy::Language::Gremlin
+        if matches!(node, Node::GraphUnion { .. })
+            && (self.policy.language == crate::ir::policy::Language::Cypher
+                || matches!(node, Node::GraphUnion { all: true, .. }))
         {
             return self.lower_union_after_boundary(node);
         }
@@ -136,6 +148,19 @@ impl Compiler<'_> {
             return Ok(Some(barrier));
         }
         let (input, reference_fields) = super::references::lift(&mut rewritten, input, &mut fields);
+        // Consecutive SQL consumers share their typed relation. Decoding it to
+        // opaque rows and immediately encoding it again creates another SQL
+        // statement, widens columns, and loses type information unnecessarily.
+        let sql_input = if self.policy.language == crate::ir::policy::Language::Cypher {
+            match &input {
+                LogicalPlan::Extension(extension) => extension.node.as_any().downcast_ref::<RowKernel>()
+                    .filter(|kernel| kernel.boundary == Some(policy::BoundaryKind::ResultTransport)
+                        && kernel.relational_input.is_some() && !kernel.relational_input_state
+                        && kernel.inputs.len() == 1 && kernel.prefix.is_empty())
+                    .map(|kernel| kernel.inputs[0].clone()),
+                _ => None,
+            }
+        } else { None };
         *crate::ir::analysis::children_mut(&mut rewritten)[0] = Node::GraphCorrelate {
             bindings: fields.clone(),
         };
@@ -184,9 +209,9 @@ impl Compiler<'_> {
         };
         bridge.schema = Arc::new(output.schema().as_ref().clone().try_into()?);
         bridge.relational_output = Some(output);
-        let source = LogicalPlan::Extension(Extension {
+        let source = sql_input.unwrap_or_else(|| LogicalPlan::Extension(Extension {
             node: Arc::new(bridge),
-        });
+        }));
         let mut context = super::super::LoweringContext {
             graph: self.graph,
             options: super::super::RelBackendOptions {
@@ -211,6 +236,8 @@ impl Compiler<'_> {
         };
         let lowered = match context.lower_node(&rewritten) {
             Ok(plan) => plan,
+            Err(super::super::RelError::Semantic(error)) => return Err(DataFusionError::External(Box::new(error))),
+            Err(super::super::RelError::RulePipeline(error)) => return Err(failure(error.to_string())),
             Err(error) => {
                 if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
                     eprintln!("SQL reentry: {error}");
@@ -314,7 +341,6 @@ impl SqlOutput {
         rows: &[Row],
         graph: &PropertyGraph,
     ) -> std::result::Result<RecordBatch, QueryExecutionError> {
-        use datafusion::common::ScalarValue;
         let mut names = self.fields.clone();
         let encoded_rows;
         let rows = if !self.transport_state || self.policy.language != crate::ir::policy::Language::Gremlin { rows } else {
@@ -423,7 +449,12 @@ pub(crate) fn live_graph_scan(graph: &PropertyGraph, binding: &str, labels: &cra
 
 fn source_identity_type(graph: &PropertyGraph) -> arrow::datatypes::DataType {
     let mut types = Vec::new();
-    for kind in graph.key_types.values() { if !types.contains(kind) { types.push(kind.clone()); } }
+    for kind in graph.key_types.values() {
+        // Dictionary encoding is a storage optimization, not an identity
+        // domain. DuckDB's Arrow bridge consumes the decoded scalar type.
+        let kind = match kind { arrow::datatypes::DataType::Dictionary(_, value) => value.as_ref(), kind => kind };
+        if !types.contains(kind) { types.push(kind.clone()); }
+    }
     match types.len() {
         0 => arrow::datatypes::DataType::Int64,
         1 => types.remove(0),

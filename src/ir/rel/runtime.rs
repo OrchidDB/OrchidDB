@@ -354,6 +354,9 @@ impl Compiler<'_> {
             if let Err(super::RelError::RulePipeline(error)) = &lowered {
                 return Err(failure(error.to_string()));
             }
+            if let Err(super::RelError::Semantic(error)) = &lowered {
+                return Err(DataFusionError::External(Box::new(error.clone())));
+            }
             if let Ok(lowered) = lowered {
                 // This mixed runtime may execute a region with DataFusion,
                 // whose physical LIMIT accepts literal bounds only. Retain
@@ -416,7 +419,11 @@ impl Compiler<'_> {
                 if self.stateful_distinct && matches!(node, Node::GraphDistinct { .. }) {
                     kernel.boundary = Some(policy::BoundaryKind::TraversalState);
                 }
-                if self.live_graph_reads && matches!(node, Node::GraphNodeScan { .. } | Node::GraphRelScan { .. }) {
+                // A provider scan is an Arrow source boundary whether it reads
+                // a stable snapshot or a mutable overlay. Its relational
+                // consumers must still reenter SQL; this licenses no kernel
+                // filtering, projection, or aggregation.
+                if matches!(node, Node::GraphNodeScan { .. } | Node::GraphRelScan { .. }) {
                     kernel.boundary = Some(policy::BoundaryKind::GraphSource);
                 }
                 policy::validate_kernel(&kernel, self.rule_context.lowering_policy).map_err(|e| failure(e.to_string()))?;
@@ -521,6 +528,16 @@ async fn execute_rows_inner(
     let mapped_resources = if resources.is_none() { graph.source.as_ref().zip(graph.mapping.as_ref()).and_then(|(source,mapping)| source.executor().map(|executor| super::dag::DagSession::with_shared(executor,mapping.physical_table_names()))) } else {None};
     #[cfg(feature = "duckdb")]
     let resources = resources.or(mapped_resources.as_ref());
+    // Discover capabilities from the same session that will execute the plan.
+    // A standalone caller still gets DuckDB's registered semantic helpers.
+    let owned_resources;
+    let resources = Some(match resources {
+        Some(resources) => resources,
+        None => {
+            owned_resources = super::dag::DagSession::new(timeout);
+            &owned_resources
+        }
+    });
     graph.begin_statement();
     let rule_context = resources.map(|r| r.rule_context()).transpose().map_err(QueryExecutionError::from_error)?.unwrap_or_default();
     let logical = host::compile_for_host(plan, graph, CompileOptions {

@@ -97,9 +97,10 @@ fn parse_query_inner(input: &str) -> Result<Query> {
     // Subquery extraction also lexes: preserve the structural escape diagnosis
     // before that first lexer pass can turn it into a generic syntax error.
     token_validation::validate_source(input)?;
-    let (input, mut calls) = subqueries::extract(input)?;
-    let normalized = normalize_cypher_extensions(&input);
-    let (root, _syntax) = parse_root(&normalized)?;
+    // Extraction also lexes, so extensions must be normalized before either lexer pass.
+    let normalized = normalize_cypher_extensions(input);
+    let (input, mut calls) = subqueries::extract(&normalized)?;
+    let (root, _syntax) = parse_root(&input)?;
     let mut visitor = lowering::visitor::AstLoweringVisitor::new();
     visitor.visit_oC_Cypher(&root);
     let mut query = visitor.finish()?;

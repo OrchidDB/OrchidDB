@@ -1,4 +1,7 @@
 //! Once-per-query SQL slicing for bounds proven valid without evaluating them.
+//!
+//! SQL audit [L21](../../../tools/diagnostics/sql-lowering-audit.md#l21-sorting-and-slicing): Bounds belong to query or invocation scope, not each result row.
+//! Validation must remain observable even when the input produces no rows.
 use super::*;
 
 fn bounded_float(expr: &IrExpr) -> Option<(Expr, f64, f64)> {

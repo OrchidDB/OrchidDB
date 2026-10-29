@@ -2,6 +2,9 @@
 //!
 //! Definitions remain plans until predicates have reached each source occurrence.
 //! Selection expands only the chosen alternative, before physical placement.
+//!
+//! SQL audit [L03](../../../tools/diagnostics/sql-lowering-audit.md#l03-logical-sources-and-access-representations): Select among equivalent typed source plans before placement. Cost
+//! estimates choose an alternative; they do not prove semantic equivalence.
 use super::layout::{LayoutDecision, LayoutProvider, TableLayout};
 use arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::{

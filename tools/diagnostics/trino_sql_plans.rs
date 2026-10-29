@@ -18,7 +18,7 @@ async fn main() {
     ];
     let queries = if queries.is_empty() { defaults.iter().map(|s| s.to_string()).collect() } else { queries };
     for query in queries {
-        let request = json!({"version":1,"dialect":"trino","language":"cypher","engine":"none",
+        let request = json!({"version":1,"dialect":"trino","language":"cypher",
             "native_values":true,"query":query,"sources":{"db":{"adapter":"trino"}},
             "tables":[{"name":"people","source":"db","columns":[
                 {"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]},

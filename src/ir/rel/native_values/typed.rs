@@ -39,6 +39,7 @@ pub const CALLS: &[&str] = &[
     "cypher_gt",
     "cypher_gte",
     "cypher_has_label",
+    "cypher_id",
     "cypher_in",
     "cypher_labels",
     "cypher_live_property",
@@ -50,6 +51,7 @@ pub const CALLS: &[&str] = &[
     "cypher_order_key",
     "cypher_path",
     "cypher_slice_bound",
+    "cypher_slice",
     "cypher_percentile_fraction",
     "cypher_property_map",
     "cypher_property_value",
@@ -70,6 +72,7 @@ pub const CALLS: &[&str] = &[
     "keys",
     "last",
     "length",
+    "list_sort",
     "map",
     "mod",
     "path_append",
@@ -113,6 +116,9 @@ pub fn operations() -> impl Iterator<Item = &'static str> {
         .chain(AGGREGATES.iter().map(|(name, _)| *name))
 }
 pub const INTERNAL: &[&str] = &[
+    "source_id",
+    "json_document",
+    "node_path",
     "argument_valid",
     "validate_argument",
     "temporal_decode",
@@ -144,6 +150,7 @@ pub fn sql_name(operation: &str) -> String {
 }
 pub fn output(operation: &str) -> Output {
     match operation {
+        "json_document" => Output::Text,
         "order_indices" => Output::Indices,
         "key" => Output::Text,
         "argument_valid" | "string_starts_with" | "string_ends_with" | "string_contains"
@@ -457,14 +464,26 @@ pub fn evaluate(operation: &str, arguments: &[ArrayRef], rows: usize) -> Result<
                     value.clone()
                 }
             }
+            ("cypher_id", [value]) => context.cypher_identity(value),
+            ("source_id", [Value::Node { id, .. } | Value::Edge { id, .. }]) => id.to_value(),
+            ("source_id", [_]) => Value::Null,
+            ("node_path", [Value::Path(items)]) => Value::Path(items.iter()
+                .filter(|item| matches!(item, Value::Node { .. })).cloned().collect()),
             ("pack", [value]) => value.clone(),
+            ("json_document", [Value::Null]) => Value::Null,
+            ("json_document", [Value::Scalar(scalar)]) if crate::ir::functions::domain::is_json(&scalar.data_type()) =>
+                crate::ir::functions::domain::json_text(scalar).map_err(|e| e.to_string())?.map(Value::String).unwrap_or(Value::Null),
+            ("json_document", [_]) => return Err("JSON: document must have JSON type; use json.parse for text".into()),
             ("element", [descriptor]) => context.attach(descriptor.clone())?,
             ("key", [value]) => Value::String(
                 STANDARD
                     .encode(crate::ir::runtime::ops::distinct::encode_cypher_equivalence(value)),
             ),
             ("boolean", [value @ (Value::Bool(_) | Value::Null)]) => value.clone(),
-            ("boolean", [_]) => return Err("Expected a boolean predicate".into()),
+            ("boolean", [_]) => return Err(crate::ir::diagnostics::QueryExecutionError {
+                message: "Expected a boolean predicate".into(),
+                diagnosis: Some(crate::ir::diagnostics::RuntimeDiagnosis::InvalidType),
+            }.sql_error()),
             ("list" | "quantifier_list", [Value::List(items) | Value::Path(items)]) => {
                 Value::List(items.clone())
             }
@@ -620,15 +639,9 @@ pub(super) fn lower(
             },
         )
     };
-    let boolean = |expr| -> RelResult<Expr> {
-        let value = lower(expr)?;
-        Ok(if is_value(&value.get_type(plan.schema())?) {
-            call("boolean", vec![value])
-        } else {
-            value
-        })
-    };
+    let boolean = |expr| context.lower_case_condition(plan, expr);
     match expr {
+        IrExpr::Id(binding) => return Ok(call("source_id", vec![lower(&IrExpr::Binding(binding.clone()))?])),
         IrExpr::Binding(binding) => {
             if let Some(column) = resolve_column_name(plan, binding) {
                 return Ok(col_exact(column));

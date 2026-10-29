@@ -102,25 +102,7 @@ async fn catalog_identity_eliminates_dedup_but_expansion_multiplicity_does_not()
     assert!(explain.contains("WindowAggr"), "{explain}");
 }
 
-#[tokio::test]
-async fn production_gremlin_distinct_and_existence_keep_bulk_and_duplicates() {
-    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
-    engine.replace_graph(graph()).unwrap();
-    for (query, expected) in [
-        ("g.inject(1,1,2).dedup().count()", 2),
-        ("g.V().dedup().count()", 3),
-        ("g.V().out().dedup().count()", 2),
-        ("g.inject(1,1,2).filter(__.dedup()).count()", 3),
-        ("g.inject(1,1,2).not(__.dedup()).count()", 0),
-    ] {
-        let result = engine.gremlin(query).await.unwrap();
-        let rows: serde_json::Value = serde_json::from_str(
-            &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
-        )
-        .unwrap();
-        assert_eq!(rows[0][0]["value"], expected, "{query}");
-    }
-}
+
 
 #[tokio::test]
 async fn optimized_fanout_distinct_count_retains_grouping() {

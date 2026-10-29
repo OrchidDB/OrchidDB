@@ -4,5 +4,3 @@
 //! into the shared Graph IR.
 
 pub mod cypher;
-pub mod gremlin;
-pub mod sparql;

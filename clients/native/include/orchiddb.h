@@ -30,10 +30,6 @@ ORCHIDDB_API char *orchiddb_bind_arrow_json(const char *input, struct ArrowArray
 /* Statistics coordinator: begin/next/submit/finish/cancel/install/release/compile.
  * Accepts bounded Arrow IPC or row samples; same response envelope and ownership. */
 ORCHIDDB_API char *orchiddb_statistics_json(const char *input);
-/* Explicit HTTP session lifecycle and typed prepared requests. Same envelope
- * and ownership. Commands: open/execute/clear_metadata_cache/close.
- * Only execute performs HTTP I/O; compilation never connects to a service. */
-ORCHIDDB_API char *orchiddb_remote_json(const char *input);
 ORCHIDDB_API void orchiddb_string_free(char *response);
 #ifdef __cplusplus
 }

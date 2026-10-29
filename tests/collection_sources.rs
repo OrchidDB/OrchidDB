@@ -41,7 +41,7 @@ async fn invalid_collection_definitions() {
     }
 }
 #[tokio::test]
-async fn struct_elements_and_rdf() {
+async fn struct_elements() {
     let mut r = request();
     r["tables"][0]["columns"][1]["data_type"] =
         json!("list:struct:{\"key\":\"string\",\"score\":\"int64\"}");
@@ -59,14 +59,7 @@ async fn struct_elements_and_rdf() {
             .contains("unnest"),
         "{result}"
     );
-    r["language"] = json!("sparql");
-    r["query"] = json!("SELECT ?tag WHERE { ?s <urn:tag> ?tag }");
-    r["rdf"] = json!([{"table":"tags","subject":{"kind":"template","prefix":"urn:person:","columns":["owner"]},"predicate":{"kind":"constant","value":"urn:tag"},"object":{"kind":"literal","column":"value"}}]);
-    let result = compile(r).await;
-    assert!(
-        result["logical_plan"].as_str().unwrap().contains("Unnest"),
-        "{result}"
-    );
+
 }
 #[tokio::test]
 #[cfg(feature = "duckdb")]

@@ -19,7 +19,6 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema};
 
-use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::{NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::ir::expr::Lit;
 use orchiddb::ir::plan::GraphPlan;
@@ -27,9 +26,6 @@ use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
 use orchiddb::ir::rel::{RelBackend, execute_lowered};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use orchiddb::language::gremlin::parser::parse_traversal;
-use orchiddb::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
-use orchiddb::planner::GremlinPlanner;
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));
@@ -415,58 +411,8 @@ async fn cypher_dynamic_list_and_unwind_on_duckdb() {
     assert_eq!(rows, vec!["30", "31"]);
 }
 
-#[tokio::test]
-async fn gremlin_out_values_on_duckdb() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Has {
-                key: "name".into(),
-                value: Lit::String("alice".into()),
-            },
-            gb::Step::Out {
-                rel_types: vec!["KNOWS".into()],
-            },
-            gb::Step::Values("name".into()),
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let rows = duckdb_and_datafusion(&plan, &fixture_graph(), false).await;
-    assert_eq!(rows, vec!["bob", "carol"]);
-}
 
-#[tokio::test]
-async fn gremlin_count_on_duckdb() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Count,
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let rows = duckdb_and_datafusion(&plan, &fixture_graph(), true).await;
-    assert_eq!(rows, vec!["3"]);
-}
 
-#[tokio::test]
-async fn gremlin_local_length_preserves_null_with_residuals() {
-    let traversal = parse_traversal(r#"g.inject("feature", "test", null).length(Scope.local)"#)
-        .expect("parse Gremlin");
-    let plan = AstGremlinPlanner::new()
-        .plan(&traversal)
-        .expect("plan Gremlin");
-    let rows = residual_rows(
-        &plan,
-        &PropertyGraph::new(),
-        "Gremlin scalar semantics require native values",
-    )
-    .await;
-    assert_eq!(rows, vec!["7", "4", "null"]);
-}
 
 #[tokio::test]
 async fn graph_setup_sql_materializes_catalog_tables() {

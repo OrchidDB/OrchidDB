@@ -128,8 +128,8 @@ async fn collected_integer_and_group_columns_are_not_null() {
     assert_eq!(
         rows(&graph, "MATCH (p:person) RETURN p.age,collect(p.name)").await,
         vec![
-            vec![Value::Int(30), Value::List(vec![text("alice")])],
-            vec![Value::Int(40), Value::List(vec![text("bob")])]
+            vec![Value::Long(30), Value::List(vec![text("alice")])],
+            vec![Value::Long(40), Value::List(vec![text("bob")])]
         ]
     );
     assert_eq!(

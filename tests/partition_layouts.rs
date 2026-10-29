@@ -59,22 +59,6 @@ async fn falls_back_for_unknown_stats_and_excludes_stale_layout() {
     assert!(result["layout_selections"][0]["estimated_bytes"].is_null());
 }
 #[tokio::test]
-async fn rdf_uses_the_same_layout_catalog() {
-    let mut r = request("");
-    r["language"] = json!("sparql");
-    r["query"] = json!("SELECT ?region WHERE { ?s <urn:region> ?region }");
-    r["rdf"] = json!([{"table":"events","subject":{"kind":"template","prefix":"urn:event:","columns":["id"]},"predicate":{"kind":"constant","value":"urn:region"},"object":{"kind":"literal","column":"region"}}]);
-    // With no pruning predicate, choose the cheaper full scan.
-    r["logical_sources"][0]["layouts"][1]["partitions"][0]["bytes"] = json!(10);
-    r["logical_sources"][0]["layouts"][1]["partitions"][1]["bytes"] = json!(10);
-    let result = compile(r).await;
-    assert_eq!(
-        result["layout_selections"][0]["table"], "by_region",
-        "{result}"
-    );
-    assert!(result["sql"].as_str().unwrap().contains("by_region"));
-}
-#[tokio::test]
 async fn invalid_layout_schema_is_rejected() {
     let mut r = request("MATCH (e:Event) RETURN e.region");
     r["tables"][1]["columns"][1]["data_type"] = json!("string");
@@ -205,25 +189,4 @@ async fn disjunction_ranges_and_partition_evolution_affect_plan_estimates() {
         "{result}"
     );
     assert_eq!(result["layout_selections"][0]["estimated_bytes"], 1000);
-}
-
-#[tokio::test]
-async fn rdf_literal_filter_chooses_partitioned_source() {
-    let mut r = request("");
-    r["language"] = json!("sparql");
-    r["query"] =
-        json!("SELECT ?region WHERE { ?s <urn:region> ?region FILTER(?region = \"west\") }");
-    r["rdf"] = json!([{"table":"events","subject":{"kind":"template","prefix":"urn:event:","columns":["id"]},"predicate":{"kind":"constant","value":"urn:region"},"object":{"kind":"literal","column":"region"}}]);
-    for table in r["tables"].as_array_mut().unwrap() {
-        table["columns"][1]["data_type"] = json!("string");
-    }
-    r["logical_sources"][0]["layouts"][1]["partitions"] = json!([
-        {"spec_id":0,"bytes":1000,"files":1,"values":{"1000":"east"}},
-        {"spec_id":0,"bytes":1000,"files":1,"values":{"1000":"west"}}
-    ]);
-    let result = compile(r).await;
-    assert_eq!(
-        result["layout_selections"][0]["table"], "by_region",
-        "{result}"
-    );
 }

@@ -1,5 +1,8 @@
-//! Source-first execution. A relational completion engine is a capability, not a
-//! mandatory final query. This protocol is internal to Orchid's client bindings.
+//! Source-first execution with DuckDB completion. Pushdown can eliminate every
+//! completion operation. This protocol is internal to Orchid's client bindings.
+//!
+//! SQL audit [L31](../../tools/diagnostics/sql-lowering-audit.md#l31-source-ownership-and-sql-region-placement): Try source SQL first and use DuckDB for residual relational work.
+//! Pushdown can eliminate completion entirely; there is no second completion mode.
 use super::stream::{BatchSource, BatchStream, InputRelation};
 use crate::{compiler::CompileRequest, federation::TransferColumn};
 use arrow::{
@@ -20,17 +23,9 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Engine {
-    None,
-    Duckdb,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionPlan {
     pub version: u32,
-    pub engine: Engine,
     pub nodes: Vec<Node>,
     pub result: usize,
 }
@@ -70,6 +65,10 @@ pub enum Operation {
 pub struct Relation {
     pub name: String,
     pub node: usize,
+    /// Recursive SQL may rescan an input inside one statement. Preserve its
+    /// snapshot in bounded Arrow IPC storage instead of reopening the source.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub replay: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -102,9 +101,28 @@ pub enum LocalExpr {
 }
 const LOCAL: &str = "__engine_function___orchid_local_";
 
+impl LocalExpr {
+    fn column_demand(&self, demand: &mut BTreeSet<usize>) {
+        match self {
+            Self::Column { index } => { demand.insert(*index); }
+            Self::GraphElement { input, .. } | Self::Cast { input, .. } => input.column_demand(demand),
+            Self::Call { arguments, .. } => for arg in arguments { arg.column_demand(demand); },
+            Self::Literal { .. } => {}
+        }
+    }
+    fn remap_columns(&mut self, mapping: &BTreeMap<usize, usize>) {
+        match self {
+            Self::Column { index } => *index = mapping[index],
+            Self::GraphElement { input, .. } | Self::Cast { input, .. } => input.remap_columns(mapping),
+            Self::Call { arguments, .. } => for arg in arguments { arg.remap_columns(mapping); },
+            Self::Literal { .. } => {}
+        }
+    }
+}
+
 pub(crate) fn validate_request(request: &CompileRequest) -> Result<(), String> {
     if !request.engines.is_empty() || request.execution_engine.is_some() {
-        return Err("engine selection uses sources, not engines/execution_engine; register Trino as a SQL source and select engine none or duckdb".into());
+        return Err("source execution uses sources, not engines/execution_engine; register Trino as a SQL source; DuckDB owns completion".into());
     }
     for (name, source) in &request.sources {
         if name.is_empty() {
@@ -269,14 +287,12 @@ fn local_expr(expr: &Expr, input: &DFSchema) -> Result<LocalExpr, String> {
 pub(crate) fn build(
     request: &CompileRequest,
     plan: &LogicalPlan,
-    engine: Engine,
 ) -> Result<ExecutionPlan, String> {
     let mut builder = Builder {
         request,
         bound: BTreeMap::new(),
         plan: ExecutionPlan {
             version: 1,
-            engine,
             nodes: vec![],
             result: 0,
         },
@@ -313,6 +329,9 @@ impl Builder<'_> {
         Ok(id)
     }
     fn lower(&mut self, plan: &LogicalPlan) -> Result<usize, String> {
+        self.lower_with_demand(plan, true)
+    }
+    fn lower_with_demand(&mut self, plan: &LogicalPlan, prune_local_input: bool) -> Result<usize, String> {
         if let LogicalPlan::TableScan(scan) = plan {
             if let Some(id) = self.bound.get(&scan.table_name.to_string()) {
                 return Ok(*id);
@@ -353,10 +372,12 @@ impl Builder<'_> {
             let source = owners.first().unwrap();
             let adapter = &self.request.sources[source].adapter;
             if let Ok(dialect) = super::SqlDialect::resolve(adapter) {
-                match crate::ir::rel::sql::unparse_plan(plan.clone(), dialect) {
+                match crate::ir::rel::sql::unparse_plan_with_context(plan.clone(), dialect, &self.request.rule_context) {
                     Ok(sql) => {
                     return self.source_sql(plan, source.clone(), adapter.clone(), sql);
                     }
+                    // A source capability miss leaves residual work for DuckDB.
+                    // This is planning, never a retry after source execution.
                     Err(error) => source_error = Some(format!("source {source} ({adapter}): {error}")),
                 }
             }
@@ -440,13 +461,32 @@ impl Builder<'_> {
                 );
             }
             LogicalPlan::Projection(p) => {
-                if let Ok(expressions) = p
+                if let Ok(mut expressions) = p
                     .expr
                     .iter()
                     .map(|e| local_expr(e, p.input.schema()))
                     .collect::<Result<Vec<_>, _>>()
                 {
-                    let input = self.lower(&p.input)?;
+                    // SQL audit G13: propagate actual argument/output demand
+                    // through the Arrow boundary and remap positional indices.
+                    let mut demand = BTreeSet::new();
+                    for expr in &expressions { expr.column_demand(&mut demand); }
+                    let input = if !prune_local_input || demand.len() == p.input.schema().fields().len() {
+                        self.lower(&p.input)?
+                    } else {
+                        let mapping = demand.iter().enumerate().map(|(new, old)| (*old, new)).collect();
+                        for expr in &mut expressions { expr.remap_columns(&mapping); }
+                        let mut columns = demand.iter().map(|i| Expr::Column(p.input.schema().columns()[*i].clone())).collect::<Vec<_>>();
+                        if columns.is_empty() {
+                            // Preserve row multiplicity for an argument-free UDF.
+                            columns.push(datafusion::logical_expr::lit(1_i64).alias("__orchid_input_row"));
+                        }
+                        let input = LogicalPlanBuilder::from(p.input.as_ref().clone()).project(columns)
+                            .and_then(|b| b.build()).map_err(|e| e.to_string())?;
+                        // This projection already expresses demand; do not wrap
+                        // it in another identical projection when it spans UDFs.
+                        self.lower_with_demand(&input, false)?
+                    };
                     return self.push(plan, Operation::LocalProject { input, expressions });
                 }
             }
@@ -535,27 +575,24 @@ impl Builder<'_> {
                 return self.lower(&rebuilt);
             }
         }
-        if self.plan.engine == Engine::None {
-            // Keep trivial constants on the engine-independent path above.
-            // More involved source-free expressions can use the sole registered
-            // SQL session, retaining its authorization and cancellation context.
-            if !local && owners.is_empty() && self.request.sources.len() == 1 {
-                let (source, binding) = self.request.sources.iter().next().unwrap();
-                if let Ok(dialect) = super::SqlDialect::resolve(&binding.adapter) {
-                    match crate::ir::rel::sql::unparse_plan(plan.clone(), dialect) {
-                        Ok(sql) => return self.source_sql(plan, source.clone(), binding.adapter.clone(), sql),
-                        Err(error) => source_error = Some(format!("source {source} ({}): {error}", binding.adapter)),
-                    }
+        // Source-free expressions can also finish on the sole SQL source.
+        // Completion stays lazy even though DuckDB is always the residual engine.
+        if !local && owners.is_empty() && self.request.sources.len() == 1 {
+            let (source, binding) = self.request.sources.iter().next().unwrap();
+            if let Ok(dialect) = super::SqlDialect::resolve(&binding.adapter) {
+                match crate::ir::rel::sql::unparse_plan_with_context(plan.clone(), dialect, &self.request.rule_context) {
+                    Ok(sql) => return self.source_sql(plan, source.clone(), binding.adapter.clone(), sql),
+                    Err(error) => source_error = Some(format!("source {source} ({}): {error}", binding.adapter)),
                 }
             }
-            if let Some(error) = source_error {
-                return Err(format!("engine none cannot lower query to {error}"));
-            }
-            return Err(format!(
-                "engine none cannot execute residual operation {}; push it to a source or select engine duckdb",
-                plan.display()
-            ));
         }
+        self.complete_in_duckdb(plan).map_err(|error| match source_error {
+            Some(source) => format!("{source}; DuckDB completion: {error}"),
+            None => error,
+        })
+    }
+
+    fn complete_in_duckdb(&mut self, plan: &LogicalPlan) -> Result<usize, String> {
         // Local calls must never leak into generated DuckDB SQL.
         if plan
             .expressions()
@@ -571,49 +608,34 @@ impl Builder<'_> {
             return Err(format!("unsupported source operation {}", plan.display()));
         }
         let mut relations = vec![];
-        let mut replaced = vec![];
-        for input in inputs {
-            let id = self.lower(input)?;
-            let name = format!("__orchid_input_{}_{id}", self.plan.nodes.len());
-            let scan = LogicalPlanBuilder::scan(
-                &name,
-                datafusion::datasource::provider_as_source(Arc::new(
-                    datafusion::datasource::empty::EmptyTable::new(Arc::new(
-                        input.schema().as_arrow().clone(),
-                    )),
-                )),
-                None,
-            )
-            .and_then(|b| b.build())
+        // A recursive query owns its work-table scope. Keep that region whole
+        // in DuckDB and expose only real source scans as Arrow inputs; never
+        // schedule a recursive work table as an independent source operation.
+        let recursive = plan.exists(|node| Ok(matches!(node, LogicalPlan::RecursiveQuery(_))))
             .map_err(|e| e.to_string())?;
-            // Restore qualifiers without changing physical input column positions.
-            let expressions = scan
-                .schema()
-                .columns()
-                .into_iter()
-                .zip(input.schema().iter())
-                .map(|(c, (q, f))| Expr::Column(c).alias_qualified(q.cloned(), f.name()))
-                .collect::<Vec<_>>();
-            replaced.push(
-                LogicalPlanBuilder::from(scan)
-                    .project(expressions)
-                    .and_then(|b| b.build())
-                    .map_err(|e| e.to_string())?,
-            );
-            relations.push(Relation { name, node: id });
-        }
-        // DataFusion exposes UNNEST's dependency columns as expressions, but
-        // with_new_exprs reconstructs those from exec_columns and requires an
-        // empty expression list. Its builder recomputes the output schema.
-        let expressions = if matches!(plan, LogicalPlan::Unnest(_)) {
-            vec![]
+        let residual = if recursive {
+            use datafusion::common::tree_node::Transformed;
+            plan.clone().transform_down_with_subqueries(|node| {
+                if let LogicalPlan::TableScan(scan) = &node {
+                    if datafusion::datasource::source_as_provider(&scan.source)?
+                        .as_any().is::<datafusion::datasource::cte_worktable::CteWorkTable>() {
+                        return Ok(Transformed::no(node));
+                    }
+                    let replacement = self.completion_input(&node, &mut relations)
+                        .map_err(datafusion::common::DataFusionError::Plan)?;
+                    return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
+                }
+                Ok(Transformed::no(node))
+            }).map_err(|e| e.to_string())?.data
         } else {
-            plan.expressions()
+            let replaced = inputs.into_iter().map(|input| self.completion_input(input, &mut relations))
+                .collect::<Result<Vec<_>, _>>()?;
+            // UNNEST reconstructs its dependencies from exec_columns.
+            let expressions = if matches!(plan, LogicalPlan::Unnest(_)) { vec![] } else { plan.expressions() };
+            plan.with_new_exprs(expressions, replaced).map_err(|e| e.to_string())?
         };
-        let residual = plan
-            .with_new_exprs(expressions, replaced)
-            .map_err(|e| e.to_string())?;
-        let sql = crate::ir::rel::sql::unparse_plan(residual, super::SqlDialect::DuckDb)
+        if recursive { for relation in &mut relations { relation.replay = true; } }
+        let sql = crate::ir::rel::sql::unparse_plan_with_context(residual, super::SqlDialect::DuckDb, &self.request.rule_context)
             .map_err(|e| e.to_string())?;
         self.push(
             plan,
@@ -623,6 +645,21 @@ impl Builder<'_> {
             },
         )
     }
+    fn completion_input(&mut self, input: &LogicalPlan, relations: &mut Vec<Relation>) -> Result<LogicalPlan, String> {
+        let id = self.lower(input)?;
+        let name = format!("__orchid_input_{}_{id}", self.plan.nodes.len());
+        let scan = LogicalPlanBuilder::scan(&name,
+            datafusion::datasource::provider_as_source(Arc::new(
+                datafusion::datasource::empty::EmptyTable::new(Arc::new(input.schema().as_arrow().clone())))), None)
+            .and_then(|b| b.build()).map_err(|e| e.to_string())?;
+        let expressions = scan.schema().columns().into_iter().zip(input.schema().iter())
+            .map(|(column, (qualifier, field))| Expr::Column(column).alias_qualified(qualifier.cloned(), field.name()))
+            .collect::<Vec<_>>();
+        let result = LogicalPlanBuilder::from(scan).project(expressions).and_then(|b| b.build()).map_err(|e| e.to_string())?;
+        relations.push(Relation { name, node: id, replay: false });
+        Ok(result)
+    }
+
 }
 
 /// Application-owned batch UDF. It must return exactly one value per input row.
@@ -785,9 +822,7 @@ pub async fn execute(
                 }
             }
             Operation::Duckdb { inputs, .. } => {
-                if plan.engine != Engine::Duckdb
-                    || duckdb.as_ref().is_none_or(|d| d.dialect() != "duckdb")
-                {
+                if duckdb.as_ref().is_none_or(|d| d.dialect() != "duckdb") {
                     return Err("plan requires a DuckDB completion binding".into());
                 }
                 for relation in inputs {
@@ -948,7 +983,11 @@ pub async fn execute(
                     .iter()
                     .any(|n| matches!(n.operation, Operation::Duckdb { .. }))
         };
-        let output = if reentry {
+        let replay = plan.nodes.iter().any(|consumer| match &consumer.operation {
+            Operation::Duckdb { inputs, .. } => inputs.iter().any(|input| input.node == id && input.replay),
+            _ => false,
+        });
+        let output = if reentry || replay {
             BatchSource::spool(stream, &std::env::temp_dir().join("orchiddb-exchanges")).await?
         } else {
             BatchSource::once(stream)

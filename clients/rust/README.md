@@ -32,8 +32,7 @@ for batch in &mut rows {
 `session` implements `SqlSession` and borrows or owns your driver connection.
 It executes the internal `SqlWork` supplied by OrchidDB and exposes an Arrow
 reader. No compiler or compiled-plan API is exported for application queries.
-Schema configuration rejects query fields. Query language is selected with
-`Query::cypher`, `Query::gremlin`, or `Query::sparql`; RDF rules stay in Schema.
+Schema configuration rejects query fields. Queries use `Query::cypher`.
 
 From the repository root, run the complete borrowed-connection example:
 
@@ -47,8 +46,7 @@ the session; retained Arrow batches keep their buffers. No database driver is
 included in this client's normal dependencies.
 
 `FederatedConnection` registers Schema with named `EngineSession` adapters and
-executes the same separate Query value. HTTP adapters are feature-gated under
-`engines`. `Connection::generate_statistics` takes a bounded collection adapter;
+executes the same separate Query value. Built-in source dialects are PostgreSQL, DuckDB, and Trino. `Connection::generate_statistics` takes a bounded collection adapter;
 `save_statistics`, `load_statistics`, and `clear_statistics` manage snapshots.
 
 [Source builds and API migration](../README.md)

@@ -1,5 +1,8 @@
 //! Required implementation normalization. This stage is independent of optional
 //! optimization and constant folding; partitioning only sees its fixed point.
+//!
+//! SQL audit [L27](../../../tools/diagnostics/sql-lowering-audit.md#l27-required-relational-normalization-and-optimizer-guards): Required normalization precedes host SQL partitioning even with
+//! optimization disabled. Residual decorrelation runs only after SQL gets first refusal.
 use super::*;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};

@@ -171,65 +171,6 @@ async fn limit_barriers() {
     );
 }
 
-#[cfg(all(feature = "prometheus", feature = "loki"))]
-#[test]
-fn native_adapters_still_emit_requests() {
-    use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-    use datafusion::{
-        common::ScalarValue,
-        datasource::{empty::EmptyTable, provider_as_source},
-        logical_expr::{LogicalPlanBuilder, col, lit},
-    };
-    use std::sync::Arc;
-    let schema = Arc::new(Schema::new(vec![
-        Field::new(
-            "timestamp",
-            DataType::Timestamp(TimeUnit::Microsecond, None),
-            false,
-        ),
-        Field::new("job", DataType::Utf8, true),
-        Field::new("sample_id", DataType::Utf8, false),
-    ]));
-    let start = 1792800000i64 * 1_000_000;
-    let plan = LogicalPlanBuilder::scan(
-        "up",
-        provider_as_source(Arc::new(EmptyTable::new(schema))),
-        None,
-    )
-    .unwrap()
-    .filter(
-        col("timestamp")
-            .gt_eq(lit(ScalarValue::TimestampMicrosecond(Some(start), None)))
-            .and(col("timestamp").lt(lit(ScalarValue::TimestampMicrosecond(
-                Some(start + 60_000_000),
-                None,
-            )))),
-    )
-    .unwrap()
-    .filter(
-        col("job")
-            .eq(lit("api"))
-            .and(col("sample_id").eq(lit("source-key"))),
-    )
-    .unwrap()
-    .build()
-    .unwrap();
-    for adapter in orchiddb::remote::adapters() {
-        if !matches!(adapter.name(), "prometheus" | "loki") {
-            continue;
-        }
-        let operation = adapter.lower(&plan).unwrap().unwrap();
-        assert_eq!(
-            operation.template.request["query"],
-            json!(if adapter.name() == "prometheus" {
-                "up{job=\"api\"}"
-            } else {
-                "{job=\"api\"}"
-            })
-        );
-        assert!(operation.replacement.is_some());
-    }
-}
 
 #[tokio::test]
 async fn actual_extension_identity_and_timestamp() {

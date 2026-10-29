@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 
-use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::ir::expr::Lit;
 use orchiddb::ir::rel::RelBackend;
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use orchiddb::planner::GremlinPlanner;
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));
@@ -52,64 +50,4 @@ async fn cypher_match_filter_expand_executes_with_datafusion() {
         .map(|row| array.value(row))
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["bob", "carol"]);
-}
-
-#[tokio::test]
-async fn gremlin_out_values_executes_with_datafusion() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Has {
-                key: "name".into(),
-                value: Lit::String("alice".into()),
-            },
-            gb::Step::Out {
-                rel_types: vec!["KNOWS".into()],
-            },
-            gb::Step::Values("name".into()),
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let result = RelBackend::new()
-        .execute(&plan, &fixture_graph())
-        .await
-        .expect("rel execute");
-
-    let array = result
-        .batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-    let names = (0..array.len())
-        .map(|row| array.value(row))
-        .collect::<Vec<_>>();
-    assert_eq!(names, vec!["bob", "carol"]);
-}
-
-#[tokio::test]
-async fn gremlin_v_count_executes_with_datafusion() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Count,
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let result = RelBackend::new()
-        .execute(&plan, &fixture_graph())
-        .await
-        .expect("rel execute");
-
-    let array = result
-        .batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .unwrap();
-    assert_eq!(array.value(0), 3);
 }

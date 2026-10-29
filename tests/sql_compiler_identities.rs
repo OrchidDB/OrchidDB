@@ -39,12 +39,8 @@ fn request(language: &str, query: &str) -> Value {
         {"label":"KNOWS","table":"knows","id":"kid","source":"src","target":"dst","source_label":"Person","target_label":"Person"},
         {"label":"WORKS_AT","table":"works","id":"wid","source":"person","target":"company","source_label":"Person","target_label":"Company"},
         {"label":"LOCATED_IN","table":"located","id":"lid","source":"company","target":"site","source_label":"Company","target_label":"Site"}
-    ],
-    "ontology":{
-        "classes":[{"iri":"http://ex.org/Person","label":"Person"}],
-        "properties":[{"iri":"http://ex.org/name","label":"Person","property":"name"}],
-        "relationships":[{"iri":"http://ex.org/knows","label":"KNOWS","source_label":"Person","target_label":"Person"}]
-    }})
+    ]
+})
 }
 
 async fn compile(request: Value) -> Result<String, String> {
@@ -136,25 +132,6 @@ async fn unlabeled_scans_union_mixed_identity_types_without_merging_labels() {
     );
 }
 
-#[tokio::test]
-async fn gremlin_and_sparql_use_text_identities() {
-    assert_eq!(
-        run("gremlin", "g.V('p-ada').out('KNOWS').values('name')").await,
-        rows(&[&["Bob"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V().hasLabel('Person').out('WORKS_AT').values('name')").await,
-        rows(&[&["Acme"], &["Acme"], &["Globex"]])
-    );
-    assert_eq!(
-        run(
-            "sparql",
-            "PREFIX ex: <http://ex.org/> SELECT ?an ?bn WHERE { ?a a ex:Person; ex:knows ?b; ex:name ?an . ?b a ex:Person; ex:name ?bn }"
-        )
-        .await,
-        rows(&[&["Ada", "Bob"], &["Bob", "Cy"], &["Cy", "Ada"]])
-    );
-}
 
 #[tokio::test]
 async fn floating_point_identities_are_accepted() {
@@ -194,19 +171,6 @@ async fn traversals_between_labels_with_different_identity_types() {
         run("cypher", "MATCH (s:Site)<-[*1..3]-(x) RETURN x.name").await,
         // Ada is reached directly and through Bob: one row per path.
         rows(&[&["Acme"], &["Ada"], &["Ada"], &["Bob"], &["Cy"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V('p-ada').out('WORKS_AT').out('LOCATED_IN').values('name')").await,
-        rows(&[&["North"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V('p-ada').repeat(out('KNOWS')).times(2).values('name')").await,
-        rows(&[&["Cy"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V('p-cy').repeat(out('KNOWS', 'WORKS_AT', 'LOCATED_IN')).times(3).values('name')").await,
-        // Cy -> Ada -> {Bob, Acme} -> {Cy, Acme, North}
-        rows(&[&["Acme"], &["Cy"], &["North"]])
     );
 }
 
@@ -310,17 +274,15 @@ async fn relationship_history_distinguishes_label_and_key_boundaries() {
 }
 
 #[tokio::test]
-async fn mixed_identity_filters_preserve_scalar_types_and_negation() {
-    assert_eq!(
-        run("gremlin", "g.V(1).values('name')").await,
-        rows(&[&["Acme"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V('p-ada', 'p-bob').values('name')").await,
-        rows(&[&["Ada"], &["Bob"]])
-    );
-    assert_eq!(
-        run("gremlin", "g.V().hasId(neq('p-ada')).values('name')").await,
-        rows(&[&["Acme"], &["Bob"], &["Cy"], &["Globex"], &["North"], &["One"]])
-    );
+async fn mapped_id_preserves_source_type_without_display_qualification() {
+    let mut input = request("cypher", "MATCH(p:Person) RETURN id(p) AS key");
+    input["tables"] = json!([{"name":"keys","columns":[{"name":"key","data_type":"uint64"}]}]);
+    input["nodes"] = json!([{"label":"Person","table":"keys","id":"key"}]);
+    input["edges"] = json!([]);
+    let sql = compile(input).await.unwrap();
+    assert!(!sql.to_uppercase().contains("CAST"), "{sql}");
+    let con = duckdb::Connection::open_in_memory().unwrap();
+    con.execute_batch("CREATE TABLE keys(key UBIGINT); INSERT INTO keys VALUES (18446744073709551615)").unwrap();
+    let actual: u64 = con.query_row(&sql, [], |row| row.get(0)).unwrap();
+    assert_eq!(actual, u64::MAX);
 }

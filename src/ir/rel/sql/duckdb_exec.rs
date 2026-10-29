@@ -319,6 +319,8 @@ impl DuckDbExecutor {
         conn.execute_batch("ROLLBACK")
             .map_err(|err| SqlError::Setup(format!("duckdb rollback: {err}")))?;
         self.language_functions_registered = false;
+        self.stream_registered = false;
+        self.arrow_registered = false;
         self.transaction_active = false;
         self.invalidate_setup();
         self.clear_query_scans()?;
@@ -530,7 +532,13 @@ impl DuckDbExecutor {
         if let Some(required)=&prepared.float_helper {self.validate_float_helper(required).map_err(|e|e.to_string())?;}
         self.ensure_connection().map_err(|e|e.to_string())?;
         if !self.stream_registered {
-            self.connection.as_ref().unwrap().register_table_function::<super::duckdb_stream::Scan>("__orchid_stream_scan").map_err(|e|e.to_string())?;
+            let connection = self.connection.as_ref().unwrap();
+            let exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM duckdb_functions() WHERE function_name = '__orchid_stream_scan')",
+                [], |row| row.get(0)).map_err(|e| e.to_string())?;
+            if !exists {
+                connection.register_table_function::<super::duckdb_stream::Scan>("__orchid_stream_scan").map_err(|e|e.to_string())?;
+            }
             self.stream_registered=true;
         }
         self.clear_query_scans().map_err(|e|e.to_string())?;

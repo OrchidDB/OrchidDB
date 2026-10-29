@@ -18,6 +18,9 @@ pub struct QueryCost {
     pub native_input_rows: u64,
     pub native_output_rows: u64,
     pub native_kernel_calls: u64,
+    /// Relational fallback work only. Explicit source, mutation, control, and
+    /// Arrow transport boundaries remain included in native_kernel_calls.
+    pub native_relational_kernel_calls: u64,
     /// Demand-driven database requests made by native graph kernels.
     pub native_source_queries: u64,
     pub native_source_rows: u64,
@@ -88,6 +91,8 @@ impl QueryCost {
         self.native_kernel_calls = self
             .native_kernel_calls
             .saturating_add(other.native_kernel_calls);
+        self.native_relational_kernel_calls = self.native_relational_kernel_calls
+            .saturating_add(other.native_relational_kernel_calls);
         self.native_source_queries = self
             .native_source_queries
             .saturating_add(other.native_source_queries);

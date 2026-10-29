@@ -9,12 +9,11 @@ use orchiddb::{
     },
     language::{
         cypher::{parse_query, planner::CypherPlanner},
-        gremlin::{GremlinPlanner, parse_traversal},
     },
 };
 
 #[tokio::test]
-async fn language_kernels_execute_without_duckdb_and_reject_other_sql_dialects() {
+async fn primitive_grouping_uses_native_sql_on_postgres_and_duckdb() {
     let graph = PropertyGraph::new();
     graph.insert_node(
         "P",
@@ -35,13 +34,6 @@ async fn language_kernels_execute_without_duckdb_and_reject_other_sql_dialects()
         "1"
     );
     let lowered = backend.lower(&plan, &graph).unwrap();
-    assert!(sql::prepare(&lowered, SqlDialect::Postgres).await.is_err());
-    let plan = GremlinPlanner::new()
-        .plan(&parse_traversal("g.V().values('name').trim().length()").unwrap())
-        .unwrap();
-    let result = backend.execute(&plan, &graph).await.unwrap();
-    assert_eq!(
-        arrow::util::display::array_value_to_string(result.batch.column(0), 0).unwrap(),
-        "3"
-    );
+    let prepared = sql::prepare(&lowered, SqlDialect::Postgres).await.unwrap();
+    assert!(!prepared.query.contains("orchid_cypher_"), "{}", prepared.query);
 }

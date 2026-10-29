@@ -87,7 +87,6 @@ pub mod constraints;
 pub mod rdf;
 pub mod rdf_mapping;
 mod repeat;
-pub(crate) mod sparql;
 pub mod sql;
 mod varlen;
 
@@ -200,6 +199,11 @@ impl Default for RelBackendOptions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RelError {
+    /// Invalid language semantics are final, not a missed SQL implementation.
+    // Retain the wrapped error itself in Error::source; transparent forwarding
+    // would skip its structured diagnosis because it has no further source.
+    #[error("{0}")]
+    Semantic(#[from] crate::ir::diagnostics::QueryExecutionError),
     #[error(transparent)]
     RulePipeline(#[from] crate::ir::rules::RuleError),
     #[error("read plan validation: {0}")]
@@ -358,9 +362,6 @@ impl RelBackend {
                 BTreeMap::new()
             },
         };
-        if sparql::handles(plan) {
-            return sparql::lower_plan(&mut ctx, plan);
-        }
         let lowered = ctx.lower_node(&plan.root)?;
         let fields = lowered
             .fields

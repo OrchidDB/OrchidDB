@@ -39,6 +39,17 @@ fn restore_identity_type(value: Value, kind: &DataType) -> Result<Value, String>
     }
 }
 impl Context {
+    pub fn cypher_identity(&self, value: &Value) -> Value {
+        let key = match value {
+            Value::Node { label, id } => (false, label.clone(), id.clone()),
+            Value::Edge { rel_type, id, .. } => (true, rel_type.clone(), id.clone()),
+            _ => return Value::Null,
+        };
+        self.elements.get(&key).and_then(|descriptor| match descriptor {
+            Value::Map(fields) => fields.get("cypher_id").cloned(), _ => None,
+        }).unwrap_or_else(|| self.graph.source_identity(value).unwrap_or_else(||
+            self.graph.cypher_id(value).map(Value::Int).unwrap_or(Value::Null)))
+    }
     pub fn attach(&mut self, descriptor: Value) -> Result<Value, String> {
         let Value::Map(fields) = &descriptor else {
             return Err("Invalid element cell".into());
@@ -187,9 +198,18 @@ impl Context {
         Ok(value)
     }
     pub fn capture(&mut self, value: &Value, graph: &PropertyGraph) -> Result<(), String> {
+        self.capture_inner(value, graph, true)
+    }
+    pub(super) fn capture_cypher(&mut self, value: &Value, graph: &PropertyGraph) -> Result<(), String> {
+        self.capture_inner(value, graph, false)
+    }
+    fn capture_inner(&mut self, value: &Value, graph: &PropertyGraph, property_records: bool) -> Result<(), String> {
         for ((edge, label, id), owner) in element_owners(value) {
             if self.elements.contains_key(&(edge, label.clone(), id.clone())) { continue; }
-            let properties = graph.jvm_properties(&owner, &[]);
+            // Cypher reads must not allocate Gremlin property handles. Doing
+            // so marks every scanned owner dirty and turns a single-row update
+            // into a rewrite of all scanned records.
+            let properties = if property_records { graph.jvm_properties(&owner, &[]) } else { Vec::new() };
             // Cypher user properties may be named `id` without being Gremlin
             // property records. Use the existing graph output accessors, then
             // retain explicit null/property-record values from the native view.
@@ -208,6 +228,7 @@ impl Context {
                 ("label".into(), Value::String(label.clone())),
                 ("identity".into(), Value::Scalar(id.scalar().clone())),
                 ("id".into(), graph.element_public_id(&owner)),
+                ("cypher_id".into(), graph.source_identity(&owner).unwrap_or_else(|| graph.cypher_id(&owner).map(Value::Int).unwrap_or(Value::Null))),
                 ("present_nulls".into(), Value::Bool(true)),
                 ("deleted".into(), Value::Bool(if edge {
                     graph.live_edge_endpoints(&label, id.clone()).is_none()
@@ -314,6 +335,22 @@ fn element_owners(value: &Value) -> BTreeMap<(bool,String,ElementId), Value> {
 }
 
 impl LoweringContext<'_> {
+    pub(in crate::ir::rel) fn lower_cypher_identity(&self, plan: &LogicalPlan, binding: &str) -> RelResult<Expr> {
+        let id = col_exact(id_col(binding));
+        if self.graph.source_keys || self.graph.mapping.is_some() { return Ok(id); }
+        if self.options.mapping.is_some() { return self.lower_expr(plan, &IrExpr::Id(binding.into())); }
+        let edge = has_binding_shape(plan, binding) == Some(BindingShape::Edge);
+        let names = if edge { self.graph.edge_rel_order() } else { self.graph.node_label_order() };
+        let mut offset = 0_i64;
+        let mut arms = Vec::new();
+        for name in names {
+            arms.push((Box::new(col_exact(label_col(binding)).eq(lit(name.clone()))),
+                Box::new(if offset == 0 { id.clone() } else { id.clone() + lit(offset) })));
+            offset += if edge { self.graph.edge_ids(name).len() } else { self.graph.node_ids(name)?.len() } as i64;
+        }
+        if arms.is_empty() { return Ok(lit(ScalarValue::Int64(None))); }
+        Ok(Expr::Case(Case::new(None, arms, Some(Box::new(lit(ScalarValue::Int64(None)))))))
+    }
     /// Preserve identity and the projected properties without fetching any rows
     /// from storage inside a scalar function.
     pub(in crate::ir::rel) fn native_element(
@@ -365,6 +402,7 @@ impl LoweringContext<'_> {
             fields.extend([lit(format!("{key}_type")), lit(kind.to_string())]);
         }
         if self.language == Language::Cypher {
+            fields.extend([lit("cypher_id"), self.lower_cypher_identity(plan, binding)?]);
             return Ok(super::typed::call("element", vec![df_core::named_struct(fields)]));
         }
         Ok(function(

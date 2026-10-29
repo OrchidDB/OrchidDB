@@ -1,5 +1,8 @@
 //! Typed conversion implementation selection. Policy is chosen before expansion;
 //! capabilities choose only between implementations of that selected contract.
+//!
+//! SQL audit [L10](../../../tools/diagnostics/sql-lowering-audit.md#l10-conversions-and-semantic-ownership): Semantic policy is chosen before helper availability. Neither folding
+//! nor fallback may substitute another engine's conversion contract.
 use super::*;
 use crate::ir::rules::{
     RuleDescriptor, RuleKind, RuleSession, Stage, StringToFloatPolicy, Traversal,

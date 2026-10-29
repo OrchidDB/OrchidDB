@@ -36,7 +36,6 @@ type SQLSource struct {
 type LocalFunction func(context.Context, []any) (any, error)
 type DuckDBCompletion func(context.Context, string, map[string]RowCursor) (RowCursor, error)
 type SourceConfig struct {
-	Engine    string
 	Library   string
 	Sources   map[string]SQLSource
 	Functions map[string]LocalFunction
@@ -51,9 +50,6 @@ type SourceConnection struct {
 }
 
 func NewSourceConnection(schema json.RawMessage, config SourceConfig) (*SourceConnection, error) {
-	if config.Engine != "none" && config.Engine != "duckdb" {
-		return nil, errors.New("engine must be none or duckdb; register Trino as a source")
-	}
 	command, err := loadRuntime(config.Library)
 	if err != nil {
 		return nil, err
@@ -114,7 +110,6 @@ type sourceNode struct {
 }
 type sourcePlan struct {
 	Version int          `json:"version"`
-	Engine  string       `json:"engine"`
 	Nodes   []sourceNode `json:"nodes"`
 	Result  int          `json:"result"`
 }
@@ -136,7 +131,7 @@ func (c *SourceConnection) Query(ctx context.Context, text string, options Query
 	}
 	request["version"] = 1
 	request["dialect"] = "duckdb"
-	request["engine"] = c.config.Engine
+	request["engine"] = "duckdb"
 	request["query"] = text
 	request["language"] = language
 	if options.Parameters != nil {
@@ -303,7 +298,7 @@ func (c *SourceConnection) execute(ctx context.Context, plan sourcePlan) (RowCur
 				}
 			}
 		case "duckdb":
-			if c.config.Engine != "duckdb" || c.config.Completion == nil {
+			if c.config.Completion == nil {
 				return nil, errors.New("DuckDB completion binding required")
 			}
 			for _, r := range n.Inputs {

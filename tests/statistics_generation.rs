@@ -10,7 +10,7 @@ async fn cmd(v: Value) -> Value {
     serde_json::from_str(&statistics::command(&v.to_string()).await.unwrap()).unwrap()
 }
 #[tokio::test]
-async fn protocol_cached_compile_all_languages_and_release() {
+async fn protocol_cached_compile_cypher_and_release() {
     let r = request();
     let started = cmd(json!({"op":"begin","request":r})).await;
     let id = started["id"].clone();
@@ -33,10 +33,6 @@ async fn protocol_cached_compile_all_languages_and_release() {
     );
     for (language, query) in [
         ("cypher", "MATCH (n:N) WHERE n.name='rare' RETURN n.name"),
-        (
-            "gremlin",
-            "g.V().hasLabel('N').has('name','rare').values('name')",
-        ),
     ] {
         let mut q = r.clone();
         q["language"] = json!(language);
@@ -49,12 +45,6 @@ async fn protocol_cached_compile_all_languages_and_release() {
         );
         assert_eq!(out["statistics_usage"], snapshot["revision"]);
     }
-    let mut rdf = r.clone();
-    rdf["language"] = json!("sparql");
-    rdf["query"] = json!("SELECT ?name WHERE {?s <urn:name> ?name FILTER(?name=\"rare\")}");
-    rdf["rdf"] = json!([{"table":"people","subject":{"kind":"template","prefix":"urn:person:","columns":["id"]},"predicate":{"kind":"constant","value":"urn:name"},"object":{"kind":"literal","column":"name"}}]);
-    let out = cmd(json!({"op":"compile","catalog_id":finished["catalog_id"],"request":rdf})).await;
-    assert!(!out["plan_estimates"].as_array().unwrap().is_empty());
     let loaded = cmd(json!({"op":"install","snapshot":snapshot})).await;
     cmd(json!({"op":"release","catalog_id":loaded["catalog_id"]})).await;
     cmd(json!({"op":"release","catalog_id":finished["catalog_id"]})).await;
@@ -307,38 +297,6 @@ async fn collected_nested_expansion_selects_flat_without_manual_statistics() {
         let mut statement = db.prepare(plan["sql"].as_str().unwrap()).unwrap();
         let batches = statement.query_arrow([]).unwrap().collect::<Vec<_>>();
         assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 2000);
-    }
-}
-#[cfg(feature = "duckdb")]
-#[tokio::test]
-async fn cheaper_materialization_for_gremlin_and_sparql() {
-    let (db, r) = demo();
-    let snapshot = statistics::generate_duckdb(&db, r.clone()).unwrap();
-    for (language, query) in [
-        ("gremlin", "g.V().hasLabel('Summary').values('n').order()"),
-        ("sparql", "SELECT ?n WHERE { ?s <urn:n> ?n } ORDER BY ?n"),
-    ] {
-        let mut q = r.clone();
-        q["language"] = json!(language);
-        q["query"] = json!(query);
-        q["rdf"] = json!([{"table":"summary","subject":{"kind":"template","prefix":"urn:summary:","columns":["name"]},"predicate":{"kind":"constant","value":"urn:n"},"object":{"kind":"literal","column":"n"}}]);
-        let before: Value =
-            serde_json::from_str(&compile_json(&q.to_string()).await.unwrap()).unwrap();
-        q["statistics"] = serde_json::to_value(&snapshot).unwrap();
-        let after: Value =
-            serde_json::from_str(&compile_json(&q.to_string()).await.unwrap()).unwrap();
-        assert_eq!(
-            after["representation_selections"][0]["representation"], "materialized",
-            "{after}"
-        );
-        let rows = |plan: &Value| {
-            let mut stmt = db.prepare(plan["sql"].as_str().unwrap()).unwrap();
-            let batches = stmt.query_arrow([]).unwrap().collect::<Vec<_>>();
-            arrow::util::pretty::pretty_format_batches(&batches)
-                .unwrap()
-                .to_string()
-        };
-        assert_eq!(rows(&before), rows(&after), "{language}");
     }
 }
 #[cfg(feature = "duckdb")]

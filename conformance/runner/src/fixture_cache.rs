@@ -55,33 +55,5 @@ mod tests {
         assert_eq!(engine.cypher("MATCH (n) RETURN n").await.unwrap().returned.batch.num_rows(), 0);
     }
 
-    #[tokio::test]
-    async fn cached_fixture_retains_public_ids_multi_properties_and_null_policy() {
-        use orchiddb::ir::catalog::Cardinality;
-        let graph = PropertyGraph::new();
-        graph.enable_null_property_values(true);
-        let vertex = graph.insert_node("P", BTreeMap::new());
-        graph.set_element_public_id(&vertex, Value::String("external-id".into())).unwrap();
-        for id in [11, 12] {
-            let property = graph.set_vertex_property(&vertex, "name", Value::String("same".into()),
-                Cardinality::List, BTreeMap::from([("source".into(), Value::Int(id))])).unwrap();
-            graph.set_vertex_property_public_id(&property, Value::Long(id)).unwrap();
-        }
-        graph.set_vertex_property(&vertex, "nullable", Value::Null, Cardinality::Single, BTreeMap::new()).unwrap();
-        let mut engine = GraphEngine::in_memory().unwrap();
-        let mut cache = FixtureCache::default();
-        cache.install(&mut engine, Some("typed"), graph).unwrap();
-        let queries = ["g.V().id()", "g.V().properties('name').id()", "g.V().properties('name').values('source')", "g.V().values('nullable')"];
-        let mut expected = Vec::new();
-        for query in queries {
-            let r = engine.gremlin(query).await.unwrap();
-            expected.push(r.returned.batch);
-        }
-        engine.gremlin("g.V().drop()").await.unwrap();
-        cache.reset(&mut engine, "typed").unwrap();
-        for (query, expected) in queries.into_iter().zip(expected) {
-            let r = engine.gremlin(query).await.unwrap();
-            assert_eq!(r.returned.batch, expected, "{query}");
-        }
-    }
+
 }

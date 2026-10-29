@@ -24,8 +24,7 @@ is needed for missing Docker images and DuckDB extensions. Missing prerequisites
 failed assertions and skipped required tests fail the run.
 
 Pinned service images: Trino 484, OPA 1.4.2, PostgreSQL 16-bookworm. DuckDB uses the
-version pinned by `extension/scripts/build.py` and the test requirements. Iceberg
-and Lance extension identities are printed in the test log. PostgreSQL is exposed
+version pinned by `extension/scripts/build.py` and the test requirements. PostgreSQL is exposed
 only at localhost:15439 and Trino at localhost:18089; OPA is internal to the test
 network. Fixture passwords and user names are test constants, never credentials
 for external services. The runner cannot be pointed at a production endpoint.
@@ -40,21 +39,12 @@ docker compose -p orchid-execution-integration \
 
 ## What is exercised
 
-### DuckDB extension
+### DuckDB UDFs and library bindings
 
-- Real PostgreSQL extension scan through registered ontology schema, parameter
-  binding, projection/filter/aggregation and decimal source data.
-- Real Parquet files plus graph mapping, ICU and JSON functions.
-- Existing Iceberg/Lance test: real Iceberg snapshot files, graph join into Lance,
-  indexed vector search, and execution-plan evidence of the storage scans.
-- Shared helper-function semantics, caller macros/UDFs, lazy conditionals, nested
-  values, empty/duplicate groups, correlated subqueries and session isolation.
-- Host federation tests: batched requests, caller transactions, cancellation,
-  schema-only binding, early results. The HTTP service in those tests is a controlled
-  protocol fixture; it is not evidence of a deployed Weaviate installation.
-- A separate diagnostic extension build enables the existing Arrow probes. Tests
-  verify bounded pulls, replay, early result close, producer errors and exactly-once
-  releases. Diagnostic functions are not added to the production artifact.
+The extension tests verify scalar-only registration, null and numeric boundaries,
+and typed Arrow batches. Rust execution tests exercise caller-owned DuckDB
+sessions, parameters, transactions, and Arrow results. The Go binding tests run
+against the retained module. The extension no longer hosts Cypher or catalogs.
 
 ### Trino with OPA
 
@@ -65,8 +55,8 @@ as successful live coverage.
 
 - PostgreSQL and Iceberg connectors; PostgreSQL-to-memory cross-catalog join fully
   pushed into one Trino query.
-- Both `engine=none` and `engine=duckdb`; no final DuckDB query, verified with a
-  completion adapter that panics if called.
+- Full source pushdown eliminates DuckDB completion, verified with a completion
+  adapter that panics if called.
 - Source function/aggregate execution and engine-independent local UDFs.
 - Real OPA row filters for Alice/Bob and column masking, admin visibility, denied
   user, and a user allowed to enter Trino but denied `SelectFromColumns`.
@@ -81,17 +71,6 @@ The Rego is a fixture policy, not a suggested production policy. This local setu
 trusts test identity headers; it does not validate TLS, identity-provider login or
 impersonation protection in a production deployment.
 
-### Trino → local UDF → DuckDB residual
-
-`test_residual.py` is one embedding test harness using the existing Python wrapper
-and freshly built native compiler. It is not a new SDK release matrix or proof of
-a complete C execution ABI. The runner stages a matching copy under `target/` with
-the current revision pin; production client pin checks are not bypassed or changed.
-
-It verifies that only OPA-authorized rows reach the UDF/completion, DuckDB is created
-once for required residual work, Trino receives one query with no local-UDF call,
-and `none` rejects the residual before any source or UDF callback executes.
-
 ## Evidence and limits
 
 `target/diagnostics/execution-integration/report.json` records overall and per-suite
@@ -99,9 +78,7 @@ status, log paths, extension hash, Git revision and whether the working tree is
 dirty. Full stdout/stderr is retained next to it. These gates can exercise pending
 engine work; a passing dirty-tree report does not certify the committed release.
 
-This matrix covers PostgreSQL, Iceberg, memory, Parquet, Lance, ICU and JSON. It does
-not establish live Prometheus/Loki/search-service coverage, S3 permission behavior,
-production identity-provider authentication, all deployment platforms, petabyte
-scale or million-QPS performance. Those require their own fixtures and evidence
-before being advertised as validated. No SDK removal, runtime API migration,
-commit, push or publication is performed by this runner.
+The retained live matrix covers Trino with PostgreSQL, Iceberg and memory
+connectors, plus local DuckDB UDF and Rust/Go binding checks. It does not establish
+production authentication, all deployment platforms, or large-scale performance.
+Historical reports describe the scope of the build that produced them.

@@ -115,27 +115,22 @@ impl FederatedConnection {
         orchiddb::federation::execute(&work, &mut self.sessions).await
     }
 }
-#[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
-pub mod engines {
-    pub use orchiddb::remote::transport::HttpSession;
-}
 
 /// Source-first connection. SQL adapters and function implementations remain
 /// application-owned; no database driver is opened or bundled by this client.
 pub struct SourceConnection {
     catalog: Arc<dyn Catalog>,
-    engine: orchiddb::execution::plan::Engine,
     sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>,
     functions: orchiddb::execution::plan::Functions,
     duckdb: Option<Box<dyn EngineSession>>,
 }
-pub use orchiddb::execution::plan::{Engine, LocalFunction, LazyDuckdb};
+pub use orchiddb::execution::plan::{LocalFunction, LazyDuckdb};
 impl SourceConnection {
-    pub fn new(schema: Schema, engine: Engine, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
-        Self::with_catalog(Arc::new(InMemoryCatalog::new(schema)), engine, sources)
+    pub fn new(schema: Schema, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
+        Self::with_catalog(Arc::new(InMemoryCatalog::new(schema)), sources)
     }
-    pub fn with_catalog(catalog: Arc<dyn Catalog>, engine: Engine, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
-        Self { catalog, engine, sources, functions: Default::default(), duckdb: None }
+    pub fn with_catalog(catalog: Arc<dyn Catalog>, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
+        Self { catalog, sources, functions: Default::default(), duckdb: None }
     }
     pub fn register_function(&mut self, name: impl Into<String>, function: Arc<dyn LocalFunction>) {
         self.functions.insert(name.into(), function);
@@ -143,7 +138,7 @@ impl SourceConnection {
     /// Supply a lazy application-owned completion adapter. Its query method is
     /// invoked only for a residual DuckDB operation.
     pub fn set_duckdb(&mut self, adapter: Box<dyn EngineSession>) -> Result<(), String> {
-        if self.engine != Engine::Duckdb || adapter.dialect() != "duckdb" { return Err("DuckDB binding requires engine duckdb".into()); }
+        if adapter.dialect() != "duckdb" { return Err("completion binding must use DuckDB".into()); }
         self.duckdb = Some(adapter);
         Ok(())
     }
@@ -152,7 +147,7 @@ impl SourceConnection {
         // Dialect is a frontend compatibility context; per-source SQL emission
         // is selected by the source-first planner, never by this default.
         let mut request = snapshot.schema.resolve().await?.request("duckdb", &query)?;
-        request.engine = Some(self.engine);
+        request.engine = Some(orchiddb::execution::ExecutableEngine::DuckDb);
         let work = orchiddb::compiler::compile(request).await?;
         let plan = work.execution_plan.as_ref().ok_or("missing execution plan")?;
         match self.duckdb.as_mut() {

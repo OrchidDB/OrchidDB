@@ -1,4 +1,7 @@
 //! Join/apply lowering and correlation maintenance.
+//!
+//! SQL audit [L06](../../../tools/diagnostics/sql-lowering-audit.md#l06-joins-and-ordinary-match-composition): Streaming MATCH can absorb its input; CALL exports and per-input
+//! barriers require the occurrence-preserving apply contract instead.
 
 use super::*;
 

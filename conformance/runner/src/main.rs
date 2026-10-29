@@ -2,8 +2,6 @@ use std::io::{self, BufRead, Write};
 use arrow::array::*;
 use arrow::datatypes::DataType;
 use orchiddb::engine::{GraphEngine, ReadMode};
-use orchiddb::language::sparql::OntologyMapping;
-use orchiddb::ir::plan::Direction;
 use serde_json::{Value, json};
 
 fn cell(a: &dyn Array, i: usize) -> Value {
@@ -26,10 +24,6 @@ async fn main() {
     let mut graph=GraphEngine::in_memory().unwrap();
     graph.set_sql_timeout(std::time::Duration::from_secs(10));
     if std::env::var("CONFORMANCE_READ_MODE").as_deref()==Ok("sql-only") { graph.set_read_mode(ReadMode::SqlOnly); }
-    let ontology=OntologyMapping::new().class("https://example.com/Person","Person")
-      .property("https://example.com/name","Person","name")
-      .property("https://example.com/age","Person","age")
-      .relationship_between("https://example.com/knows","KNOWS",Direction::Out,"Person","Person");
     for line in io::stdin().lock().lines() {
         let line=line.unwrap();
         let request:Value=match serde_json::from_str(&line) { Ok(x)=>x,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue;} };
@@ -37,9 +31,8 @@ async fn main() {
         let mutates=request["mutates"].as_bool().unwrap_or(false);
         if mutates { let _=graph.begin(); }
         let result=match request["language"].as_str().unwrap_or("cypher") {
-          "gremlin"=>graph.gremlin(q).await,
-          "sparql"=>graph.sparql(q,ontology.clone()).await,
-          _=>graph.cypher(q).await,
+          "cypher"=>graph.cypher(q).await,
+          _=>Err("Only Cypher is supported".into()),
         };
         let output=match result {
           Ok(r)=>{let b=r.returned.batch;json!({"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"backend":format!("{:?}",r.backend)})},

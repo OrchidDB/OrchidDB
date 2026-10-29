@@ -64,8 +64,8 @@ impl plan::LocalFunction for Double {
         ))
     }
 }
-fn request(engine: &str, query: &str) -> Value {
-    json!({"version":1,"dialect":"trino","engine":engine,"query":query,"language":"cypher",
+fn request(query: &str) -> Value {
+    json!({"version":1,"dialect":"trino","query":query,"language":"cypher",
         "sources":{"trino":{"adapter":"trino"}},
         "tables":[{"name":"postgresql.public.documents","source":"trino","columns":[
             {"name":"id","data_type":"int64"},{"name":"tenant","data_type":"string"},{"name":"secret","data_type":"string"}]}],
@@ -107,120 +107,101 @@ async fn execute(input: Value, user: &str, functions: plan::Functions) -> Result
 #[tokio::test]
 #[ignore = "requires provisioned Trino/OPA; integration runner executes explicitly"]
 async fn tenant_filters_masks_and_identity_isolation() {
-    for engine in ["none", "duckdb"] {
-        for (user, expected) in [
-            (
-                "alice",
-                json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}]),
-            ),
-            ("bob", json!([{"id":2,"secret":"masked"}])),
-            (
-                "admin",
-                json!([{"id":1,"secret":"alice-private"},{"id":2,"secret":"bob-private"},{"id":3}]),
-            ),
-            (
-                "alice",
-                json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}]),
-            ),
-        ] {
-            let actual = execute(
-                request(
-                    engine,
-                    "MATCH (d:Doc) RETURN d.id AS id, d.secret AS secret ORDER BY id",
-                ),
-                user,
-                Default::default(),
-            )
-            .await
-            .unwrap();
-            assert_eq!(actual, expected, "{engine}/{user}");
-        }
-        for user in ["denied", "restricted"] {
-            let err = execute(
-                request(engine, "MATCH (d:Doc) RETURN d.id AS id"),
-                user,
-                Default::default(),
-            )
-            .await
-            .unwrap_err();
-            assert!(err.to_lowercase().contains("denied"), "{err}");
-        }
+    for (user, expected) in [
+        (
+            "alice",
+            json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}]),
+        ),
+        ("bob", json!([{"id":2,"secret":"masked"}])),
+        (
+            "admin",
+            json!([{"id":1,"secret":"alice-private"},{"id":2,"secret":"bob-private"},{"id":3}]),
+        ),
+        (
+            "alice",
+            json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}]),
+        ),
+    ] {
+        let actual = execute(
+            request("MATCH (d:Doc) RETURN d.id AS id, d.secret AS secret ORDER BY id"),
+            user,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(actual, expected, "{user}");
+    }
+    for user in ["denied", "restricted"] {
+        let err = execute(
+            request("MATCH (d:Doc) RETURN d.id AS id"),
+            user,
+            Default::default(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_lowercase().contains("denied"), "{err}");
     }
 }
 #[tokio::test]
 #[ignore = "requires provisioned Trino/OPA; integration runner executes explicitly"]
 async fn source_functions_aggregation_and_local_udf() {
-    for engine in ["none", "duckdb"] {
-        assert_eq!(
-            execute(
-                request(engine, "MATCH (d:Doc) RETURN count(d) AS n"),
-                "alice",
-                Default::default()
-            )
-            .await
-            .unwrap(),
-            json!([{"n":2}])
-        );
-        assert_eq!(
-            execute(
-                request(
-                    engine,
-                    "MATCH (d:Doc) RETURN toUpper(d.tenant) AS tenant ORDER BY d.id"
-                ),
-                "bob",
-                Default::default()
-            )
-            .await
-            .unwrap(),
-            json!([{"tenant":"BOB"}])
-        );
-        let mut input = request(engine, "MATCH (d:Doc) RETURN twice(d.id) AS doubled");
-        input["functions"] = json!([{"name":"twice","target":"twice","parameters":["int64"],"returns":"int64","local":true}]);
-        let functions: plan::Functions = BTreeMap::from([(
-            "twice".into(),
-            Arc::new(Double) as Arc<dyn plan::LocalFunction>,
-        )]);
-        assert_eq!(
-            execute(input, "bob", functions).await.unwrap(),
-            json!([{"doubled":4}])
-        );
-    }
+    assert_eq!(
+        execute(
+            request("MATCH (d:Doc) RETURN count(d) AS n"),
+            "alice",
+            Default::default()
+        )
+        .await
+        .unwrap(),
+        json!([{"n":2}])
+    );
+    assert_eq!(
+        execute(
+            request("MATCH (d:Doc) RETURN toUpper(d.tenant) AS tenant ORDER BY d.id"),
+            "bob",
+            Default::default()
+        )
+        .await
+        .unwrap(),
+        json!([{"tenant":"BOB"}])
+    );
+    let mut input = request("MATCH (d:Doc) RETURN twice(d.id) AS doubled");
+    input["functions"] = json!([{"name":"twice","target":"twice","parameters":["int64"],"returns":"int64","local":true}]);
+    let functions: plan::Functions = BTreeMap::from([(
+        "twice".into(),
+        Arc::new(Double) as Arc<dyn plan::LocalFunction>,
+    )]);
+    assert_eq!(
+        execute(input, "bob", functions).await.unwrap(),
+        json!([{"doubled":4}])
+    );
 }
 #[tokio::test]
 #[ignore = "requires provisioned Trino/OPA; integration runner executes explicitly"]
 async fn cross_catalog_join_pushes_to_trino() {
     let mut input = request(
-        "none",
         "MATCH (d:Doc), (l:Label) WHERE d.id = l.id RETURN d.id AS id, l.title AS title ORDER BY id",
     );
     input["tables"].as_array_mut().unwrap().push(json!({"name":"memory.orchid.labels","source":"trino","columns":[{"name":"id","data_type":"int64"},{"name":"title","data_type":"string"}]}));
     input["nodes"].as_array_mut().unwrap().push(json!({"label":"Label","table":"memory.orchid.labels","id":"id","properties":{"id":"id","title":"title"}}));
-    for engine in ["none", "duckdb"] {
-        input["engine"] = json!(engine);
-        assert_eq!(
-            execute(input.clone(), "alice", Default::default())
-                .await
-                .unwrap(),
-            json!([{"id":1,"title":"first"},{"id":3,"title":"third"}])
-        );
-    }
+    assert_eq!(
+        execute(input.clone(), "alice", Default::default())
+            .await
+            .unwrap(),
+        json!([{"id":1,"title":"first"},{"id":3,"title":"third"}])
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires provisioned Trino/OPA; integration runner executes explicitly"]
 async fn iceberg_connector_retains_policy_enforcement() {
-    for engine in ["none", "duckdb"] {
-        let mut input = request(
-            engine,
-            "MATCH (d:Doc) RETURN d.id AS id, d.secret AS secret ORDER BY id",
-        );
-        input["tables"][0]["name"] = json!("iceberg.orchid.documents");
-        input["nodes"][0]["table"] = json!("iceberg.orchid.documents");
-        assert_eq!(
-            execute(input, "alice", Default::default()).await.unwrap(),
-            json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}])
-        );
-    }
+    let mut input = request("MATCH (d:Doc) RETURN d.id AS id, d.secret AS secret ORDER BY id");
+    input["tables"][0]["name"] = json!("iceberg.orchid.documents");
+    input["nodes"][0]["table"] = json!("iceberg.orchid.documents");
+    assert_eq!(
+        execute(input, "alice", Default::default()).await.unwrap(),
+        json!([{"id":1,"secret":"masked"},{"id":3,"secret":"masked"}])
+    );
 }
 
 #[tokio::test]
@@ -293,4 +274,33 @@ async fn source_stream_types_empty_results_and_errors() {
         .unwrap(),
         json!([{"n":42}])
     );
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+#[ignore = "requires provisioned Trino/OPA; integration runner executes explicitly"]
+async fn unbounded_traversal_completes_over_trino_arrow_inputs() {
+    let remote = source("admin");
+    for sql in [
+        "CREATE TABLE IF NOT EXISTS memory.orchid.recursive_nodes AS SELECT id FROM (VALUES BIGINT '1', BIGINT '2', BIGINT '3') t(id)",
+        "CREATE TABLE IF NOT EXISTS memory.orchid.recursive_edges AS SELECT * FROM (VALUES (BIGINT '101', BIGINT '1', BIGINT '2'), (BIGINT '102', BIGINT '2', BIGINT '3')) t(id, src, dst)",
+    ] { remote.execute(sql, vec![]).await.unwrap().collect_batches().await.unwrap(); }
+    let input = json!({"version":1,"dialect":"duckdb","language":"cypher","native_values":true,
+        "query":"MATCH(a:P)-[:LINK*]->(b:P) RETURN a.id AS a,b.id AS b ORDER BY a,b",
+        "sources":{"db":{"adapter":"trino"}},
+        "tables":[
+            {"name":"memory.orchid.recursive_nodes","source":"db","columns":[{"name":"id","data_type":"int64"}]},
+            {"name":"memory.orchid.recursive_edges","source":"db","columns":[{"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"}]}],
+        "nodes":[{"label":"P","table":"memory.orchid.recursive_nodes","id":"id","properties":{"id":"id"}}],
+        "edges":[{"label":"LINK","table":"memory.orchid.recursive_edges","id":"id","source_label":"P","target_label":"P","source":"src","target":"dst","properties":{}}]});
+    let compiled = compiler::compile(serde_json::from_value(input).unwrap()).await.unwrap();
+    let work = compiled.execution_plan.unwrap();
+    assert!(work.nodes.iter().any(|n| matches!(n.operation, Operation::Duckdb { .. })));
+    let expected_calls = work.nodes.iter().filter(|n| matches!(n.operation, Operation::SourceSql { .. })).count();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut sources: BTreeMap<String, Box<dyn Session>> = BTreeMap::from([("db".into(), Box::new(Counted(remote, calls.clone())) as Box<dyn Session>)]);
+    let mut completion = orchiddb::ir::rel::sql::DuckDbSession::default();
+    let stream = plan::execute(&work, &mut sources, &Default::default(), Some(&mut completion)).await.unwrap();
+    assert_eq!(rows(stream).await.unwrap(), json!([{"a":1,"b":2},{"a":1,"b":3},{"a":2,"b":3}]));
+    assert_eq!(calls.load(Ordering::SeqCst), expected_calls, "recursive rescans must replay the same source snapshot");
 }

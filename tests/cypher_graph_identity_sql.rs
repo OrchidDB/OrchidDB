@@ -97,12 +97,12 @@ async fn terminal_graph_transport_restores_public_typed_results_and_nulls() {
     assert_eq!(typed[0][2]["properties"]["k"]["value"], 1);
     assert_eq!(typed[0][1]["outV"], typed[0][2]["id"]);
     assert_eq!(typed[0][1]["inV"], typed[0][0]["id"]);
-    assert_eq!(result.stats.cost.native_kernel_calls, 0);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
 
     let result = engine.cypher("MATCH (b:C) OPTIONAL MATCH (b)-[r:T]->(n) RETURN n,r,b").await.unwrap();
     let typed: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["orchiddb.cypher.typed_rows.v1"]).unwrap();
     assert_eq!(typed[0][0]["type"], "null");
     assert_eq!(typed[0][1]["type"], "null");
     assert_eq!(typed[0][2]["type"], "vertex");
-    assert_eq!(result.stats.cost.native_kernel_calls, 0);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
 }

@@ -1,4 +1,7 @@
 //! Shared frontend preparation with the parser's original typed diagnostics.
+//!
+//! SQL audit [L01](../../../tools/diagnostics/sql-lowering-audit.md#l01-frontend-normalization-and-scoped-graph-ir): Validate and bind language scopes before SQL implementation selection;
+//! optimizations cannot make an invalid Cypher program valid.
 use std::collections::BTreeMap;
 use crate::ir::{plan::GraphPlan, procedures::ProcedureCatalog, value::Value};
 use super::{parser, parameters, planner, procedures};

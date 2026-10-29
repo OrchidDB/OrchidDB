@@ -16,7 +16,6 @@ use arrow::datatypes::{DataType, Field, Schema};
 use orchiddb::ir::plan::Direction;
 use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
 use orchiddb::ir::rel::sql::DuckDbExecutor;
-use orchiddb::language::sparql::OntologyMapping;
 use orchiddb::mapped_engine::MappedGraphEngine;
 
 /// The user's schema, as raw SQL applied via `execute_sql`.
@@ -175,65 +174,9 @@ async fn cypher_follow_join_table_between_persons() {
     assert_eq!(lines(&result.batch), vec!["bob", "carol"]);
 }
 
-#[tokio::test]
-async fn gremlin_count_and_traversal_over_user_tables() {
-    let mut engine = setup_engine().await;
 
-    let counted = engine
-        .gremlin("g.V().hasLabel('Person').count()")
-        .await
-        .expect("gremlin count");
-    assert_eq!(lines(&counted.batch), vec!["3"]);
 
-    let traversed = engine
-        .gremlin("g.V().hasLabel('Person').has('name', 'alice').out('FOLLOWS').values('name')")
-        .await
-        .expect("gremlin traversal");
-    let mut names = lines(&traversed.batch);
-    names.sort();
-    assert_eq!(names, vec!["bob", "carol"]);
-}
 
-fn ontology() -> OntologyMapping {
-    OntologyMapping::new()
-        .class("https://example.com/Person", "Person")
-        .property("https://example.com/name", "Person", "name")
-        .relationship_between(
-            "https://example.com/follows",
-            "FOLLOWS",
-            Direction::Out,
-            "Person",
-            "Person",
-        )
-}
-
-#[tokio::test]
-async fn sparql_property_and_relationship_over_user_tables() {
-    let mut engine = setup_engine().await;
-
-    let names = engine
-        .sparql(
-            "PREFIX ex: <https://example.com/> \
-             SELECT ?name WHERE { ?p a ex:Person . ?p ex:name ?name . } ORDER BY ?name",
-            ontology(),
-        )
-        .await
-        .expect("sparql property");
-    assert_eq!(lines(&names.batch), vec!["alice", "bob", "carol"]);
-
-    let friends = engine
-        .sparql(
-            "PREFIX ex: <https://example.com/> \
-             SELECT DISTINCT ?friendName WHERE { \
-               ?a a ex:Person . ?a ex:follows ?friend . \
-               ?friend a ex:Person . ?friend ex:name ?friendName . \
-             } ORDER BY ?friendName",
-            ontology(),
-        )
-        .await
-        .expect("sparql relationship");
-    assert_eq!(lines(&friends.batch), vec!["bob", "carol"]);
-}
 
 #[tokio::test]
 async fn explain_cypher_returns_generated_sql_referencing_user_tables() {

@@ -1,5 +1,8 @@
 //! Preserve projection namespaces around correlated SQL expressions so physical
 //! source columns cannot capture logical outer references.
+//!
+//! SQL audit [L29](../../../../tools/diagnostics/sql-lowering-audit.md#l29-ctes-and-scope-preservation): Aliases bind namespaces, not just output labels. Rewrites must update
+//! outer-reference metadata without capturing subquery-local columns.
 use super::*;
 use datafusion::logical_expr::LogicalPlanBuilder;
 fn correlated(exprs: &[Expr]) -> datafusion::common::Result<bool> {
@@ -63,6 +66,24 @@ pub(super) fn preserve_scopes(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
                             break name;
                         }
                     };
+                    // The new scope changes input qualifiers. Rebind direct
+                    // projection references by their proven input position;
+                    // keep subquery-local columns in their own namespaces.
+                    let input_schema = projection.input.schema().clone();
+                    projection.expr = projection.expr.into_iter().map(|expr| {
+                        Ok(expr.transform_up(|expr| {
+                            if let Expr::Column(column) = &expr {
+                                let index = input_schema.index_of_column(column)?;
+                                return Ok(Transformed::yes(Expr::Column(
+                                    datafusion::common::Column::new(
+                                        Some(datafusion::common::TableReference::bare(name.clone())),
+                                        input_schema.field(index).name().clone(),
+                                    ),
+                                )));
+                            }
+                            Ok(Transformed::no(expr))
+                        })?.data)
+                    }).collect::<datafusion::common::Result<Vec<_>>>()?;
                     projection.input = Arc::new(
                         LogicalPlanBuilder::from(projection.input.as_ref().clone())
                             .alias(name)?

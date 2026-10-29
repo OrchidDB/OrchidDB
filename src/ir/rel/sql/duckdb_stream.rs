@@ -129,7 +129,7 @@ impl Drop for WorkerDone {
         self.0.interrupt.lock().unwrap().take();
     }
 }
-type Entry = (BatchSource, Arc<Mutex<Option<String>>>, Arc<Cancellation>);
+type Entry = (BatchSource, Arc<Mutex<Option<String>>>, Arc<Cancellation>, Option<tokio::runtime::Handle>);
 fn registry() -> &'static Mutex<BTreeMap<String, Entry>> {
     static ITEMS: OnceLock<Mutex<BTreeMap<String, Entry>>> = OnceLock::new();
     ITEMS.get_or_init(Default::default)
@@ -177,6 +177,9 @@ impl VTab for Scan {
         out: &mut DataChunkHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let source = info.get_bind_data();
+        // DuckDB may invoke a scan on its own worker thread. Network-backed
+        // Arrow sources still need the caller's Tokio reactor when polled there.
+        let _runtime = source.3.as_ref().map(|runtime| runtime.enter());
         let mut cursor = info
             .get_init_data()
             .lock()
@@ -312,7 +315,7 @@ impl DuckDbSession {
                                     .map_err(|_| "stream registry poisoned")?
                                     .insert(
                                         key.clone(),
-                                        (input.source, error.clone(), cancel.clone()),
+                                        (input.source, error.clone(), cancel.clone(), runtime.clone()),
                                     );
                                 keys.push(key.clone());
                                 let name = super::SqlDialect::DuckDb.quote_ident(&input.name);

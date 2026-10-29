@@ -1,4 +1,7 @@
 //! DuckDB source-table adapter for the shared graph runtime.
+//!
+//! SQL audit [L33](../../../../tools/diagnostics/sql-lowering-audit.md#l33-mutation-and-read-after-write-boundaries): Cypher writes use effectful storage boundaries and staged relations.
+//! This DuckDB adapter is not a portable DML implementation for every SQL source.
 use super::{HostRelational, HostRequest};
 pub(crate) use crate::ir::{
     ElementId, Value,

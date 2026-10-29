@@ -73,40 +73,7 @@ fn scalar(e: &mut MappedGraphEngine, sql: &str) -> i64 {
         .query_row(sql, [], |r| r.get(0))
         .unwrap()
 }
-#[tokio::test]
-async fn cypher_writes_resolve_all_three_tables_and_preserve_read_mapping() {
-    let mut e = engine();
-    e.cypher("CREATE (p:Person {identity:42,name:'Alice',score:7}), (t:Team {identity:1,name:'Engineering'}), (p)-[:MEMBER {identity:1,weight:3}]->(t) RETURN p.name,t.name").await.unwrap();
-    assert_eq!(
-        scalar(
-            &mut e,
-            "SELECT count(*) FROM people WHERE person_id=42 AND full_name='Alice'"
-        ),
-        1
-    );
-    assert_eq!(
-        scalar(
-            &mut e,
-            "SELECT count(*) FROM memberships WHERE person_fk=42 AND team_fk=1 AND strength=3"
-        ),
-        1
-    );
-    let r = e
-        .gremlin("g.V().hasLabel('Person').out('MEMBER').values('name')")
-        .await
-        .unwrap();
-    assert_eq!(r.batch.num_rows(), 1);
-    e.cypher("MATCH (p:Person)-[r:MEMBER]->(t:Team) SET p.score=p.score+2, t.name='Platform', r.weight=8 RETURN p.score").await.unwrap();
-    assert_eq!(scalar(&mut e, "SELECT score FROM people"), 9);
-    assert_eq!(scalar(&mut e, "SELECT strength FROM memberships"), 8);
-    assert!(e.cypher("MATCH (p:Person) DELETE p").await.is_err());
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 1);
-    e.cypher("MATCH ()-[r:MEMBER]->() DELETE r").await.unwrap();
-    e.cypher("MATCH (p:Person) DELETE p").await.unwrap();
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 0);
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM memberships"), 0);
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM teams"), 1);
-}
+
 #[tokio::test]
 async fn mapped_writes_rollback_all_tables_on_failure_and_join_transactions() {
     let mut e = engine();
@@ -124,26 +91,7 @@ async fn mapped_writes_rollback_all_tables_on_failure_and_join_transactions() {
     e.executor_mut().rollback().unwrap();
     assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 0);
 }
-#[tokio::test]
-async fn gremlin_inserts_updates_and_deletes_use_mapped_rows() {
-    let mut e = engine();
-    e.gremlin("g.addV('Person').property('identity',1).property('name','Bob').property('score',20)")
-        .await
-        .unwrap();
-    assert_eq!(
-        scalar(
-            &mut e,
-            "SELECT count(*) FROM people WHERE full_name='Bob' AND score=20"
-        ),
-        1
-    );
-    e.gremlin("g.V().hasLabel('Person').has('name','Bob').property('score',21)")
-        .await
-        .unwrap();
-    assert_eq!(scalar(&mut e, "SELECT score FROM people"), 21);
-    e.gremlin("g.V().hasLabel('Person').drop()").await.unwrap();
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 0);
-}
+
 #[tokio::test]
 async fn no_match_writes_preserve_return_and_aggregate_bindings() {
     let mut e = engine();
@@ -195,27 +143,7 @@ async fn replacements_read_old_values_and_unknown_properties_rollback() {
         0
     );
 }
-#[tokio::test]
-async fn gremlin_creates_edges_between_existing_mapped_nodes() {
-    let mut e = engine();
-    e.cypher("CREATE (:Person {identity:1,name:'A'}), (:Team {identity:1,name:'T'})")
-        .await
-        .unwrap();
-    e.gremlin("g.V().hasLabel('Person').as('p').V().hasLabel('Team').addE('MEMBER').from('p').property('identity',1).property('weight',4)").await.unwrap();
-    assert_eq!(
-        scalar(
-            &mut e,
-            "SELECT count(*) FROM memberships WHERE person_fk=1 AND team_fk=1 AND strength=4"
-        ),
-        1
-    );
-    e.gremlin("g.E().hasLabel('MEMBER').property('weight',6)")
-        .await
-        .unwrap();
-    assert_eq!(scalar(&mut e, "SELECT strength FROM memberships"), 6);
-    e.gremlin("g.E().hasLabel('MEMBER').drop()").await.unwrap();
-    assert_eq!(scalar(&mut e, "SELECT count(*) FROM memberships"), 0);
-}
+
 #[tokio::test]
 async fn detach_deletes_incident_rows_by_scalar_edge_keys() {
     let mut m = GraphMapping::new();

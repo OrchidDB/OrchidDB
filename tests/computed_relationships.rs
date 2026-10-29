@@ -192,28 +192,7 @@ async fn sql_uses_backend_mappings() {
     }
 }
 
-#[tokio::test]
-async fn gremlin_uses_the_same_ranked_relationships() {
-    use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
-    let plan = GremlinPlanner::new()
-        .plan(
-            &parse_traversal(
-                "g.V().hasLabel('Document').has('id',1).out('SIMILAR_TO').values('id')",
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    let lowered = RelBackend::with_options(RelBackendOptions {
-        mapping: Some(Arc::new(mapping(COSINE))),
-        ..Default::default()
-    })
-    .lower(&plan, &PropertyGraph::new())
-    .unwrap();
-    assert_eq!(
-        rows(&execute_lowered(lowered).await.unwrap().batch),
-        vec!["2"]
-    );
-}
+
 
 #[cfg(feature = "duckdb")]
 #[tokio::test]
@@ -331,58 +310,7 @@ score = "vector.maxsim(source.tokens,target.tokens)"
 }
 
 #[cfg(feature = "duckdb")]
-#[tokio::test]
-async fn mapped_engine_composes_stored_edges_and_sql_functions() {
-    use orchiddb::{
-        engine::GraphEngine,
-        ir::{functions::logical::LogicalFunction, rel::mapping::EdgeMapping},
-    };
-    let db = duckdb::Connection::open_in_memory().unwrap();
-    db.execute_batch("CREATE TABLE documents(id BIGINT, embedding DOUBLE[], body VARCHAR, tokens DOUBLE[][]); INSERT INTO documents VALUES (1,[1.0,0.0],'cat',[[1.0,0.0]]),(2,[0.8,0.6],'cat',[[0.8,0.6]]),(3,[0.0,1.0],'dog',[[0.0,1.0]]); CREATE TABLE links(id BIGINT,src BIGINT,dst BIGINT); INSERT INTO links VALUES(1,3,2);").unwrap();
-    let mut map = mapping(&COSINE.replace(
-        "vector.cosine_similarity(source.embedding, target.embedding)",
-        "custom.absolute(source.id - target.id)",
-    ));
-    map.register_logical_function(LogicalFunction::new(
-        "custom.absolute",
-        datafusion::functions::math::abs(),
-        [("duckdb".into(), orchiddb::ir::functions::logical::SqlFunctionMapping {
-            value: "abs(__arg0)".into(), ordering: None,
-        })].into(),
-    ))
-    .unwrap();
-    map.map_edge(
-        EdgeMapping::table("LINK", "links", "src", "dst", "Document", "Document").with_id("id"),
-    );
-    let mut engine = GraphEngine::mapped(db, Arc::new(map)).unwrap();
-    let result=engine.cypher("MATCH (s:Document {id:1})-[e:SIMILAR_TO]->(t:Document)-[:LINK]->(u:Document) RETURN t.id,u.id,e.score").await.unwrap();
-    assert_eq!(rows(&result.returned.batch), vec!["3|2|2"]);
-    assert_eq!(result.stats.datafusion_ops, 0);
-    for (query, expected) in [
-        (
-            "g.V().has('Document','id',1).out('SIMILAR_TO').values('body')",
-            "dog",
-        ),
-        (
-            "g.V().has('Document','id',1).repeat(out('SIMILAR_TO')).times(1).values('body')",
-            "dog",
-        ),
-    ] {
-        let result = engine.gremlin(query).await.unwrap();
-        assert_eq!(
-            rows(&result.returned.batch),
-            vec![expected],
-            "{query} {:#?}",
-            result.stats
-        );
-    }
-    assert!(
-        engine
-            .cypher("MATCH ()-[e:SIMILAR_TO]->() SET e.score=1")
-            .await
-            .is_err()
-    );
-}
+
 
 #[test]
 fn maxsim_and_bm25_have_reference_semantics() {

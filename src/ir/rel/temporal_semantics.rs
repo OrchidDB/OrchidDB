@@ -2,6 +2,9 @@
 //!
 //! Transport uses a nominal string domain, never a temporal comparison key.
 //! An unrelated temporal column must not prohibit ordinary integer/string SQL.
+//!
+//! SQL audit [L11](../../../tools/diagnostics/sql-lowering-audit.md#l11-temporal-values): Prefer native DATE, then typed temporal SQL, then complete finite
+//! domains. The serialized envelope alone never proves comparison semantics.
 use super::*;
 use arrow::array::Array;
 mod runtime_date;

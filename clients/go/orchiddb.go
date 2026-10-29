@@ -29,7 +29,7 @@ type Config struct {
 }
 
 // QueryOptions supplies query inputs separately from the registered schema.
-// Language defaults to cypher; use sparql for SPARQL queries.
+// Language defaults to cypher, the only supported query language.
 type QueryOptions struct {
 	Language      string
 	Parameters    map[string]any
@@ -65,7 +65,7 @@ func New(session Session, schema json.RawMessage, config Config) (*Connection, e
 		return nil, errors.New("orchiddb: session is required")
 	}
 	switch config.Dialect {
-	case "duckdb", "postgres", "starrocks", "trino":
+	case "duckdb", "postgres", "trino":
 	default:
 		return nil, fmt.Errorf("orchiddb: unsupported dialect %q", config.Dialect)
 	}

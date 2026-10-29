@@ -69,17 +69,7 @@ fn jvm_nodes_round_trip_through_optimizer_and_are_effect_fences() {
     assert!(orchiddb::ir::explain(&plan).contains("GraphJvm"));
 }
 
-#[test]
-fn gremlin_call_lowers_to_jvm_ir() {
-    let parsed = orchiddb::language::gremlin::parser::parse_traversal(
-        "g.inject(2).call('orchiddb.jvm',['script':'current + 3'])",
-    )
-    .unwrap();
-    let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
-        .plan(&parsed)
-        .unwrap();
-    assert!(orchiddb::ir::jvm::contains_jvm(&plan.root));
-}
+
 
 #[test]
 #[ignore = "requires the production JVM classpath"]
@@ -221,20 +211,7 @@ fn transactions_cannot_commit_inside_a_node_and_null_policy_is_preserved() {
     assert!(!graph.supports_null_property_values());
 }
 
-#[test]
-#[ignore = "requires the production JVM classpath"]
-fn repeat_body_uses_the_correlated_frontier() {
-    let parsed = orchiddb::language::gremlin::parser::parse_traversal(
-        "g.inject(2).repeat(__.call('orchiddb.jvm',['script':'current + 1'])).times(2)",
-    )
-    .unwrap();
-    let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
-        .plan(&parsed)
-        .unwrap();
-    let rows = execute_rows_with_jvm(&plan, &PropertyGraph::new(), execution()).unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].get("current"), Value::Int(4));
-}
+
 
 #[cfg(feature = "duckdb")]
 #[tokio::test]
@@ -374,250 +351,19 @@ fn graphcomputer_fragment_uses_private_native_result_graph() {
 }
 
 #[cfg(feature = "duckdb")]
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn public_engine_executes_ir_and_respects_outer_rollback() {
-    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
-    engine
-        .gremlin("g.addV('person').property('name','caller')")
-        .await
-        .unwrap();
-    engine.begin().unwrap();
-    engine.gremlin("g.V().call('orchiddb.jvm',['script':\"current.property('name','changed'); current\"])").await.unwrap();
-    engine.rollback().unwrap();
-    let rows = engine.gremlin("g.V().values('name')").await.unwrap();
-    assert_eq!(
-        arrow::util::display::array_value_to_string(rows.returned.batch.column(0), 0).unwrap(),
-        "caller"
-    );
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor() {
-    use orchiddb::engine::{ExecutionBackend, GraphEngine};
-    use orchiddb::language::gremlin::GremlinBinding;
-    use std::collections::HashMap;
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine
-        .gremlin("g.addV('person').property('name','alice').property('age',20)")
-        .await
-        .unwrap();
-    engine
-        .gremlin("g.addV('person').property('name','bob').property('age',30)")
-        .await
-        .unwrap();
-    let bindings = HashMap::from([
-        (
-            "f".into(),
-            GremlinBinding::Lambda("it.get().value('age') > 20".into()),
-        ),
-        (
-            "m".into(),
-            GremlinBinding::Lambda("it.get().value('name').toUpperCase()".into()),
-        ),
-        (
-            "key".into(),
-            GremlinBinding::Lambda("it.value('name').substring(0,1)".into()),
-        ),
-    ]);
-    let output = engine
-        .gremlin_with_bindings("g.V().filter(f).map(m)", &bindings)
-        .await
-        .unwrap();
-    assert_eq!(output.backend, ExecutionBackend::Boundaries);
-    assert_eq!(output.returned.batch.num_rows(), 1);
-    let metadata = output.returned.batch.schema();
-    assert!(metadata.metadata()["orchiddb.gremlin.typed_rows.v1"].contains("BOB"));
-    let grouped = engine
-        .gremlin_with_bindings("g.V().group().by(key).by(__.count())", &bindings)
-        .await
-        .unwrap();
-    assert_eq!(grouped.returned.batch.num_rows(), 1);
-    let inline = engine
-        .gremlin("g.V().map(Lambda.function(\"it.get().value('name')\"))")
-        .await
-        .unwrap();
-    assert_eq!(inline.returned.batch.num_rows(), 2);
-    let bindings = HashMap::from([(
-        "f".into(),
-        GremlinBinding::Lambda("it.path('a').value('name')".into()),
-    )]);
-    let path = engine
-        .gremlin_with_bindings("g.withPath().V().as('a').map(f)", &bindings)
-        .await
-        .unwrap();
-    assert_eq!(path.returned.batch.num_rows(), 2);
-    let bindings = HashMap::from([(
-        "f".into(),
-        GremlinBinding::Lambda(
-            "it.get().property('name','lost'); throw new IllegalStateException('callback failure')"
-                .into(),
-        ),
-    )]);
-    assert!(
-        engine
-            .gremlin_with_bindings("g.V().map(f)", &bindings)
-            .await
-            .is_err()
-    );
-    assert_eq!(
-        engine
-            .gremlin("g.V().has('name','lost')")
-            .await
-            .unwrap()
-            .returned
-            .batch
-            .num_rows(),
-        0
-    );
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn production_comparator_preserves_rows_and_graph_computer_uses_query_local_view() {
-    use orchiddb::engine::GraphEngine;
-    use orchiddb::language::gremlin::GremlinBinding;
-    use std::collections::HashMap;
-    let mut engine = GraphEngine::in_memory().unwrap();
-    let bindings = HashMap::from([
-        (
-            "first".into(),
-            GremlinBinding::Lambda("a,b -> a.substring(1,2).compareTo(b.substring(1,2))".into()),
-        ),
-        (
-            "second".into(),
-            GremlinBinding::Lambda("a,b -> b.substring(2,3).compareTo(a.substring(2,3))".into()),
-        ),
-    ]);
-    let result=engine.gremlin_with_bindings("g.inject('ax1','az1','ax2').as('original').order().by(first).by(second).select('original')",&bindings).await.unwrap();
-    let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
-    )
-    .unwrap();
-    assert_eq!(rows[0][0]["value"], "ax2");
-    assert_eq!(rows[1][0]["value"], "ax1");
-    assert_eq!(rows[2][0]["value"], "az1");
-    engine.gremlin("g.addV('person').property('name','a').as('a').addV('person').property('name','b').addE('knows').from('a')").await.unwrap();
-    assert_eq!(
-        engine
-            .gremlin("g.V()")
-            .await
-            .unwrap()
-            .returned
-            .batch
-            .num_rows(),
-        2
-    );
-    let connected=engine.gremlin("g.V().connectedComponent().with('~tinkerpop.connectedComponent.propertyName','component').values('component')").await.unwrap();
-    assert_eq!(connected.returned.batch.num_rows(), 2);
-    assert_eq!(
-        engine
-            .gremlin("g.V().has('component')")
-            .await
-            .unwrap()
-            .returned
-            .batch
-            .num_rows(),
-        0
-    );
-    let rank=engine.gremlin("g.V().pageRank(1.0).with('~tinkerpop.pageRank.times',1).with('~tinkerpop.pageRank.propertyName','rank').values('rank')").await.unwrap();
-    assert_eq!(rank.returned.batch.num_rows(), 2);
-    let shortest=engine.gremlin("g.V().has('name','a').shortestPath().with('~tinkerpop.shortestPath.target',__.has('name','b'))").await.unwrap();
-    assert_eq!(shortest.returned.batch.num_rows(), 1);
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
-    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
-    use std::collections::HashMap;
-    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
-    let bindings = HashMap::from([
-        ("seed".into(), GremlinBinding::Value(GValue::Long(1))),
-        (
-            "increment".into(),
-            GremlinBinding::Lambda("it.get() + 1L".into()),
-        ),
-    ]);
-    let result = engine
-        .gremlin_with_bindings(
-            "g.inject(seed).repeat(__.map(increment)).times(20)",
-            &bindings,
-        )
-        .await
-        .unwrap();
-    let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
-    )
-    .unwrap();
-    assert_eq!(rows[0][0]["value"], 21);
-    assert_eq!(rows[0][0]["type"], "long");
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn sack_supplier_split_and_update_are_relational_jvm_operators() {
-    use orchiddb::engine::{ExecutionBackend, GraphEngine};
-    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
-    use std::collections::HashMap;
-    let mut engine=GraphEngine::in_memory().unwrap();
-    engine.gremlin("g.addV('a').as('a').addV('b').as('b').addE('link').from('a').to('b')").await.unwrap();
-    let bindings=HashMap::from([
-        ("config".into(),GremlinBinding::Value(GValue::SackCallbacks {
-            supplier:"{ -> 7 }".into(), split:Some("{ sack -> sack + 10 }".into()),
-        })),
-        ("update".into(),GremlinBinding::Lambda("sack, vertex -> sack + vertex.label().length()".into())),
-    ]);
-    let result=engine.gremlin_with_bindings("g.withSack(config).V().hasLabel('a').out().sack(update).sack()",&bindings).await.unwrap();
-    assert_eq!(result.backend,ExecutionBackend::Mixed);
-    assert_eq!(result.returned.batch.num_rows(),1);
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0),0).unwrap(),"18");
-    let failed=HashMap::from([("update".into(),GremlinBinding::Lambda("sack, vertex -> vertex.property('lost',true); throw new IllegalStateException('sack callback failed')".into()))]);
-    assert!(engine.gremlin_with_bindings("g.withSack(1).V().sack(update)",&failed).await.is_err());
-    assert_eq!(engine.gremlin("g.V().has('lost')").await.unwrap().returned.batch.num_rows(),0);
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn engine_reuses_worker_but_clears_script_and_graph_bindings_between_queries() {
-    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
-    let first = plan(jvm(jvm(input(vec![Value::Long(1)]),
-        "def sameStatement() { 42L }; leakedGraph = graph; ProcessHandle.current().pid()", JvmMode::Map),
-        "assert sameStatement() == 42L; current", JvmMode::Map));
-    let result = engine.execute_plan(&first).await.unwrap();
-    let pid = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
-    engine.gremlin("g.addV('fresh')").await.unwrap();
-    let clean = plan(jvm(input(vec![Value::Long(2)]),
-        "assert !binding.hasVariable('leakedGraph'); try { sameStatement(); throw new AssertionError('function leaked') } catch (groovy.lang.MissingMethodException expected) {}; assert g.V().count().next() == 1L; ProcessHandle.current().pid()", JvmMode::Map));
-    let result = engine.execute_plan(&clean).await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), pid);
-    let failing = plan(jvm(input(vec![Value::Long(1)]),
-        "g.addV('leaked').iterate(); throw new IllegalStateException('expected failure')", JvmMode::Map));
-    assert!(engine.execute_plan(&failing).await.unwrap_err().contains("expected failure"));
-    let result = engine.execute_plan(&clean).await.unwrap();
-    let replacement = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
-    assert_ne!(replacement, pid, "failed worker must be discarded");
-    assert_eq!(engine.gremlin("g.V().count()").await.unwrap().returned.batch.num_rows(), 1);
-}
 
-#[tokio::test]
-#[ignore = "requires the production JVM classpath"]
-async fn dropping_query_cancels_worker_and_next_query_gets_fresh_controls() {
-    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
-    let pid_query = plan(jvm(input(vec![Value::Long(1)]), "ProcessHandle.current().pid()", JvmMode::Map));
-    let result = engine.execute_plan(&pid_query).await.unwrap();
-    let pid = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
-    let blocking = plan(jvm(input(vec![Value::Long(1)]),
-        "g.addV('cancelled').iterate(); while(true) { Thread.sleep(10) }; 0L", JvmMode::Map));
-    assert!(tokio::time::timeout(Duration::from_millis(300), engine.execute_plan(&blocking)).await.is_err());
-    // An interrupted caller-owned transaction is explicitly rolled back.
-    if engine.in_transaction() { engine.rollback().unwrap(); }
-    let result = engine.execute_plan(&pid_query).await.unwrap();
-    assert_ne!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), pid);
-    let empty = engine.gremlin("g.V().count()").await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(empty.returned.batch.column(0), 0).unwrap(), "0");
-}
+
+
+
+
+
+
+
 
 #[test]
 #[ignore = "requires the production JVM classpath"]

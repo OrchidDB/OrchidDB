@@ -1,23 +1,22 @@
-//! SQL text generation and real-database execution for lowered plans.
+//! Dialect SQL emission, typed result transport, and SQL session integration.
 //!
-//! `ir::rel` lowers Graph IR to a DataFusion `LogicalPlan` whose leaves are
-//! in-memory table scans derived from the `PropertyGraph`. This module turns
-//! that lowered plan into dialect-specific SQL text (via DataFusion's
-//! unparser), materializes the scan tables into a real database as
-//! `CREATE TABLE` + `INSERT` statements, executes the SQL there, and converts
-//! the rows back into Arrow batches so results can be compared against the
-//! in-process DataFusion execution.
+//! Graph lowering supplies a typed DataFusion logical plan. Source-owned scans
+//! refer to existing tables; Arrow-backed host regions supply input relations to
+//! DuckDB. Test helpers can materialize property-graph tables for database probes.
+//! DataFusion is a compiler dependency, not a physical completion engine.
 //!
-//! The pieces are deliberately separable:
+//! [`SqlDialect`] and [`DialectAdapter`] own source capabilities and rewrites;
+//! [`unparse`] prepares plans and emits SQL. Unsupported types, functions, and
+//! shapes produce [`SqlError::Unsupported`] so planning can select a supported
+//! region. Execution errors are not retried on another database.
 //!
-//! * [`SqlDialect`] — the dialect abstraction (identifier quoting, DDL types,
-//!   literal rendering, unparser dialect selection, post-unparse fixups).
-//! * [`unparse`] / [`plan_tables`] / [`table_setup_sql`] — pure SQL
-//!   generation; anything the unparser cannot express surfaces as a typed
-//!   [`SqlError::Unsupported`], never as wrong SQL.
-//! * [`SqlExecutor`] — the engine abstraction. [`DuckDbExecutor`] (feature
-//!   `duckdb`) embeds DuckDB. TrinoSession executes remotely through Trino.
-//!   Applications can supply caller-owned DuckDB and Trino streaming sessions.
+//! [`SqlExecutor`] supports internal database probes; runtime session interfaces
+//! carry typed Arrow results. The embedded DuckDB adapter is feature-gated, while
+//! applications can supply their own sessions and lazy completion binding.
+//!
+//! SQL audit [L28](../../../../tools/diagnostics/sql-lowering-audit.md#l28-sql-preparation-and-cleanup-sequence):
+//! Preparation order is semantic: transport, correlation, helper rewrites, and
+//! cleanup cannot be arbitrarily reordered.
 
 #[cfg(feature = "duckdb")]
 pub mod language_functions;
@@ -38,7 +37,6 @@ pub(crate) mod eligibility;
 mod correlation;
 mod capabilities;
 pub use capabilities::{SubqueryKind, SubqueryRequirements};
-pub mod starrocks;
 pub mod trino;
 pub(crate) mod duckdb_observability;
 pub(crate) mod duckdb_iceberg;
@@ -103,7 +101,7 @@ mod literals;
 use literals::*;
 mod unparse;
 pub use unparse::unparse;
-pub(crate) use unparse::unparse_plan;
+pub(crate) use unparse::{unparse_plan, unparse_plan_with_context};
 use unparse::*;
 
 #[cfg(feature = "duckdb")]
@@ -264,6 +262,11 @@ impl SqlDialect {
         if structured::is_structured(data_type) {
             return if self == Self::Postgres { Ok("JSONB".into()) } else { crate::ir::functions::duckdb_type(data_type).map_err(SqlError::from) };
         }
+        // DDL and expression casts share the same lossless physical mapping.
+        if self == Self::DuckDb && *data_type != DataType::Null {
+            return crate::ir::functions::duckdb_type(data_type).map_err(SqlError::from);
+        }
+        if let DataType::Dictionary(_, value) = data_type { return self.ddl_type(value); }
         // List-valued properties are ordinary graph data (a `tags` array on a
         // node), so they have to survive the round trip through the engine.
         if let DataType::List(inner)
@@ -276,7 +279,8 @@ impl SqlDialect {
             DataType::Boolean => "BOOLEAN",
             DataType::Int8 | DataType::Int16 | DataType::UInt8 => "SMALLINT",
             DataType::Int32 | DataType::UInt16 => "INTEGER",
-            DataType::Int64 | DataType::UInt32 | DataType::UInt64 => "BIGINT",
+            DataType::Int64 | DataType::UInt32 => "BIGINT",
+            DataType::UInt64 => "NUMERIC(20,0)",
             DataType::Float32 => "REAL",
             DataType::Float64 => self.double_type(),
             DataType::Date32 => "DATE",

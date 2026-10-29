@@ -146,18 +146,8 @@ impl Query {
             authorization: None,
         }
     }
-    pub fn gremlin(text: impl Into<String>) -> Self {
-        Self {
-            language: "gremlin".into(),
-            ..Self::cypher(text)
-        }
-    }
-    pub fn sparql(text: impl Into<String>) -> Self {
-        Self {
-            language: "sparql".into(),
-            ..Self::cypher(text)
-        }
-    }
+
+
     pub fn parameter(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
         self.parameters.insert(name.into(), value.into());
         self

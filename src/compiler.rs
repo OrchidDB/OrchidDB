@@ -3,7 +3,6 @@
 //!
 //! Schemas and function signatures come from the caller. No connection, catalog
 //! discovery, DDL, data copying, or SQL execution happens in this module.
-pub use crate::ir::rel::rdf_mapping::{RdfMapping, RdfTermMapping};
 use crate::ir::{
     catalog::PropertyGraph,
     functions::{
@@ -43,9 +42,10 @@ pub struct CompileRequest {
     #[serde(default)]
     pub statistics: Option<std::sync::Arc<crate::ir::rel::statistics::StatisticsSnapshot>>,
     pub dialect: String,
-    /// Optional relational completion engine; source dialects remain independent.
+    /// Legacy protocol selector for source execution. DuckDB is the sole
+    /// completion engine; registered sources select this route automatically.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub engine: Option<crate::execution::plan::Engine>,
+    pub engine: Option<crate::execution::ExecutableEngine>,
     #[serde(default)]
     pub engines: BTreeMap<String, crate::federation::Engine>,
     /// SQL and request sources, distinct from the relational completion engine.
@@ -74,15 +74,6 @@ pub struct CompileRequest {
     #[serde(default)]
     pub nodes: Vec<Node>,
     #[serde(default)]
-    pub rdf: Vec<RdfMapping>,
-    /// Existing typed quad mappings, sharing the runtime's RDF term contract.
-    #[serde(default)]
-    pub rdf_sources: Vec<crate::ir::rel::rdf::IriQuadSource>,
-    #[serde(default)]
-    pub rdf_graph_names: Option<RdfGraphNames>,
-    #[serde(default = "default_rdf_dataset")]
-    pub dataset: String,
-    #[serde(default)]
     pub edges: Vec<Edge>,
     #[serde(default)]
     pub computed_relationships: Vec<crate::ir::rel::mapping::ComputedRelationship>,
@@ -95,20 +86,19 @@ pub struct CompileRequest {
     #[serde(default)]
     pub functions: Vec<Function>,
     #[serde(default)]
-    pub ontology: Ontology,
-    #[serde(default)]
     pub constraints: crate::ir::rel::constraints::ConstraintCatalog,
     #[serde(default)]
     pub constraint_scope: Option<String>,
 }
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RdfGraphNames {
-    pub table: String,
-    pub column: String,
-    #[serde(default)]
-    pub writable: bool,
+impl CompileRequest {
+    pub(crate) fn uses_source_plan(&self) -> bool {
+        self.engine.is_some()
+            || (!self.sources.is_empty()
+                && self.engines.is_empty()
+                && self.execution_engine.is_none())
+    }
 }
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
@@ -125,9 +115,6 @@ pub struct Column {
     pub data_type: String,
     #[serde(default = "yes")]
     pub nullable: bool,
-}
-fn default_rdf_dataset() -> String {
-    "default".into()
 }
 fn yes() -> bool {
     true
@@ -277,38 +264,6 @@ pub struct Function {
     pub aggregate: bool,
     #[serde(default)]
     pub local: bool,
-}
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Ontology {
-    #[serde(default)]
-    pub classes: Vec<OntologyClass>,
-    #[serde(default)]
-    pub properties: Vec<OntologyProperty>,
-    #[serde(default)]
-    pub relationships: Vec<OntologyRelationship>,
-}
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OntologyClass {
-    pub iri: String,
-    pub label: String,
-    pub identity: Option<String>,
-}
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OntologyProperty {
-    pub iri: String,
-    pub label: String,
-    pub property: String,
-}
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OntologyRelationship {
-    pub iri: String,
-    pub label: String,
-    pub source_label: String,
-    pub target_label: String,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -588,76 +543,6 @@ fn register_tables(
     Ok(schemas)
 }
 
-fn configure_rdf(
-    request: &CompileRequest,
-    mapping: &mut GraphMapping,
-    schemas: &BTreeMap<String, Arc<Schema>>,
-) -> Result<(), String> {
-    for rule in &request.rdf {
-        mapping.map_rdf(rule.clone());
-    }
-    if !request.rdf_sources.is_empty() || request.rdf_graph_names.is_some() {
-        let mut rdf = mapping.rdf_mapping();
-        for source in &request.rdf_sources {
-            if !schemas.contains_key(&source.table) {
-                return Err(format!(
-                    "RDF source table `{}` is not registered",
-                    source.table
-                ));
-            }
-            rdf.map_typed_quads(&request.dataset, source.clone());
-        }
-        if let Some(names) = &request.rdf_graph_names {
-            let schema = schemas
-                .get(&names.table)
-                .ok_or("RDF graph-name table is not registered")?;
-            schema
-                .field_with_name(&names.column)
-                .map_err(|e| e.to_string())?;
-            if names.writable {
-                rdf.map_writable_named_graphs(&request.dataset, &names.table, &names.column);
-            } else {
-                rdf.map_named_graphs(&request.dataset, &names.table, &names.column);
-            }
-        }
-        *mapping = std::mem::take(mapping).with_rdf_mapping(rdf);
-    }
-    let mut o = crate::language::sparql::OntologyMapping::new();
-    for c in &request.ontology.classes {
-        o = match &c.identity {
-            Some(id) => o.class_with_identity(&c.iri, &c.label, id),
-            None => o.class(&c.iri, &c.label),
-        };
-    }
-    for p in &request.ontology.properties {
-        o = o.property(&p.iri, &p.label, &p.property);
-    }
-    for r in &request.ontology.relationships {
-        o = o.relationship_between(
-            &r.iri,
-            &r.label,
-            crate::ir::plan::Direction::Out,
-            &r.source_label,
-            &r.target_label,
-        );
-    }
-    o.apply_to(mapping, &request.dataset)?;
-    Ok(())
-}
-
-/// Bind the same RDF source declarations for a host-owned update session.
-pub fn rdf_mapping(
-    request: &CompileRequest,
-) -> Result<crate::ir::rel::rdf::RdfDatasetMapping, String> {
-    if request.version != 1 {
-        return Err("unsupported compiler protocol version".into());
-    }
-    let mut mapping = GraphMapping::new();
-    let schemas = register_tables(request, &mut mapping)?;
-    configure_rdf(request, &mut mapping, &schemas)?;
-    Ok(mapping.rdf_mapping())
-}
-
 /// Preserve frontend error classifications without inferring types from text.
 pub fn cypher_diagnostic(
     request: &CompileRequest,
@@ -683,7 +568,7 @@ pub fn cypher_diagnostic(
 /// Compile a read query using only schema metadata. SQL is specialized to typed
 /// parameter values; caches must include the entire request, including values.
 pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
-    compile_parsed(resolve_catalog(request).await?, None).await
+    compile_parsed(resolve_catalog(request).await?).await
 }
 
 pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<CompileRequest, String> {
@@ -719,18 +604,6 @@ pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<Compi
     } else {
         Ok(request)
     }
-}
-
-/// Compile a parsed SPARQL query without a text round trip. Update datasets can
-/// distinguish unrestricted named graphs from the empty FROM NAMED set.
-pub async fn compile_sparql(
-    request: CompileRequest,
-    query: &crate::spargebra::Query,
-) -> Result<CompiledSql, String> {
-    if request.language != "sparql" {
-        return Err("Expected SPARQL compiler request".into());
-    }
-    compile_parsed(resolve_catalog(request).await?, Some(query)).await
 }
 
 /// Database-free frontend preparation shared by SQL-only and kernel hosts.
@@ -781,11 +654,10 @@ impl PreparedGraphBindings {
 }
 pub fn prepare_graph(request: &CompileRequest) -> Result<PreparedGraphQuery, String> {
     let context = request.rule_context.new_query();
-    prepare_graph_parsed(request, None, &context)
+    prepare_graph_parsed(request, &context)
 }
 fn prepare_graph_parsed(
     request: &CompileRequest,
-    sparql: Option<&crate::spargebra::Query>,
     context: &crate::ir::rules::RuleContext,
 ) -> Result<PreparedGraphQuery, String> {
     if request.catalog.is_some() {
@@ -794,9 +666,8 @@ fn prepare_graph_parsed(
     if request.version != 1 {
         return Err("unsupported compiler protocol version".into());
     }
-    if request.language != "gremlin" && !request.bindings.is_empty() {
-        return Err("typed bindings require the Gremlin language".into());
-    }
+    if request.language != "cypher" { return Err("Only Cypher is supported".into()); }
+    if !request.bindings.is_empty() { return Err("Use Cypher parameters instead of typed bindings".into()); }
     crate::federation::validate(&request)?;
     let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     let mut mapping = GraphMapping::new();
@@ -1032,8 +903,8 @@ fn prepare_graph_parsed(
             .unwrap_or_else(|| Arc::new(DeclaredCatalog(request.dialect.clone()))),
     );
     for f in &request.functions {
-        if f.local && request.engine.is_none() {
-            return Err("local UDFs require explicit engine none or duckdb and source bindings".into());
+        if f.local && !request.uses_source_plan() {
+            return Err("local UDFs require source execution bindings".into());
         }
         if f.local && f.aggregate {
             return Err("local aggregate functions require an explicit batch pipeline".into());
@@ -1065,7 +936,6 @@ fn prepare_graph_parsed(
         .iter()
         .map(|(k, v)| Ok((k.clone(), parameter(v)?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
-    configure_rdf(&request, &mut mapping, &schemas)?;
     crate::catalog::lowering::install(
         &mut mapping,
         &request.cypher_relationships,
@@ -1083,35 +953,6 @@ fn prepare_graph_parsed(
                 request.native_values,
             )
             .map_err(|e| e.to_string())?,
-            "gremlin" => {
-                if !parameters.is_empty() {
-                    return Err("bindings are currently supported only for Cypher".into());
-                }
-                let bindings = crate::language::gremlin::bindings::bindings(
-                    &serde_json::to_value(&request.bindings).map_err(|e| e.to_string())?,
-                )?;
-                let (source, values) =
-                    crate::language::gremlin::callables::prepare(&request.query, &bindings)
-                        .map_err(|e| e.to_string())?;
-                let parsed = crate::language::gremlin::parser::parse_traversal_with_bindings(
-                    &source, &values,
-                )
-                .map_err(|e| e.to_string())?;
-                crate::language::gremlin::planner::GremlinPlanner::new()
-                    .plan(&parsed)
-                    .map_err(|e| e.to_string())?
-            }
-            "sparql" => {
-                if !parameters.is_empty() {
-                    return Err("bindings are currently supported only for Cypher".into());
-                }
-                let planner = crate::language::sparql::SparqlPlanner::new(&request.dataset);
-                match sparql {
-                    Some(query) => planner.plan(query),
-                    None => planner.plan_str(&request.query),
-                }
-                .map_err(|e| e.to_string())?
-            }
             other => return Err(format!("unsupported query language `{other}`")),
         };
         Ok(plan)
@@ -1131,7 +972,6 @@ fn prepare_graph_parsed(
 
 async fn compile_parsed(
     mut request: CompileRequest,
-    sparql: Option<&crate::spargebra::Query>,
 ) -> Result<CompiledSql, String> {
     request.rule_context = request.rule_context.new_query();
     let PreparedGraphQuery {
@@ -1140,7 +980,7 @@ async fn compile_parsed(
         mapping,
         operators,
         managed_table,
-    } = prepare_graph_parsed(&request, sparql, &request.rule_context)?;
+    } = prepare_graph_parsed(&request, &request.rule_context)?;
     if managed_table.is_some() {
         return Err("Managed graph queries require the host compiled-kernel adapter".into());
     }
@@ -1198,46 +1038,6 @@ async fn compile_parsed(
         crate::ir::rel::pipeline::relational(lowered.plan.clone(), &lowered.rule_context, false)
             .map_err(|e| e.to_string())?;
     lowered.plan = optimized;
-    if request.language == "sparql"
-        && request.rdf.is_empty()
-        && request.rdf_sources.is_empty()
-        && !lowered.fields.is_empty()
-        && lowered.plan.schema().fields().len() > lowered.fields.len()
-    {
-        let legacy_types = lowered
-            .fields
-            .iter()
-            .filter_map(|name| {
-                let dt = crate::ir::rel::rdf::binding_identity_columns(name)[1].clone();
-                let iri = constant_string_column(&lowered.plan, &dt)?;
-                Some((
-                    name.clone(),
-                    crate::ir::rel::rdf_mapping::legacy_scalar_type(&iri)?,
-                ))
-            })
-            .collect::<BTreeMap<_, _>>();
-        // Preserve the legacy compiler's visible-column result contract.
-        lowered.plan = datafusion::logical_expr::LogicalPlanBuilder::from(lowered.plan)
-            .project(
-                lowered
-                    .fields
-                    .iter()
-                    .map(|name| {
-                        let value = Expr::Column(datafusion::common::Column::from_name(name));
-                        match legacy_types.get(name) {
-                            Some(kind) => Expr::Cast(datafusion::logical_expr::Cast::new(
-                                Box::new(value),
-                                kind.clone(),
-                            ))
-                            .alias(name),
-                            None => value,
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .and_then(|p| p.build())
-            .map_err(|e| e.to_string())?;
-    }
     let selected = crate::ir::rel::pipeline::placement(lowered.plan, &lowered.rule_context)
         .map_err(|e| e.to_string())?;
     let (optimized, mut optimizer_decisions) =
@@ -1268,8 +1068,8 @@ async fn compile_parsed(
     lowered.plan = crate::ir::rel::search::bind_seeds(lowered.plan).map_err(|e| e.to_string())?;
     lowered.plan =
         crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e| e.to_string())?;
-    let execution_plan = request.engine
-        .map(|engine| crate::execution::plan::build(&request, &lowered.plan, engine))
+    let execution_plan = request.uses_source_plan()
+        .then(|| crate::execution::plan::build(&request, &lowered.plan))
         .transpose()?;
     let (plan, transfers) = if execution_plan.is_some() {
         (lowered.plan, vec![])
@@ -1472,41 +1272,6 @@ pub async fn compile_json(input: &str) -> Result<String, String> {
     serde_json::to_string(&compile(request).await?).map_err(|e| e.to_string())
 }
 
-fn constant_string_column(plan: &LogicalPlan, name: &str) -> Option<String> {
-    fn expression(expr: &Expr, input: &LogicalPlan) -> Option<String> {
-        match expr {
-            Expr::Alias(alias) => expression(&alias.expr, input),
-            Expr::Literal(datafusion::common::ScalarValue::Utf8(Some(value)), _) => {
-                Some(value.clone())
-            }
-            Expr::Column(column) => constant_string_column(input, &column.name),
-            _ => None,
-        }
-    }
-    if let LogicalPlan::Projection(projection) = plan {
-        let index = projection
-            .schema
-            .fields()
-            .iter()
-            .position(|field| field.name() == name)?;
-        return expression(&projection.expr[index], &projection.input);
-    }
-    let inputs = plan
-        .inputs()
-        .into_iter()
-        .filter(|input| input.schema().has_column_with_unqualified_name(name))
-        .collect::<Vec<_>>();
-    let mut values = inputs
-        .iter()
-        .map(|input| constant_string_column(input, name));
-    let first = values.next()??;
-    values
-        .all(|value| value.as_ref() == Some(&first))
-        .then_some(first)
-}
-
-#[cfg(all(test, feature = "weaviate"))]
-mod vector_lowering_tests;
 
 #[cfg(test)]
 mod rule_context_lifetime_tests {

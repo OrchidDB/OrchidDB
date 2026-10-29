@@ -50,7 +50,7 @@ class LinuxWrapperTests(unittest.TestCase):
                     exec(program, {})
                 self.assertEqual(calls, [('/existing/host.so', {'mode': 256})])
                 self.assertIn("quote''d", queries[0])
-                self.assertEqual(json.loads(queries[1].split("'release','", 1)[1][:-2]), {'tables': []})
+                self.assertEqual(queries[1], "SELECT __orchiddb_cypher_to_float_v1('42')")
                 engine.__version__ = '1.5.2'
                 with patch.dict(sys.modules, modules), patch.object(sys, 'argv', argv), self.assertRaises(AssertionError):
                     exec(program, {})

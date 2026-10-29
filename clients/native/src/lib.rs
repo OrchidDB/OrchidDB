@@ -40,12 +40,6 @@ fn dispatch(input: String, operation: u8) -> Result<serde_json::Value, String> {
     runtime.spawn(async move {
         let result = match operation {
             1 => orchiddb::ir::rel::statistics::command(&input).await,
-            2 => {
-                #[cfg(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki"))]
-                { orchiddb::remote::transport::command(&input).await }
-                #[cfg(not(any(feature = "quickwit", feature = "elasticsearch", feature = "weaviate", feature = "prometheus", feature = "loki")))]
-                { Err("remote engine support is disabled".into()) }
-            },
             _ => orchiddb::compiler::compile_json(&input).await,
         };
         let _ = sender.send(result);
@@ -114,15 +108,6 @@ pub unsafe extern "C" fn orchiddb_bind_arrow_json(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn orchiddb_statistics_json(input: *const c_char) -> *mut c_char {
     unsafe { invoke_json(input, 1) }
-}
-
-/// Open, execute, or close an explicitly requested remote HTTP session.
-/// # Safety
-/// Input must be null or a valid NUL-terminated UTF-8 string. Free the response
-/// using orchiddb_string_free. Unlike the execution preparation command, execute performs network I/O.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn orchiddb_remote_json(input: *const c_char) -> *mut c_char {
-    unsafe { invoke_json(input, 2) }
 }
 
 unsafe fn invoke_json(input: *const c_char, operation: u8) -> *mut c_char {

@@ -22,7 +22,7 @@ impl ExecutableEngine {
     pub fn parse(name: &str) -> Result<Self, String> {
         match name {
             "duckdb" => Ok(Self::DuckDb),
-            "trino" => Err("Trino is a source; register it under sources and select engine none or duckdb".into()),
+            "trino" => Err("Trino is a source; register it under sources; DuckDB owns completion".into()),
             _ => Err(format!(
                 "unsupported executable engine {name:?}; expected duckdb"
             )),

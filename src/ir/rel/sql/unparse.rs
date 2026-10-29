@@ -1,4 +1,7 @@
 //! Unparse for SQL execution.
+//!
+//! SQL audit [L28](../../../../tools/diagnostics/sql-lowering-audit.md#l28-sql-preparation-and-cleanup-sequence): This ordered sequence is part of the lowering contract: demand can
+//! expose late integrity proofs, while cleanup must preserve evaluation and scope.
 
 use super::*;
 
@@ -14,7 +17,18 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
 pub(crate) fn unparse_plan_with_context(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect, context))
 }
+// Preparation owns semantic validation, placement, demand, and scope repair.
+// Emission consumes its result without making independent eligibility decisions.
+// Both source regions and host completion enter through this contract, carrying
+// the statement's RuleContext rather than constructing a fresh rule session.
+enum PreparedRegion {
+    Compact(String),
+    Relational(LogicalPlan),
+}
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<String> {
+    emit_prepared(prepare_region(plan, dialect, context)?, dialect)
+}
+fn prepare_region(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::rules::RuleContext) -> SqlResult<PreparedRegion> {
     // Resolve declared argument types only after the source dialect is known.
     // Keep the complete Arrow type in the UDF, rather than serializing it into
     // a default-engine SQL spelling during language lowering.
@@ -26,7 +40,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
     // semantic and capability validation as the ordinary emitter.
     if let Some(sql) = super::compact_unwind::emit(&plan, dialect)? {
         context.record_selection("adapter.compact_unwind", "selected-language-contract", "eligible typed VALUES/UNNEST shape");
-        return Ok(sql);
+        return Ok(PreparedRegion::Compact(sql));
     }
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
     let plan = super::lowering::transform_relations(plan, dialect)?;
@@ -176,6 +190,39 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect, context: &crate::i
         Ok(Transformed::no(LogicalPlan::Join(join)))
     })?.data;
     let plan = super::correlation::preserve_scopes(plan)?;
+    Ok(PreparedRegion::Relational(plan))
+}
+fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<String> {
+    let plan = match region {
+        PreparedRegion::Compact(sql) => return Ok(sql),
+        PreparedRegion::Relational(plan) => plan,
+    };
+    // WHERE belongs outside an earlier LIMIT. The upstream unparser can merge
+    // these clauses into one SELECT, filtering before selecting the top rows.
+    // Introduce a SQL block after optimization so this semantic fence survives.
+    let mut limit_scope = 0;
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Filter(mut filter) = node else { return Ok(Transformed::no(node)); };
+        if matches!(filter.input.as_ref(), LogicalPlan::Limit(_)) {
+            limit_scope += 1;
+            filter.input = Arc::new(sort_scope(filter.input.as_ref().clone(),
+                format!("__w_sql_cte_limit_filter_{limit_scope}"))?);
+            return Ok(Transformed::yes(LogicalPlan::Filter(filter)));
+        }
+        Ok(Transformed::no(LogicalPlan::Filter(filter)))
+    })?.data;
+    // A sorted join needs an explicit SELECT list. DF's unparser otherwise
+    // inherits the right relation's projection and drops visible left fields
+    // when it wraps ORDER BY in a derived query (composed table procedures).
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Sort(mut sort) = node else { return Ok(Transformed::no(node)); };
+        if !matches!(sort.input.as_ref(), LogicalPlan::Join(_)) {
+            return Ok(Transformed::no(LogicalPlan::Sort(sort)));
+        }
+        sort.input = Arc::new(datafusion::logical_expr::LogicalPlanBuilder::from(sort.input.as_ref().clone())
+            .project(sort.input.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>())?.build()?);
+        Ok(Transformed::yes(LogicalPlan::Sort(sort)))
+    })?.data;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
     Ok(apply_identifier_repairs(sql, &repairs))
@@ -929,10 +976,8 @@ fn validate_portable_calls(plan: &LogicalPlan, dialect: SqlDialect) -> SqlResult
             }
             if let Expr::ScalarFunction(call) = expr {
                 if let Some(f) = crate::ir::functions::logical::definition(&call.func).filter(|f| f.portable_builtin) {
-                    if matches!(dialect, SqlDialect::Custom(adapter) if adapter.function_mapping(f.logical_name()).is_some()) {
-                        return Ok(TreeNodeRecursion::Continue);
-                    }
-                    if !f.has_sql_mapping(dialect.name(), call.args.len()) {
+                    let adapter_mapping = matches!(dialect, SqlDialect::Custom(adapter) if adapter.function_mapping(f.logical_name()).is_some());
+                    if !adapter_mapping && !f.has_sql_mapping(dialect.name(), call.args.len()) {
                         return Err(DataFusionError::Plan(format!("{} has no {} mapping for {} arguments: {}", f.logical_name(), dialect.name(), call.args.len(), crate::ir::functions::portable::audit_note(f.logical_name(), dialect.name()))));
                     }
                     crate::ir::functions::portable::validate_call(f.logical_name(), &call.args, &schema, dialect.name())
@@ -948,6 +993,7 @@ fn validate_portable_calls(plan: &LogicalPlan, dialect: SqlDialect) -> SqlResult
 
 fn specialize_portable_calls(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
     use datafusion::logical_expr::expr_rewriter::NamePreserver;
+    use datafusion::logical_expr::ExprSchemable;
     Ok(plan.transform_up_with_subqueries(|node| {
         let names = NamePreserver::new(&node);
         let mut schema = datafusion::common::DFSchema::empty();
@@ -968,12 +1014,12 @@ fn specialize_portable_calls(plan: LogicalPlan, dialect: SqlDialect) -> SqlResul
                             .expect("native structured function has a portable adapter");
                         let f = crate::ir::functions::logical::definition(&portable).unwrap();
                         let value = crate::ir::functions::portable::structured::mapping(f.logical_name(), &call.args, &schema, true)?;
-                        return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).into_udf().call(call.args.clone())));
+                        return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).with_result_type(expr.get_type(&schema)?).into_udf().call(call.args.clone())));
                     }
                     if let Some(f) = crate::ir::functions::logical::definition(&call.func).filter(|f| f.portable_builtin) {
                         if crate::ir::functions::portable::structured::handles(f.logical_name()) && !matches!(dialect, SqlDialect::Custom(_)) {
                             let value = crate::ir::functions::portable::structured::mapping(f.logical_name(), &call.args, &schema, dialect == SqlDialect::Postgres)?;
-                            return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).into_udf().call(call.args.clone())));
+                            return Ok(Transformed::yes(f.specialized(dialect.name(), call.args.len(), value).with_result_type(expr.get_type(&schema)?).into_udf().call(call.args.clone())));
                         }
                     }
                 }

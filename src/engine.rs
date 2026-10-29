@@ -5,13 +5,11 @@
 //! regions and explicit graph boundaries. No DataFusion executor runs queries.
 
 mod mapped_storage;
-mod rdf;
 pub(crate) mod mapped_source;
 mod snapshot;
 mod checkpoint;
 pub use snapshot::CypherStateSnapshot;
 pub use checkpoint::ManagedGraphCheckpoint;
-pub use crate::rdf_engine::{RdfTermValue, SparqlResults};
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -29,7 +27,7 @@ use crate::ir::runtime::ReturnedBatches;
 use crate::ir::plan::GraphPlan;
 use crate::ir::rel::{RelBackend, sql};
 use crate::ir::value::Value;
-use crate::language::{cypher, gremlin, sparql};
+use crate::language::cypher;
 use crate::storage::{decode_graph, encode_graph};
 
 pub type EngineResult<T> = Result<T, String>;
@@ -694,33 +692,11 @@ impl GraphEngine {
         self.execute_plan(&plan).await
     }
 
-    pub async fn gremlin(&mut self, query: &str) -> EngineResult<QueryResult> {
-        self.gremlin_with_bindings(query, &std::collections::HashMap::new()).await
-    }
 
-    pub async fn gremlin_with_bindings(
-        &mut self, query: &str,
-        bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>,
-    ) -> EngineResult<QueryResult> {
-        let plan = plan_gremlin(query, bindings)?;
-        self.execute_plan(&plan).await
-    }
 
-    pub async fn sparql(
-        &mut self,
-        query: &str,
-        ontology: sparql::OntologyMapping,
-    ) -> EngineResult<QueryResult> {
-        if let Some(mapping)=&self.mapping {
-            let mut mapping=(**mapping).clone();
-            ontology.apply_to(&mut mapping,"default")?;
-            let mut result=self.run_rdf(query,"default",None,false,Some(Arc::new(mapping.rdf_mapping()))).await?.ok_or("missing SPARQL result")?;
-            result.returned=crate::rdf_engine::legacy_columns(result.returned)?;
-            return Ok(result);
-        }
-        let plan = plan_sparql(query, ontology)?;
-        self.execute_plan(&plan).await
-    }
+
+
+
 
     async fn execute_dag(&mut self, plan: &GraphPlan) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
         // Long clause chains create deep logical DAGs. Give each synchronous
@@ -865,11 +841,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
     session.region_session = region_session;
     session.set_rule_context(rule_context);
     let result: Result<_, QueryExecutionError> = async {
-        let rdf=mapping.rdf_mapping();
-        if crate::ir::rel::sparql::handles(plan) {
-            let mut context=crate::rdf_engine::RdfSession {resources:&session,mapping:Arc::new(rdf),dataset:"default".into(),scalar_registered:false,last_query_stats:None};
-            return context.execute_plan(plan).await.map_err(Into::into);
-        }
+
         if contains_mutation(&plan.root) { mapping.validate_partitioned_writes()?; }
         let mut graph = mapped_source::attach_for_query(session.shared_executor(), mapping.clone(), plan)?;
         graph.procedures = procedures;
@@ -915,20 +887,9 @@ pub(crate) fn plan_cypher(query: &str, parameters: &BTreeMap<String, Value>, cat
         cypher::preparation::prepare(query, parameters, Some(catalog)).map_err(|e| e.to_string())
 }
 
-pub(crate) fn plan_gremlin(query: &str, bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>) -> EngineResult<GraphPlan> {
-        let (source, values) = gremlin::callables::prepare(query, bindings).map_err(|e| e.to_string())?;
-        let parsed = gremlin::parse_traversal_with_bindings(&source, &values).map_err(|e| e.to_string())?;
-        gremlin::GremlinPlanner::new()
-            .plan(&parsed)
-            .map_err(|e| e.to_string())
-}
 
-pub(crate) fn plan_sparql(query: &str, ontology: sparql::OntologyMapping) -> EngineResult<GraphPlan> {
-        sparql::SparqlPlanner::default()
-            .with_ontology(ontology)
-            .plan_str(query)
-            .map_err(|e| e.to_string())
-}
+
+
 
 async fn execute_graph_dag(plan: &GraphPlan, graph: &PropertyGraph, timeout: Option<Duration>, session: Option<&crate::ir::rel::dag::DagSession>, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
     let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(plan, graph, timeout, session, jvm_workers));

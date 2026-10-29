@@ -60,7 +60,11 @@ pub(crate) fn quantifier_value(
                     match eval(predicate, &item_row, graph)? {
                         Value::Bool(true) => matches_count += 1,
                         Value::Null => null_count += 1,
-                        _ => {}
+                        Value::Bool(false) => {},
+                        _ => return Err(crate::ir::RuntimeError::Diagnosed {
+                            code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+                            message: "Cypher quantifier predicate requires a Boolean or null".into(),
+                        }),
                     }
                 }
             }

@@ -5,6 +5,9 @@
 //! scans in the main plan, unparse every component independently, and add the
 //! small wrapper the upstream unparser does not provide. The same mechanism
 //! preserves explicitly marked aggregate and join scope barriers.
+//!
+//! SQL audit [L29](../../../../tools/diagnostics/sql-lowering-audit.md#l29-ctes-and-scope-preservation): CTEs preserve recursive layouts and explicit scopes; only selected
+//! DuckDB/PostgreSQL boundaries request materialization. Do not hoist free correlation.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;

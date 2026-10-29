@@ -5,7 +5,6 @@
 //! native implementation; SQL-only compilation rejects them rather than guessing.
 mod arrays;
 mod runtime;
-mod starrocks;
 pub(crate) use runtime::call as runtime_call;
 mod audit;
 pub use audit::audit_note;
@@ -35,10 +34,11 @@ pub struct ScalarCapability {
     pub volatility: datafusion::logical_expr::Volatility,
     pub duckdb: bool,
     pub postgres: bool,
-    pub starrocks: bool,
+    pub trino: bool,
     /// Reviewed scope or the concrete reason SQL execution remains native.
     pub duckdb_note: &'static str,
     pub postgres_note: &'static str,
+    pub trino_note: &'static str,
 }
 
 struct Catalog {
@@ -60,7 +60,7 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
             .map(|a| format!("fn.{a}"))
             .collect::<Vec<_>>();
         if native.name() == "contains" { aliases.push("fn.contains_fn".into()); }
-        let sql = ["duckdb", "postgres", "starrocks"]
+        let sql = ["duckdb", "postgres"]
             .into_iter()
             .filter_map(|dialect| {
                 mapping(native.name(), dialect).map(|value| {
@@ -76,7 +76,7 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
             .collect::<BTreeMap<_, _>>();
         let mut definition = LogicalFunction::new(&name, native.clone(), sql);
         definition.portable_builtin = true;
-        for dialect in ["duckdb", "postgres", "starrocks"] {
+        for dialect in ["duckdb", "postgres"] {
             // Encoding has a literal format and a known Arrow input type.
             // Specialize it instead of emitting correlated runtime type tests.
             if native.name() == "encode" && matches!(dialect, "duckdb" | "postgres") { continue; }
@@ -95,12 +95,16 @@ static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
         capabilities.push(ScalarCapability {
             name: name.clone(),
             preparation: resolves_in_preparation(native.name()),
+            trino: resolves_in_preparation(native.name()) || crate::ir::rel::sql::DialectAdapter::function_mapping(
+                &crate::ir::rel::sql::trino::TRINO, &name).is_some(),
+            trino_note: if resolves_in_preparation(native.name()) { "Resolved during typed preparation" }
+                else if crate::ir::rel::sql::DialectAdapter::function_mapping(&crate::ir::rel::sql::trino::TRINO, &name).is_some() {
+                    "Adapter mapping available; typed arguments and arity must pass validation"
+                } else { "No Trino mapping; requires DuckDB completion" },
             duckdb_note: audit_note(native.name(), "duckdb"),
             postgres_note: audit_note(native.name(), "postgres"),
             aliases: aliases.clone(),
             volatility: native.signature().volatility,
-            starrocks: definition.sql.contains_key("starrocks")
-                || definition.sql_overloads.keys().any(|(d, _)| d == "starrocks"),
             duckdb: structured::handles(native.name())
                 || resolves_in_preparation(native.name())
                 || definition.sql.contains_key("duckdb")
@@ -149,7 +153,6 @@ fn unary(body: &str) -> String {
 }
 
 fn mapping(name: &str, dialect: &str) -> Option<String> {
-    if dialect == "starrocks" { return starrocks::mapping(name); }
     let pg = dialect == "postgres";
     let unary = |body: &str| bind_unary(body, pg);
     let double = if pg { "DOUBLE PRECISION" } else { "DOUBLE" };
@@ -202,7 +205,6 @@ fn mapping(name: &str, dialect: &str) -> Option<String> {
 }
 
 fn overload(name: &str, dialect: &str, arity: usize) -> Option<String> {
-    if dialect == "starrocks" { return starrocks::overload(name, arity); }
     Some(match (name, arity) {
         ("concat", 0) => "''".into(),
         ("btrim" | "ltrim" | "rtrim", 1 | 2) => {

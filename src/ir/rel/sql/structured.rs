@@ -1,5 +1,8 @@
 //! Schema-directed structured transport. PostgreSQL uses JSONB with textual
 //! leaves; DuckDB uses native values. Both restore the original Arrow schema.
+//!
+//! SQL audit [L30](../../../../tools/diagnostics/sql-lowering-audit.md#l30-dialect-types-and-lossless-result-transport): These codecs preserve Arrow values, not language equality or ordering.
+//! Never remove representation casts based only on their appearance in generated SQL.
 use super::*;
 use serde_json::{Value, json};
 pub(super) fn is_structured(ty: &DataType) -> bool {

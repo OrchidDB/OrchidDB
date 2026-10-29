@@ -4,7 +4,7 @@ version = "0.5.1"
 edition = "2024"
 publish = false
 license = "GPL-3.0-only"
-description = "Internal OrchidDB runtime ABI for language clients"
+description = "Internal OrchidDB C ABI for Go"
 repository = "https://github.com/OrchidDB/OrchidDB"
 
 [lib]
@@ -18,11 +18,6 @@ arrow = { version = "58.2.0", default-features = false, features = ["ffi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
-prometheus = ["orchiddb/prometheus"]
-loki = ["orchiddb/loki"]
 kafka = ["orchiddb/kafka"]
-weaviate = ["orchiddb/weaviate"]
 orchid-catalog = ["orchiddb/orchid-catalog"]
-default = ["prometheus", "loki", "kafka", "quickwit", "elasticsearch", "weaviate", "orchid-catalog"]
-quickwit = ["orchiddb/quickwit"]
-elasticsearch = ["orchiddb/elasticsearch"]
+default = []

@@ -3,12 +3,16 @@
 //! The primary lowering uses a recursive CTE and therefore has no implicit
 //! depth cap. Bounded unrolling remains as a compatibility fallback for plan
 //! shapes that cannot safely be expressed by the recursive lowering.
+//!
+//! SQL audit [L05](../../../tools/diagnostics/sql-lowering-audit.md#l05-variable-paths-and-payload-demand): Recursive construction and bounded unrolling are compile-time choices.
+//! Backend recursion limits never authorize silently truncating an unbounded path.
 
 use datafusion::datasource::cte_worktable::CteWorkTable;
 use datafusion::datasource::provider_as_source;
 use datafusion::logical_expr::expr::Case;
 
 use super::*;
+use super::apply::with_row_identity;
 
 const VARLEN_UNROLL_CAP: u32 = 6;
 const WORK_CUR_ID: &str = "__w_cur_id";
@@ -45,6 +49,14 @@ impl LoweringContext<'_> {
                 projection.push(Self::empty_relationship_history().alias(history));
                 let plan = LogicalPlanBuilder::from(input.plan.clone()).project(projection)?.build()?;
                 input = input.with_plan(plan);
+            } else if native_values::is_value(&col_exact(history).get_type(input.plan.schema())?) {
+                // SQL reentry transports a dynamic trail as one opaque cell.
+                // Normalize it before both seed and recursive branches, so a
+                // zero-hop branch cannot UNION an opaque cell with a list.
+                let mut projection = existing_columns(&input.plan, &BTreeSet::from([history.to_owned()]));
+                projection.push(native_values::typed::call("list", vec![col_exact(history)]).alias(history));
+                let plan = LogicalPlanBuilder::from(input.plan.clone()).project(projection)?.build()?;
+                input = input.with_plan(plan);
             }
         }
         if has_binding_shape(&input.plan, source).is_none() {
@@ -64,6 +76,7 @@ impl LoweringContext<'_> {
             dir,
             length,
             history,
+            false,
         );
         match recursive {
             Ok(lowered) => Ok(lowered),
@@ -105,6 +118,7 @@ impl LoweringContext<'_> {
         dir: Direction,
         length: &crate::ir::plan::Length,
         history: Option<&str>,
+        stop_at_target: bool,
     ) -> RelResult<LoweredNode> {
         // Gremlin path values have a different rendering contract. Traversals
         // that do not expose the relationship binding still use recursion.
@@ -114,7 +128,21 @@ impl LoweringContext<'_> {
             ));
         }
 
-        self.scan_counter += 1;
+        // Reentry may compose independently lowered recursive regions. Reserve
+        // their work-table names before introducing another positional scope.
+        let mut names = BTreeSet::new();
+        input.plan.apply_with_subqueries(|node| {
+            match node {
+                LogicalPlan::RecursiveQuery(query) => { names.insert(query.name.clone()); },
+                LogicalPlan::TableScan(scan) => { names.insert(scan.table_name.to_string()); },
+                _ => {},
+            }
+            Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+        })?;
+        loop {
+            self.scan_counter += 1;
+            if !names.contains(&format!("__graph_varlen_{}", self.scan_counter)) { break; }
+        }
         let uniq = self.scan_counter;
         let cte_name = format!("__graph_varlen_{uniq}");
         let edge_binding = format!("__w_edge_{uniq}");
@@ -178,6 +206,12 @@ impl LoweringContext<'_> {
         let mut recursive_input =
             LogicalPlanBuilder::scan(&cte_name, provider_as_source(work_table), None)?.build()?;
 
+        if stop_at_target && target_mode == TargetMode::Existing {
+            let reached = identity_compare(&[&recursive_input], WORK_CUR_ID, BinaryOp::Eq, &id_col(target))
+                .and(col_exact(WORK_CUR_LABEL).eq(col_exact(label_col(target))));
+            recursive_input = LogicalPlanBuilder::from(recursive_input).filter(Expr::Not(Box::new(reached)))?.build()?;
+        }
+
         // A bounded query can stop producing work as soon as its upper bound
         // is reached. Unbounded queries terminate solely through trail
         // semantics: every iteration consumes a previously unused edge.
@@ -233,6 +267,9 @@ impl LoweringContext<'_> {
             Self::relationship_key(&edge_scan.plan, &edge_binding),
             lit(","),
         ]) };
+        let edge_key = if matches!(col_exact(WORK_TRAIL).get_type(recursive_joined.schema())?, DataType::List(field) if native_values::is_value(field.data_type())) {
+            native_values::typed::call("pack", vec![edge_key])
+        } else { edge_key };
         let unused = if history.is_some() {
             Expr::Not(Box::new(datafusion::functions_nested::expr_fn::array_has(col_exact(WORK_TRAIL), edge_key.clone())))
         } else {
@@ -493,6 +530,54 @@ impl LoweringContext<'_> {
             fields: input.fields,
             result_form: input.result_form,
         })
+    }
+
+    /// Shortest paths share the finite, edge-unique recursive relation with
+    /// variable expansion. Selection is per input *occurrence* and destination;
+    /// duplicate input rows and equal-length ties must not collapse together.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn lower_shortest_path(
+        &mut self, input: &Node, source: &str, target: Option<&str>,
+        direction: Direction, rel_types: &LabelExpr, max_distance: Option<f64>,
+        include_edges: bool, output: &str, all_paths: bool,
+    ) -> RelResult<LoweredNode> {
+        if !self.options.native_values {
+            return Err(RelError::Unsupported("shortest paths require typed path values".into()));
+        }
+        let input = self.lower_node(input)?;
+        let original = output_fields(&input.plan);
+        let labels = self.mapped_endpoint_labels(&LabelExpr::Any, rel_types, Direction::Both)?;
+        let mut input = self.bind_native_node_with_labels(input, source, &labels)?;
+        if let Some(target) = target { input = self.bind_native_node_with_labels(input, target, &labels)?; }
+        if max_distance.is_some_and(|bound| bound < 0.0) {
+            input.plan = LogicalPlanBuilder::from(input.plan).filter(lit(false))?.build()?;
+        }
+        self.scan_counter += 1;
+        let serial = self.scan_counter;
+        let mut keys = Vec::new();
+        input.plan = with_row_identity(input.plan, &mut keys, &mut BTreeSet::new(), serial)?;
+        let destination = target.map(str::to_owned).unwrap_or_else(|| format!("__shortest_target_{serial}"));
+        let path = format!("__shortest_path_{serial}");
+        let max = max_distance.filter(|n| n.is_finite() && *n <= f64::from(u32::MAX))
+            .map(|n| n.max(0.0).floor() as u32);
+        let mut expanded = self.lower_expand_varlen_recursive(input, source, &destination,
+            if target.is_some() { TargetMode::Existing } else { TargetMode::BindNew },
+            &labels, Some(&path), rel_types, direction,
+            &crate::ir::plan::Length { min: 0, max }, None, true)?;
+        keys.extend([id_col(&destination), label_col(&destination)]);
+        let ordering = col_exact(path_len_col(&path)).sort(true, false);
+        let rank = if all_paths { df_window::rank() } else { df_window::row_number() }
+            .partition_by(keys.iter().map(col_exact).collect())
+            .order_by(vec![ordering]).build()?.alias("__shortest_rank");
+        expanded.plan = LogicalPlanBuilder::from(expanded.plan).window(vec![rank])?
+            .filter(col_exact("__shortest_rank").eq(lit(1_u64)))?.build()?;
+        let mut projection = original.iter().filter(|name| name.as_str() != output)
+            .map(col_exact).collect::<Vec<_>>();
+        let value = if include_edges { col_exact(&path) }
+            else { native_values::typed::call("node_path", vec![col_exact(&path)]) };
+        projection.push(value.alias(output));
+        expanded.plan = LogicalPlanBuilder::from(expanded.plan).project(projection)?.build()?;
+        Ok(expanded)
     }
 
     /// Compatibility implementation for bounded plans the recursive lowering

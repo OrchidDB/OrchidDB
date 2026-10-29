@@ -6,12 +6,10 @@ use orchiddb::{
         plan::GraphPlan,
         rel::{
             mapping::{GraphMapping, NodeMapping},
-            rdf::RdfDatasetMapping,
         },
     },
     language::{
         cypher::{parse_query, planner::CypherPlanner},
-        sparql::SparqlPlanner,
     },
 };
 use std::{sync::Arc, time::Instant};
@@ -34,7 +32,7 @@ fn values(result: &QueryResult) -> Vec<Vec<String>> {
 async fn main() {
     let connection = duckdb::Connection::open_in_memory().unwrap();
     connection.execute_batch("SET threads=1; CREATE TABLE people AS SELECT i::BIGINT AS id, (i % 100)::BIGINT AS x, ' hello 😀 '::VARCHAR AS name FROM range(10000) t(i)").unwrap();
-    let mut mapping = GraphMapping::new().with_rdf_mapping(RdfDatasetMapping::new());
+    let mut mapping = GraphMapping::new();
     mapping
         .register_table_schema(
             "people",
@@ -54,38 +52,9 @@ async fn main() {
     for (language, query) in [
         ("cypher", "MATCH (p:P) RETURN p.x, count(*)"),
         ("cypher", "MATCH (p:P) RETURN count(DISTINCT p.x)"),
-        ("gremlin", "g.V().values('name').toUpper().trim()"),
-        (
-            "sparql",
-            "SELECT (ENCODE_FOR_URI(?v) AS ?x) WHERE { VALUES ?v { \"a b\" \"é\" } }",
-        ),
+        ("cypher", "MATCH (p:P) RETURN trim(toUpper(p.name))"),
     ] {
-        let plan: GraphPlan = match language {
-            "cypher" => CypherPlanner::new()
-                .plan(&parse_query(query).unwrap())
-                .unwrap(),
-            "sparql" => SparqlPlanner::new("default").plan_str(query).unwrap(),
-            _ => {
-                // Use the engine parser while collecting the same public stats.
-                engine.set_language_functions(false).unwrap();
-                let before = engine.gremlin(query).await.unwrap();
-                engine.set_language_functions(true).unwrap();
-                let after = engine.gremlin(query).await.unwrap();
-                assert_eq!(values(&before), values(&after));
-                let mut timings = [Vec::new(), Vec::new()];
-                for enabled in [false, true] {
-                    engine.set_language_functions(enabled).unwrap();
-                    for _ in 0..5 {
-                        let t = Instant::now();
-                        let r = engine.gremlin(query).await.unwrap();
-                        timings[enabled as usize].push(t.elapsed().as_secs_f64() * 1000.0);
-                        assert_eq!(values(&before), values(&r));
-                    }
-                }
-                comparisons.push(report(language, query, &before, &after, timings));
-                continue;
-            }
-        };
+        let plan: GraphPlan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
         engine.set_language_functions(false).unwrap();
         let before = engine.execute_plan(&plan).await.unwrap();
         engine.set_language_functions(true).unwrap();

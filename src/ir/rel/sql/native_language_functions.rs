@@ -180,7 +180,7 @@ pub(super) fn register(connection: &Connection) -> duckdb::Result<()> {
             ),
         ),
     ] {
-        connection.execute_batch(&format!("CREATE MACRO {name}({args}) AS {body}"))?;
+        connection.execute_batch(&format!("CREATE OR REPLACE TEMP MACRO {name}({args}) AS {body}"))?;
     }
     Ok(())
 }

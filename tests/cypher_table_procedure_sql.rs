@@ -15,7 +15,7 @@ async fn sql_rows(query: &str, procedure: TableProcedure) -> Vec<Vec<String>> {
     let plan = orchiddb::language::cypher::preparation::prepare(query, &BTreeMap::new(), Some(&catalog)).unwrap();
     let lowered = RelBackend::new().with_language_functions(true).lower(&plan, &graph).unwrap();
     let mut executor = DuckDbExecutor::default();
-    let result = execute_lowered_sql(&mut executor, &lowered).await.unwrap();
+    let result = execute_lowered_sql(&mut executor, &lowered).await.unwrap_or_else(|error| panic!("{query}: {error}\n{}\n{}", lowered.plan.display_indent(), orchiddb::ir::rel::sql::unparse(&lowered, orchiddb::ir::rel::sql::SqlDialect::DuckDb).unwrap()));
     let batch = &result.batch;
     (0..batch.num_rows()).map(|row| batch.columns().iter().map(|column| {
         arrow::util::display::array_value_to_string(column, row).unwrap()

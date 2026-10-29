@@ -52,8 +52,7 @@ def linux_load_check(container, vendor, arch, extension):
         "ctypes.CDLL(_duckdb.__file__,mode=ctypes.RTLD_GLOBAL);"
         "db=duckdb.connect(config={'allow_unsigned_extensions':'true'});"
         "db.execute(\"LOAD '\"+sys.argv[2].replace(\"'\",\"''\")+\"'\");"
-        "db.execute(\"CALL orchid_register_schema('release','{\\\"tables\\\":[]}')\");"
-        "assert db.execute(\"SELECT * FROM orchid_query('release','RETURN 42 AS answer')\").fetchall()==[(42,)];"
+        "assert db.execute(\"SELECT __orchiddb_cypher_to_float_v1('42')\").fetchall()==[(42,)];"
         "print('Linux C++ host validation passed')"
     )
     run([*container, python, "-c", program, host, extension, VERSION.removeprefix("v")])
@@ -125,11 +124,11 @@ def main():
             raise SystemExit(f"Expected {VERSION}, found {duckdb_version}")
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT.parent / "target"))).resolve()
     profile = "release" if args.release else "debug"
-    archive = target / (args.rust_target or "") / profile / "liborchid_duckdb_compiler.a"
+    archive = target / (args.rust_target or "") / profile / "liborchiddb_duckdb_functions.a"
     if not args.skip_rust:
         env = dict(os.environ, CARGO_TARGET_DIR=str(target))
         env.setdefault("CARGO_BUILD_JOBS", "4")
-        run(["cargo", "build", "--locked", "--manifest-path", ROOT / "compiler/Cargo.toml"]
+        run(["cargo", "build", "--locked", "--manifest-path", ROOT / "functions/Cargo.toml"]
             + (["--target", args.rust_target] if args.rust_target else [])
             + (["--release"] if args.release else []), env=env)
     obj = build / "orchid_extension.o"

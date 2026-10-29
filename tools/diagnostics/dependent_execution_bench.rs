@@ -100,9 +100,7 @@ mod benchmark {
             "sql_executions": cost.sql_executions, "sql_output_rows": cost.sql_output_rows,
             "first_batch_micros": first_batch_micros, "elapsed_micros": elapsed_micros,
             "output_batches": output_batches, "largest_output_batch_bytes": largest_output_batch_bytes,
-            "operator_metrics": dependent.metrics().map(|m| m.iter().map(|metric| {
-                (metric.value().name().to_string(), metric.value().as_usize())
-            }).collect::<std::collections::BTreeMap<_, _>>()),
+
         })
     }
 

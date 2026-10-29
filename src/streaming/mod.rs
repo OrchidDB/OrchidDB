@@ -804,7 +804,7 @@ impl Subscription<'_> {
                 let graph = self.connection.visible_graph(vec![(change, table)])?;
                 Some(
                     self.program
-                        .execute(&self.plan, graph, self.connection.limits.timeout)?,
+                        .execute(&self.plan, graph, self.connection.limits.timeout).await?,
                 )
             };
             let record = self.pending.take().unwrap();

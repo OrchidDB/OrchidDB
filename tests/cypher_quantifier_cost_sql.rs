@@ -70,7 +70,7 @@ async fn bounded_nested_predicates_keep_effectful_input_on_materialized_path() {
     without_constant_folding(async {
         let query="UNWIND [1,1] AS k WITH k,rand() AS r,[1,2,3] AS xs RETURN k,r,all(x IN xs WHERE any(y IN xs WHERE x+y>0)) AS result";
         let plan=CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
-        assert!(format!("{plan:?}").contains("GraphApply"), "{plan:?}");
+        assert!(format!("{plan:?}").contains("GraphQuantifier"), "{plan:?}");
         let mut engine=orchiddb::engine::GraphEngine::in_memory().unwrap();
         let result=engine.cypher(query).await.unwrap();
         let batch=&result.returned.batch;

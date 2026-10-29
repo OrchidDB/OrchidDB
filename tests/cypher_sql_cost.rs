@@ -31,7 +31,7 @@ async fn integer_range_is_a_streaming_sql_table_function() {
         let r = e.cypher(query).await.unwrap();
         assert_eq!(rows(&r), [expected], "{query}");
         assert_eq!(
-            r.stats.cost.native_kernel_calls, 0,
+            r.stats.cost.native_relational_kernel_calls, 0,
             "{query}: {:?}\n{}",
             r.stats.cost, r.stats.physical_plan
         );
@@ -63,7 +63,7 @@ async fn element_count_stays_in_sql_and_handles_optional_nulls() {
         let r = e.cypher(query).await.unwrap();
         assert_eq!(rows(&r), [expected]);
         assert_eq!(
-            r.stats.cost.native_kernel_calls, 0,
+            r.stats.cost.native_relational_kernel_calls, 0,
             "{query}: {:?}\n{}",
             r.stats.cost, r.stats.physical_plan
         );
@@ -96,7 +96,7 @@ async fn quantifiers_preserve_multiple_bindings_and_three_valued_logic() {
         actual.sort();
         assert_eq!(actual.join(";"), expected, "{query}");
         assert_eq!(
-            r.stats.cost.native_kernel_calls, 0,
+            r.stats.cost.native_relational_kernel_calls, 0,
             "{query}: {:?}\n{}\n{:?}",
             r.stats.cost, r.stats.physical_plan, r.stats.sql_queries
         );
@@ -122,12 +122,13 @@ async fn heterogeneous_constant_quantifiers_keep_null_and_empty_semantics() {
 }
 
 #[tokio::test]
-async fn fused_mixed_collection_kernels_preserve_order_and_shadowing() {
+async fn mixed_collection_sql_preserves_order_and_shadowing() {
     let mut e = GraphEngine::in_memory().unwrap();
     let query = "WITH 42 AS x, [1,true,'z',null] AS xs UNWIND xs AS item RETURN x,item,any(x IN xs WHERE x = item)";
     let r = e.cypher(query).await.unwrap();
     assert_eq!(rows(&r), ["42|1|true", "42|true|true", "42|z|true", "42||"]);
-    assert!(r.stats.physical_plan.contains("Fused("), "{}", r.stats.physical_plan);
+    assert_eq!(r.stats.cost.native_relational_kernel_calls, 0, "{}", r.stats.physical_plan);
+    assert_eq!(r.stats.cost.sql_executions, 1, "{:?}", r.stats.sql_queries);
 }
 
 #[tokio::test]
@@ -148,11 +149,11 @@ async fn scalar_collect_lowers_with_order_null_and_empty_semantics() {
     ] {
         let result = e.cypher(query).await.unwrap();
         assert_eq!(rows(&result), [expected], "{query}\n{:?}", result.stats.sql_queries);
-        assert_eq!(result.stats.cost.native_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
     }
     let result = e.cypher("UNWIND [3,1,2,4] AS x WITH x, x % 2 AS g ORDER BY x DESC RETURN g,collect(x) ORDER BY g").await.unwrap();
     assert_eq!(rows(&result), ["0|[4,2]", "1|[3,1]"]);
-    assert_eq!(result.stats.cost.native_kernel_calls, 0);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
 }
 
 #[tokio::test]
@@ -162,7 +163,7 @@ async fn uniform_union_uses_sql_set_operations_without_coercing_mixed_values() {
     let mut actual = rows(&result);
     actual.sort();
     assert_eq!(actual, ["1", "2", "3"]);
-    assert_eq!(result.stats.cost.native_kernel_calls, 0, "{}", result.stats.physical_plan);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{}", result.stats.physical_plan);
     assert!(result.stats.sql_queries.iter().any(|sql| sql.contains("UNION")));
     assert!(!result.stats.sql_queries.iter().any(|sql| sql.to_lowercase().contains("row_number")));
     assert!(e.cypher("RETURN 1 AS x UNION RETURN '1' AS x").await.is_err());
@@ -171,7 +172,8 @@ async fn uniform_union_uses_sql_set_operations_without_coercing_mixed_values() {
     ] {
         let result = e.cypher(query).await.unwrap();
         assert_eq!(result.returned.batch.num_rows(), 2, "{query}");
-        assert!(result.stats.cost.native_kernel_calls > 0, "{query}");
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}");
+        assert_eq!(result.stats.cost.sql_executions, 1);
     }
 }
 
@@ -192,7 +194,7 @@ async fn literal_quantifiers_need_no_window_or_unnest() {
         let query = format!("WITH {list} AS xs RETURN all(x IN xs WHERE {predicate}),any(x IN xs WHERE {predicate}),none(x IN xs WHERE {predicate}),single(x IN xs WHERE {predicate})");
         let result = e.cypher(&query).await.unwrap();
         assert_eq!(rows(&result), [expected], "{query}");
-        assert_eq!(result.stats.cost.native_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
         assert!(!result.stats.sql_queries.iter().any(|sql| {
             let sql = sql.to_lowercase(); sql.contains("row_number") || sql.contains("unnest")
         }), "{query}\n{:?}", result.stats.sql_queries);
@@ -211,7 +213,7 @@ async fn collection_cardinality_uses_count_without_building_a_list() {
     ] {
         let result = e.cypher(query).await.unwrap();
         assert_eq!(rows(&result), [expected], "{query}");
-        assert_eq!(result.stats.cost.native_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
         assert!(!result.stats.sql_queries.iter().any(|sql| sql.to_lowercase().contains("array_agg")), "{query}");
     }
 }
@@ -241,7 +243,7 @@ async fn absent_quantifier_items_do_not_evaluate_the_predicate() {
         let query = format!("RETURN all(x IN {list} WHERE 1 / 0 > 0),any(x IN {list} WHERE 1 / 0 > 0),none(x IN {list} WHERE 1 / 0 > 0),single(x IN {list} WHERE 1 / 0 > 0)");
         let result = e.cypher(&query).await.unwrap();
         assert_eq!(rows(&result), [expected]);
-        assert_eq!(result.stats.cost.native_kernel_calls, 0);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
         assert!(!result.stats.sql_queries.iter().any(|sql| sql.to_lowercase().contains("row_number")));
     }
 }
@@ -259,15 +261,15 @@ async fn distinct_scalar_collect_preserves_order_groups_and_sibling_aggregates()
     ] {
         let result = e.cypher(query).await.unwrap();
         assert_eq!(rows(&result), [expected], "{query}\n{:?}", result.stats.sql_queries);
-        assert_eq!(result.stats.cost.native_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
     }
     let result = e.cypher("UNWIND [3,1,3,2,2] AS x WITH x, x % 2 AS g ORDER BY x DESC RETURN g,collect(DISTINCT x),count(*) ORDER BY g").await.unwrap();
     assert_eq!(rows(&result), ["0|[2]|2", "1|[3,1]|3"]);
-    assert_eq!(result.stats.cost.native_kernel_calls, 0);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
     e.cypher("CREATE (:P {g:1}),(:P {g:1}),(:P {g:2,v:3})").await.unwrap();
     let result = e.cypher("MATCH (n:P) RETURN n.g AS g,collect(DISTINCT n.v),count(*) ORDER BY g").await.unwrap();
     assert_eq!(rows(&result), ["1|[]|2", "2|[3]|1"]);
-    assert_eq!(result.stats.cost.native_kernel_calls, 0);
+    assert_eq!(result.stats.cost.native_relational_kernel_calls, 0);
 }
 
 #[tokio::test]
@@ -280,7 +282,7 @@ async fn deterministic_slice_bounds_lower_and_invalid_bounds_still_fail() {
     ] {
         let result = e.cypher(query).await.unwrap();
         assert_eq!(rows(&result), expected, "{query}");
-        assert_eq!(result.stats.cost.native_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
+        assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{query}\n{}", result.stats.physical_plan);
     }
     assert!(e.cypher("UNWIND [] AS x RETURN x LIMIT toInteger(-1)").await.is_err());
     assert!(e.cypher("UNWIND [1] AS x RETURN x LIMIT toInteger(-1)").await.is_err());

@@ -1,4 +1,7 @@
 //! Collection operators.
+//!
+//! SQL audit [L13](../../../tools/diagnostics/sql-lowering-audit.md#l13-list-carriers-and-unwind): UNWIND, collection reconstruction, and general quantification share
+//! list transport but differ in empty/null and parent-occurrence preservation.
 
 use super::*;
 

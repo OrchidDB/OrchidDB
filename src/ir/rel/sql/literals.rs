@@ -15,6 +15,8 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
         }
     }
     Ok(match value {
+        ScalarValue::Dictionary(_, value) => sql_literal(dialect, value)?,
+        ScalarValue::Float16(v) => opt(v, |f| float_literal(dialect, f.to_f64())),
         ScalarValue::Null => "NULL".to_string(),
         ScalarValue::Boolean(v) => opt(v, |b| if *b { "TRUE" } else { "FALSE" }.to_string()),
         ScalarValue::Int8(v) => opt(v, |i| i.to_string()),
@@ -31,14 +33,14 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
             Some(text) => string_literal(dialect, text)?,
             None => "NULL".to_string(),
         },
-        ScalarValue::Date32(_) | ScalarValue::TimestampSecond(_, _) | ScalarValue::TimestampMillisecond(_, _) | ScalarValue::TimestampMicrosecond(_, _) | ScalarValue::TimestampNanosecond(_, None) | ScalarValue::Time32Second(_) | ScalarValue::Time32Millisecond(_) | ScalarValue::Time64Microsecond(_) => {
+        ScalarValue::Date32(_) | ScalarValue::Date64(_) | ScalarValue::Decimal32(_,_,_) | ScalarValue::Decimal64(_,_,_) | ScalarValue::Decimal128(_,_,_) | ScalarValue::Decimal256(_,_,_) | ScalarValue::TimestampSecond(_, _) | ScalarValue::TimestampMillisecond(_, _) | ScalarValue::TimestampMicrosecond(_, _) | ScalarValue::TimestampNanosecond(_, None) | ScalarValue::Time32Second(_) | ScalarValue::Time32Millisecond(_) | ScalarValue::Time64Microsecond(_) => {
             if value.is_null() { "NULL".into() } else {
                 let array = value.to_array()?;
                 let text = arrow::util::display::array_value_to_string(array.as_ref(), 0)?;
                 format!("CAST({} AS {})", string_literal(dialect, &text)?, dialect.ddl_type(&value.data_type())?)
             }
         }
-        ScalarValue::Binary(v) | ScalarValue::LargeBinary(v) | ScalarValue::BinaryView(v) => opt(v, |bytes| {
+        ScalarValue::Binary(v) | ScalarValue::LargeBinary(v) | ScalarValue::BinaryView(v) | ScalarValue::FixedSizeBinary(_, v) => opt(v, |bytes| {
             let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
             if dialect == SqlDialect::Postgres { format!("decode('{hex}', 'hex')") } else { format!("from_hex('{hex}')") }
         }),

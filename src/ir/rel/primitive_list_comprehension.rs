@@ -1,5 +1,8 @@
 //! Ordered per-row primitive list reconstruction in a correlated scalar query.
 //! Only total scalar expressions are admitted: SQL may reorder/repeat them.
+//!
+//! SQL audit [L16](../../../tools/diagnostics/sql-lowering-audit.md#l16-ordered-primitive-list-reconstruction): Reconstruction orders by element index inside a scalar subquery.
+//! Unlike cardinality-only reduction, returning a list still needs aggregation.
 use super::*;
 use datafusion::common::ExprSchema;
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};

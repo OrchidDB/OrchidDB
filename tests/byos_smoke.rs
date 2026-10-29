@@ -24,7 +24,6 @@ use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 
 
-use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::PropertyGraph;
 use orchiddb::ir::expr::Lit;
 use orchiddb::ir::plan::GraphPlan;
@@ -33,7 +32,6 @@ use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
 use orchiddb::ir::rel::{LoweredPlan, RelBackend, RelBackendOptions, execute_lowered};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use orchiddb::planner::GremlinPlanner;
 
 const HIGH_VALUE_VIEW_SQL: &str = "SELECT c.cust_id, c.full_name \
      FROM customers c JOIN orders o ON o.cust_id = c.cust_id \
@@ -324,49 +322,7 @@ async fn cypher_view_backed_label_reads_duckdb_view() {
     assert_eq!(rows, vec!["carol"]);
 }
 
-#[tokio::test]
-async fn gremlin_out_over_user_follow_table() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Has {
-                key: "name".into(),
-                value: Lit::String("alice".into()),
-            },
-            gb::Step::Out {
-                rel_types: vec!["FOLLOWS".into()],
-            },
-            gb::Step::Values("name".into()),
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let rows = both_engines(&plan, false).await;
-    assert_eq!(rows, vec!["bob", "carol"]);
-}
 
-#[tokio::test]
-async fn gremlin_out_ordered_totals() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Has {
-                key: "name".into(),
-                value: Lit::String("alice".into()),
-            },
-            gb::Step::Out {
-                rel_types: vec!["ORDERED".into()],
-            },
-            gb::Step::Values("total".into()),
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let rows = both_engines(&plan, false).await;
-    assert_eq!(rows, vec!["120", "50"]);
-}
 
 /// Optimizer pushdown evidence: predicates and projections written against
 /// graph properties end up on the *user's* columns, pruned to what the query

@@ -31,7 +31,10 @@ pub fn result_batch(
         source.check()?;
     }
     let mut context = Context::default();
-    for value in values { context.capture(value, graph)?; }
+    for value in values {
+        if policy.language == Language::Cypher { context.capture_cypher(value, graph)?; }
+        else { context.capture(value, graph)?; }
+    }
     graph.check_source()?;
     let mut columns = Vec::with_capacity(fields.len());
     for field in fields {

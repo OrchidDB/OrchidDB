@@ -15,7 +15,7 @@ impl<'a> LoweringContext<'a> {
             return self.lower_managed_scan(&table, binding, labels, false);
         }
         if self.options.mapping.is_none() && (self.graph.mapping.is_some() || self.graph.source_keys) {
-            return Err(RelError::Unsupported("source-key graph scans require the shared typed graph kernel".into()));
+            return Ok(LoweredNode::new(runtime::live_graph_scan(self.graph, binding, labels, false, &self.policy)?));
         }
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
@@ -110,7 +110,7 @@ impl<'a> LoweringContext<'a> {
         }
 
         if self.options.mapping.is_none() && (self.graph.mapping.is_some() || self.graph.source_keys) {
-            return Err(RelError::Unsupported("source-key graph scans require the shared typed graph kernel".into()));
+            return Ok(LoweredNode::new(runtime::live_graph_scan(self.graph, binding, types, true, &self.policy)?));
         }
         if let Some(table) = self.options.mapping.as_ref().and_then(|m| m.managed_table.clone()) {
             return self.lower_managed_scan(&table, binding, types, true);

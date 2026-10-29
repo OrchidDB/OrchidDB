@@ -61,15 +61,3 @@ async fn cypher_composite_fk_joins_keep_tenants_and_skip_partial_nulls() {
         ["Ada|10", "Grace|20"]
     );
 }
-
-#[tokio::test]
-async fn gremlin_composite_fk_traversal_keeps_tenants_and_skips_partial_nulls() {
-    assert_eq!(
-        run(
-            "gremlin",
-            "g.V().hasLabel('Customer').out('HAS_ORDER').values('total')"
-        )
-        .await,
-        ["10", "20"]
-    );
-}

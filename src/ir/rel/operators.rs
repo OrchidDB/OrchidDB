@@ -1,4 +1,7 @@
 //! Dispatch Graph IR operators to relational lowering.
+//!
+//! SQL audit [L19](../../../tools/diagnostics/sql-lowering-audit.md#l19-distinct-and-representative-selection): DISTINCT representative windows depend on downstream order demand.
+//! Terminal bags can use grouping; slices and collections can retain occurrence order.
 
 use super::*;
 
@@ -201,6 +204,8 @@ impl LoweringContext<'_> {
                     )?
                 }
             }
+            GraphShortestPath { source, target, direction, rel_types, max_distance, include_edges, output, all_paths, input } =>
+                self.lower_shortest_path(input, source, target.as_deref(), *direction, rel_types, *max_distance, *include_edges, output, *all_paths)?,
             GraphPathFilter {condition,input,..} if self.options.native_values => self.lower_node(&GraphFilter{condition:condition.clone(),input:input.clone()})?,
             GraphFilter { condition, input } => {
                 if let Some(pushed) = self.push_expand_equality(condition, input)? {
@@ -252,12 +257,38 @@ impl LoweringContext<'_> {
                 {
                     self.lower_cardinality_input(input)?
                 } else { self.lower_node(input)? };
-                if aggs.iter().any(|agg| !matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk)
-                    && (agg.arg.as_ref().is_some_and(has_temporal_constructor) || input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type())))) {
-                    return Err(RelError::Unsupported("Temporal aggregate requires typed runtime evaluation".into()));
+                // Capability belongs to the consumed expression, not every
+                // column in its input. A temporal ORDER BY key must not fence
+                // collect(integer_count) or an unrelated integer group key.
+                let temporal_argument = |expr: &IrExpr| -> RelResult<bool> {
+                    match self.lower_expr(&input.plan, expr) {
+                        Ok(value) => Ok(crate::ir::temporal::transport::contains_type(
+                            &value.get_type(input.plan.schema())?)),
+                        // Graph groups and count(graph) use identity columns
+                        // below, without constructing a scalar graph value.
+                        // Let the selected aggregate validate those operands;
+                        // this temporal check must not require scalar lowering.
+                        Err(RelError::Unsupported(_)) => Ok(false),
+                        Err(error) => Err(error),
+                    }
+                };
+                for agg in aggs.iter().filter(|agg| !matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk)) {
+                    let args = match (&agg.kind, &agg.arg) {
+                        (AggKind::EngineFunction, Some(IrExpr::Call { args, .. }))
+                        | (AggKind::PercentileCont | AggKind::PercentileDisc, Some(IrExpr::List(args))) => args.iter().collect::<Vec<_>>(),
+                        (_, Some(arg)) => vec![arg],
+                        _ => vec![],
+                    };
+                    for arg in args {
+                        if temporal_argument(arg)? {
+                            return Err(RelError::Unsupported("Temporal aggregate requires typed runtime evaluation".into()));
+                        }
+                    }
                 }
-                if !group.is_empty() && (group.iter().any(|item| has_temporal_constructor(&item.expr)) || input.plan.schema().fields().iter().any(|field| crate::ir::temporal::transport::contains_type(field.data_type()))) {
-                    return Err(RelError::Unsupported("Temporal grouping requires typed runtime evaluation".into()));
+                for item in group {
+                    if temporal_argument(&item.expr)? {
+                        return Err(RelError::Unsupported("Temporal grouping requires typed runtime evaluation".into()));
+                    }
                 }
                 let mut compact_collections = BTreeMap::new();
                 for agg in aggs {
@@ -432,7 +463,9 @@ impl LoweringContext<'_> {
                         if !sql_native_aggregates && self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin)
                             && !matches!(agg.kind,AggKind::CountRows|AggKind::CountBulk|AggKind::CountDistinct|AggKind::CountIf|AggKind::EngineFunction)
                             && let Some(arg)=&agg.arg {
-                            let lowered=self.lower_expr(&input.plan,arg)?;
+                            let lowered = if self.language == Language::Cypher && matches!(agg.kind, AggKind::PercentileCont | AggKind::PercentileDisc) {
+                                self.native_expr(&input.plan, arg)?
+                            } else { self.lower_expr(&input.plan, arg)? };
                             if self.language==Language::Gremlin || matches!(agg.kind, AggKind::CollectNonNull | AggKind::PercentileCont | AggKind::PercentileDisc) || matches!(&lowered,Expr::Literal(v,_) if v.is_null()) || native_values::is_value(&lowered.get_type(input.plan.schema())?) {
                                 return Ok(native_values::aggregate_expr(agg,lowered,self.language==Language::Cypher,collect_ordinal.as_deref())?.alias(&agg.alias));
                             }
@@ -477,10 +510,10 @@ impl LoweringContext<'_> {
                             // SQL's SUM/AVG are NULL over an empty or all-NULL
                             // group; Kuzu's identity for these is zero. Only
                             // the `OrNull`/plain-AVG kinds want SQL's answer.
-                            AggKind::Sum | AggKind::SumOrZero if sql_native_aggregates => distinct_if(df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?), agg.distinct)?,
+                            AggKind::Sum | AggKind::SumOrZero if sql_native_aggregates => distinct_if(df_sum(self.lower_sum_arg(&input.plan, &agg.arg)?), agg.distinct)?,
                             AggKind::Sum | AggKind::SumOrZero => df_core::coalesce(vec![
                                 distinct_if(
-                                    df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                    df_sum(self.lower_sum_arg(&input.plan, &agg.arg)?),
                                     agg.distinct,
                                 )?,
                                 lit(0_i64),
@@ -718,27 +751,8 @@ impl LoweringContext<'_> {
                     let plan=LogicalPlanBuilder::from(input.plan.clone()).limit_by_expr(skip,take)?.build()?;
                     return Ok(input.with_plan(plan));
                 }
-                // Invalid parameter bounds must still raise their language error
-                // from a host SQL scalar, rather than selecting a native slicer.
-                if self.options.native_values && offset.iter().chain(fetch.iter()).any(|expr|
-                    crate::ir::runtime::ops::slice::evaluate_slice_bound("LIMIT", expr, self.graph).is_err()) {
-                    let input = self.lower_node(input)?;
-                    let lower = |name: &str, expr: &IrExpr| -> RelResult<Expr> {
-                        match crate::ir::runtime::ops::slice::evaluate_slice_bound(name, expr, self.graph) {
-                            Ok(n) => Ok(lit(n)),
-                            Err(_) => {
-                                let validate = IrExpr::Binary { op: BinaryOp::Eq,
-                                    lhs: Box::new(expr.clone()), rhs: Box::new(IrExpr::Lit(Lit::Int(0))) };
-                                Ok(Expr::Cast(Cast::new(Box::new(native_values::predicate(
-                                    self.native_expr(&input.plan, &validate)?)), DataType::Int64)))
-                            }
-                        }
-                    };
-                    let skip = offset.as_ref().map(|e| lower("SKIP", e)).transpose()?;
-                    let take = fetch.as_ref().map(|e| lower("LIMIT", e)).transpose()?;
-                    let plan = LogicalPlanBuilder::from(input.plan.clone()).limit_by_expr(skip, take)?.build()?;
-                    return Ok(input.with_plan(plan));
-                }
+                // Query-scoped deterministic errors were validated before
+                // graph normalization; never bury their guard in a row scalar.
                 // A deterministic bound can use the ordinary LIMIT lowering.
                 // Keep volatile bounds and evaluation failures on the runtime
                 // path, where they retain once-only evaluation/error timing.
@@ -747,7 +761,7 @@ impl LoweringContext<'_> {
                         return Err(RelError::Unsupported("Dynamic slice bound requires runtime evaluation".into()));
                     }
                     crate::ir::runtime::ops::slice::evaluate_slice_bound(name, expr, self.graph)
-                        .map_err(|_| RelError::Unsupported("Invalid slice bound requires runtime validation".into()))
+                        .map_err(|error| RelError::Semantic(crate::ir::diagnostics::QueryExecutionError::from_error(error)))
                 };
                 let offset = offset.as_ref().map(|expr| bound("SKIP", expr)).transpose()?.unwrap_or(0);
                 let fetch = fetch.as_ref().map(|expr| bound("LIMIT", expr)).transpose()?;

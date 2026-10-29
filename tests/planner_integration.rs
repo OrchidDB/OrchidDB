@@ -9,14 +9,13 @@ use std::sync::Arc;
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 
 use orchiddb::ir::bridge::cypher as cb;
-use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::ir::expr::{BinaryOp, Lit};
 use crate::datafusion_test::execute;
 use orchiddb::ir::plan::{Direction, Length, SortDir};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use orchiddb::planner::{CypherPlanner, GremlinPlanner};
+use orchiddb::planner::CypherPlanner;
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));
@@ -107,26 +106,6 @@ fn cypher_planner_round_trips_match_return() {
     assert_eq!(names, vec!["bob", "carol"]);
 }
 
-#[test]
-fn gremlin_planner_round_trips_v_count() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Count,
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let result = execute(&plan, &fixture_graph()).expect("execute");
-    let array = result
-        .batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .unwrap();
-    assert_eq!(array.value(0), 3);
-}
 
 #[test]
 fn cypher_count_if_uses_aggregate_path() {
@@ -228,35 +207,6 @@ fn cypher_union_aligns_branch_outputs_by_position() {
     assert_eq!(values, vec![28, 28, 30, 30, 41, 41]);
 }
 
-#[test]
-fn gremlin_planner_filters_then_traverses() {
-    let traversal = gb::GremlinTraversal {
-        steps: vec![
-            gb::Step::V {
-                label: Some("Person".into()),
-            },
-            gb::Step::Has {
-                key: "name".into(),
-                value: Lit::String("alice".into()),
-            },
-            gb::Step::Out {
-                rel_types: vec!["KNOWS".into()],
-            },
-            gb::Step::Values("name".into()),
-        ],
-    };
-    let plan = GremlinPlanner::new().plan(&traversal);
-    let result = execute(&plan, &fixture_graph()).expect("execute");
-    let array = result
-        .batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-    let mut names: Vec<&str> = (0..array.len()).map(|i| array.value(i)).collect();
-    names.sort();
-    assert_eq!(names, vec!["bob", "carol"]);
-}
 
 fn plan_cypher_error(query: &str) -> String {
     let parsed = parse_query(query).expect("parse");

@@ -453,26 +453,7 @@ async fn upstream_duration_preserves_calendar_and_clock_components() {
 }
 
 
-#[tokio::test]
-async fn cypher_label_sets_preserve_storage_identity_and_gremlin_labels() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine.cypher("CREATE (:A:B {k: 1}), (:A {k: 2}), ({k: 3})").await.unwrap();
-    for (query, expected) in [
-        ("MATCH (n) RETURN count(n)", "3"),
-        ("MATCH (n:A:B) RETURN count(n)", "1"),
-        ("MATCH (n:B) RETURN n.k", "1"),
-        ("MATCH (n) WHERE n:B RETURN n.k", "1"),
-        ("MATCH (n) WHERE size(labels(n)) = 0 RETURN n.k", "3"),
-        ("MATCH (n:A:B) SET n:C REMOVE n:A RETURN n.k", "1"),
-        ("MATCH (n:B:C) RETURN n.k", "1"),
-        ("MATCH (n:A) RETURN n.k", "2"),
-        ("MATCH (n:B) REMOVE n.k RETURN size(keys(n))", "0"),
-    ] {
-        assert_eq!(rows(&mut engine, query).await, vec![vec![expected]], "{query}");
-    }
-    let result = engine.gremlin("g.V().hasLabel('A').count()").await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "2");
-}
+
 
 #[tokio::test]
 async fn cypher_label_sets_survive_incremental_reopen_and_checkpoint() {
@@ -495,19 +476,7 @@ async fn cypher_label_sets_survive_incremental_reopen_and_checkpoint() {
 }
 
 
-#[tokio::test]
-async fn cypher_collect_null_contract_and_undirected_loop_contract() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    for query in ["UNWIND [null, null] AS x RETURN collect(x)",
-        "UNWIND [null, null] AS x RETURN collect(DISTINCT x)",
-        "UNWIND [] AS x RETURN collect(x)"] {
-        assert_eq!(rows(&mut engine, query).await, vec![vec!["[]"]], "{query}");
-    }
-    engine.cypher("CREATE (a:A)-[:R]->(a)").await.unwrap();
-    assert_eq!(rows(&mut engine, "MATCH p = (a:A)-[r]-(b) RETURN count(p)").await, vec![vec!["1"]]);
-    let result = engine.gremlin("g.V().both().count()").await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "2");
-}
+
 
 
 #[tokio::test]

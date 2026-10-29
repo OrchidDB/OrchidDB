@@ -67,9 +67,6 @@ var runtimeCache = struct {
 func loadRuntime(path string) (commandFunc, error) {
 	return loadCommand(path, "orchiddb_execution_command")
 }
-func loadRemoteRuntime(path string) (commandFunc, error) {
-	return loadCommand(path, "orchiddb_remote_json")
-}
 func loadCommand(path, symbol string) (commandFunc, error) {
 	if path == "" {
 		path = os.Getenv("ORCHIDDB_NATIVE_LIBRARY")

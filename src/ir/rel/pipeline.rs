@@ -1,5 +1,8 @@
 //! Active stage composition over the existing IRs. Domain passes retain their
 //! proofs and implementation; this module owns their order and query lifetime.
+//!
+//! SQL audit [L34](../../../tools/diagnostics/sql-lowering-audit.md#l34-finite-domains-and-effect-aware-partial-evaluation): These shared rule entry points do not make source compilation and host
+//! DAG preparation identical; audit both callers and their query contexts.
 use super::*;
 use crate::ir::rules::{RuleContext, RuleDescriptor, RuleKind, RuleOutcome, RuleSession, Stage, Traversal};
 
@@ -9,6 +12,25 @@ pub(crate) const fn descriptor(id: &'static str, stage: Stage, kind: RuleKind, r
 }
 pub(crate) fn normalize_graph(plan: &GraphPlan, context: &RuleContext) -> RelResult<GraphPlan> {
     context.validate().map_err(RelError::RulePipeline)?;
+    // SQL audit G03: query-scoped bounds are validated before empty-input
+    // simplification or SQL-region selection can discard their evaluation.
+    // Only known deterministic, row-independent expressions are evaluated.
+    if plan.policy.language == Language::Cypher {
+        let graph = PropertyGraph::new();
+        let mut nodes = vec![plan.root.as_ref()];
+        while let Some(node) = nodes.pop() {
+            if let Node::GraphSliceExpr { offset, fetch, .. } = node {
+                for (name, expr) in [("SKIP", offset), ("LIMIT", fetch)] {
+                    if let Some(expr) = expr.as_ref().filter(|expr| expr_is_constant(expr, &[])) {
+                        let checked = IrExpr::Call { name: "cypher_slice_bound".into(), args: vec![expr.clone()] };
+                        crate::ir::runtime::ops::slice::evaluate_slice_bound(name, &checked, &graph)
+                            .map_err(crate::ir::diagnostics::QueryExecutionError::from_error)?;
+                    }
+                }
+            }
+            nodes.extend(crate::ir::analysis::children(node));
+        }
+    }
     crate::ir::rules::graph::normalize(plan, &mut RuleSession::new(context.clone()))
         .map_err(RelError::RulePipeline)
 }

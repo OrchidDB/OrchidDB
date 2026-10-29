@@ -18,15 +18,4 @@ pub mod generated {
         pub mod cyphervisitor;
     }
 
-    pub mod gremlin {
-        #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
-        #![allow(unused_imports, unused_mut, unused_parens, unused_variables)]
-
-        pub mod gremlinbaselistener;
-        pub mod gremlinbasevisitor;
-        pub mod gremlinlexer;
-        pub mod gremlinlistener;
-        pub mod gremlinparser;
-        pub mod gremlinvisitor;
-    }
 }

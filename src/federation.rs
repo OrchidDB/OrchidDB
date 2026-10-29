@@ -90,7 +90,7 @@ pub struct TransferColumn {
 }
 
 pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
-    if request.engine.is_some() {
+    if request.uses_source_plan() {
         return crate::execution::plan::validate_request(request);
     }
     crate::execution::SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;

@@ -207,11 +207,11 @@ pub async fn conformance_sql_with_estimates(
     let mut graph = mapped_source::attach(resources.shared_executor(), mapping)?;
     graph.procedures = procedures;
     let stats = crate::ir::rel::runtime::inspect_with_session(plan, &graph, &resources).await?;
-    let full = stats.sql_queries.len() == 1 && stats.boundary_operators == 0;
+    let full = stats.sql_queries.len() == 1 && stats.boundary_operators == stats.output_decode_operators;
     let mut output = serde_json::json!({
         "schema_mode":"conformance_runner_mapping", "capture":"prepared_not_executed",
         "sql": if full {stats.sql_queries.first().cloned()} else {None},
-        "regions": if full {Vec::<serde_json::Value>::new()} else {stats.sql_queries.iter().map(|sql| serde_json::json!({"sql":sql})).collect()},
+        "regions": stats.sql_queries.iter().map(|sql| serde_json::json!({"sql":sql})).collect::<Vec<_>>(),
         "datafusion_operators":stats.datafusion_operators,
         "boundary_operators":stats.boundary_operators,
         "residual_operators":stats.boundary_operators,

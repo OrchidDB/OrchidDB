@@ -81,24 +81,6 @@ async fn unknown_costs_and_stale_generations_keep_default() {
     assert!(result["representation_selections"][0]["estimated_cost"].is_null());
 }
 #[tokio::test]
-async fn rdf_and_gremlin_share_representation_selection() {
-    let mut r = request("");
-    r["language"] = json!("sparql");
-    r["query"] = json!("SELECT ?sku WHERE { ?item <urn:sku> ?sku FILTER(?sku = \"a\") }");
-    r["rdf"] = json!([{"table":"items","subject":{"kind":"template","prefix":"urn:item:","columns":["order_id","item_id"]},"predicate":{"kind":"constant","value":"urn:sku"},"object":{"kind":"literal","column":"sku"}}]);
-    assert_eq!(
-        compile(r).await["representation_selections"][0]["representation"],
-        "flat_sku"
-    );
-    let mut r = request("");
-    r["language"] = json!("gremlin");
-    r["query"] = json!("g.V().hasLabel('Item').has('sku','a').values('sku')");
-    assert_eq!(
-        compile(r).await["representation_selections"][0]["representation"],
-        "flat_sku"
-    );
-}
-#[tokio::test]
 async fn schema_and_catalog_errors_are_explicit() {
     for r in [
         {
@@ -443,32 +425,6 @@ async fn shared_engine_execution_statistics_lazy_elements_and_writes() {
     );
 }
 
-#[cfg(feature = "duckdb")]
-#[tokio::test]
-async fn unified_rdf_reads_selected_representation_and_rejects_writes() {
-    use orchiddb::engine::GraphEngine;
-    use std::sync::Arc;
-    let mut m = mapping();
-    m.map_rdf(serde_json::from_value(json!({"table":"items","subject":{"kind":"template","prefix":"urn:item:","columns":["order_id","item_id"]},"predicate":{"kind":"constant","value":"urn:sku"},"object":{"kind":"literal","column":"sku"},"writable":true,"key":["order_id","item_id"]})).unwrap());
-    let mut engine = GraphEngine::mapped(database(), Arc::new(m)).unwrap();
-    let result = engine
-        .sparql_dataset(
-            "SELECT ?s WHERE {?s <urn:sku> ?sku FILTER(?sku = \"a\")}",
-            "default",
-        )
-        .await
-        .unwrap();
-    assert_eq!(result.returned.batch.num_rows(), 2);
-    assert_eq!(
-        result.stats.representation_selections[0].representation,
-        "flat_sku"
-    );
-    let error = engine
-        .sparql_update("DELETE WHERE {?s <urn:sku> ?sku}", "default", None)
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("read-only"), "{error}");
-}
 
 #[tokio::test]
 async fn definitions_reject_statements_and_forward_references_bind() {
@@ -528,38 +484,6 @@ async fn representation_costs_compose_with_partition_layouts() {
     assert_eq!(result["layout_selections"].as_array().unwrap().len(), 1);
 }
 
-#[cfg(feature = "duckdb")]
-#[tokio::test]
-async fn quad_mapping_cannot_write_through_representation() {
-    use orchiddb::{engine::GraphEngine, ir::rel::rdf::IriQuadSource};
-    use std::sync::Arc;
-    let mut m = mapping();
-    m.register_representation_source(
-        serde_json::from_value(json!({
-            "name":"quads", "default_representation":"definition",
-            "representations":[{"name":"definition","source":{"kind":"query",
-                "sql":"SELECT sku AS s, sku AS p, sku AS o FROM items"}}]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let mut rdf = m.rdf_mapping();
-    rdf.map_iri_quads(
-        "quads",
-        IriQuadSource::table("quads", "s", "p", "o").writable(),
-    );
-    let mut engine = GraphEngine::mapped(database(), Arc::new(m.with_rdf_mapping(rdf))).unwrap();
-    let error = engine
-        .sparql_update("INSERT DATA { <urn:s> <urn:p> <urn:o> }", "quads", None)
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("representation source `quads` is read-only"),
-        "{error}"
-    );
-}
 
 #[tokio::test]
 async fn relationship_mapping_uses_canonical_endpoint_keys() {

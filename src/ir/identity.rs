@@ -228,6 +228,9 @@ impl TryFrom<&super::Value> for ElementId {
         }
         Self::new(match value {
             Value::Scalar(v) => v.clone(),
+            Value::Temporal(v) if v.kind() == "date" =>
+                super::temporal::transport::scalar_for_type(v, &arrow::datatypes::DataType::Date32)
+                    .map_err(|e| e.to_string())?,
             Value::BigInt(v) | Value::UInt128(v) => ScalarValue::Utf8(Some(v.to_string())),
             Value::BigDecimal(v) => ScalarValue::Utf8(Some(v.to_string())),
             Value::Int(v) | Value::Long(v) => ScalarValue::Int64(Some(*v)),

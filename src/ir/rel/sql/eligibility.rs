@@ -1,3 +1,6 @@
+//! SQL lowering audit
+//! SQL audit [L31](../../../../tools/diagnostics/sql-lowering-audit.md#l31-source-ownership-and-sql-region-placement): Host region eligibility and source-plan emission are separate entry
+//! points. Keep their function, subquery-shape, and query-context contracts aligned.
 use super::*;
 use crate::ir::rel::sql;
 /// Unknown functions and residual extension nodes require an explicit boundary.
@@ -105,8 +108,13 @@ impl SqlEligibility {
                         }
                         return Ok(TreeNodeRecursion::Continue);
                     }
-                    if super::super::collection_lambda::definition(&function.func).is_some()
-                        || super::super::native_values::typed::operation(function.func.name()).is_some()
+                    if let Some(lambda) = super::super::collection_lambda::definition(&function.func) {
+                        if let Err(why) = super::lambdas::capability(lambda, self.dialect.unwrap_or(sql::SqlDialect::DuckDb)) {
+                            reason.get_or_insert(why);
+                        }
+                        return Ok(TreeNodeRecursion::Continue);
+                    }
+                    if super::super::native_values::typed::operation(function.func.name()).is_some()
                         || crate::ir::rel::language_functions::supported(function.func.name())
                         || matches!(function.func.name(), super::super::native_values::VALUE | super::super::native_values::PREDICATE | super::super::native_values::ITEMS | super::super::native_values::KEY | super::super::native_values::PROJECT | super::super::native_values::SORT | super::super::native_values::AGGREGATE) {
                         if self.language_functions && self.dialect == Some(sql::SqlDialect::DuckDb)
@@ -140,7 +148,7 @@ impl SqlEligibility {
                             reason.get_or_insert("logical function requires native execution");
                             return Ok(TreeNodeRecursion::Stop);
                         }
-                        if !adapter_mapping && logical.portable_builtin {
+                        if logical.portable_builtin {
                             if let Err(why) = crate::ir::functions::portable::validate_call(
                                 logical.logical_name(),
                                 &function.args,
@@ -157,16 +165,6 @@ impl SqlEligibility {
                         .dialect
                         .unwrap_or(sql::SqlDialect::DuckDb)
                         .supports_scalar_function(function.func.name())
-                        || {
-                            #[cfg(feature = "duckdb")]
-                            {
-                                crate::ir::rel::sparql::is_duck_function(&function.func)
-                            }
-                            #[cfg(not(feature = "duckdb"))]
-                            {
-                                false
-                            }
-                        }
                         || function
                             .func
                             .name()

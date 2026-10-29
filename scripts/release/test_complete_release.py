@@ -60,13 +60,14 @@ class CompleteReleaseTests(unittest.TestCase):
         for value in ('../escape', '1.2', 'v1.2.3', '1.2.3;echo bad'):
             with self.subTest(value=value), self.assertRaises(ValueError): release.Release(value)
 
-    def test_native_reuse_after_typescript_fix_preserves_binary_revision(self):
+    def test_native_reuse_after_go_fix_preserves_binary_revision(self):
         source = Path(release.__file__).read_text()
         for changed, corrupt, expected in [
-            ('clients/js/src/internal.ts', False, True),
-            ('clients/js/test/source-plan.test.mjs', False, True),
+            ('clients/go/internal.go', False, True),
+            ('clients/go/federation_test.go', False, True),
             ('src/catalog.rs', False, False),
-            ('clients/js/src/internal.ts', True, False),
+            ('clients/js/src/internal.ts', False, False),
+            ('clients/go/internal.go', True, False),
         ]:
             with self.subTest(changed=changed, corrupt=corrupt), tempfile.TemporaryDirectory() as tmp, patch.object(release, 'ROOT', Path(tmp)):
                 root = Path(tmp)
@@ -102,7 +103,7 @@ class CompleteReleaseTests(unittest.TestCase):
 
     def test_platforms_and_every_client_are_included(self):
         self.assertEqual(set(release.TARGETS), {'osx_arm64', 'linux_arm64', 'linux_amd64'})
-        self.assertEqual(set(release.COMPONENTS), {'extension', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'})
+        self.assertEqual(set(release.COMPONENTS), {'extension', 'native', 'rust', 'go'})
 
     def test_packages_require_build_receipts(self):
         instance = object.__new__(release.Release)

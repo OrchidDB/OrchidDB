@@ -1,5 +1,8 @@
 //! Compiler-only list lambdas. The body is a typed expression, not a program
 //! passed to a runtime UDF; adapters emit native SQL lambda syntax.
+//!
+//! SQL audit [L14](../../../tools/diagnostics/sql-lowering-audit.md#l14-native-sql-list-lambdas): This native-values route precedes scalar relational comprehensions.
+//! A dialect lacking lambda emission does not automatically retry that alternative.
 use super::*;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::logical_expr::{
@@ -18,6 +21,7 @@ pub(super) struct Lambda {
     pub body: Expr,
     pub captures: Vec<String>,
     pub result: DataType,
+    pub source: DataType,
     pub total_body: bool,
     signature: Signature,
 }
@@ -189,7 +193,7 @@ impl LoweringContext<'_> {
                 body.get_type(scope.schema())?,
                 true,
             ))),
-            "filter" => source_type,
+            "filter" => source_type.clone(),
             _ => DataType::Boolean,
         };
         let total_body = constraints::harmless_expression(&body, scope.schema());
@@ -231,6 +235,7 @@ impl LoweringContext<'_> {
             body,
             captures: capture_names,
             result,
+            source: source_type,
             total_body,
             signature: Signature::any(args.len(), Volatility::Volatile),
         };

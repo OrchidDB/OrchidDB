@@ -33,6 +33,19 @@ pub fn validate_call(
         )?;
     }
     let integer_literal = |i: usize| args.get(i).and_then(literal_integer);
+    if dialect == "trino" {
+        // Adapter templates must not silently discard optional arguments or
+        // pass catalog-specific modifiers to unrelated engine overloads.
+        match name {
+            "array_length" | "array_sort" if args.len() != 1 =>
+                return Err("Trino array length/sort mapping currently accepts one argument"),
+            "array_concat" if args.len() != 2 =>
+                return Err("Trino array concatenation mapping currently accepts two arguments"),
+            "trim" | "ltrim" | "rtrim" if args.len() != 1 =>
+                return Err("Trino trim mapping currently accepts one argument"),
+            _ => {}
+        }
+    }
     if dialect == "postgres"
         && name == "chr"
         && !integer_literal(0).is_some_and(|v| (v as u32) != 0)

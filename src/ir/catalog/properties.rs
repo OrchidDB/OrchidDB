@@ -53,6 +53,7 @@ impl PropertyGraph {
     /// compatibility with providers that interpret null assignments as removal.
     /// Stored records keep their presence independently of this write policy.
     pub fn enable_null_property_values(&self, enabled: bool) {
+        if self.overlay.borrow().allow_null_property_values == enabled { return; }
         self.overlay.borrow_mut().allow_null_property_values = enabled;
         // Include the provider setting in the next delta for existing entities.
         let mut pending = self.pending.borrow_mut();

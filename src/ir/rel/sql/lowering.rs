@@ -1,6 +1,9 @@
 //! Code-first relational lowering shared by search, table functions, and future
 //! JSON relation operations. Adapters return typed SQL ASTs or explicit execution
 //! boundaries; no failed execution is retried using another access method.
+//!
+//! SQL audit [L22](../../../../tools/diagnostics/sql-lowering-audit.md#l22-procedures-and-dependent-table-functions): A relation adapter chooses SQL, a schema-preserving rewrite, or a
+//! bound dependent template. Dependent execution is not a single set-oriented query.
 use super::*;
 use crate::ir::rel::dependent::{ArgumentBinding, TableFunction};
 use datafusion::common::DFSchemaRef;

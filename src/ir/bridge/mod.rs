@@ -8,4 +8,3 @@
 //! directly using the same surface AST.
 
 pub mod cypher;
-pub mod gremlin;

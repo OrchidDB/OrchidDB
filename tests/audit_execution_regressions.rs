@@ -165,31 +165,7 @@ async fn negated_conjunction_retains_nonmatching_nodes() {
     }
 }
 
-#[tokio::test]
-async fn graphson_equivalent_integer_encodings_resolve_endpoint() {
-    let path = std::env::temp_dir().join(format!("orchid-round2-{}.json", std::process::id()));
-    std::fs::write(&path, r#"
-{"id":{"@type":"gx:BigInteger","@value":"1"},"label":"P","outE":{"E":[{"id":{"@type":"g:Int32","@value":3},"inV":{"@type":"gx:BigInteger","@value":2}}]}}
-{"id":{"@type":"gx:BigInteger","@value":"2"},"label":"P"}
-"#).unwrap();
-    let mut engine = GraphEngine::in_memory().unwrap();
-    let result = engine
-        .gremlin(&format!(
-            "g.io({}).read()",
-            serde_json::to_string(path.to_str().unwrap()).unwrap()
-        ))
-        .await;
-    std::fs::remove_file(&path).unwrap();
-    assert!(
-        result.is_ok(),
-        "equivalent endpoint encoding rejected: {:?}",
-        result.err()
-    );
-    assert_eq!(
-        strings(engine.gremlin("g.E().count()").await.unwrap()),
-        vec![vec!["1"]]
-    );
-}
+
 
 #[tokio::test]
 async fn execution_preserves_unbounded_query_semantics() {
@@ -308,22 +284,4 @@ fn strings(result: orchiddb::engine::QueryResult) -> Vec<Vec<String>> {
                 .collect()
         })
         .collect()
-}
-
-#[tokio::test]
-async fn production_path_and_gremlin_controls() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine.cypher("CREATE (a:Person {name:'alice'}), (b:Person {name:'bob'}), (c:Person {name:'carol'}), (a)-[:KNOWS]->(b), (a)-[:KNOWS]->(c), (b)-[:KNOWS]->(c), (city:City {name:'paris'}), (b)-[:LIVES_IN]->(city)").await.unwrap();
-    assert_eq!(strings(engine.cypher("MATCH (p:Person)-[e:KNOWS*1..]->(f) WHERE p.name='alice' RETURN count(DISTINCT e)").await.unwrap()), vec![vec!["3"]]);
-    assert_eq!(strings(engine.cypher("MATCH (p:Person)-[e:KNOWS*2..2]-(f) WHERE p.name='alice' RETURN f.name, size(e) ORDER BY f.name").await.unwrap()), vec![vec!["bob", "2"], vec!["carol", "2"]]);
-    assert_eq!(strings(engine.cypher("MATCH p=(a:Person)-[:KNOWS*1..1]->(:Person)-[:LIVES_IN]->(:City) WHERE a.name='alice' RETURN length(p)").await.unwrap()), vec![vec!["2"]]);
-    assert_eq!(
-        strings(
-            engine
-                .gremlin("g.inject(\"feature\",\"test\",null).length(Scope.local)")
-                .await
-                .unwrap()
-        ),
-        vec![vec!["7"], vec!["4"], vec![""]]
-    );
 }

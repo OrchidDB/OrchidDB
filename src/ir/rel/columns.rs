@@ -1,4 +1,7 @@
 //! Graph binding column layout and projections.
+//!
+//! SQL audit [L04](../../../tools/diagnostics/sql-lowering-audit.md#l04-fixed-traversals-and-redundant-label-or-cast-removal): Identity casts reconcile domains; same-type endpoints should compare
+//! directly. Display formatting must not become an equality key.
 
 use super::*;
 

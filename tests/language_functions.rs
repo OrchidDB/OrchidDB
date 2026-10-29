@@ -65,96 +65,29 @@ async fn cypher_grouping_and_distinct_move_into_duckdb() {
         "MATCH (p:P) RETURN count(DISTINCT p.x)",
     ] {
         engine.set_language_functions(false).unwrap();
-        let before = engine.cypher(q).await.unwrap();
+        let disabled = engine.cypher(q).await.unwrap_err();
+        assert!(disabled.contains("language functions disabled"), "{disabled}");
         engine.set_language_functions(true).unwrap();
         let after = engine.cypher(q).await.unwrap();
-        assert_eq!(rows(&before), rows(&after), "{q}");
+        let expected = if q.contains("count(DISTINCT") { vec![vec!["2"]] }
+            else if q.contains("DISTINCT") { vec![vec!["1.5"], vec!["2.5"]] }
+            else { vec![vec!["1.5", "2"], vec!["2.5", "1"]] };
+        assert_eq!(rows(&after), expected, "{q}");
+        assert_eq!(after.stats.cost.native_relational_kernel_calls, 0);
         assert!(
             after
                 .stats
                 .sql_queries
                 .iter()
-                .any(|s| s.contains("__orchiddb_lang_cypher_key")),
+                .any(|s| s.contains("orchid_cypher_key")),
             "{q}: {:?}",
             after.stats
         );
-        println!(
-            "{q}\nbefore={} after={}\n{}",
-            before.stats.datafusion_ops,
-            after.stats.datafusion_ops,
-            after.stats.sql_queries.join("\n")
-        );
+
     }
 }
-#[tokio::test]
-async fn gremlin_functions_move_into_duckdb_without_changing_results() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine
-        .cypher("CREATE (:P {name: '  Ab😀 cd  '}), (:P {name: 'Other'})")
-        .await
-        .unwrap();
-    for q in [
-        "g.V().values('name').toUpper()",
-        "g.V().values('name').trim()",
-        "g.V().values('name').reverse()",
-        "g.V().values('name').split(' ')",
-        "g.V().values('name').length()",
-        "g.V().values('name').substring(1,4)",
-    ] {
-        engine.set_language_functions(false).unwrap();
-        let before = engine.gremlin(q).await.unwrap();
-        engine.set_language_functions(true).unwrap();
-        let after = engine.gremlin(q).await.unwrap();
-        assert_eq!(rows(&before), rows(&after), "{q}");
-        assert!(
-            after
-                .stats
-                .sql_queries
-                .iter()
-                .any(|s| s.contains("__orchiddb_lang_")),
-            "{q}: {:?}",
-            after.stats
-        );
-        println!(
-            "{q}: before={} after={}",
-            before.stats.datafusion_ops, after.stats.datafusion_ops
-        );
-    }
-}
-#[tokio::test]
-async fn sparql_functions_use_the_optional_registry() {
-    use orchiddb::{
-        ir::rel::{mapping::GraphMapping, rdf::RdfDatasetMapping},
-        language::sparql::SparqlPlanner,
-    };
-    use std::sync::Arc;
-    let mapping = GraphMapping::new().with_rdf_mapping(RdfDatasetMapping::new());
-    let mut engine = GraphEngine::mapped(
-        duckdb::Connection::open_in_memory().unwrap(),
-        Arc::new(mapping),
-    )
-    .unwrap();
-    for q in [
-        "SELECT (ENCODE_FOR_URI(?v) AS ?x) WHERE { VALUES ?v { \"a b\" \"é\" } }",
-        "SELECT (REPLACE(?v, \"a\", \"X\") AS ?x) WHERE { VALUES ?v { \"abc\" \"aaa\" } }",
-    ] {
-        let plan = SparqlPlanner::new("default").plan_str(q).unwrap();
-        engine.set_language_functions(false).unwrap();
-        let before = engine.execute_plan(&plan).await.unwrap();
-        engine.set_language_functions(true).unwrap();
-        let after = engine.execute_plan(&plan).await.unwrap();
-        assert_eq!(rows(&before), rows(&after));
-        assert!(
-            after
-                .stats
-                .sql_queries
-                .iter()
-                .any(|s| s.contains("__orchiddb_lang_sparql")),
-            "{:?}",
-            after.stats
-        );
-    }
-}
+
+
 
 #[test]
 fn batched_nested_values_and_gremlin_null_contracts() {
@@ -208,52 +141,7 @@ fn batched_nested_values_and_gremlin_null_contracts() {
     );
 }
 
-#[tokio::test]
-async fn nulls_empty_groups_and_unsupported_shapes_preserve_results() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine
-        .cypher("CREATE (:P {x: 1.5}), (:P), (:P {x: 2.5})")
-        .await
-        .unwrap();
-    for q in [
-        "MATCH (p:P) RETURN p.x, count(*)",
-        "MATCH (p:P) WHERE p.x > 10 RETURN p.x, count(*)",
-        "MATCH (p:P) WHERE p.x > 10 RETURN count(DISTINCT p.x)",
-        "MATCH (p:P) RETURN count(DISTINCT p)",
-        "UNWIND [1, 1.0] AS x RETURN x, count(*)",
-        "UNWIND [[1], [1.0]] AS x RETURN count(DISTINCT x)",
-        "UNWIND [1, 1.0] AS x RETURN collect(DISTINCT x)",
-        "RETURN 1 AS n UNION RETURN 1.0 AS n",
-    ] {
-        engine.set_language_functions(false).unwrap();
-        let before = engine.cypher(q).await.unwrap();
-        engine.set_language_functions(true).unwrap();
-        let after = engine.cypher(q).await.unwrap();
-        assert_eq!(rows(&before), rows(&after), "{q}");
-    }
-    for q in [
-        "g.V().values('x').path()",
-        "g.V().as('p').values('x').select('p')",
-    ] {
-        engine.set_language_functions(false).unwrap();
-        let before = engine.gremlin(q).await.unwrap();
-        engine.set_language_functions(true).unwrap();
-        let after = engine.gremlin(q).await.unwrap();
-        assert_eq!(rows(&before), rows(&after), "{q}");
-    }
-    engine.set_sql_timeout(std::time::Duration::from_secs(10));
-    let after_reset = engine
-        .cypher("MATCH (p:P) RETURN count(DISTINCT p.x)")
-        .await
-        .unwrap();
-    assert!(
-        after_reset
-            .stats
-            .sql_queries
-            .iter()
-            .any(|s| s.contains("__orchiddb_lang_cypher_key"))
-    );
-}
+
 
 #[test]
 fn registration_survives_transaction_rollback() {
@@ -302,18 +190,12 @@ async fn graph_engine_uses_language_functions_by_default_with_explicit_opt_out()
             .stats
             .sql_queries
             .iter()
-            .any(|sql| sql.contains("__orchiddb_lang_cypher_key"))
+            .any(|sql| sql.contains("orchid_cypher_key"))
     );
     engine.set_language_functions(false).unwrap();
-    let disabled = engine.cypher(query).await.unwrap();
-    assert_eq!(rows(&enabled), rows(&disabled));
-    assert!(
-        disabled
-            .stats
-            .sql_queries
-            .iter()
-            .all(|sql| !sql.contains("__orchiddb_lang_cypher_key"))
-    );
+    let disabled = engine.cypher(query).await.unwrap_err();
+    assert!(disabled.contains("language functions disabled"), "{disabled}");
+    assert_eq!(rows(&engine.cypher("RETURN 1 AS n").await.unwrap()), vec![vec!["1"]]);
 }
 
 #[test]

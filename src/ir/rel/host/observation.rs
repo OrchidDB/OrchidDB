@@ -15,12 +15,7 @@ pub struct CypherStateSnapshot {
     pub node_properties: Vec<Vec<serde_json::Value>>,
     pub edge_properties: Vec<Vec<serde_json::Value>>,
 }
-pub type QualifiedIdentities =
-    std::collections::BTreeMap<(bool, String, crate::ir::ElementId), Value>;
-pub fn observe(
-    graph: &PropertyGraph,
-    qualified: Option<&QualifiedIdentities>,
-) -> Result<CypherStateSnapshot, String> {
+pub fn observe(graph: &PropertyGraph) -> Result<CypherStateSnapshot, String> {
     let mut result = CypherStateSnapshot {
         nodes: vec![],
         relationships: vec![],
@@ -55,12 +50,10 @@ pub fn observe(
             let Value::Node { id, .. } = &node else {
                 unreachable!()
             };
-            let identity = encode(&identity(&node));
-            let element_identity = qualified
-                .and_then(|ids| ids.get(&(false, label.clone(), id.clone())))
-                .map(&encode)
-                .unwrap_or_else(|| identity.clone());
-            result.nodes.push(vec![element_identity]);
+            // Element rows and property-owner rows share the same typed
+            // Cypher identity; source/display qualification is not id().
+            let element_identity = encode(&identity(&node));
+            result.nodes.push(vec![element_identity.clone()]);
             labels.extend(graph.node_labels(&label, id.clone()));
             for key in &keys {
                 if matches!(key.as_str(), STRUCT_ORDER_KEY | STRUCT_TYPES_KEY) {
@@ -69,7 +62,7 @@ pub fn observe(
                 let value = graph.node_property(&label, id.clone(), key);
                 if value != Value::Null {
                     result.node_properties.push(vec![
-                        identity.clone(),
+                        element_identity.clone(),
                         encode(&Value::String(key.clone())),
                         encode(&value),
                     ]);
@@ -105,12 +98,8 @@ pub fn observe(
                 dst_id,
                 projected_properties: None,
             };
-            let identity = encode(&identity(&edge));
-            let element_identity = qualified
-                .and_then(|ids| ids.get(&(true, rel_type.clone(), id.clone())))
-                .map(&encode)
-                .unwrap_or_else(|| identity.clone());
-            result.relationships.push(vec![element_identity]);
+            let element_identity = encode(&identity(&edge));
+            result.relationships.push(vec![element_identity.clone()]);
             for key in &keys {
                 if matches!(key.as_str(), STRUCT_ORDER_KEY | STRUCT_TYPES_KEY) {
                     continue;
@@ -118,7 +107,7 @@ pub fn observe(
                 let value = graph.edge_property(&rel_type, id.clone(), key);
                 if value != Value::Null {
                     result.edge_properties.push(vec![
-                        identity.clone(),
+                        element_identity.clone(),
                         encode(&Value::String(key.clone())),
                         encode(&value),
                     ]);

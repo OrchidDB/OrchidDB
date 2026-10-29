@@ -234,8 +234,10 @@ async fn registering_a_source_dialect_does_not_enable_a_third_execution_engine()
         "MATCH (p:Person) RETURN p.id",
         "MATCH (p:Person) RETURN json.valid(p.name)",
     ] {
-        let error = compile_json(&request(query).to_string()).await.unwrap_err();
-        assert!(error.contains("unsupported executable engine"), "{error}");
+        let mut input = request(query);
+        input["engine"] = json!("adapter_test_warehouse");
+        let error = compile_json(&input.to_string()).await.unwrap_err();
+        assert!(error.contains("unknown variant"), "{error}");
     }
 }
 #[test]

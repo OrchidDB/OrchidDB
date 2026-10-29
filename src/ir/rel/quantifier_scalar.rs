@@ -2,6 +2,9 @@
 //! Total primitive scalar predicates may be repeated by aggregate SQL; effectful
 //! expressions retain the general evaluation path. Nested quantifiers preserve
 //! their lexical scope as scalar subqueries, without occurrence joins.
+//!
+//! SQL audit [L15](../../../tools/diagnostics/sql-lowering-audit.md#l15-quantifiers-and-cardinality-without-list-construction): Scalar correlated reductions avoid a global occurrence window only
+//! with repeatable inputs and total typed predicates; retain the null truth table.
 use super::*;
 use arrow::array::Array;
 use datafusion::common::ExprSchema;

@@ -103,7 +103,7 @@ def build_one(version, commit, target):
         env['PATH'] = str(Path(rustc).parent) + os.pathsep + env['PATH']
         run(['rustup', 'target', 'add', triple], env)
         rust = ['cargo', 'zigbuild', '--locked', '--release', '--manifest-path',
-                'extension/compiler/Cargo.toml', '--target', triple + '.2.28']
+                'extension/functions/Cargo.toml', '--target', triple + '.2.28']
         run(rust, env)
         run([sys.executable, 'extension/scripts/build.py', '--release', '--skip-rust',
              '--extension-version', version, '--duckdb-platform', target,

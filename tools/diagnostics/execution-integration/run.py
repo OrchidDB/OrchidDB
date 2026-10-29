@@ -74,21 +74,9 @@ def main():
                    ORCHIDDB_TEST_OPA_URL=ENDPOINT, ORCHID_EXTERNAL_TESTS='1', ORCHID_EXTENSION=str(extension), ORCHID_EXECUTION_INTEGRATION='1',
                    ORCHID_TEST_PG_DSN='host=127.0.0.1 port=15439 dbname=orchid user=postgres password=orchid-fixture')
         run('trino-opa', ['cargo','test','--locked','--no-default-features','--features','trino','--test','trino_opa','--','--ignored','--nocapture'], env)
-        run('duckdb-extensions', [args.python, '-m', 'unittest', '-v',
-            'test_execution_extensions', 'test_duckdb_functions', 'test_lake_queries',
-            'test_host_federation', 'test_schema_connection', 'test_value_boundaries', 'test_extension.ExternalStorageTests'], env, ROOT / 'extension/tests')
-        streaming_env = dict(env, CXXFLAGS='-DORCHID_TEST_ARROW_STREAM', ORCHID_BUILD_DIR=str(output / 'streaming-extension'))
-        run('duckdb-streaming-build', [sys.executable, ROOT / 'extension/scripts/build.py'], streaming_env)
-        streaming_env.update(ORCHID_STREAM_TESTS='1', ORCHID_EXTENSION=str(output / 'streaming-extension/orchid.duckdb_extension'))
-        run('duckdb-streaming', [args.python, '-m', 'unittest', '-v', 'test_host_streaming'], streaming_env, ROOT / 'extension/tests')
-        run('native-test-harness-build', ['cargo','build','--locked','-p','orchiddb-compiler-native','--no-default-features'], env)
-        native_name = 'liborchiddb_compiler.dylib' if sys.platform == 'darwin' else 'liborchiddb_compiler.so'
-        env['ORCHIDDB_NATIVE_LIBRARY'] = str(ROOT / 'target/debug' / native_name)
-        harness = output / 'python-harness'
-        shutil.copytree(ROOT / 'clients/python/src/orchiddb', harness / 'orchiddb', dirs_exist_ok=True, ignore=shutil.ignore_patterns('native', '__pycache__'))
-        (harness / 'orchiddb/CORE_REVISION').write_text(report['revision'] + '\n')
-        env['PYTHONPATH'] = str(harness)
-        run('trino-duckdb-residual', [args.python, '-m', 'unittest', '-v', 'test_residual'], env, HERE)
+        run('duckdb-udfs', [args.python, '-m', 'unittest', '-v', 'test_udfs'], env, ROOT / 'extension/tests')
+        run('rust-execution', ['cargo', 'test', '--locked', '-p', 'orchiddb-client', '--test', 'end_to_end'], env)
+        run('go-bindings', ['go', 'test', '-ldflags=-linkmode=external', './...'], env, ROOT / 'clients/go')
         # Fail closed if policy service is unavailable. Restore only this fixture.
         subprocess.run(COMPOSE + ['stop', 'opa'], check=True, stdout=subprocess.DEVNULL)
         try:

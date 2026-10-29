@@ -107,6 +107,7 @@ class Gremlin:
    if self.fixture_directory:self.fixture_directory.cleanup()
 def main():
  p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','arcadedb','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);p.add_argument('--jobs',type=int,default=1,help='Independent native Cypher/RDF workers; Gremlin requires one instance');p.add_argument('--case-file',type=Path,help='JSON array of exact case IDs');args=p.parse_args()
+ if args.engine=='orchiddb' and args.suite!='opencypher':p.error('OrchidDB supports Cypher only; use --suite opencypher')
  if args.jobs<1:p.error('--jobs must be positive')
  if args.jobs>1 and (args.engine!='orchiddb' or args.suite=='tinkerpop'):p.error('Parallel workers require native OrchidDB Cypher or RDF; Gremlin uses one uninterrupted instance')
  if args.jobs>1 and args.resume:p.error('Use --jobs 1 to resume a journal')
@@ -190,14 +191,6 @@ def main():
   sql_config=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))
   build['sql_engine']=sql_config['dialect']
   if sql_config['dialect']=='postgres':build['sql_session_options']={'statement_timeout_ms':8000,'jit':False}
-  if sql_config['dialect']=='starrocks':
-   import pymysql
-   with pymysql.connect(host='127.0.0.1',port=int(os.environ.get('ORCHIDDB_TEST_STARROCKS_PORT','19030')),user='root') as connection:
-    with connection.cursor() as cursor:
-     cursor.execute('SELECT current_version()')
-     build['sql_server_version']=cursor.fetchone()[0]
-   build['sql_session_options']={'query_timeout_seconds':30,'enable_recursive_cte':True,'recursive_cte_max_depth':1000}
-   build['sql_adapter_sources']=[file_identity(REPO/path) for path in ('conformance/runner/src/starrocks.rs','conformance/upstream/starrocks_session.py','clients/python/src/orchiddb/starrocks.py')]
 
  build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
  build['capture_phase']='before-scenarios'

@@ -1346,6 +1346,7 @@ impl RelationalFixture {
                 ));
             }
         }
+        let mut stable = BTreeMap::new();
         for (edge, identity, table, key, filter) in scans {
             let mut query = self
                 .storage
@@ -1365,7 +1366,21 @@ impl RelationalFixture {
                 &mut snapshot.nodes
             };
             for key in keys {
-                target.push(vec![serde_json::json!({"type":"string", "value":format!("{identity}:{}", key.map_err(|e| e.to_string())?)})]);
+                let key = key.map_err(|e| e.to_string())?;
+                let id = serde_json::json!({"type":"string", "value":format!("{identity}:{key}")});
+                stable.insert((edge, key), id.clone());
+                target.push(vec![id]);
+            }
+        }
+        // The fixture allocates globally unique integer node/edge keys. Apply
+        // its stable schema-independent identities to property owners too;
+        // the engine snapshot preserves the original typed source keys.
+        for (edge, properties) in [(false, &mut snapshot.node_properties), (true, &mut snapshot.edge_properties)] {
+            for row in properties {
+                let key = row[0]["value"].as_i64();
+                let id = key.and_then(|key| stable.get(&(edge, key)))
+                    .ok_or_else(|| format!("property owner missing from fixture snapshot: {}", row[0]))?;
+                row[0] = id.clone();
             }
         }
         Ok(snapshot)
@@ -1999,117 +2014,17 @@ mod tests {
         assert_eq!(fixture.sql("SELECT count(*) FROM duckdb_columns() WHERE table_name='city' AND column_name='age'").unwrap(),0);
     }
 
-    #[tokio::test]
-    async fn imported_identity_types_reach_the_native_transport() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        fixture.install(&serde_json::json!({"nodes":[{"id":1,"id_type":"Integer","label":"person","properties":{"name":"Alice"}}],"edges":[]})).unwrap();
-        assert_eq!(fixture.sql("SELECT count(*) FROM duckdb_columns() WHERE table_name='person' AND column_name='node_id' AND data_type='INTEGER'").unwrap(),1);
-        let result = fixture.engine.gremlin("g.V().id()").await.unwrap();
-        let rows: Value = serde_json::from_str(
-            result
-                .returned
-                .batch
-                .schema()
-                .metadata()
-                .get("orchiddb.gremlin.typed_rows.v1")
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(rows[0][0], serde_json::json!({"type":"int","value":1}));
-    }
 
-    #[tokio::test]
-    async fn gremlin_merge_declares_real_tables_and_properties() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        let query = "g.mergeV([(T.label):'person', 'name':'Alice'])";
-        let parsed = orchiddb::language::gremlin::parse_traversal(query).unwrap();
-        let plan = orchiddb::language::gremlin::GremlinPlanner::new().plan(&parsed).unwrap();
-        fixture.prepare(&plan).unwrap();
-        fixture.engine.gremlin(query).await.unwrap();
-        fixture.engine.gremlin(query).await.unwrap();
-        assert_eq!(fixture.sql("SELECT count(*) FROM person WHERE name='Alice'").unwrap(), 1);
-    }
 
-    #[tokio::test]
-    async fn gremlin_partition_write_declares_vertex_and_edge_properties() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        let query = "g.withStrategies(new PartitionStrategy(partitionKey: '_partition', writePartition: 'a', readPartitions: ['a'])).addV('person').property('name','alice').addE('self')";
-        let (source, values) = orchiddb::language::gremlin::callables::prepare(query, &Default::default()).unwrap();
-        let parsed = orchiddb::language::gremlin::parse_traversal_with_bindings(&source, &values).unwrap();
-        let plan = orchiddb::language::gremlin::GremlinPlanner::new().plan(&parsed).unwrap();
-        fixture.prepare(&plan).unwrap();
-        fixture.engine.gremlin(query).await.unwrap_or_else(|e| panic!("{e}\n{plan:#?}\n{:?}", fixture.schema_sql()));
-        assert_eq!(fixture.sql("SELECT count(*) FROM person WHERE _partition='a'").unwrap(), 1);
-    }
 
-    #[tokio::test]
-    async fn gremlin_existence_and_repeated_scan_keep_sql_scopes() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        fixture.install(&serde_json::json!({"nodes":[
-            {"id":1,"label":"person","properties":{"name":"Alice"}},
-            {"id":2,"label":"person","properties":{"name":"Bob"}},
-            {"id":3,"label":"software","properties":{"name":"Orchid"}}],"edges":[]})).unwrap();
-        for (query, count) in [
-            ("g.V(2).union(constant(1),constant(2),constant(3))", 3),
-            ("g.V(99).union(constant(1),constant(2),constant(3))", 0),
-            ("g.V().hasLabel('person').V().hasLabel('software').values('name')", 2),
-        ] {
-            let result = fixture.engine.gremlin(query).await.unwrap();
-            assert_eq!(result.returned.batch.num_rows(), count, "{query}");
-        }
-    }
 
-    #[tokio::test]
-    async fn repeated_element_labels_preserve_first_and_all_occurrences() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        fixture.install(&serde_json::json!({"nodes":[
-            {"id":1,"label":"person","properties":{"name":"Alice"}},
-            {"id":2,"label":"person","properties":{"name":"Bob"}}],
-            "edges":[{"id":9,"label":"knows","src":1,"dst":2,"properties":{}}]})).unwrap();
-        for (query, expected) in [
-            ("g.V(1).as('a').out('knows').as('a').select(Pop.first,'a').values('name')", "Alice"),
-            ("g.V(1).as('a').out('knows').as('a').select(Pop.all,'a').count(local)", "2"),
-            ("g.V(1).as('a').out('knows').as('a').select(Pop.all,__.constant('a')).count(local)", "2"),
-        ] {
-            let result=fixture.engine.gremlin(query).await.unwrap();
-            assert_eq!(result.returned.batch.num_rows(),1,"{query}");
-            assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0),0).unwrap(),expected,"{query}");
-        }
-    }
 
-    #[tokio::test]
-    async fn gremlin_disjunction_correlates_each_aggregate_branch() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        fixture.install(&serde_json::json!({"nodes":[
-            {"id":1,"label":"person","properties":{"age":29,"name":"Alice"}},
-            {"id":2,"label":"person","properties":{"age":27,"name":"Bob"}},
-            {"id":3,"label":"person","properties":{"age":20,"name":"Charlie"}}],
-            "edges":[{"id":9,"label":"knows","src":2,"dst":1,"properties":{}},
-                      {"id":10,"label":"knows","src":2,"dst":3,"properties":{}}]})).unwrap();
-        let result=fixture.engine.gremlin("g.V().or(__.has('age',P.gt(27)),__.outE().count().is(P.gte(2))).values('name')").await.unwrap();
-        let mut names=(0..result.returned.batch.num_rows()).map(|row|
-            arrow::util::display::array_value_to_string(result.returned.batch.column(0),row).unwrap()).collect::<Vec<_>>();
-        names.sort();
-        assert_eq!(names,["Alice","Bob"]);
-        let result=fixture.engine.gremlin("g.withStrategies(ProductiveByStrategy).V().or(has('name','Alice'),has('name','Bob')).order().by('age').values('name')").await.unwrap();
-        let names=(0..result.returned.batch.num_rows()).map(|row|
-            arrow::util::display::array_value_to_string(result.returned.batch.column(0),row).unwrap()).collect::<Vec<_>>();
-        assert_eq!(names,["Bob","Alice"]);
-    }
 
-    #[tokio::test]
-    async fn gremlin_alias_history_does_not_rebind_prior_expressions() {
-        let mut fixture = RelationalFixture::new().unwrap();
-        let query = "g.addV('person').property('name','Alice').as('a').addV('person').property('name','Bob').as('b').addV('software').property('name','Orchid').as('s').addE('knows').from('a').to('b').property('weight',1.0d)";
-        let parsed = orchiddb::language::gremlin::parse_traversal(query).unwrap();
-        let plan = orchiddb::language::gremlin::GremlinPlanner::new()
-            .plan(&parsed)
-            .unwrap();
-        fixture.prepare(&plan).unwrap();
-        fixture.engine.gremlin(query).await.unwrap();
-        assert_eq!(fixture.sql("SELECT count(*) FROM person").unwrap(), 2);
-        assert_eq!(fixture.snapshot().unwrap().relationships.len(), 1);
-        assert_eq!(fixture.sql("SELECT count(*) FROM knows").unwrap(), 1);
-        assert_eq!(fixture.storage_tables().len(), 3);
-    }
+
+
+
+
+
+
+
 }

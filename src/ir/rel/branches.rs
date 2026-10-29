@@ -1,4 +1,7 @@
 //! Branches.
+//!
+//! SQL audit [L20](../../../tools/diagnostics/sql-lowering-audit.md#l20-union-and-branch-alignment): Align branch types before SQL set operations. Native-value support
+//! does not imply that every primitive column has already been losslessly boxed.
 
 use super::*;
 
@@ -39,6 +42,25 @@ impl<'a> LoweringContext<'a> {
                 fields.iter().any(|field| has_binding_shape(&node.plan, field).is_some()));
             if graph_fields(&left) || graph_fields(&right) {
                 return self.lower_graph_union(all, left, right);
+            }
+        }
+        // SQL audit G01: select a lossless carrier before SQL can coerce
+        // heterogeneous branches. DISTINCT then compares language keys, not
+        // serialized carriers (integer 1 and float 1.0 are equal in Cypher).
+        let mut cypher_boxed = false;
+        if self.language == Language::Cypher && self.options.native_values {
+            let boxed = left.plan.schema().fields().iter().zip(right.plan.schema().fields())
+                .enumerate().filter_map(|(i, (a, b))| (a.data_type() != b.data_type()).then_some(i))
+                .collect::<BTreeSet<_>>();
+            cypher_boxed = !boxed.is_empty();
+            for input in [&mut left, &mut right] {
+                if !cypher_boxed { break; }
+                let expressions = input.plan.schema().fields().iter().enumerate().map(|(i, field)| {
+                    if boxed.contains(&i) && !native_values::is_value(field.data_type()) {
+                        Ok(native_values::typed::call("pack", vec![col_exact(field.name())]).alias(field.name()))
+                    } else { Ok(col_exact(field.name())) }
+                }).collect::<RelResult<Vec<_>>>()?;
+                input.plan = LogicalPlanBuilder::from(input.plan.clone()).project(expressions)?.build()?;
             }
         }
         if self.language == Language::Cypher && !self.options.native_values {
@@ -83,7 +105,7 @@ impl<'a> LoweringContext<'a> {
             ));
         }
         let builder = LogicalPlanBuilder::from(left.plan.clone());
-        let plan = match (all, align) {
+        let mut plan = match (all || cypher_boxed, align) {
             (true, UnionAlign::ByPosition) if self.language == Language::Gremlin => {
                 builder.union_by_name(right.plan.clone())?.build()?
             }
@@ -101,6 +123,14 @@ impl<'a> LoweringContext<'a> {
                 .union_by_name_distinct(right.plan.clone())?
                 .build()?,
         };
+        if cypher_boxed && !all {
+            let columns = plan.schema().columns();
+            let groups = columns.iter().map(|c| native_values::key_expr(Expr::Column(c.clone()), true)).collect::<Vec<_>>();
+            let representatives = columns.iter().map(|c| datafusion::functions_aggregate::first_last::first_value(
+                Expr::Column(c.clone()), vec![]).alias(c.name.clone())).collect::<Vec<_>>();
+            let names = columns.iter().map(|c| col_exact(&c.name)).collect::<Vec<_>>();
+            plan = LogicalPlanBuilder::from(plan).aggregate(groups, representatives)?.project(names)?.build()?;
+        }
         let mut islands = left.islands;
         islands.merge(right.islands);
         Ok(LoweredNode {

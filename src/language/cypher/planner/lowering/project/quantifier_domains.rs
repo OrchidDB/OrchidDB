@@ -208,12 +208,9 @@ fn predicate(expr: &Expr, scope: &Scope) -> bool {
 }
 
 pub(super) fn direct(input: &Node, variable: &str, source: &Expr, body: &Expr) -> bool {
-    // The relational scalar path fences non-immutable ancestry. Do not route
-    // newly supported nested bodies there when a sibling producer could force
-    // its rejection; the existing Apply path can materialize those scopes.
-    if !legacy_predicate(body) && !structural_input(input) {
-        return false;
-    }
+    // Prove the expressions actually consumed by the quantifier. Unrelated
+    // volatile output columns stay in the upstream projection; they do not
+    // require occurrence joins or windows inside this scalar collection body.
     let mut scope = input_scope(input);
     let element = domain(source, &scope);
     scope.remove(variable);
@@ -221,60 +218,6 @@ pub(super) fn direct(input: &Node, variable: &str, source: &Expr, body: &Expr) -
         scope.insert(variable.to_owned(), *element);
     }
     predicate(body, &scope)
-}
-
-fn structural_value(expr: &IrExpr) -> bool {
-    match expr {
-        IrExpr::Binding(_) | IrExpr::Lit(_) => true,
-        IrExpr::List(items) => items.iter().all(structural_value),
-        _ => false,
-    }
-}
-
-fn structural_input(input: &Node) -> bool {
-    match input {
-        Node::GraphOneRow => true,
-        Node::GraphProject { input, items, .. } => {
-            structural_input(input) && items.iter().all(|item| structural_value(&item.expr))
-        }
-        Node::GraphUnwind {
-            input, input_expr, ..
-        } => structural_input(input) && structural_value(input_expr),
-        _ => false,
-    }
-}
-
-fn legacy_predicate(expr: &Expr) -> bool {
-    match expr {
-        Expr::Variable(_) | Expr::Literal(_) => true,
-        Expr::Quantifier {
-            collection: source,
-            predicate: body,
-            ..
-        } => collection(source) && legacy_predicate(body),
-        Expr::Unary {
-            op: UnaryOp::Not,
-            expr,
-        }
-        | Expr::IsNull(expr)
-        | Expr::IsNotNull(expr) => legacy_predicate(expr),
-        Expr::Binary { op, lhs, rhs }
-            if matches!(
-                op,
-                BinaryOp::Eq
-                    | BinaryOp::Neq
-                    | BinaryOp::Lt
-                    | BinaryOp::Lte
-                    | BinaryOp::Gt
-                    | BinaryOp::Gte
-                    | BinaryOp::And
-                    | BinaryOp::Or
-            ) =>
-        {
-            legacy_predicate(lhs) && legacy_predicate(rhs)
-        }
-        _ => false,
-    }
 }
 
 #[cfg(test)]

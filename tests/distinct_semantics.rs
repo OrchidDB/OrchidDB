@@ -18,8 +18,6 @@ use orchiddb::ir::policy::{GraphPlanPolicy, ResultForm};
 use orchiddb::ir::rel::RelBackend;
 use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
 use orchiddb::ir::value::Value;
-use orchiddb::language::gremlin::parser::parse_traversal;
-use orchiddb::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
 use orchiddb::planner::CypherPlanner;
 
 /// Nodes labelled `P` with `group = [a, a, b]`. `name` and `score` let a test
@@ -36,12 +34,6 @@ fn group_graph() -> PropertyGraph {
     graph
 }
 
-fn gremlin_plan(source: &str) -> GraphPlan {
-    let traversal = parse_traversal(source).expect("parse Gremlin");
-    AstGremlinPlanner::new()
-        .plan(&traversal)
-        .expect("plan Gremlin")
-}
 
 async fn sql_rows(plan: &GraphPlan, graph: &PropertyGraph) -> Vec<Vec<SqlValue>> {
     let lowered = RelBackend::new().lower(plan, graph).expect("lower");
@@ -86,21 +78,7 @@ fn values_distinct_plan(bindings: Vec<&str>, rows: Vec<Vec<Value>>, keys: Vec<&s
     )
 }
 
-#[tokio::test]
-async fn gremlin_dedup_by_group_keeps_first_row_only() {
-    let plan = gremlin_plan(r#"g.V().hasLabel("P").dedup().by("group").values("name")"#);
-    let actual = sql_rows(&plan, &group_graph()).await;
-    assert_eq!(actual, vec![vec![text("x1")], vec![text("x3")]]);
-}
 
-#[tokio::test]
-async fn gremlin_order_then_dedup_by_group() {
-    let plan = gremlin_plan(
-        r#"g.V().hasLabel("P").order().by("score", Order.desc).dedup().by("group").values("name")"#,
-    );
-    let actual = sql_rows(&plan, &group_graph()).await;
-    assert_eq!(actual, vec![vec![text("x2")], vec![text("x3")]]);
-}
 
 #[tokio::test]
 async fn cypher_return_distinct_by_property_ignores_hidden_columns() {

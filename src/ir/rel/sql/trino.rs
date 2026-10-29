@@ -223,8 +223,11 @@ impl DialectAdapter for TrinoAdapter {
             "vector.maxsim" => maxsim(),
             "fn.contains" => "strpos(__arg0, __arg1) > 0".into(),
             "fn.array_length" | "fn.cardinality" => "cardinality(__arg0)".into(),
-            "fn.array_has" => "contains(__arg0, __arg1)".into(),
-            "fn.array_concat" => "concat(__args)".into(),
+            "fn.array_has" => "CASE WHEN __arg0 IS NULL OR __arg1 IS NULL THEN NULL ELSE coalesce(contains(__arg0, __arg1), false) END".into(),
+            "fn.array_concat" => "CASE WHEN __arg0 IS NULL AND __arg1 IS NULL THEN NULL ELSE concat(coalesce(__arg0, ARRAY[]), coalesce(__arg1, ARRAY[])) END".into(),
+            // The native catalog orders NULL first. Trino's one-argument
+            // array_sort orders NULL last, so spell out the comparator.
+            "fn.array_sort" => "array_sort(__arg0, (__sort_a, __sort_b) -> CASE WHEN __sort_a IS NULL AND __sort_b IS NULL THEN 0 WHEN __sort_a IS NULL THEN -1 WHEN __sort_b IS NULL THEN 1 WHEN __sort_a < __sort_b THEN -1 WHEN __sort_a > __sort_b THEN 1 ELSE 0 END)".into(),
             "fn.array_append" => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])".into(),
             "fn.array_prepend" => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))".into(),
             "fn.array_element" => "element_at(__arg0, nullif(__arg1, 0))".into(),

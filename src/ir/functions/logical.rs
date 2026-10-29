@@ -35,6 +35,9 @@ pub struct LogicalFunction {
     name: String,
     aliases: Vec<String>,
     native: Arc<ScalarUDF>,
+    /// Frozen after typed SQL specialization. Representation rewrites may turn
+    /// literal field-name arguments into expressions without changing the type.
+    result_type: Option<DataType>,
     pub sql: BTreeMap<String, SqlFunctionMapping>,
     /// Arity-specific mappings take precedence over a dialect-wide mapping.
     pub sql_overloads: BTreeMap<(String, usize), SqlFunctionMapping>,
@@ -66,6 +69,7 @@ impl LogicalFunction {
             name: format!("__orchiddb_logical_{encoded}"),
             aliases: vec![name],
             native,
+            result_type: None,
             sql,
             sql_overloads: BTreeMap::new(),
             portable_builtin: false,
@@ -137,6 +141,10 @@ impl LogicalFunction {
     pub fn into_udf(self) -> Arc<ScalarUDF> {
         Arc::new(ScalarUDF::new_from_impl(self))
     }
+    pub(crate) fn with_result_type(mut self, kind: DataType) -> Self {
+        self.result_type = Some(kind);
+        self
+    }
 }
 impl ScalarUDFImpl for LogicalFunction {
     fn as_any(&self) -> &dyn Any {
@@ -152,9 +160,13 @@ impl ScalarUDFImpl for LogicalFunction {
         self.native.signature()
     }
     fn return_type(&self, args: &[DataType]) -> Result<DataType> {
+        if let Some(kind) = &self.result_type { return Ok(kind.clone()); }
         self.native.return_type(args)
     }
     fn return_field_from_args(&self, args: ReturnFieldArgs) -> Result<arrow::datatypes::FieldRef> {
+        if let Some(kind) = &self.result_type {
+            return Ok(Arc::new(arrow::datatypes::Field::new(self.name(), kind.clone(), true)));
+        }
         self.native.return_field_from_args(args)
     }
     fn with_updated_config(

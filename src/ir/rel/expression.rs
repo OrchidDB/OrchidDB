@@ -1,4 +1,7 @@
 //! Scalar expression lowering and function/type classification.
+//!
+//! SQL audit [L08](../../../tools/diagnostics/sql-lowering-audit.md#l08-scalar-dispatch-and-typed-kernel-fallback): Dispatch selects ordinary SQL, structural graph expressions, or typed
+//! scalar kernels. Kernel availability must still be checked on the SQL owner.
 
 use super::*;
 
@@ -35,12 +38,20 @@ impl<'a> LoweringContext<'a> {
     /// retaining the generic string-null representation emits invalid SQL on
     /// engines such as PostgreSQL that do not coerce VARCHAR to a predicate.
     pub(super) fn lower_case_condition(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        // SQL audit G02: decide the language domain before a backend can
+        // implicitly coerce numbers or strings to BOOLEAN.
         let lowered = self.lower_expr(plan, expr)?;
         if self.options.native_values && native_values::is_value(&lowered.get_type(plan.schema())?) {return Ok(native_values::predicate(lowered));}
-        if matches!(&lowered, Expr::Literal(value, _) if value.is_null()) {
+        if lowered.get_type(plan.schema())? == DataType::Null || matches!(&lowered, Expr::Literal(value, _) if value.is_null()) {
             Ok(lit(ScalarValue::Boolean(None)))
-        } else {
+        } else if lowered.get_type(plan.schema())? == DataType::Boolean {
             Ok(lowered)
+        } else {
+            // Validate when the predicate is evaluated. An empty collection or
+            // a dead CASE arm must not fail merely because its unused body has
+            // a non-Boolean type. The target capability check still requires
+            // this strict validator; never borrow SQL's truthy coercions.
+            Ok(native_values::predicate(lowered))
         }
     }
 
@@ -132,6 +143,7 @@ impl<'a> LoweringContext<'a> {
             }
             match self.lower_sql_expr(plan, expr) {
                 Ok(value) => return Ok(value),
+                Err(error @ RelError::Semantic(_)) => return Err(error),
                 Err(error) => return self.native_expr(plan, expr).map_err(|native| {
                     if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {eprintln!("Native scalar boundary: {native}; expression: {expr:?}");}
                     error
@@ -332,38 +344,14 @@ impl<'a> LoweringContext<'a> {
                 if !has_exact_col(plan, &col) {
                     return Err(RelError::Unsupported(format!("id({binding})")));
                 }
-                // Gremlin source and hasId filters pair a label predicate
-                // with the per-label row id. Cypher's ID() result is the
-                // provider-qualified `table:offset` value below.
-                if self.language == Language::Gremlin {
-                    let kind = plan.schema().field_with_unqualified_name(&col)?.data_type();
-                    if matches!(kind, DataType::Struct(_)) {
-                        return Err(RelError::Unsupported("composite or heterogeneous source IDs require native typed values".into()));
-                    }
-                    return Ok(col_exact(col));
+                // IR identity is the typed source key on every route. Display
+                // qualification belongs to graph rendering, never equality or
+                // id() predicates; it adds casts and changes UInt64 semantics.
+                let kind = plan.schema().field_with_unqualified_name(&col)?.data_type();
+                if matches!(kind, DataType::Struct(_)) {
+                    return Err(RelError::Unsupported("composite or heterogeneous source IDs require native typed values".into()));
                 }
-                // Kuzu's `ID()` yields an internal id that prints as
-                // `table:offset`, not a bare offset. Mirror
-                // `runtime::element_id` so the same element gets the same
-                // id whichever path evaluated it.
-                let table_index = match has_binding_shape(plan, binding) {
-                    Some(BindingShape::Node) => label_index_case(
-                        col_exact(label_col(binding)),
-                        self.graph.node_label_order(),
-                        0,
-                        1,
-                    ),
-                    Some(BindingShape::Edge) => {
-                        rel_index_case(col_exact(label_col(binding)), self.graph)
-                    }
-                    // Not an element binding — nothing to qualify it with.
-                    None => return Ok(col_exact(col)),
-                };
-                Ok(concat_exprs(vec![
-                    table_index,
-                    lit(":"),
-                    identity_text_expr(plan, col),
-                ]))
+                Ok(col_exact(col))
             }
             IrExpr::Label(binding) => {
                 let col = label_col(binding);
@@ -467,9 +455,10 @@ impl<'a> LoweringContext<'a> {
                 };
                 self.lower_expr(plan, fallback)
             }
-            IrExpr::Call { name, args } if name == "cypher_id" && self.options.mapping.is_some() => {
-                if let [IrExpr::Binding(binding)] = args.as_slice() {
-                    self.lower_expr(plan, &IrExpr::Id(binding.clone()))
+            IrExpr::Call { name, args } if name == "cypher_id" => {
+                if let [IrExpr::Binding(binding)] = args.as_slice()
+                    && has_binding_shape(plan, binding).is_some() {
+                    self.lower_cypher_identity(plan, binding)
                 } else { Err(RelError::Unsupported("Mapped identity requires an element binding".into())) }
             }
             IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") || name == "cypher_range" => {
@@ -1245,6 +1234,19 @@ impl<'a> LoweringContext<'a> {
                     let mapping = self.options.mapping.as_ref().ok_or_else(||
                         RelError::Unsupported(mapping::BM25_CORPUS_ERROR.into()))?;
                     args.push(mapping.bm25_corpus(plan, &args[1])?);
+                }
+                // A graph property can carry JSON through a heterogeneous
+                // value column. Restore its domain before typed JSON dispatch;
+                // this checks the stored type and never parses ordinary text.
+                if let Some(op) = crate::ir::functions::json::operation(name) {
+                    for (index, arg) in args.iter_mut().enumerate() {
+                        let document = index == 0 && !matches!(op, "parse" | "valid" | "array" | "object")
+                            || index == 1 && matches!(op, "equals" | "contains" | "merge_patch");
+                        if document && native_values::is_value(&arg.get_type(plan.schema())?) {
+                            *arg = crate::ir::functions::json::function("json.parse").unwrap()
+                                .call(vec![native_values::typed::call("json_document", vec![arg.clone()])]);
+                        }
+                    }
                 }
                 Ok(crate::ir::functions::native_scalar(
                     name,

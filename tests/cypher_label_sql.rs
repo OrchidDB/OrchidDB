@@ -52,7 +52,7 @@ async fn logical_labels_lower_with_aliases_nulls_and_relationship_types() {
         let r = e.cypher(query).await.unwrap();
         assert_eq!(rows(&r), expected, "{query}\n{:?}", r.stats.sql_queries);
         assert_eq!(
-            r.stats.cost.native_kernel_calls, 0,
+            r.stats.cost.native_relational_kernel_calls, 0,
             "{query}\n{}",
             r.stats.physical_plan
         );
@@ -63,7 +63,7 @@ async fn logical_labels_lower_with_aliases_nulls_and_relationship_types() {
         .await
         .unwrap();
     assert_eq!(rows(&r), ["false|true|true|[B,C]"]);
-    assert_eq!(r.stats.cost.native_kernel_calls, 0);
+    assert_eq!(r.stats.cost.native_relational_kernel_calls, 0);
     assert!(e.cypher("RETURN labels(42)").await.is_err());
 }
 

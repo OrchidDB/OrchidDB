@@ -404,6 +404,17 @@ fn compute_aggregate_with_cypher_equivalence(
             let Some(percentile) = percentile_value(percentile_expr, rows, graph)? else {
                 return Ok(Value::Null);
             };
+            if agg.kind == AggKind::PercentileDisc {
+                // Discrete percentiles select an input value, including its
+                // integer width; converting the population to f64 loses both
+                // exact ordering above 2^53 and the selected value's type.
+                let mut values = aggregate_values(value_expr, rows, graph, agg.distinct, cypher_equivalence)?;
+                values.retain(|value| numeric_f64(value).is_some());
+                if values.is_empty() { return Ok(Value::Null); }
+                values.sort_by(crate::ir::runtime::scalar::compare_cypher_order);
+                let index = ((percentile * values.len() as f64).ceil() as usize).saturating_sub(1);
+                return Ok(values[index.min(values.len() - 1)].clone());
+            }
             let mut values = numeric_aggregate_values(
                 value_expr,
                 rows,

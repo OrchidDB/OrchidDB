@@ -174,13 +174,14 @@ async fn observed_paths_and_relationship_properties_are_not_silently_dropped() {
 }
 
 #[tokio::test]
-async fn postgres_relationship_membership_uses_its_native_array_function() {
+async fn postgres_fixed_relationship_uniqueness_uses_scalar_keys() {
     let mut req = request("MATCH (a:N)-[]->(b:N)-[]->(c:N) RETURN c.id");
     req["dialect"] = json!("postgres");
     let compiled: Value =
         serde_json::from_str(&compile_json(&req.to_string()).await.unwrap()).unwrap();
     let sql = compiled["sql"].as_str().unwrap();
-    assert!(sql.contains("array_position"), "{sql}");
+    assert!(sql.contains("<>") && sql.contains("__e0_label") && sql.contains("__e0_id"), "{sql}");
+    assert!(!sql.contains("array_position"), "fixed paths need no list history: {sql}");
     assert!(!sql.contains("array_has("), "{sql}");
     datafusion::sql::sqlparser::parser::Parser::parse_sql(
         &datafusion::sql::sqlparser::dialect::PostgreSqlDialect {},

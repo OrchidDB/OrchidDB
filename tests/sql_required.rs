@@ -60,26 +60,7 @@ impl orchiddb::ir::rel::runtime::policy::BoundaryExecutable for Observe {
     }
 }
 
-#[tokio::test]
-async fn boundary_override_preserves_default_execution() {
-    use orchiddb::ir::rel::runtime::policy::{BoundaryKind, ExecutableSet};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-    let mut engine = GraphEngine::in_memory().unwrap();
-    let calls = Arc::new(AtomicUsize::new(0));
-    engine.set_boundary_executables(
-        ExecutableSet::default().with(BoundaryKind::Barrier, Arc::new(Observe(calls.clone()))),
-    );
-    engine.set_lowering_policy(LoweringPolicy::SqlRequired);
-    let count = engine.gremlin("g.inject(1,2).barrier().count()").await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(count.returned.batch.column(0), 0).unwrap(), "2");
-    assert_eq!(count.stats.islands, 2);
-    let result = engine.gremlin("g.inject(1,2).barrier()").await.unwrap();
-    assert_eq!(result.returned.batch.num_rows(), 2);
-    assert!(calls.load(Ordering::Relaxed) > 0);
-}
+
 
 #[tokio::test]
 async fn sql_native_aggregate_semantics_are_independent_of_placement() {
@@ -110,18 +91,7 @@ async fn sql_native_aggregate_semantics_are_independent_of_placement() {
     }
 }
 
-#[tokio::test]
-async fn sql_union_resumes_after_branch_barriers() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine.set_lowering_policy(LoweringPolicy::SqlRequired);
-    let result = engine.gremlin(
-        "g.union(__.inject(1).barrier(), __.inject(2).barrier()).sum()",
-    ).await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(
-        result.returned.batch.column(0), 0,
-    ).unwrap(), "3");
-    assert!(result.stats.sql_queries.iter().any(|sql| sql.contains("UNION ALL")));
-}
+
 
 #[test]
 fn sql_required_rejects_relational_kernels_at_compile_time() {

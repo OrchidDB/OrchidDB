@@ -5,37 +5,23 @@ edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 autobins = false
-description = "Multi-engine graph language compiler, runtime, and optional DuckDB extension"
+description = "Cypher query lowering and Arrow execution on caller-owned SQL sources"
 repository = "https://github.com/OrchidDB/OrchidDB"
 homepage = "https://orchiddb.com"
 documentation = "https://github.com/OrchidDB/OrchidDB#readme"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = ["clients/rust", "clients/native", "clients/java/native", "extension/compiler", "compiler/datafusion"]
+members = ["clients/rust", "clients/native", "extension/functions", "compiler/datafusion"]
 default-members = ["."]
 exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo", "vendor/duckdb", "vendor/libduckdb-sys", "vendor/datafusion-functions", "vendor/datafusion-functions-aggregate", "vendor/datafusion-functions-nested", "vendor/datafusion-sql"]
 resolver = "2"
 
-[[bin]]
-name = "orchiddb-jvm-store"
-path = "src/bin/orchiddb-jvm-store.rs"
-
 [features]
 default = []
-# Optional syntax extensions of the embedded SPARQL parser.
-sep-0002 = []
-sep-0006 = []
-sparql-12 = ["oxrdf/rdf-12"]
-standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
 duckdb-download = ["duckdb", "duckdb/download"]
 trino = ["dep:reqwest"]
-weaviate = ["dep:reqwest"]
-quickwit = ["dep:reqwest"]
-prometheus = ["dep:reqwest"]
-loki = ["dep:reqwest"]
-elasticsearch = ["dep:reqwest"]
 orchid-catalog = ["dep:reqwest"]
 kafka = ["dep:rdkafka"]
 
@@ -57,8 +43,6 @@ duckdb = { version = "1.10502.0", path = "vendor/duckdb", features = ["chrono", 
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
-oxiri = "0.2"
-oxsdatatypes = "0.2.2"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"], optional = true }
 sha2 = "0.10"
@@ -67,9 +51,6 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 jsonschema = { version = "0.33", default-features = false }
-oxilangtag = "0.1"
-oxrdf = "=0.3.4"
-peg = "0.8"
 rand = "0.9"
 thiserror = "2"
 unicode-segmentation = "1"
@@ -122,9 +103,6 @@ path = "tools/diagnostics/partition_layout_plans.rs"
 name = "representation_plans"
 path = "tools/diagnostics/representation_plans.rs"
 
-[[example]]
-name = "sparql_coverage"
-path = "tools/diagnostics/sparql_coverage.rs"
 
 [[example]]
 name = "statistics_access_plans"

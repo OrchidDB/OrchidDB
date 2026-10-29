@@ -1,5 +1,8 @@
 //! Orchid-owned execution DAG: SQL regions and explicit language boundaries.
 //! DataFusion is used for logical analysis/optimization only.
+//!
+//! SQL audit [L32](../../../tools/diagnostics/sql-lowering-audit.md#l32-arrow-execution-and-reentry-after-boundaries): Typed runtime inputs reconnect SQL above explicit executable
+//! boundaries. Transport/kernel counts alone do not measure missed relational lowering.
 use arrow::array::RecordBatch;
 use std::sync::{Arc, Mutex};
 use std::{

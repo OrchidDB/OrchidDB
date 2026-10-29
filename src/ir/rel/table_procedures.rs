@@ -1,6 +1,9 @@
 //! Pure table-procedure specialization. This is deliberately narrower than a
 //! general read-procedure capability: only successful, primitive constant
 //! arguments may select rows from a registered immutable table snapshot.
+//!
+//! SQL audit [L22](../../../tools/diagnostics/sql-lowering-audit.md#l22-procedures-and-dependent-table-functions): Constant snapshot specialization precedes capability validation.
+//! General procedure calls and dependent SQL are different execution contracts.
 use super::*;
 use crate::ir::plan::ProcedureMode;
 

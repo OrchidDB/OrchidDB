@@ -1,9 +1,10 @@
 # Three execution suites and a smaller Orchid release
 
-Status: complete planning document; implementation and deletions proposed here are
-not yet performed. This supersedes the multi-language distribution/testing scope of
-`optional-relational-engine-plan.md`, while retaining its source-first execution
-contract. No README changes are included.
+Status: planning inventory, with several scope reductions now implemented.
+The [SQL lowering audit](sql-lowering-audit.md) records current implementation
+strategies, gaps, and validation evidence. DuckDB is the sole completion engine;
+full source pushdown eliminates its work. Remaining proposals below are not
+claims of implemented behavior.
 
 ## 1. Product boundary
 
@@ -15,25 +16,24 @@ Release two deliverables:
    PostgreSQL driver. Schema registration is separate from query and parameters;
    callers receive results, not a plan they must implement themselves.
 2. **Orchid DuckDB extension/function bundle:** the same language semantics,
-   lowering, kernels, codecs, and required SQL helper functions hosted by the
-   caller's DuckDB connection. Keep schema registration and query execution in this
-   artifact; do not reduce it to scalar helpers if doing so strands graph queries.
-   DuckDB extensions supply access to external systems.
+   kernels, codecs, and required scalar SQL helpers hosted by the caller's DuckDB
+   connection. Schema registration and Cypher execution stay in the Rust/Go
+   library. The separately built extension registers UDFs only.
 
 Interpret “native thing” as an executable embedding library, not a server or a
 compile-only tool. Interpret “bundle of functions for the extension” as the existing
-DuckDB host with shared function implementations. A new Trino function plugin is
+separate scalar-UDF module with shared function implementations. A new Trino function plugin is
 not implied. Trino connector functions remain source-owned; unsupported functions
-run locally or in optional DuckDB completion.
+run as declared local functions or through DuckDB completion.
 
-Only two completion-engine values exist: `none` and `duckdb`. There are exactly
+DuckDB is the sole completion engine. There are
 three top-level integration suites, named for the requested execution paths:
 
 | Suite | What executes work | Authorization boundary |
 | --- | --- | --- |
 | DuckDB lowering and extensions | Caller-owned DuckDB, its extensions, and explicit residual completion | Caller session credentials; S3/object permissions for lake data |
 | Trino lowering and connectors/functions | Trino source; local UDFs or DuckDB only for unsupported residual work | Trino with externally configured OPA |
-| Native/none | Caller SQL/request endpoints and native local UDF execution | Application-owned authentication and table/source hooks |
+| Arrow and bindings | Caller SQL/request endpoints and native local UDF execution | Application-owned authentication and table/source hooks |
 
 These are execution paths, not three engines or three separate graph products.
 Lake and realtime workloads use the appropriate path. Neither 4 TB/petabyte data
@@ -54,8 +54,8 @@ unused. Before deleting shared internals, trace consumers and run retained suite
 | Schema mapping, relationship declarations, foreign keys, temporal source mappings | Keep | Ontology functionality independent of storage ownership |
 | Computed/RAG edges, retrieval, vector/search lowering, local UDFs | Keep | Explicit capabilities, types, dependencies and effects; no DuckDB registration for native UDFs |
 | `src/execution/plan.rs` and typed Arrow streaming | Keep/consolidate | One runtime executes source-first plans; language wrappers must not become separate runtimes |
-| SQL dialects including PostgreSQL and Trino | Keep | Dialect/function lowering does not imply a bundled driver; StarRocks and other less-used mappings remain internal until covered and claimed |
-| DuckDB host and extension helper functions; `extension/src`, `extension/compiler` | Keep | Caller-owned connection/catalog; lazy optional completion in native integrations |
+| SQL dialects including PostgreSQL and Trino | Keep | Dialect/function lowering does not imply a bundled driver; only PostgreSQL, DuckDB, and Trino are built in; engine-extension rewrites remain supported |
+| DuckDB host and extension helper functions; `extension/src`, `extension/compiler` | Keep | Caller-owned connection/catalog; lazy completion in native integrations |
 | Trino SQL source and codec; `src/execution/trino.rs` | Keep as optional source adapter | Full pushdown where possible; no intermediate-result uploads or Trino completion-engine option |
 | Trino Arrow exchange plugin; `extensions/trino` | Remove from supported release, then delete obsolete consumers | Inspect plugin function consumers first; retain any independently required lowering function elsewhere; generic streaming is not automatically obsolete |
 | Generic SQL/request execution interfaces and source capability declarations | Keep | Application owns endpoint/driver/pool/auth; Orchid passes SQL and typed parameters and consumes typed streams |
@@ -64,7 +64,7 @@ unused. Before deleting shared internals, trace consumers and run retained suite
 | Table/source hooks | Keep/design native contract | Caller policy may deny or resolve access to a scoped relation; fail closed and cover every access path |
 | Rust, Python, JS, Java, Go, C++, Elixir SDKs under `clients/` | Remove as supported products | Move native runtime, shared useful code and unique regression tests first; remove duplicated plan interpreters, JNI/NIF and package publishing |
 | `clients/native` C ABI | Retain and promote, not delete with clients | Currently planning/statistics oriented; add native execution/session/callback/stream lifecycle before retiring SDK execution |
-| Remote adapters: Weaviate, Elasticsearch, Quickwit, Prometheus, Loki | Keep lowering contracts; make built-in transports optional | No default transport bundle; callers can bind request execution; keep real protocol regression tests for adapters still shipped |
+| Standalone HTTP source adapters | Remove | PostgreSQL, DuckDB, and Trino are the built-in sources; database-hosted extension rewrites remain supported |
 | DuckDB PromQL/LogQL and lake/vector extension mappings | Keep when supported by pinned integrations | Verify actual extension functions, versions and result schemas; missing integration must fail explicitly |
 | Kafka/Flink streaming materialization, subscriptions and offsets; `src/streaming` | Remove from these release deliverables / defer as separate scope | Remove Kafka default feature/packaging and query-level permission checks; preserve reusable bounded result-streaming primitives |
 | Managed graph storage, incremental engine, checkpointing; `src/engine.rs`, `src/storage.rs`, managed/RDF engine modules | Defer storage-owning product surface | Remove managed store lifecycle/background processing from slim release; retain codecs/kernels used by queries and shared host helpers |
@@ -146,14 +146,14 @@ cases exercising source-first residual execution.
 
 | Case | Integration / query shape | Required evidence |
 | --- | --- | --- |
-| A1 | Local DuckDB tables; Cypher/Gremlin/SPARQL supported corpus | Real results, required Orchid helper registration, exact value semantics |
+| A1 | Local DuckDB tables; supported Cypher corpus | Real results, required Orchid helper registration, exact value semantics |
 | A2 | Parquet/object-store access through DuckDB; Iceberg mapping when supported | Predicate/projection placement, partitioned fixture results, storage credentials and denied object access |
 | A3 | DuckDB PostgreSQL extension against fixture PostgreSQL | Real extension lowering and typed results; no PostgreSQL driver in Orchid artifacts |
 | A4 | Lance/vector/search mapping supported by chosen extension build | Supported search/filter/order semantics and missing-function diagnostics |
 | A5 | Prometheus/PromQL and Loki/LogQL extension mappings | Time range, labels, parameters, result schema; malformed/service-error propagation |
 | A6 | Two independent sources requiring a join/aggregate | Exactly the residual operators run in DuckDB; source pushdown retained; typed input registration and cleanup |
 | A7 | Source → local UDF → residual relational work | UDF runs locally once per declared input semantics; no unregistered local function emitted into SQL |
-| A8 | Source-only plan while completion capability is `duckdb` | DuckDB factory/query tripwire never fires; no manufactured final SELECT |
+| A8 | Fully pushed-down source plan | DuckDB factory/query tripwire never fires; no manufactured final SELECT |
 | A9 | Nulls, empty batches, large/nested values, cancellation and late errors | Same semantics as shared fixtures; bounded streaming and deterministic cleanup |
 
 A4/A5 must pin the real available extension builds, not pretend an emitted SQL
@@ -172,12 +172,12 @@ HTTP request adapters.
 
 | Case | Integration / query shape | Required evidence |
 | --- | --- | --- |
-| B1 | Full query over one Trino catalog, `engine=none` and `engine=duckdb` | One source query, correct results, zero DuckDB initialization/queries |
+| B1 | Full query over one Trino catalog | One source query, correct results, zero DuckDB initialization/queries |
 | B2 | Join across catalogs accessible through the same Trino source | Entire supported join lowers to Trino; no per-table Orchid fan-out |
 | B3 | Iceberg table/snapshot/history mappings | Real fixture snapshot identity and expected rows; unsupported change/history capabilities rejected |
 | B4 | Source-owned functions/connector extensions | Correct qualified function calls, types and predicates; missing capabilities diagnosed before execution where known |
 | B5 | Trino → native local UDF → result | No DuckDB activity; no requirement to install local UDF in Trino |
-| B6 | Trino → local work → required relational completion | `duckdb` completes residual; `none` rejects before source/UDF side effects |
+| B6 | Trino → local work → required relational completion | DuckDB completes residual automatically; a missing completion binding fails before source/UDF side effects |
 | B7 | Intermediate Arrow input supplied to Trino | Explicit rejection before network; no exchange plugin/upload path |
 | B8 | OPA allow, deny, row/column restrictions when configured, two principals | Real authorized results and denied operations; no credential/context bleed across reused sessions |
 | B9 | Pagination, null/nested/decimal/time values, cancellation, server/late-page errors | Native stream receives correct types/errors; remote query cancellation and closure verified |
@@ -186,7 +186,7 @@ B8 uses policy features enabled in the pinned Trino/OPA setup. Do not advertise
 masking/filtering merely because a synthetic allow/deny test passed. Tests exercise
 Orchid's identity propagation and enforcement boundary, not implement OPA in Orchid.
 
-## 7. Suite C: Native/none
+## 7. Suite C: Arrow and bindings
 
 Build the native artifact with explicit minimal features and exercise it from one
 small C ABI harness plus Rust core tests. SQL endpoints and request adapters are
@@ -199,7 +199,7 @@ exist outside the distributed Orchid artifact.
 | C2 | SQL callback with PostgreSQL dialect; projection/filter/join/aggregate supported by one source | Whole supported query reaches caller endpoint with typed parameters; correct streamed results |
 | C3 | Constants/parameters → local UDF; source → UDF | No SQL or DuckDB generated solely to evaluate local functions; exact type/null behavior |
 | C4 | Embedding → vector request → SQL fetch → reranking | Correct dependency order, batching and row correlation; no accidental fan-out duplication |
-| C5 | Unsupported cross-source join, sort/aggregate residual, missing source/UDF | Preflight failure before callbacks execute; no implicit engine fallback |
+| C5 | Cross-source join, sort/aggregate residual, missing source/UDF/completion binding | Residual operators select DuckDB; missing runtime bindings fail preflight before callbacks execute |
 | C6 | Table/source hooks across nested, aliased and dependent access | All required hooks invoked, deny/error fail closed, tenant separation under cache/session reuse |
 | C7 | Callback errors, invalid UDF type/cardinality, empty results, cancellation/reentrancy | Structured errors, bounded buffering, early-close/late-error handling, no leaked streams |
 | C8 | ABI version mismatch, null arguments, ownership/release and concurrent requests | Safe failures and lifecycle contract; no result/context leakage between concurrent callers |
@@ -290,7 +290,7 @@ completion. Its generated report records the tested working tree and exact scope
 This adds evidence for Suites A/B; it does not complete the proposed native ABI,
 product removals, all connector variants, S3 permissions, or production validation.
 
-The preceding optional-engine implementation has local coverage for source-only
+The source-first implementation has local coverage for source-only
 pushdown, local UDF placement, unsupported residual rejection, dependent requests,
 mocked Trino streaming, and several SDK/native smoke paths. Dependency/link checks
 on the tested native build found no DuckDB or PostgreSQL driver. Those checks do

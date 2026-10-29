@@ -31,14 +31,12 @@ def verify(assets):
         raise RuntimeError('Release assets differ from SHA256SUMS')
     if any(actual.get(n) != h for n, h in manifest['assets'].items()):
         raise RuntimeError('Release assets differ from manifest')
-    required = {'extension', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go'}
+    required = {'extension', 'native', 'rust', 'go'}
     if set(manifest['components']) != required or any(not v for v in manifest['components'].values()):
         raise RuntimeError('Missing release clients')
     # Receipt also changes when validation code changes.
     inputs = {'assets': actual, 'verifier': sha(Path(__file__)),
-              'smoke': sha(ROOT / 'scripts/release/platform_smoke.py'),
-              'javascript_smoke': sha(ROOT / 'tools/diagnostics/release/js-smoke.mjs'),
-              'javascript_adapter': sha(ROOT / 'tools/diagnostics/release/adapter.mjs')}
+              'smoke': sha(ROOT / 'scripts/release/platform_smoke.py')}
     receipt = assets.parent / 'verified.json'
     if receipt.exists() and json.loads(receipt.read_text()).get('inputs') == inputs:
         print('Reusing verified package receipts', flush=True)
@@ -96,21 +94,9 @@ def verify(assets):
         for directory in extracted.values():
             for library in directory.rglob(native.name):
                 if sha(library) == sha(native): matches += 1
-        if matches < 5:
+        if matches < 2:
             raise RuntimeError('Missing matching runtime copies for ' + platform)
-    wheel = next(n for n in manifest['components']['python'] if 'macosx' in n)
-    run([python, '-m', 'pip', 'install', '--force-reinstall', '--no-deps', assets / wheel])
-    run([python, '-m', 'pytest', '-q', ROOT / 'clients/python/tests/test_integration.py'], env=env)
-    js = work / 'javascript'; js.mkdir(exist_ok=True)
-    package = {'private': True, 'type': 'module', 'dependencies': {
-        '@orchiddb/client': 'file:' + str(assets / manifest['components']['javascript'][0]),
-        '@duckdb/duckdb-wasm': '1.33.1-dev57.0', 'apache-arrow': '17.0.0'}}
-    (js / 'package.json').write_text(json.dumps(package))
-    for source, dest in [('js-smoke.mjs', 'smoke.mjs'), ('adapter.mjs', 'adapter.mjs')]:
-        shutil.copy2(ROOT / 'tools/diagnostics/release' / source, js / dest)
-    run(['npm', 'install', '--prefix', js, '--no-audit', '--no-fund'])
-    run(['node', js / 'smoke.mjs'], env=env)
     receipt.write_text(json.dumps({'inputs': inputs, 'platforms': manifest['platforms'],
                                    'checks': ['archive integrity', 'native ABI', 'extension execution',
-                                              'runtime copies', 'installed Python', 'installed JavaScript']}, indent=2))
-    print('Verified all platform packages and installed Python/JavaScript clients', flush=True)
+                                              'runtime copies']}, indent=2))
+    print('Verified Rust/Go platform packages and scalar extension', flush=True)

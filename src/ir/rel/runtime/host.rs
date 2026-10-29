@@ -109,19 +109,18 @@ pub fn compile_for_host(
     graph: &PropertyGraph,
     options: CompileOptions,
 ) -> std::result::Result<LogicalPlan, QueryExecutionError> {
-    let rule_context = &options.rule_context;
-    let normalized = super::super::pipeline::normalize_graph(plan, rule_context)
-        .map_err(QueryExecutionError::from_error)?;
-    let plan = &normalized;
-    stacker::maybe_grow(1024 * 1024, 64 * 1024 * 1024, || {
+    stacker::maybe_grow(64 * 1024 * 1024, 64 * 1024 * 1024, || {
+        let rule_context = &options.rule_context;
+        let normalized = super::super::pipeline::normalize_graph(plan, rule_context)
+            .map_err(QueryExecutionError::from_error)?;
+        let plan = &normalized;
         let compiler = Compiler {
             rule_context: rule_context.clone(),
             graph,
             policy: plan.policy.clone(),
             sql: options.sql_islands
                 && (!has_mutating_branches(&plan.root)
-                    || rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired)
-                && !(graph.mapping.is_some() && graph.has_mutations()),
+                    || rule_context.lowering_policy == policy::LoweringPolicy::SqlRequired),
             language_functions: options.language_functions,
             native_values: options.native_values,
             live_graph_reads: crate::ir::analysis::contains_source_mutation(&plan.root) || graph.has_mutations(),
@@ -405,30 +404,7 @@ pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn host_arrow_output_splits_bulk_lazily_and_checks_cancellation() {
-        let output = super::super::reentry::SqlOutput {
-            fields: vec!["current".into()], nodes: vec![], edges: vec![],
-            policy: crate::ir::policy::GraphPlanPolicy::gremlin(),
-            preserve_bulk: false, transport_state: false,
-            identity_type: arrow::datatypes::DataType::Int64,
-            implicit_fields: vec![],
-        };
-        let LogicalPlan::Extension(extension) = kernel("BulkHostOutput", vec![], |_, _| Ok(vec![])) else { unreachable!() };
-        let mut kernel = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
-        kernel.relational_output = Some(output);
-        let state = KernelState::default();
-        let row = Row { bindings: [("current".into(), Value::String("payload".into()))].into(), bulk: 33 };
-        let reader = kernel.host_output_reader(vec![row.clone()], &state, 4);
-        assert_eq!(reader.map(|batch| batch.unwrap().num_rows()).collect::<Vec<_>>(), vec![4,4,4,4,4,4,4,4,1]);
-        let mut huge = row;
-        huge.bulk = u64::MAX;
-        let mut reader = kernel.host_output_reader(vec![huge], &state, 4);
-        assert_eq!(reader.next().unwrap().unwrap().num_rows(), 4);
-        state.context.jvm.cancelled.store(true, Ordering::Release);
-        assert!(reader.next().unwrap().unwrap_err().to_string().contains("execution cancelled"));
-        assert!(reader.next().is_none());
-    }
+
 
     // Test-only Hybrid reference harness for kernel semantics and transaction
     // behavior. Production scheduling is SQL-required and tested separately.
@@ -465,64 +441,6 @@ pub(crate) mod tests {
                 .map_err(|e| RuntimeError::Runtime(e.to_string()))
         }
     }
-    fn compile(query: &str, graph: &PropertyGraph) -> LogicalPlan {
-        let traversal = crate::language::gremlin::parse_traversal(query).unwrap();
-        let plan = crate::language::gremlin::GremlinPlanner::new()
-            .plan(&traversal)
-            .unwrap();
-        compile_for_host(
-            &plan,
-            graph,
-            CompileOptions {
-                sql_islands: false,
-                rule_context: reference_context(),
-                language_functions: true,
-                ..Default::default()
-            },
-        )
-        .unwrap()
-    }
-    #[test]
-    fn injected_host_runs_nested_control_and_group_finalizers_without_datafusion() {
-        let graph = PropertyGraph::new();
-        let runner = Arc::new(HostRunner::default());
-        for (query, expected) in [
-            (
-                "g.inject(1,2,3).coalesce(__.filter(__.is(2)),__.constant(9))",
-                vec![9, 2, 9],
-            ),
-            (
-                "g.inject(1).repeat(__.map(__.constant(2))).times(2)",
-                vec![2],
-            ),
-        ] {
-            let compiled = compile(query, &graph);
-            let mut state =
-                KernelState::for_host(graph.clone(), runner.clone(), &reference_context());
-            let rows = runner.run(&compiled, &mut state).unwrap();
-            let values = rows
-                .iter()
-                .map(|row| match row.get("current") {
-                    Value::Int(v) => v as i64,
-                    Value::Long(v) => v,
-                    other => panic!("unexpected output: {other:?}"),
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(values, expected, "{query}");
-        }
-        let compiled = compile(
-            "g.inject('a','b','a').group().by(__.identity()).by(__.count())",
-            &graph,
-        );
-        let mut state = KernelState::for_host(graph, runner.clone(), &reference_context());
-        let rows = runner.run(&compiled, &mut state).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert!(matches!(
-            rows[0].get("current"),
-            Value::TypedMap(_) | Value::Map(_)
-        ));
-        assert!(runner.calls.load(Ordering::Relaxed) > 10);
-    }
     #[test]
     fn nullable_optional_path_uses_existing_host_kernels() {
         for function in ["nodes", "relationships"] {
@@ -552,61 +470,4 @@ pub(crate) mod tests {
             assert!(matches!(rows[0].bindings.get("literal"), Some(Value::Null)));
         }
     }
-    #[test]
-    fn prepared_kernel_graph_gets_fresh_side_effects_and_bulk_per_execution() {
-        let graph = PropertyGraph::new();
-        let runner = Arc::new(HostRunner::default());
-        let compiled = compile("g.inject(1,2).aggregate('seen').cap('seen')", &graph);
-        let mut prior = None;
-        for _ in 0..2 {
-            let mut state =
-                KernelState::for_host(graph.clone(), runner.clone(), &reference_context());
-            let rows = runner.run(&compiled, &mut state).unwrap();
-            assert_eq!(rows.len(), 1);
-            let encoded =
-                crate::ir::catalog::snapshot::binary::encode_value_bytes(&rows[0].get("current"));
-            if let Some(prior) = &prior {
-                assert_eq!(prior, &encoded);
-            }
-            prior = Some(encoded);
-        }
-    }
-}
-
-#[cfg(all(test, feature = "duckdb"))]
-#[tokio::test]
-async fn repeat_dedup_retains_seen_state_while_ordinary_distinct_remains_sql() {
-    let mut engine = crate::engine::GraphEngine::in_memory().unwrap();
-    for (query, expected) in [
-        ("g.inject(1,2,2).dedup().count()", "2"),
-        ("g.inject(1,2,2).repeat(__.dedup()).times(2).count()", "0"),
-        ("g.inject(1,2,2).repeat(__.dedup()).times(1).count()", "2"),
-    ] {
-        let result = engine.gremlin(query).await.unwrap();
-        assert_eq!(result.returned.batch.num_rows(), 1, "{query}");
-        assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), expected, "{query}");
-    }
-}
-
-#[cfg(all(test, feature = "duckdb"))]
-#[tokio::test]
-async fn both_endpoints_keep_properties_and_self_loop_multiplicity() {
-    let mut engine = crate::engine::GraphEngine::in_memory().unwrap();
-    engine.gremlin("g.addV('person').property('name','a').as('a').addV('person').property('name','b').as('b').addE('R').from('a').to('b')").await.unwrap();
-    let result = engine.gremlin("g.withStrategies(new SubgraphStrategy(vertices: __.has('name',P.within('a','b')))).E().bothV().values('name').order()").await.unwrap();
-    let names = (0..result.returned.batch.num_rows()).map(|row|
-        arrow::util::display::array_value_to_string(result.returned.batch.column(0), row).unwrap()).collect::<Vec<_>>();
-    assert_eq!(names, vec!["a", "b"]);
-    engine.gremlin("g.V().has('name','a').as('a').addE('Loop').to('a')").await.unwrap();
-    let result = engine.gremlin("g.E().hasLabel('Loop').bothV().count()").await.unwrap();
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "2");
-}
-
-#[cfg(all(test, feature = "duckdb"))]
-#[tokio::test]
-async fn mixed_injected_values_preserve_sql_union_carriers() {
-    let mut engine = crate::engine::GraphEngine::in_memory().unwrap();
-    let result = engine.gremlin("g.inject('a').concat(__.inject(['b','c']))").await.unwrap();
-    assert_eq!(result.returned.batch.num_rows(), 1);
-    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "aa");
 }

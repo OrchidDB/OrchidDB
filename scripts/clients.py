@@ -21,10 +21,7 @@ def revision():
 
 
 def metadata(value):
-    for relative in ['clients/native/CORE_REVISION', 'clients/java/native/CORE_REVISION',
-                     'clients/python/CORE_REVISION', 'clients/python/src/orchiddb/CORE_REVISION',
-                     'clients/elixir/CORE_REVISION']:
-        (ROOT / relative).write_text(value + '\n')
+    (ROOT / 'clients/native/CORE_REVISION').write_text(value + '\n')
 
 
 def main():
@@ -48,20 +45,6 @@ def main():
     native.orchiddb_core_revision.restype = ctypes.c_char_p
     value = native.orchiddb_core_revision().decode()
     metadata(value)
-    for relative in ['clients/python/src/orchiddb/native', 'clients/cpp/_native']:
-        destination = ROOT / relative
-        destination.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination / library)
-    system = {'Darwin': 'darwin', 'Linux': 'linux'}[platform.system()]
-    machine = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'x64'}[platform.machine()]
-    destination = ROOT / 'clients/js/native' / f'{system}-{machine}'
-    destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, destination / library)
-    version = json.loads((ROOT / 'clients/js/package.json').read_text())['version']
-    (destination / 'manifest.json').write_text(json.dumps({
-        'abi_version': 2, 'version': version, 'core_revision': value,
-        'sha256': hashlib.sha256(source.read_bytes()).hexdigest()
-    }) + '\n')
     print(f'ORCHIDDB_NATIVE_LIBRARY={source}')
 
 

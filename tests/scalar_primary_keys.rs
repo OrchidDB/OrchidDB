@@ -1,4 +1,5 @@
-//! Native scalar keys must survive scans and endpoint joins without conversion.
+//! Supported scalar keys must survive scans and endpoint joins without loss.
+//! Types beyond DuckDB's exact range must fail instead of truncating identity.
 use arrow::array::*;
 use arrow::datatypes::*;
 use datafusion::datasource::MemTable;
@@ -11,6 +12,9 @@ use std::sync::Arc;
 
 async fn check(keys: ArrayRef) {
     let ty = keys.data_type().clone();
+    let unrepresentable = matches!(ty, DataType::Decimal256(39..=76, _)
+        | DataType::Duration(TimeUnit::Nanosecond)
+        | DataType::Interval(IntervalUnit::MonthDayNano));
     let mut mapping = GraphMapping::new();
     let nodes = RecordBatch::try_from_iter(vec![
         ("key", keys.clone()),
@@ -87,9 +91,16 @@ async fn check(keys: ArrayRef) {
         let plan = CypherPlanner::new()
             .plan(&parse_query(query).unwrap())
             .unwrap();
-        let native_result = orchiddb::ir::rel::runtime::execute(&plan, &native, None)
-            .await
-            .unwrap_or_else(|e| panic!("native {ty:?}: {query}: {e}"));
+        let native_result = orchiddb::ir::rel::runtime::execute(&plan, &native, None).await;
+        if unrepresentable {
+            let error = native_result.err().expect("lossy source identity must be rejected").to_string();
+            assert!(error.contains("losslessly") || error.contains("no DuckDB"), "{ty:?}: {error}");
+            let lowered = backend.lower(&plan, &PropertyGraph::new()).unwrap();
+            let error = execute_lowered(lowered).await.err().expect("lossy mapped identity must be rejected").to_string();
+            assert!(error.contains("losslessly") || error.contains("no DuckDB"), "{ty:?}: {error}");
+            continue;
+        }
+        let native_result = native_result.unwrap_or_else(|e| panic!("native {ty:?}: {query}: {e}"));
         assert_eq!(
             native_result.0.batch.num_rows(),
             1,
@@ -171,6 +182,9 @@ async fn scalar_primary_keys_join() {
             .unwrap(),
     ))
     .await;
+    check(Arc::new(
+        Decimal256Array::from(vec![i256::from_i128(125), i256::from_i128(250)]).with_precision_and_scale(38, 2).unwrap(),
+    )).await;
     check(Arc::new(
         Decimal256Array::from(vec![i256::from_i128(125), i256::from_i128(250)])
             .with_precision_and_scale(76, 2)

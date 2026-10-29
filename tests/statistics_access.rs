@@ -84,38 +84,6 @@ async fn connected_three_way_join_changes_sql_and_preserves_results() {
         assert_eq!(rows(&db, &before), rows(&db, &after));
     }
 }
-#[tokio::test]
-async fn connected_access_preserves_gremlin_and_rdf_bindings() {
-    let (db, mut r) = fixture();
-    r["edges"] = json!([{"label":"OF","table":"items","id":["owner","value"],"source":["owner","value"],"target":"owner","source_label":"Item","target_label":"Customer"}]);
-    r["rdf"] = json!([
- {"table":"items","subject":{"kind":"template","prefix":"urn:item:","columns":["owner","value"]},"predicate":{"kind":"constant","value":"urn:owner"},"object":{"kind":"template","prefix":"urn:customer:","columns":["owner"]}},
- {"table":"customers","subject":{"kind":"template","prefix":"urn:customer:","columns":["id"]},"predicate":{"kind":"constant","value":"urn:kind"},"object":{"kind":"literal","column":"kind"}}]);
-    let snapshot = statistics::generate_duckdb(&db, r.clone()).unwrap();
-    for (language, query) in [
-        (
-            "gremlin",
-            "g.V().hasLabel('Customer').has('kind','rare').in('OF').values('value').order()",
-        ),
-        (
-            "sparql",
-            "SELECT ?s WHERE { ?s <urn:owner> ?c . ?c <urn:kind> \"rare\" } ORDER BY ?s",
-        ),
-    ] {
-        r["language"] = json!(language);
-        r["query"] = json!(query);
-        r.as_object_mut().unwrap().remove("statistics");
-        let before = compile(&r).await;
-        r["statistics"] = serde_json::to_value(&snapshot).unwrap();
-        let after = compile(&r).await;
-        assert!(
-            !after["optimizer_decisions"].as_array().unwrap().is_empty(),
-            "{language}: expected actionable statistics"
-        );
-        assert!(!after["plan_estimates"].as_array().unwrap().is_empty());
-        assert_eq!(rows(&db, &before), rows(&db, &after), "{language}");
-    }
-}
 
 #[tokio::test]
 async fn parent_restriction_keeps_duplicate_bindings_and_optional_rows() {

@@ -416,7 +416,7 @@ mod tests {
         .unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].get("hits"), Value::Int(1));
-        let snapshot = observe(&store.attach(host).unwrap(), None).unwrap();
+        let snapshot = observe(&store.attach(host).unwrap()).unwrap();
         assert_eq!(snapshot.nodes.len(), 3);
         assert_eq!(snapshot.labels.len(), 3);
     }
@@ -427,27 +427,27 @@ mod tests {
         store.create(host.as_ref()).unwrap();
         cypher(host.clone(), &store, "CREATE (a:A)-[:R]->(b:B)").unwrap();
         let before =
-            serde_json::to_value(observe(&store.attach(host.clone()).unwrap(), None).unwrap())
+            serde_json::to_value(observe(&store.attach(host.clone()).unwrap()).unwrap())
                 .unwrap();
         assert!(cypher(host.clone(), &store, "MATCH (a:A) DELETE a").is_err());
         assert_eq!(
-            serde_json::to_value(observe(&store.attach(host.clone()).unwrap(), None).unwrap())
+            serde_json::to_value(observe(&store.attach(host.clone()).unwrap()).unwrap())
                 .unwrap(),
             before
         );
         assert!(cypher(host.clone(), &store, "CREATE (n:Bad) SET n.invalid=[{x:1}]").is_err());
         assert_eq!(
-            serde_json::to_value(observe(&store.attach(host.clone()).unwrap(), None).unwrap())
+            serde_json::to_value(observe(&store.attach(host.clone()).unwrap()).unwrap())
                 .unwrap(),
             before
         );
         cypher(host.clone(), &store, "MATCH p=(a:A)-[:R]->(b:B) DELETE p").unwrap();
-        let snapshot = observe(&store.attach(host.clone()).unwrap(), None).unwrap();
+        let snapshot = observe(&store.attach(host.clone()).unwrap()).unwrap();
         assert!(snapshot.nodes.is_empty());
         assert!(snapshot.relationships.is_empty());
         cypher(host.clone(), &store, "CREATE (:A)-[:R]->(:B)").unwrap();
         cypher(host.clone(), &store, "MATCH (a:A) DETACH DELETE a").unwrap();
-        let snapshot = observe(&store.attach(host).unwrap(), None).unwrap();
+        let snapshot = observe(&store.attach(host).unwrap()).unwrap();
         assert_eq!(snapshot.nodes.len(), 1);
         assert!(snapshot.relationships.is_empty());
     }
@@ -537,7 +537,7 @@ mod tests {
         } else {
             panic!()
         }
-        let snapshot = observe(&graph, None).unwrap();
+        let snapshot = observe(&graph).unwrap();
         assert_eq!(snapshot.nodes.len(), 2);
         assert_eq!(snapshot.relationships.len(), 1);
         store.persist(host.as_ref(), &graph).unwrap();

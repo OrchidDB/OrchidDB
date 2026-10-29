@@ -30,7 +30,7 @@ TARGETS = {
     'linux_arm64': ('aarch64-unknown-linux-gnu', 'linux-aarch64', 'linux-arm64', 'manylinux_2_28_aarch64'),
     'linux_amd64': ('x86_64-unknown-linux-gnu', 'linux-x86_64', 'linux-x64', 'manylinux_2_28_x86_64'),
 }
-COMPONENTS = ('extension', 'native', 'python', 'javascript', 'java', 'rust', 'cpp', 'elixir', 'go')
+COMPONENTS = ('extension', 'native', 'rust', 'go')
 
 
 def digest(path):
@@ -87,22 +87,14 @@ class Release:
         self.env.pop('ORCHID_BUILD_DIR', None)
         self.env.pop('DUCKDB_LIB_DIR', None)
         self.env.pop('DUCKDB_INCLUDE_DIR', None)
-        erlang = Path('/opt/homebrew/opt/erlang/bin')
-        if erlang.is_dir(): self.env['PATH'] = str(erlang) + ':' + self.env['PATH']
-        self.python = os.path.abspath(os.environ.get('RELEASE_PYTHON', ROOT / 'target/release-env/bin/python'))
 
     def check(self):
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT):
             raise RuntimeError('Commit the source changes before a release; the release must identify one clean commit')
         versions = {}
-        for name in ('Cargo.toml', 'clients/rust/Cargo.toml', 'clients/rust/examples/Cargo.toml', 'clients/native/Cargo.toml', 'clients/java/native/Cargo.toml', 'clients/python/pyproject.toml'):
+        for name in ('Cargo.toml', 'clients/rust/Cargo.toml', 'clients/rust/examples/Cargo.toml', 'clients/native/Cargo.toml', 'extension/functions/Cargo.toml'):
             config = tomllib.loads((ROOT / name).read_text())
             versions[name] = (config.get('package') or config['project'])['version']
-        versions['clients/js/package.json'] = read(ROOT / 'clients/js/package.json')['version']
-        for name, pattern in [('clients/java/pom.xml', r'<version>([^<]+)</version>'),
-                              ('clients/elixir/mix.exs', r'version: "([^"]+)"'),
-                              ('clients/cpp/CMakeLists.txt', r'project\(OrchidDB VERSION ([^ ]+)')]:
-            versions[name] = re.search(pattern, (ROOT / name).read_text())[1]
         wrong = {name: value for name, value in versions.items() if value != self.version}
         if wrong:
             raise RuntimeError(f'Update and commit component versions to {self.version} first: {wrong}')
@@ -111,15 +103,9 @@ class Release:
         run(['cargo', 'metadata', '--locked', '--format-version', '1',
              '--manifest-path', 'clients/rust/examples/Cargo.toml'], env=self.env, capture=True)
         matrix.prerequisites()
-        self.env['JAVA_HOME'] = subprocess.check_output(
-            ['/usr/libexec/java_home', '-F', '-v', '21'], text=True).strip()
-        self.env['PATH'] = str(Path(self.env['JAVA_HOME']) / 'bin') + os.pathsep + self.env['PATH']
-        for tool in ('npm', 'node', 'mvn', 'java', 'cmake', 'c++', 'go'):
+        for tool in ('c++', 'go'):
             if not shutil.which(tool, path=self.env['PATH']):
                 raise RuntimeError('Missing release prerequisite: ' + tool)
-        if not Path(self.python).is_file():
-            raise RuntimeError('Run make release-env to prepare the packaging environment')
-        run([self.python, '-c', 'import build, wheel, setuptools'], env=self.env)
         run([sys.executable, 'scripts/clients.py', 'metadata'], env=self.env)
         self.base.mkdir(parents=True, exist_ok=True)
 
@@ -153,9 +139,9 @@ class Release:
                 if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or commit == self.commit:
                     continue
                 changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-                # TypeScript changes cannot affect native binaries. Rebuild JS,
+                # Go source changes cannot affect native binaries. Rebuild Go,
                 # but retain the completed platform builds and their provenance.
-                if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'tools/diagnostics/release/js-smoke.mjs', 'tools/diagnostics/release/adapter.mjs', 'scripts/release/release.py', 'scripts/release/test_complete_release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') and not (name.startswith('clients/js/src/') and name.endswith('.ts')) and not (name.startswith('clients/js/test/') and name.endswith('.mjs')) for name in changed):
+                if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'scripts/release/release.py', 'scripts/release/test_complete_release.py', 'README.md', 'Makefile', 'scripts/release/publish.py') and not (name.startswith('clients/go/') and name.endswith('.go')) for name in changed):
                     continue
                 previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
                 if native_inputs(previous) != current_inputs or not state.get('files'):
@@ -201,7 +187,7 @@ class Release:
             if state.get('version') != self.version or not re.fullmatch(r'[0-9a-f]{40}', commit) or not state.get('files'):
                 continue
             changed = subprocess.check_output(['git', 'diff', '--name-only', commit, self.commit], cwd=ROOT, text=True).splitlines()
-            if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'tools/diagnostics/release/js-smoke.mjs', 'tools/diagnostics/release/adapter.mjs', 'scripts/release/release.py', 'clients/java/scripts/package-github.py', 'clients/java/scripts/verify-native-artifacts.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
+            if any(name not in ('scripts/release/test_release_entrypoint.py', 'scripts/release-all.sh', 'scripts/release/verify.py', 'scripts/release/cache_recovery.py', 'scripts/release/test_recovery_verify.py', 'scripts/release/release.py', 'README.md', 'Makefile', 'scripts/release/publish.py') for name in changed):
                 continue
             previous = subprocess.check_output(['git', 'show', commit + ':scripts/release/release.py'], cwd=ROOT, text=True)
             if build_method(previous) != current:
@@ -228,14 +214,8 @@ class Release:
             run(['go', 'build', '-mod=readonly', './...'], cwd=ROOT / 'clients/go', env=go_env)
         matrix.prepare_sources()
         matrix.parallel_build(self.build_platform, list(TARGETS))
-        run(['npm', 'ci', '--workspaces=false'], cwd=ROOT / 'clients/js', env=self.env)
-        run(['npm', 'run', 'build'], cwd=ROOT / 'clients/js', env=self.env)
-        java_env = dict(self.env)
-        for module in ('jvm-codecs', 'jvm'):
-            run(['mvn', '-q', '-f', module + '/pom.xml', '-Dmaven.test.skip=true', 'install', 'dependency:build-classpath', '-DincludeScope=runtime', '-Dmdep.regenerateFile=true', '-Dmdep.outputFile=target/classpath.txt'], env=java_env)
-        run(['mvn', '-Pgremlin', '-Dmaven.test.skip=true', 'package', 'dependency:copy-dependencies', '-DincludeScope=runtime', '-DoutputDirectory=target/runtime-deps'], cwd=ROOT / 'clients/java', env=java_env)
         inputs = [ROOT / path for t in TARGETS for path in read(self.base / ('build-' + t + '.json'))['files']]
-        self.stamp('build', inputs + list((ROOT / 'clients/js/dist').glob('*')) + list((ROOT / 'clients/java').glob('*/target/*.jar')) + list((ROOT / 'clients/java').glob('*/target/runtime-deps/*.jar')) + [ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', ROOT / 'jvm/target/classpath.txt'])
+        self.stamp('build', inputs)
 
     def binary_commit(self, target):
         return read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit)
@@ -273,7 +253,7 @@ class Release:
                        CPPFLAGS='', WARN_CFLAGS='-Wall', LDFLAGS='-Wl,--undefined-version',
                        krb5_cv_attr_constructor_destructor='yes', ac_cv_func_regcomp='yes',
                        ac_cv_printf_positional='yes', ac_cv_gssapi_supports_spnego='yes')
-        for package in ('orchid-duckdb-compiler', 'orchiddb-compiler-native', 'orchiddb-java-native'):
+        for package in ('orchiddb-duckdb-functions', 'orchiddb-compiler-native'):
             command += ['-p', package]
         run(command, env=env)
         extension_build = matrix.location(self.version, self.commit) / target
@@ -292,11 +272,9 @@ class Release:
         out = self.base / 'binaries' / target
         out.mkdir(parents=True, exist_ok=True)
         suffix = 'dylib' if target == 'osx_arm64' else 'so'
-        for name in ('liborchiddb_compiler.' + suffix, 'liborchiddb_java.' + suffix):
+        for name in ('liborchiddb_compiler.' + suffix,):
             shutil.copy2(binaries / name, out / name)
-        run([sys.executable, 'clients/java/scripts/package-native.py', '--platform', classifier, '--library', out / ('liborchiddb_java.' + suffix), '--version', self.version,
-             '--output', ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar')], env=env)
-        self.stamp(stage, list(out.iterdir()) + [ROOT / 'clients/java/target/native-artifacts' / (classifier + '.jar'), matrix.location(self.version, self.commit) / target / 'orchid.duckdb_extension', matrix.location(self.version, self.commit) / target / 'build-manifest.json'])
+        self.stamp(stage, list(out.iterdir()) + [extension_build / 'orchid.duckdb_extension', extension_build / 'build-manifest.json'])
 
     def package(self):
         if not self.completed('build'):
@@ -333,54 +311,9 @@ class Release:
                     ).encode(),
                 })
                 add('native', f'orchiddb-native-{self.version}-{target}.tar.gz', {**common, 'lib/' + library.name: library, 'include/orchiddb.h': ROOT / 'clients/native/include/orchiddb.h'})
-                cpp = stage / ('cpp-' + target)
-                run(['cmake', '-S', 'clients/cpp', '-B', cpp / 'build', '-DCMAKE_INSTALL_PREFIX=' + str(cpp / 'install'), '-DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=TRUE', '-DORCHIDDB_NATIVE_LIBRARY=' + str(library)], env=self.env)
-                run(['cmake', '--install', cpp / 'build'], env=self.env)
-                add('cpp', f'orchiddb-cpp-{self.version}-{target}.tar.gz', {**common, 'README.md': ROOT / 'clients/cpp/README.md', **{'examples/' + k: v for k, v in source_files(Path('clients/cpp/examples')).items()}, **{str(p.relative_to(cpp / 'install')): p for p in (cpp / 'install').rglob('*') if p.is_file()}})
-                python = stage / ('python-' + target)
-                for name, path in source_files(Path('clients/python')).items():
-                    destination = python / name; destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(path, destination)
-                native = python / 'src/orchiddb/native'; native.mkdir(exist_ok=True)
-                shutil.copy2(library, native / library.name)
-                (python / 'src/orchiddb/CORE_REVISION').write_text(self.binary_commit(target) + '\n')
-                run([self.python, 'setup.py', 'bdist_wheel', '--plat-name', wheel_platform, '--dist-dir', output], cwd=python, env=self.env)
-                inventory['python'] += [p.name for p in output.glob('*' + wheel_platform + '.whl')]
-                elixir = source_files(Path('clients/elixir'))
-                elixir.update({'CORE_REVISION': (self.binary_commit(target) + '\n').encode(), 'priv/native/' + library.name: library,
-                              'RELEASE.txt': b'Use a Mix path dependency on this extracted directory. The NIF builds for your installed Erlang. Set ORCHIDDB_NATIVE_LIBRARY to priv/native/liborchiddb_compiler.so (Linux) or .dylib (macOS).\n'})
-                add('elixir', f'orchiddb-elixir-{self.version}-{target}.tar.gz', elixir)
                 packaged = package_extension(ROOT, matrix.location(self.version, self.commit) / target)
                 tar, _, _ = extension_bundle(packaged, self.version, read(packaged / 'manifest.json')['revision'])
                 shutil.copy2(tar, output / tar.name); inventory['extension'].append(tar.name)
-            node = stage / 'node'; node.mkdir()
-            for name, path in source_files(Path('clients/js')).items():
-                destination = node / name; destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(path, destination)
-            shutil.copytree(ROOT / 'clients/js/dist', node / 'dist')
-            for target, (_, _, node_platform, _) in TARGETS.items():
-                destination = node / 'native' / node_platform; destination.mkdir(parents=True)
-                library = next((self.base / 'binaries' / target).glob('liborchiddb_compiler.*'))
-                shutil.copy2(library, destination / library.name)
-                write(destination / 'manifest.json', {'version': self.version, 'core_revision': self.binary_commit(target), 'abi_version': 2, 'sha256': digest(library)})
-            run(['npm', 'pack', '--ignore-scripts', '--pack-destination', output], cwd=node, env=self.env)
-            inventory['javascript'] = [p.name for p in output.glob('*.tgz')]
-            native_revisions = stage / 'native-revisions.json'
-            write(native_revisions, {values[1]: read(self.base / ('build-' + target + '.json')).get('binary_commit', self.commit) for target, values in TARGETS.items()})
-            run([sys.executable, 'clients/java/scripts/package-github.py', '--output', output, '--native-revisions', native_revisions, '--platforms', *[v[1] for v in TARGETS.values()]], env=self.env)
-            inventory['java'] = [p.name for p in output.glob('orchiddb-java-*.zip')]
-            kernels = output / f'orchiddb-jvm-kernels-{self.version}.zip'
-            kernel_files = {'lib/orchiddb-jvm-0.1.0.jar': ROOT / 'jvm/target/orchiddb-jvm-0.1.0.jar', 'LICENSE.md': ROOT / 'LICENSE.md'}
-            for dependency in (ROOT / 'jvm/target/classpath.txt').read_text().strip().split(os.pathsep):
-                artifact = Path(dependency)
-                if not artifact.is_file(): raise RuntimeError('Missing JVM runtime dependency: ' + dependency)
-                key = 'lib/' + artifact.name
-                if key in kernel_files and digest(kernel_files[key]) != digest(artifact): raise RuntimeError('Conflicting JVM runtime JAR: ' + key)
-                kernel_files[key] = artifact
-            with zipfile.ZipFile(kernels, 'w', zipfile.ZIP_DEFLATED) as zipped:
-                for name, artifact in sorted(kernel_files.items()):
-                    info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED
-                    zipped.writestr(info, artifact.read_bytes())
-                zipped.writestr('README.txt', 'Optional JVM graph kernels. Use Java 21 and set ORCHIDDB_JVM_CLASSPATH to the absolute path of lib/* in this extracted directory. Third-party dependencies are included.\n')
-            inventory['native'].append(kernels.name)
             add('rust', f'orchiddb-source-{self.version}.tar.gz', source_files(Path('.')))
             if any(not assets for assets in inventory.values()): raise RuntimeError('Missing client release assets')
             (output / 'SHA256SUMS').unlink(missing_ok=True)

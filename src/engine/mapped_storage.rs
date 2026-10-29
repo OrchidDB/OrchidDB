@@ -1,5 +1,4 @@
 //! Legacy connection facade for the shared mapped storage implementation.
-pub(super) use crate::ir::rel::host::mapped_storage::{keys, quote, resolved_source};
 use crate::ir::{
     catalog::PropertyGraph,
     rel::{
@@ -9,12 +8,6 @@ use crate::ir::{
 };
 use duckdb::Connection;
 use std::sync::Arc;
-pub(super) fn query(
-    connection: &Connection,
-    sql: &str,
-) -> Result<arrow::array::RecordBatch, String> {
-    mapped_storage::query(&ConnectionHost(connection), sql)
-}
 pub(super) fn register(connection: &Connection) -> Result<(), String> {
     crate::ir::rel::host::legacy::register(connection)
 }

@@ -22,7 +22,7 @@ async fn collection_order_demand_and_singleton_quantifiers() {
             ("UNWIND [true,false] AS x WITH x ORDER BY x DESC WITH collect(x) AS xs RETURN xs[0], any(y IN xs WHERE y)", "true|true", true),
         ] {
             let plan = orchiddb::language::cypher::preparation::prepare(query, &Default::default(), Some(&Default::default())).unwrap();
-            let lowered = RelBackend::new().with_language_functions(true).lower(&plan,&PropertyGraph::new()).unwrap();
+            let lowered = RelBackend::new().with_language_functions(true).lower(&plan,&PropertyGraph::new()).unwrap_or_else(|e| panic!("{query}: {e}"));
             let sql = unparse(&lowered,SqlDialect::DuckDb).unwrap();
             assert_eq!(sql.to_lowercase().contains("row_number"),window,"{query}\n{sql}");
             let result=execute_lowered_sql(&mut DuckDbExecutor::default(),&lowered).await.unwrap_or_else(|e|panic!("{query}: {e}\n{sql}"));

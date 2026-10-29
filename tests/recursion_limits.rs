@@ -151,15 +151,3 @@ async fn unbounded_varlen_lowers_to_a_recursive_cte_not_a_bounded_unroll() {
         prepared.query
     );
 }
-
-#[tokio::test]
-async fn relational_repeat_exceeds_the_former_iteration_ceiling() {
-    use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
-    let plan = GremlinPlanner::new().plan(&parse_traversal(
-        "g.V().repeat(__.identity()).times(10001).count()",
-    ).unwrap()).unwrap();
-    let lowered = RelBackend::new().lower(&plan, &chain_graph(0)).unwrap();
-    let mut executor = DuckDbExecutor::new();
-    let returned = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap();
-    assert_eq!(batch_lines(&returned.batch), vec!["1"]);
-}

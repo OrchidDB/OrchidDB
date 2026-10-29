@@ -54,6 +54,11 @@ fn catalog_covers_every_native_scalar_and_alias_without_engine_dependencies() {
     assert!(portable::function("sqrt").is_none());
     assert!(portable::function("fn.does_not_exist").is_none());
     for capability in portable::capabilities() {
+        use orchiddb::ir::rel::sql::DialectAdapter;
+        assert_eq!(capability.trino, capability.preparation ||
+            orchiddb::ir::rel::sql::trino::TRINO.function_mapping(&capability.name).is_some(),
+            "{}", capability.name);
+        assert!(!capability.trino_note.is_empty());
         assert!(
             !capability.duckdb_note.starts_with("NOT AUDITED"),
             "{}",
@@ -1303,7 +1308,7 @@ fn portable_results_round_trip_through_duckdb() {
         for executor in &mut executors {
             let prepared = runtime
                 .block_on(sql::prepare(&plan, executor.dialect()))
-                .unwrap();
+                .unwrap_or_else(|error| panic!("{label} {:?}: {error}\n{}", executor.dialect(), plan.plan.display_indent()));
             let result = sql::execute_prepared(executor.as_mut(), &prepared)
                 .unwrap_or_else(|e| panic!("{label} {:?}: {e}", executor.dialect()));
             assert_eq!(result.batch.num_rows(), expected[0].num_rows());

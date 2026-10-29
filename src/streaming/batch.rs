@@ -187,7 +187,7 @@ impl Subscription<'_> {
         let graph = self.connection.visible_graph(visible)?;
         let (batch, index) =
             self.program
-                .execute_indexed(&self.plan, graph, self.connection.limits.timeout)?;
+                .execute_indexed(&self.plan, graph, self.connection.limits.timeout).await?;
         let typed_key = "orchiddb.cypher.typed_rows.v1";
         let mut metadata = batch.schema().metadata().clone();
         let typed_rows: Vec<Value> = metadata

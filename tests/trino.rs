@@ -483,7 +483,7 @@ async fn computed_retrieval_edge_execution() {
 #[tokio::test]
 async fn recursive_paths_preserve_declared_base_types() {
     let request = json!({"version":1,"dialect":"trino","language":"cypher",
-        "query":"MATCH (a:Person {name:'A'})-[:R*]->(b) RETURN b.name AS name ORDER BY name",
+        "query":"MATCH (a:Person {name:'A'})-[:R*1..3]->(b) RETURN b.name AS name ORDER BY name",
         "tables":[
             {"name":"nodes","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]},
             {"name":"edges","columns":[{"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"}]}

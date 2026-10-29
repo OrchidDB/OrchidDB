@@ -1,4 +1,7 @@
 //! Elementwise three-valued equality for homogeneous primitive lists.
+//!
+//! SQL audit [L17](../../../tools/diagnostics/sql-lowering-audit.md#l17-list-membership-and-equality): Backend array equality is not assumed to implement three-valued
+//! language equality. Keep element alignment, cardinality, null, and effect proofs.
 use super::*;
 use arrow::array::Array;
 use datafusion::common::ExprSchema;

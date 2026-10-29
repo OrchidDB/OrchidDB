@@ -165,6 +165,9 @@ fn run_prepared(kernel: &RowKernel, mut inputs: Vec<Vec<Row>>, state: &mut State
     if kernel.relational_input.is_none() {
         let cost = &mut state.context.query_cost;
         cost.native_kernel_calls = cost.native_kernel_calls.saturating_add(1);
+        if kernel.boundary.is_none() {
+            cost.native_relational_kernel_calls = cost.native_relational_kernel_calls.saturating_add(1);
+        }
         if kernel.source.is_none() {
             cost.native_input_rows = cost
                 .native_input_rows

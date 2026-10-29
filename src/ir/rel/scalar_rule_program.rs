@@ -1,6 +1,9 @@
 //! Ordered scalar-family program over bound relational inputs. The old local
 //! dispatch lives here once, with shared budgets, outcomes and invalidation;
 //! individual implementation proofs remain in their domain modules.
+//!
+//! SQL audit [L09](../../../tools/diagnostics/sql-lowering-audit.md#l09-exact-comparisons-and-heterogeneous-primitive-properties): Comparison, membership, temporal, and collection rules retain distinct
+//! proof domains. Successful scalar coercion does not prove UNION coercion safe.
 use super::expression::exact_float_literal;
 use super::*;
 use crate::ir::rules::{RuleDescriptor, RuleKind, RuleSession, Stage, Traversal};

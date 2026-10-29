@@ -28,6 +28,7 @@ pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
         | DataType::BinaryView
         | DataType::FixedSizeBinary(_) => "BLOB".into(),
         DataType::Date32 | DataType::Date64 => "DATE".into(),
+        DataType::Time64(TimeUnit::Nanosecond) => "TIME_NS".into(),
         DataType::Time32(_) | DataType::Time64(_) => "TIME".into(),
         DataType::Timestamp(_, Some(_)) => "TIMESTAMPTZ".into(),
         DataType::Timestamp(unit, None) => match unit {
@@ -37,8 +38,10 @@ pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
             TimeUnit::Nanosecond => "TIMESTAMP_NS",
         }
         .into(),
-        DataType::Interval(_) => "INTERVAL".into(),
-        DataType::Decimal128(precision, scale) | DataType::Decimal256(precision, scale)
+        DataType::Duration(TimeUnit::Nanosecond) | DataType::Interval(arrow::datatypes::IntervalUnit::MonthDayNano) => return Err(unsupported(data_type)),
+        DataType::Duration(_) | DataType::Interval(_) => "INTERVAL".into(),
+        DataType::Decimal32(precision, scale) | DataType::Decimal64(precision, scale)
+        | DataType::Decimal128(precision, scale) | DataType::Decimal256(precision, scale)
             if *precision <= 38 && *scale >= 0 =>
         {
             format!("DECIMAL({precision},{scale})")

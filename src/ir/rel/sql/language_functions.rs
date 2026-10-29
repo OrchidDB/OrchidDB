@@ -170,7 +170,6 @@ pub fn register(connection: &Connection) -> duckdb::Result<()> {
     add!(Texts, "__orchiddb_lang_texts");
     add!(Int, "__orchiddb_lang_int");
     add!(Ints, "__orchiddb_lang_ints");
-    add!(crate::rdf_engine::scalar::SparqlScalar, kernels::SPARQL);
     Ok(())
 }
 

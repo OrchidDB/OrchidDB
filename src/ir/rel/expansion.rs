@@ -1,4 +1,7 @@
 //! Expansion.
+//!
+//! SQL audit [L04](../../../tools/diagnostics/sql-lowering-audit.md#l04-fixed-traversals-and-redundant-label-or-cast-removal): Fixed hops become endpoint joins. Label predicates and trail checks
+//! have different purposes: proving a fixed label cannot remove trail uniqueness.
 
 use super::*;
 use datafusion::common::tree_node::TreeNode;
@@ -95,6 +98,9 @@ impl<'a> LoweringContext<'a> {
     /// element of nodes(path)). Identity equality stays inside SQL; no graph
     /// lookup or per-row execution boundary is needed to re-enter expansion.
     pub(super) fn bind_native_node(&mut self, input: LoweredNode, binding: &str) -> RelResult<LoweredNode> {
+        self.bind_native_node_with_labels(input, binding, &LabelExpr::Any)
+    }
+    pub(super) fn bind_native_node_with_labels(&mut self, input: LoweredNode, binding: &str, labels: &LabelExpr) -> RelResult<LoweredNode> {
         if self.language != Language::Cypher || has_binding_shape(&input.plan, binding).is_some()
             || !has_exact_col(&input.plan, binding)
             || !native_values::is_value(&col_exact(binding).get_type(input.plan.schema())?) {
@@ -109,7 +115,7 @@ impl<'a> LoweringContext<'a> {
         }
         let candidate = format!("__orchid_value_node_{}", self.scan_counter);
         self.scan_counter += 1;
-        let nodes = self.lower_node_scan(&candidate, &LabelExpr::Any)?;
+        let nodes = self.lower_node_scan(&candidate, labels)?;
         let key = native_values::key_expr(col_exact(binding), true);
         let candidate_key = native_values::key_expr(
             self.native_expr(&nodes.plan, &IrExpr::Binding(candidate.clone()))?, true);
@@ -310,7 +316,7 @@ impl<'a> LoweringContext<'a> {
             recursive |= matches!(node, LogicalPlan::RecursiveQuery(_));
             Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
         })?;
-        let typed = !self.options.native_values && !recursive && (!has_previous || !previous.is_empty())
+        let typed = !recursive && (!has_previous || !previous.is_empty())
             && previous.iter().all(|(name, _)| col_exact(name).get_type(input.plan.schema()).ok()
                 == id.get_type(input.plan.schema()).ok());
         let filtered = if has_previous {

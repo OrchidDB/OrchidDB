@@ -35,20 +35,3 @@ async fn ordered_offset_keeps_exact_limit_and_projected_alias_scope() {
     }
     assert_eq!(rows(engine.cypher("MATCH (a:A) WITH a.num2 AS x WITH x % 3 AS x ORDER BY x * -1 LIMIT 3 RETURN x").await.unwrap()), vec![vec!["2"], vec!["1"], vec!["1"]]);
 }
-
-#[tokio::test]
-async fn scalar_child_guard_does_not_mask_list_step_errors() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    for step in ["combine", "difference", "disjunct", "intersect", "merge", "product"] {
-        let error = engine.gremlin(&format!("g.inject(null).{step}(__.inject(1))")).await.err().expect("null input must fail");
-        assert!(error.to_string().contains(&format!("Incoming traverser for {step} step can't be null")), "{step}: {error}");
-    }
-}
-
-#[tokio::test]
-async fn wildcard_values_keeps_heterogeneous_properties() {
-    let mut engine = GraphEngine::in_memory().unwrap();
-    engine.cypher("CREATE (:Person {name:'b', age:3}), (:Person {name:'a', age:2})").await.unwrap();
-    assert_eq!(rows(engine.gremlin("g.V().values().order()").await.unwrap()), vec![vec!["2"], vec!["3"], vec!["a"], vec!["b"]]);
-    assert_eq!(rows(engine.gremlin("g.V().values('name').order()").await.unwrap()), vec![vec!["a"], vec!["b"]]);
-}

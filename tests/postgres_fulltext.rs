@@ -3,7 +3,7 @@ use orchiddb::compiler::compile_json;
 use serde_json::{Value, json};
 
 fn request(query: &str) -> Value {
-    json!({"version":1,"dialect":"duckdb","engine":"none","language":"cypher","query":query,
+    json!({"version":1,"dialect":"duckdb","language":"cypher","query":query,
         "sources":{"db":{"adapter":"postgres"}},
         "tables":[{"name":"documents","source":"db","columns":[
             {"name":"id","data_type":"int64"},{"name":"body","data_type":"string"},

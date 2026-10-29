@@ -108,7 +108,7 @@ async fn subquery_sql_capability_matrix() {
                         r.stats.sql_queries
                     ));
                 }
-                if r.stats.cost.native_kernel_calls != 0 {
+                if r.stats.cost.native_relational_kernel_calls != 0 {
                     failures.push(format!(
                         "{query}\nresidual kernels: {}\n{}",
                         r.stats.cost.native_kernel_calls, r.stats.physical_plan

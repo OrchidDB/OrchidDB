@@ -3,6 +3,9 @@
 //! This deliberately is not a map transport format. Only literal constructors
 //! and already bound values are substituted, so discarded fields cannot throw or observe an evaluation
 //! count. Values that escape as maps retain the existing typed-value boundary.
+//!
+//! SQL audit [L12](../../../tools/diagnostics/sql-lowering-audit.md#l12-map-elimination-and-structural-graph-scalars): Eliminate constructors only when all escaping uses and discarded field
+//! evaluations are proved safe. This is not general map serialization removal.
 use super::*;
 
 fn literal_tree(expr: &IrExpr) -> bool {

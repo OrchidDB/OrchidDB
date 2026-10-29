@@ -18,7 +18,6 @@ use crate::ir::runtime::ReturnedBatches;
 use crate::ir::value::Value;
 use crate::language::cypher::parser::parse_query;
 use crate::language::cypher::planner::CypherPlanner;
-use crate::language::sparql::OntologyMapping;
 
 /// Owns the external SQL executor and the schema mapping that turns graph
 /// labels/edge types into the user's relational tables.
@@ -102,33 +101,14 @@ impl MappedGraphEngine {
     }
 
     /// Run a Gremlin traversal or mutation against the mapped schema.
-    pub async fn gremlin(&mut self, query: &str) -> Result<ReturnedBatches, String> {
-        self.gremlin_with_bindings(query, &Default::default()).await
-    }
 
-    pub async fn gremlin_with_bindings(
-        &mut self,
-        query: &str,
-        bindings: &std::collections::HashMap<String, crate::language::gremlin::GremlinBinding>,
-    ) -> Result<ReturnedBatches, String> {
-        let plan = self.with_functions(|| crate::engine::plan_gremlin(query, bindings))?;
-        self.run_plan(&plan).await
-    }
+
+
 
     /// Run a SPARQL query against the mapped schema. The ontology is passed
     /// explicitly so vocabulary resolution is a caller decision, not hidden
     /// engine state.
-    pub async fn sparql(
-        &mut self,
-        query: &str,
-        ontology: OntologyMapping,
-    ) -> Result<ReturnedBatches, String> {
-        let mut mapping=(*self.mapping).clone();
-        ontology.apply_to(&mut mapping,"default")?;
-        let plan=crate::language::sparql::SparqlPlanner::new("default").plan_str(query).map_err(|e|e.to_string())?;
-        let result=crate::engine::execute_mapped(&mut self.executor,Arc::new(mapping),&plan,self.jvm_workers.clone()).await?;
-        crate::rdf_engine::legacy_columns(result)
-    }
+
 
     /// Lower a Cypher read query and return the generated DuckDB SQL text.
     pub async fn explain_cypher(&mut self, query: &str) -> Result<String, String> {

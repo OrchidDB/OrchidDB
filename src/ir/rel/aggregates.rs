@@ -1,4 +1,7 @@
 //! Aggregates.
+//!
+//! SQL audit [L18](../../../tools/diagnostics/sql-lowering-audit.md#l18-aggregation-and-collection-demand): Presence-only counts, returned collections, and ordered distinct
+//! collections need different payloads. A dead list must be proved dead at consumers.
 
 use super::*;
 
@@ -188,6 +191,21 @@ impl<'a> LoweringContext<'a> {
             return Err(RelError::Unsupported("Heterogeneous primitive extrema require Cypher ordering".into()));
         }
         Ok(value)
+    }
+
+    pub(super) fn lower_sum_arg(
+        &self,
+        plan: &LogicalPlan,
+        arg: &Option<IrExpr>,
+    ) -> RelResult<Expr> {
+        let value = self.lower_required_agg_arg(plan, arg)?;
+        // SUM has no Null-typed accumulator. Type only untyped NULLs;
+        // retain real numeric widths and the surrounding empty-group policy.
+        Ok(if value.get_type(plan.schema())? == DataType::Null {
+            value.cast_to(&DataType::Int64, plan.schema())?
+        } else {
+            value
+        })
     }
 
     pub(super) fn lower_avg_arg(

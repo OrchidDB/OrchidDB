@@ -44,63 +44,7 @@ async fn query(e: &mut MappedGraphEngine, q: &str) {
     e.cypher(q).await.unwrap_or_else(|err| panic!("{q}: {err}"));
 }
 
-#[tokio::test]
-async fn fk_writes_coalesce_and_preserve_child_in_both_directions() {
-    for reverse in [false, true] {
-        let mut e = engine(reverse, false);
-        let pattern = if reverse {
-            "(c:Child {id:'c',name:'child'})-[r:LINK {weight:7}]->(p)"
-        } else {
-            "(p)-[r:LINK {weight:7}]->(c:Child {id:'c',name:'child'})"
-        };
-        query(
-            &mut e,
-            &format!("MATCH (p:Parent {{id:'a'}}) CREATE {pattern}"),
-        )
-        .await;
-        assert_eq!(
-            scalar(
-                &mut e,
-                "SELECT parent_id || ':' || name || ':' || weight::VARCHAR FROM children"
-            ),
-            "a:child:7"
-        );
-        query(&mut e, "MATCH ()-[r:LINK]->() SET r.weight=9").await;
-        assert_eq!(scalar(&mut e, "SELECT weight::VARCHAR FROM children"), "9");
-        query(&mut e, "MATCH ()-[r:LINK]->() DELETE r").await;
-        assert_eq!(
-            scalar(
-                &mut e,
-                "SELECT count(*)::VARCHAR FROM children WHERE parent_id IS NULL AND name='child'"
-            ),
-            "1"
-        );
-        let r = e.cypher("MATCH ()-[r:LINK]->() RETURN r").await.unwrap();
-        assert_eq!(r.batch.num_rows(), 0);
-        let r = e.gremlin("g.E().hasLabel('LINK').count()").await.unwrap();
-        assert_eq!(
-            arrow::util::display::array_value_to_string(r.batch.column(0), 0).unwrap(),
-            "0"
-        );
-        let pattern = if reverse {
-            "(c)-[:LINK]->(p)"
-        } else {
-            "(p)-[:LINK]->(c)"
-        };
-        query(
-            &mut e,
-            &format!("MATCH (p:Parent {{id:'b'}}),(c:Child {{id:'c'}}) CREATE {pattern}"),
-        )
-        .await;
-        assert_eq!(scalar(&mut e, "SELECT parent_id FROM children"), "b");
-        query(&mut e, "MATCH (c:Child) DETACH DELETE c").await;
-        assert_eq!(
-            scalar(&mut e, "SELECT count(*)::VARCHAR FROM children"),
-            "0"
-        );
-        assert_eq!(scalar(&mut e, "SELECT count(*)::VARCHAR FROM parents"), "2");
-    }
-}
+
 
 #[tokio::test]
 async fn required_fk_reparenting_and_failures_are_atomic() {

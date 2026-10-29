@@ -1,4 +1,7 @@
 //! In-code engine integration. Adapters own syntax, codecs and relational rewrites.
+//!
+//! SQL audit [L23](../../../../tools/diagnostics/sql-lowering-audit.md#l23-portable-functions-and-extension-rewrite-hooks): Extension rewriting belongs at typed function/relation and AST hooks.
+//! Emitting a function name does not install or verify an engine extension.
 use super::{SqlDialect, SqlError, SqlResult};
 use arrow::datatypes::DataType;
 use datafusion::common::ScalarValue;
@@ -205,7 +208,7 @@ impl SqlDialect {
     /// Re-registering the same instance is idempotent; replacement is rejected.
     pub fn register(adapter: &'static dyn DialectAdapter) -> SqlResult<Self> {
         let name = adapter.name();
-        if name.is_empty() || matches!(name, "postgres" | "duckdb" | "starrocks" | "trino") {
+        if name.is_empty() || matches!(name, "postgres" | "duckdb" | "trino") {
             return Err(SqlError::Setup(format!(
                 "reserved or empty engine dialect name {name:?}"
             )));
@@ -230,7 +233,6 @@ impl SqlDialect {
         match name {
             "duckdb" => Ok(Self::DuckDb),
             "postgres" => Ok(Self::Postgres),
-            "starrocks" => Ok(Self::Custom(&super::starrocks::STARROCKS)),
             "trino" => Ok(Self::Custom(&super::trino::TRINO)),
             _ => registry()
                 .read()

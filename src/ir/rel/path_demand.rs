@@ -1,5 +1,8 @@
 //! Demand reduction for Cypher path payloads. Traversal and trail history are
 //! deliberately unchanged: a dead result path does not make its rows dead.
+//!
+//! SQL audit [L05](../../../tools/diagnostics/sql-lowering-audit.md#l05-variable-paths-and-payload-demand): Payload demand can remove path construction, not the traversal or its
+//! relationship history. COUNT requires a separate non-null presence proof.
 use super::*;
 use crate::ir::plan::{ApplyKind, PathMaterialization, PathUpdate, ProjectMode};
 

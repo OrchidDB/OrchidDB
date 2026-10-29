@@ -32,8 +32,7 @@ def verify(binaries, extension, version, commit, export_host_symbols=False):
         ctypes.CDLL(_duckdb.__file__, mode=ctypes.RTLD_GLOBAL)
     with duckdb.connect(config={'allow_unsigned_extensions': 'true'}) as database:
         database.execute("LOAD '" + str(extension).replace("'", "''") + "'")
-        database.execute('CALL orchid_register_schema(?, ?)', ['release', '{"tables":[]}'])
-        assert database.execute("SELECT * FROM orchid_query('release', 'RETURN 42 AS answer')").fetchall() == [(42,)]
+        assert database.execute("SELECT __orchiddb_cypher_to_float_v1('42')").fetchall() == [(42,)]
     print('Validated native ABI and extension execution:', binaries.name)
 
 

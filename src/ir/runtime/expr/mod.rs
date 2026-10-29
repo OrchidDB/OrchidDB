@@ -297,8 +297,13 @@ fn eval_inner(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value
         }
         IrExpr::Case { arms, otherwise } => {
             for (cond, value) in arms {
-                if matches!(eval(cond, row, graph)?, Value::Bool(true)) {
-                    return eval(value, row, graph);
+                match eval(cond, row, graph)? {
+                    Value::Bool(true) => return eval(value, row, graph),
+                    Value::Bool(false) | Value::Null => {},
+                    _ => return Err(RuntimeError::Diagnosed {
+                        code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+                        message: "CASE predicate requires a Boolean or null".into(),
+                    }),
                 }
             }
             match otherwise {

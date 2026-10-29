@@ -109,8 +109,8 @@ async fn relowering_reads_new_snapshot_without_reusing_old_dictionary() {
         ["1984", "2000"]
     );
 }
-#[test]
-fn large_domains_and_undefined_duration_order_remain_runtime() {
+#[tokio::test]
+async fn large_date_domains_lower_while_undefined_duration_order_is_rejected() {
     let graph = graph("duration", &["P1D", "P2D"]);
     let plan = CypherPlanner::new()
         .plan(&parse_query("MATCH (n:T) RETURN n.v ORDER BY n.v").unwrap())
@@ -128,10 +128,8 @@ fn large_domains_and_undefined_duration_order_remain_runtime() {
             )]),
         );
     }
-    let plan = CypherPlanner::new()
-        .plan(&parse_query("MATCH (n:T) WITH n.v AS d RETURN d.year").unwrap())
-        .unwrap();
-    assert!(RelBackend::new().lower(&plan, &graph).is_err());
+    assert_eq!(rows(&graph, "MATCH (n:T) WITH n.v AS d RETURN d.year ORDER BY d.year").await,
+        (1900..1965).map(|year| year.to_string()).collect::<Vec<_>>());
 }
 
 #[tokio::test]

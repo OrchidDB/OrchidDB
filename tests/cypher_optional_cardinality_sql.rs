@@ -270,7 +270,10 @@ async fn mapped_and_nested_list_comparisons_use_the_shared_semantic_helper() {
             fixture.prepare(&setup).unwrap();
             fixture.engine.execute_plan(&setup).await.unwrap();
             let report=fixture.diagnostic_sql(&target).await.unwrap();
-            assert!(report.to_string().contains("__orchiddb_cypher_list_compare"), "{query}: {report}");
+            // Typed flat lists can now compare directly in SQL; nested and
+            // heterogeneous lists may still use a scalar equality helper.
+            assert_eq!(report["residual_compute_operators"], 0, "{query}: {report}");
+            assert!(!report["regions"].as_array().unwrap().is_empty(), "{query}: {report}");
             let result=fixture.engine.execute_plan(&target).await.unwrap();
             assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0),0).unwrap(),expected,"{query}");
         }
