@@ -1924,7 +1924,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "antlr4rust",
  "arrow",
@@ -1956,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb-client"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "arrow",
  "orchiddb",
@@ -1966,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "orchiddb-published-example"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "duckdb",
  "orchiddb-client",
