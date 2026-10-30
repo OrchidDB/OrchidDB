@@ -24,6 +24,13 @@ pub enum ConnectorSource {
         #[serde(default)]
         argument_columns: std::collections::BTreeMap<String, String>,
     },
+    Table {
+        catalog: String,
+        schema: String,
+        table: String,
+        #[serde(default)]
+        json_columns: std::collections::BTreeSet<String>,
+    },
     Iceberg {
         catalog: String,
         schema: String,
@@ -143,6 +150,12 @@ impl ConnectorSource {
                     q(schema),
                     q(function)
                 )
+            }
+            Self::Table { catalog, schema, table: name, .. } => {
+                if [catalog, schema, name].iter().any(|name| name.is_empty()) {
+                    return Err(invalid("table identifiers must be nonempty"));
+                }
+                table(catalog, schema, name)
             }
             Self::Iceberg {
                 catalog,
@@ -341,6 +354,10 @@ impl ConnectorSource {
     fn column(&self, name: &str, ty: &DataType) -> SqlResult<String> {
         let q = TRINO.quote_ident(name);
         Ok(match self {
+            Self::Table { json_columns, .. } => {
+                let value = if json_columns.contains(name) { format!("json_format({q})") } else { q };
+                format!("CAST({value} AS {})", TRINO.sql_type(ty)?)
+            }
             Self::TableFunction { arguments, argument_columns, .. } if argument_columns.contains_key(name) => {
                 let argument = &argument_columns[name];
                 let value = arguments.get(argument).ok_or_else(|| invalid(&format!("argument {argument} is required for column {name}")))?;
