@@ -351,7 +351,7 @@ pub(crate) fn prepare_query(
     mapping: &mut GraphMapping,
     native: bool,
 ) -> Result<GraphPlan, String> {
-    if mapping.cypher_relationships.is_empty() {
+    if mapping.cypher_relationships.is_empty() && !mapping.has_source_parameters() {
         return crate::language::cypher::preparation::prepare(
             text,
             values,
@@ -433,10 +433,59 @@ fn prepare_calls(
     Ok(())
 }
 fn prepare_patterns(query: &mut ast::Query, mapping: &mut GraphMapping) -> Result<(), String> {
-    fn pattern(part: &mut ast::PatternPart, mapping: &mut GraphMapping) -> Result<(), String> {
-        if let Some(value) = &mut part.element.start.properties { expression(value, mapping)?; }
+    prepare_patterns_scoped(query, mapping, &BTreeSet::new())
+}
+fn prepare_patterns_scoped(query: &mut ast::Query, mapping: &mut GraphMapping, inherited: &BTreeSet<String>) -> Result<(), String> {
+    fn node(pattern: &mut ast::NodePattern, mapping: &mut GraphMapping, visible: &mut BTreeSet<String>) -> Result<(), String> {
+        let existing = pattern.variable.as_ref().is_some_and(|name| visible.contains(name));
+        if let Some(name) = &pattern.variable { visible.insert(name.clone()); }
+        let declarations = pattern.labels.iter().filter_map(|name| mapping.node(name))
+            .filter(|node| !node.parameters.is_empty()).collect::<Vec<_>>();
+        if declarations.is_empty() { return Ok(()); }
+        if pattern.labels.len() != 1 { return Err("source arguments require one explicit node label".into()); }
+        let parameters = declarations[0].parameters.clone();
+        let mut supplied = BTreeMap::new();
+        if let Some(ast::Expr::Map(items)) = &pattern.properties {
+            for (name, value) in items {
+                if parameters.iter().any(|p| p.name == *name) {
+                    if supplied.insert(name.clone(), constant(value)?).is_some() { return Err(format!("duplicate source argument {name}")); }
+                }
+            }
+        }
+        if existing {
+            if !supplied.is_empty() { return Err("source arguments cannot rebind an existing node variable; use a new variable".into()); }
+            return Ok(());
+        }
+        pattern.labels[0] = mapping.bind_node_arguments(&pattern.labels[0], &supplied)?;
+        if let Some(ast::Expr::Map(items)) = &mut pattern.properties {
+            items.retain(|(name, _)| !supplied.contains_key(name));
+            if items.is_empty() { pattern.properties = None; }
+        }
+        Ok(())
+    }
+    fn pattern(part: &mut ast::PatternPart, mapping: &mut GraphMapping, visible: &mut BTreeSet<String>) -> Result<(), String> {
+        node(&mut part.element.start, mapping, visible)?;
+        if let Some(value) = &mut part.element.start.properties { expression(value, mapping, visible)?; }
         for chain in &mut part.element.chains {
             let rel = &mut chain.relationship;
+            let source_parameters = rel.types.iter().filter_map(|name| mapping.edge(name))
+                .flat_map(|edge| edge.parameters.iter().cloned()).collect::<Vec<_>>();
+            if !source_parameters.is_empty() {
+                if rel.types.len() != 1 { return Err("source arguments require one explicit relationship type".into()); }
+                let mut supplied = BTreeMap::new();
+                if let Some(ast::Expr::Map(items)) = &rel.properties {
+                    for (name, value) in items {
+                        if source_parameters.iter().any(|p| p.name == *name) {
+                            if supplied.insert(name.clone(), constant(value)?).is_some() { return Err(format!("duplicate source argument {name}")); }
+                        }
+                    }
+                }
+                rel.types[0] = mapping.bind_edge_arguments(&rel.types[0], &supplied)?;
+                if let Some(ast::Expr::Map(items)) = &mut rel.properties {
+                    items.retain(|(name, _)| !supplied.contains_key(name));
+                    if items.is_empty() { rel.properties = None; }
+                }
+            }
             if let Some(ast::Expr::Map(items)) = &mut rel.properties {
                 let rules: Vec<_> = rel.types.iter().filter_map(|name| mapping.cypher_relationships.get(name)).collect();
                 let mut arguments = BTreeMap::new();
@@ -456,80 +505,102 @@ fn prepare_patterns(query: &mut ast::Query, mapping: &mut GraphMapping) -> Resul
                     if items.is_empty() { rel.properties = None; }
                 }
             }
-            if let Some(value) = &mut rel.properties { expression(value, mapping)?; }
+            if let Some(value) = &mut rel.properties { expression(value, mapping, visible)?; }
             if let Some(recursive) = &mut rel.recursive {
-                if let Some(value) = &mut recursive.predicate { expression(value, mapping)?; }
+                if let Some(value) = &mut recursive.predicate { expression(value, mapping, visible)?; }
             }
-            if let Some(value) = &mut chain.node.properties { expression(value, mapping)?; }
+            node(&mut chain.node, mapping, visible)?;
+            if let Some(value) = &mut chain.node.properties { expression(value, mapping, visible)?; }
         }
         Ok(())
     }
-    fn expression(value: &mut ast::Expr, mapping: &mut GraphMapping) -> Result<(), String> {
+    fn expression(value: &mut ast::Expr, mapping: &mut GraphMapping, visible: &mut BTreeSet<String>) -> Result<(), String> {
         use ast::Expr::*;
         match value {
-            Property { target, .. } | LabelPredicate { target, .. } => expression(target, mapping)?,
-            List(items) | Function { args: items, .. } => for item in items { expression(item, mapping)?; },
-            Map(items) => for (_, item) in items { expression(item, mapping)?; },
-            Unary { expr, .. } | IsNull(expr) | IsNotNull(expr) => expression(expr, mapping)?,
-            Binary { lhs, rhs, .. } => { expression(lhs, mapping)?; expression(rhs, mapping)?; }
-            StringPredicate { target, pattern, .. } => { expression(target, mapping)?; expression(pattern, mapping)?; }
+            Property { target, .. } | LabelPredicate { target, .. } => expression(target, mapping, visible)?,
+            List(items) | Function { args: items, .. } => for item in items { expression(item, mapping, visible)?; },
+            Map(items) => for (_, item) in items { expression(item, mapping, visible)?; },
+            Unary { expr, .. } | IsNull(expr) | IsNotNull(expr) => expression(expr, mapping, visible)?,
+            Binary { lhs, rhs, .. } => { expression(lhs, mapping, visible)?; expression(rhs, mapping, visible)?; }
+            StringPredicate { target, pattern, .. } => { expression(target, mapping, visible)?; expression(pattern, mapping, visible)?; }
             Case { case, arms, otherwise } => {
-                if let Some(value) = case { expression(value, mapping)?; }
-                for (a, b) in arms { expression(a, mapping)?; expression(b, mapping)?; }
-                if let Some(value) = otherwise { expression(value, mapping)?; }
+                if let Some(value) = case { expression(value, mapping, visible)?; }
+                for (a, b) in arms { expression(a, mapping, visible)?; expression(b, mapping, visible)?; }
+                if let Some(value) = otherwise { expression(value, mapping, visible)?; }
             }
             Exists(subquery) => {
-                if let Some(query) = &mut subquery.query { prepare_patterns(query, mapping)?; }
-                for part in &mut subquery.patterns { pattern(part, mapping)?; }
-                if let Some(value) = &mut subquery.predicate { expression(value, mapping)?; }
+                let mut local = visible.clone();
+                let visible = &mut local;
+                if let Some(query) = &mut subquery.query { prepare_patterns_scoped(query, mapping, visible)?; }
+                for part in &mut subquery.patterns { pattern(part, mapping, visible)?; }
+                if let Some(value) = &mut subquery.predicate { expression(value, mapping, visible)?; }
             }
-            PatternPredicate(parts) => for part in parts { pattern(part, mapping)?; },
+            PatternPredicate(parts) => { let mut local = visible.clone(); for part in parts { pattern(part, mapping, &mut local)?; } },
             PatternComprehension { pattern: part, predicate, map, .. } => {
-                pattern(part, mapping)?;
-                if let Some(value) = predicate { expression(value, mapping)?; }
-                expression(map, mapping)?;
+                let mut local = visible.clone();
+                let visible = &mut local;
+                pattern(part, mapping, visible)?;
+                if let Some(value) = predicate { expression(value, mapping, visible)?; }
+                expression(map, mapping, visible)?;
             }
             ListComprehension { collection, predicate, map, .. } => {
-                expression(collection, mapping)?;
-                if let Some(value) = predicate { expression(value, mapping)?; }
-                expression(map, mapping)?;
+                expression(collection, mapping, visible)?;
+                if let Some(value) = predicate { expression(value, mapping, visible)?; }
+                expression(map, mapping, visible)?;
             }
             ListReduce { collection, map, .. } | ListTransform { collection, map, .. } => {
-                expression(collection, mapping)?; expression(map, mapping)?;
+                expression(collection, mapping, visible)?; expression(map, mapping, visible)?;
             }
             ListFilter { collection, predicate, .. } | Quantifier { collection, predicate, .. } => {
-                expression(collection, mapping)?; expression(predicate, mapping)?;
+                expression(collection, mapping, visible)?; expression(predicate, mapping, visible)?;
             }
             Star | Variable(_) | Parameter(_) | Literal(_) | CountStar => {}
         }
         Ok(())
     }
-    fn projection(value: &mut ast::ProjectionBody, mapping: &mut GraphMapping) -> Result<(), String> {
-        for item in &mut value.items { expression(&mut item.expr, mapping)?; }
-        for item in &mut value.order_by { expression(&mut item.expr, mapping)?; }
-        for value in [&mut value.skip, &mut value.limit].into_iter().flatten() { expression(value, mapping)?; }
+    fn projection(value: &mut ast::ProjectionBody, mapping: &mut GraphMapping, visible: &mut BTreeSet<String>) -> Result<(), String> {
+        for item in &mut value.items { expression(&mut item.expr, mapping, visible)?; }
+        for item in &mut value.order_by { expression(&mut item.expr, mapping, visible)?; }
+        for value in [&mut value.skip, &mut value.limit].into_iter().flatten() { expression(value, mapping, visible)?; }
         Ok(())
     }
+    let mut scope = inherited.clone();
+    let visible = &mut scope;
     for clause in &mut query.clauses {
         match clause {
             ast::Clause::Match(value) => {
-                for part in &mut value.patterns { pattern(part, mapping)?; }
-                if let Some(value) = &mut value.predicate { expression(value, mapping)?; }
+                for part in &mut value.patterns { pattern(part, mapping, visible)?; }
+                if let Some(value) = &mut value.predicate { expression(value, mapping, visible)?; }
             }
             ast::Clause::With(value) => {
-                projection(&mut value.projection, mapping)?;
-                if let Some(value) = &mut value.predicate { expression(value, mapping)?; }
+                projection(&mut value.projection, mapping, visible)?;
+                let mut next = if value.projection.include_existing { visible.clone() } else { BTreeSet::new() };
+                for item in &value.projection.items {
+                    if let Some(name) = &item.alias { next.insert(name.clone()); }
+                    else if let ast::Expr::Variable(name) = &item.expr { next.insert(name.clone()); }
+                }
+                *visible = next;
+                if let Some(value) = &mut value.predicate { expression(value, mapping, visible)?; }
             }
-            ast::Clause::Return(value) => projection(&mut value.projection, mapping)?,
-            ast::Clause::Unwind(value) => expression(&mut value.expr, mapping)?,
+            ast::Clause::Return(value) => projection(&mut value.projection, mapping, visible)?,
+            ast::Clause::Unwind(value) => {
+                expression(&mut value.expr, mapping, visible)?;
+                visible.insert(value.alias.clone());
+            }
+            ast::Clause::Subquery(value) => {
+                let imports = value.imports.iter().cloned().collect();
+                prepare_patterns_scoped(&mut value.query, mapping, &imports)?;
+                visible.extend(value.outputs.iter().cloned());
+            }
             ast::Clause::Call(value) => {
-                for arg in &mut value.args { expression(arg, mapping)?; }
-                if let Some(value) = &mut value.predicate { expression(value, mapping)?; }
+                for arg in &mut value.args { expression(arg, mapping, visible)?; }
+                visible.extend(value.yields.iter().map(|item| item.alias.clone()));
+                if let Some(value) = &mut value.predicate { expression(value, mapping, visible)?; }
             }
             _ => {}
         }
     }
-    for branch in &mut query.unions { prepare_patterns(&mut branch.query, mapping)?; }
+    for branch in &mut query.unions { prepare_patterns_scoped(&mut branch.query, mapping, inherited)?; }
     Ok(())
 }
 
@@ -564,7 +635,7 @@ pub(super) fn constant(expr: &ast::Expr) -> Result<serde_json::Value, String> {
                 serde_json::json!(-value.as_f64().ok_or("numeric argument required")?)
             }
         }
-        _ => return Err("relationship arguments must be literals or query parameters".into()),
+        _ => return Err("pattern arguments must be literals or query parameters".into()),
     })
 }
 fn expand_calls(node: &mut Node, bodies: &BTreeMap<String, Node>) -> Result<(), String> {

@@ -26,7 +26,7 @@ impl<'a> LoweringContext<'a> {
                 if dir != Direction::In { endpoints.insert(edge.dst_label.clone()); }
             }
         }
-        Ok(LabelExpr::AnyOf(allowed.into_iter().filter(|label| endpoints.contains(label)).collect()))
+        Ok(LabelExpr::AnyOf(allowed.into_iter().filter(|label| endpoints.contains(mapping.node(label).map(|n| &n.label).unwrap_or(label))).collect()))
     }
 
     /// Bound endpoints still have to satisfy labels written in the pattern.

@@ -251,6 +251,7 @@ impl serde::Serialize for KeyColumns {
 /// Maps one node label onto the user's schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeMapping {
+    pub parameters: Vec<crate::catalog::RelationshipParameter>,
     /// Physical identity namespace; independent of logical label membership.
     pub label: String,
     /// Optional non-null list of logical Cypher labels for each row.
@@ -286,6 +287,7 @@ impl NodeMapping {
         id_column: impl Into<KeyColumns>,
     ) -> Self {
         Self {
+            parameters: Vec::new(),
             label: label.into(),
             labels_column: None,
             source,
@@ -319,6 +321,7 @@ pub enum ForeignKeyEndpoint {
 /// Maps one edge type onto the user's schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeMapping {
+    pub parameters: Vec<crate::catalog::RelationshipParameter>,
     /// When set, the edge is an FK on this endpoint's row, not an independent row.
     pub foreign_key: Option<ForeignKeyEndpoint>,
     pub rel_type: String,
@@ -383,6 +386,7 @@ impl EdgeMapping {
         dst_label: impl Into<String>,
     ) -> Self {
         Self {
+            parameters: Vec::new(),
             foreign_key: None,
             rel_type: rel_type.into(),
             source,
@@ -454,6 +458,8 @@ pub struct GraphMapping {
     edges: BTreeMap<String, EdgeMapping>,
     edge_partitions: BTreeMap<String, Vec<EdgeMapping>>,
     edge_instances: BTreeMap<String, EdgeMapping>,
+    node_instances: BTreeMap<String, NodeMapping>,
+    pub(crate) bound_table_sources: BTreeMap<String, String>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     representation_sources: BTreeMap<String, super::representation::RepresentationSource>,
     statistics: Option<Arc<super::statistics::StatisticsSnapshot>>,
@@ -1156,22 +1162,74 @@ impl GraphMapping {
     }
 
     pub fn node(&self, label: &str) -> Option<&NodeMapping> {
-        self.nodes.get(label)
+        self.node_instances.get(label).or_else(|| self.nodes.get(label))
     }
 
     pub fn edge(&self, rel_type: &str) -> Option<&EdgeMapping> {
         self.edge_instances.get(rel_type).or_else(|| self.edges.get(rel_type))
     }
 
+    pub(crate) fn has_source_parameters(&self) -> bool {
+        self.nodes.values().any(|n| !n.parameters.is_empty()) || self.edges.values().any(|e| !e.parameters.is_empty())
+    }
+    fn bind_source(&mut self, source: &MappedSource, parameters: &[crate::catalog::RelationshipParameter], supplied: &BTreeMap<String, serde_json::Value>, context: &str) -> Result<MappedSource, String> {
+        let MappedSource::Table(table) = source else { return Err(format!("{context}: source arguments require a table-backed mapping")); };
+        let values = crate::catalog::relationship::bind_parameters(parameters, supplied, context)?;
+        let metadata = self.source_metadata.get(table).ok_or_else(|| format!("{context}: source metadata is required"))?;
+        let format = metadata.format.as_deref().ok_or("source format is required")?;
+        let super::sql::SqlDialect::Custom(adapter) = super::sql::SqlDialect::resolve(format).map_err(|e| e.to_string())? else { return Err(format!("{format} does not support source arguments")); };
+        let schema = self.tables.get(table).ok_or("source table is not registered")?.schema();
+        let provider = adapter.bind_source_arguments(metadata, &values, schema).map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("{context}: source does not support explicit arguments"))?;
+        let mut index = self.bound_table_sources.len();
+        let alias = loop {
+            let candidate = format!("__orchid_source_arguments_{index}");
+            if !self.tables.contains_key(&candidate) { break candidate; }
+            index += 1;
+        };
+        self.register_table(&alias, provider);
+        self.bound_table_sources.insert(alias.clone(), table.clone());
+        Ok(MappedSource::Table(alias))
+    }
+    pub(crate) fn bind_node_arguments(&mut self, name: &str, supplied: &BTreeMap<String, serde_json::Value>) -> Result<String, String> {
+        let mut node = self.node(name).ok_or_else(|| format!("unknown node {name}"))?.clone();
+        node.source = self.bind_source(&node.source, &node.parameters, supplied, name)?;
+        node.parameters.clear();
+        let mut index = self.node_instances.len();
+        let alias = loop {
+            let candidate = format!("__orchid_node_arguments_{index}");
+            if self.node(&candidate).is_none() { break candidate; }
+            index += 1;
+        };
+        self.node_instances.insert(alias.clone(), node);
+        Ok(alias)
+    }
+    pub(crate) fn node_scan_candidates(&self, labels: &LabelExpr) -> RelResult<Vec<&NodeMapping>> {
+        let explicit = match labels { LabelExpr::AllOf(names) | LabelExpr::AnyOf(names) => names, _ => return Ok(self.nodes.values().collect()) };
+        let instances = explicit.iter().filter_map(|name| self.node_instances.get(name)).collect::<Vec<_>>();
+        if instances.is_empty() { return Ok(self.nodes.values().collect()); }
+        if explicit.len() != 1 { return Err(RelError::Unsupported("source arguments require one explicit node label".into())); }
+        Ok(instances)
+    }
+    pub(crate) fn canonical_node_labels(&self, labels: &LabelExpr) -> LabelExpr {
+        let names = |names: &[String]| names.iter().map(|n| self.node_instances.get(n).map(|node| node.label.clone()).unwrap_or_else(|| n.clone())).collect();
+        match labels {
+            LabelExpr::Any => LabelExpr::Any,
+            LabelExpr::AllOf(n) => LabelExpr::AllOf(names(n)),
+            LabelExpr::AnyOf(n) => LabelExpr::AnyOf(names(n)),
+            LabelExpr::Not(inner) => LabelExpr::Not(Box::new(self.canonical_node_labels(inner))),
+        }
+    }
     pub(crate) fn bind_edge_arguments(&mut self, name: &str, arguments: &BTreeMap<String, serde_json::Value>) -> Result<String, String> {
         if self.edge_partitions.contains_key(name) { return Err(format!("partitioned relationship {name} does not declare parameters")); }
         let mut edge = self.edge(name).ok_or_else(|| format!("unknown relationship {name}"))?.clone();
-        let MappedSource::Cypher(rule) = &mut edge.source else {
-            return Err(format!("relationship {name} does not declare parameters"));
-        };
-        let values = rule.arguments(arguments)?;
-        for parameter in &mut rule.parameters {
-            parameter.default = Some(values[&parameter.name].clone());
+        if !edge.parameters.is_empty() {
+            edge.source = self.bind_source(&edge.source, &edge.parameters, arguments, name)?;
+            edge.parameters.clear();
+        } else {
+            let MappedSource::Cypher(rule) = &mut edge.source else { return Err(format!("relationship {name} does not declare parameters")); };
+            let values = rule.arguments(arguments)?;
+            for parameter in &mut rule.parameters { parameter.default = Some(values[&parameter.name].clone()); }
         }
         let mut index = self.edge_instances.len();
         let alias = loop {
@@ -1321,12 +1379,14 @@ pub(super) fn lower_mapped_node_scan_restricted(
     labels: &LabelExpr, physical_labels: Option<&BTreeSet<String>>,
 ) -> RelResult<LoweredNode> {
     let mut sources = Vec::new();
-    for node in mapping.nodes.values() {
+    let canonical = mapping.canonical_node_labels(labels);
+    for node in mapping.node_scan_candidates(labels)? {
         if physical_labels.is_some_and(|allowed| !allowed.contains(&node.label)) { continue; }
         if (node.labels_column.is_none() || ctx.language != crate::ir::policy::Language::Cypher)
-            && !static_labels_match(labels, &node.label) {
+            && !static_labels_match(&canonical, &node.label) {
             continue;
         }
+        if !node.parameters.is_empty() { return Err(RelError::Unsupported(format!("node {} requires an explicit labelled pattern for source arguments", node.label))); }
         let mut plan = mapping.source_plan(&node.source)?;
         if let Some(column) = &node.labels_column {
             let ty = source_column_type(&plan, column, "logical node labels")?;
@@ -1334,13 +1394,13 @@ pub(super) fn lower_mapped_node_scan_restricted(
                 return Err(RelError::Unsupported("logical node labels require a list of strings".into()));
             }
             let value = col_exact(resolve_column(&plan, column)?);
-            let predicate = mapped_label_predicate(labels, &|name| {
+            let predicate = mapped_label_predicate(&canonical, &|name| {
                 datafusion::functions_nested::expr_fn::array_has(value.clone(), lit(name.to_owned()))
             });
             if ctx.language == crate::ir::policy::Language::Cypher && !matches!(labels, LabelExpr::Any) {
                 plan = LogicalPlanBuilder::from(plan).filter(predicate)?.build()?;
             }
-        } else if !static_labels_match(labels, &node.label) {
+        } else if !static_labels_match(&canonical, &node.label) {
             continue;
         }
         sources.push((node, plan));
@@ -1424,6 +1484,7 @@ pub(super) fn lower_mapped_rel_scan_restricted(
         for edge in mapping.edge_partitions(rel_type) {
         if sources_allowed.is_some_and(|allowed| !allowed.contains(&edge.src_label))
             || targets_allowed.is_some_and(|allowed| !allowed.contains(&edge.dst_label)) { continue; }
+        if !edge.parameters.is_empty() { return Err(RelError::Unsupported(format!("relationship {} requires an explicit typed pattern for source arguments", edge.rel_type))); }
         mapping.validate_foreign_keys()?;
         let mut plan = mapping.source_plan(&edge.source)?;
         if let Some((_, _, _, fk)) = edge.foreign_key_columns() {
@@ -1956,6 +2017,7 @@ impl GraphMapping {
                     let source = section_source(entries, &format!("node.{name}"))?;
                     let id = require_columns(entries, "id", &format!("node.{name}"))?;
                     let mut node = NodeMapping::new(name.clone(), source, id);
+                    if let Some(value) = entries.get("parameters") { node.parameters = serde_json::from_str(value.string()?).map_err(|e| RelError::Unsupported(format!("node parameters: {e}")))?; }
                     if let Some(column) = entries.get("labels_column") {
                         node = node.labels_column(column.string()?);
                     }
@@ -1982,6 +2044,7 @@ impl GraphMapping {
                         require_key(entries, "src_label", &at)?,
                         require_key(entries, "dst_label", &at)?,
                     );
+                    if let Some(value) = entries.get("parameters") { edge.parameters = serde_json::from_str(value.string()?).map_err(|e| RelError::Unsupported(format!("edge parameters: {e}")))?; }
                     if let Some(child) = entries.get("foreign_key") {
                         edge = edge.foreign_key(match child.string()? {
                             "src" => ForeignKeyEndpoint::Source,
@@ -2071,6 +2134,7 @@ impl GraphMapping {
         for (label, node) in &self.nodes {
             out.push_str(&format!("[node.{}]\n", key(label)));
             out.push_str(&source_line(&node.source));
+            if !node.parameters.is_empty() { out.push_str(&format!("\nparameters = {}\n", quote(&serde_json::to_string(&node.parameters).map_err(|e| RelError::Unsupported(e.to_string()))?))); }
             out.push('\n');
             out.push_str(&format!("id = {}\n", node.id_column.toml()));
             if let Some(column) = &node.labels_column {
@@ -2096,6 +2160,7 @@ impl GraphMapping {
             }
             out.push_str(&format!("[edge.{}]\n", key(rel_type)));
             out.push_str(&source_line(&edge.source));
+            if !edge.parameters.is_empty() { out.push_str(&format!("\nparameters = {}\n", quote(&serde_json::to_string(&edge.parameters).map_err(|e| RelError::Unsupported(e.to_string()))?))); }
             out.push('\n');
             out.push_str(&format!("src = {}\n", edge.src_column.toml()));
             out.push_str(&format!("dst = {}\n", edge.dst_column.toml()));

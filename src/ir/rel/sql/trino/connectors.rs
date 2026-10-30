@@ -21,6 +21,8 @@ pub enum ConnectorSource {
         function: String,
         #[serde(default)]
         arguments: std::collections::BTreeMap<String, serde_json::Value>,
+        #[serde(default)]
+        argument_columns: std::collections::BTreeMap<String, String>,
     },
     Iceberg {
         catalog: String,
@@ -104,6 +106,7 @@ impl ConnectorSource {
                 schema,
                 function,
                 arguments,
+                ..
             } => {
                 if [catalog, schema, function]
                     .iter()
@@ -338,6 +341,18 @@ impl ConnectorSource {
     fn column(&self, name: &str, ty: &DataType) -> SqlResult<String> {
         let q = TRINO.quote_ident(name);
         Ok(match self {
+            Self::TableFunction { arguments, argument_columns, .. } if argument_columns.contains_key(name) => {
+                let argument = &argument_columns[name];
+                let value = arguments.get(argument).ok_or_else(|| invalid(&format!("argument {argument} is required for column {name}")))?;
+                let literal = match value {
+                    serde_json::Value::Null => "NULL".into(),
+                    serde_json::Value::Bool(v) => if *v { "TRUE" } else { "FALSE" }.into(),
+                    serde_json::Value::Number(v) => v.to_string(),
+                    serde_json::Value::String(v) => string(v),
+                    _ => return Err(invalid("argument columns require scalar arguments")),
+                };
+                format!("CAST({literal} AS {})", TRINO.sql_type(ty)?)
+            }
             Self::Loki { .. } | Self::Prometheus { .. } => match name {
                 "timestamp" => format!(
                     "CAST(timestamp AT TIME ZONE 'UTC' AS {})",
@@ -398,6 +413,19 @@ pub(super) fn provider(
         serde_json::to_value(&metadata.options).map_err(|e| invalid(&e.to_string()))?,
     )
     .map_err(|e| invalid(&e.to_string()))?;
+    source.provider(schema).map(Some)
+}
+pub(super) fn bind_arguments(
+    metadata: &crate::ir::rel::source_metadata::SourceMetadata,
+    supplied: &std::collections::BTreeMap<String, serde_json::Value>,
+    schema: arrow::datatypes::SchemaRef,
+) -> SqlResult<Option<Arc<dyn TableProvider>>> {
+    if metadata.format.as_deref() != Some("trino") { return Ok(None); }
+    let mut source: ConnectorSource = serde_json::from_value(
+        serde_json::to_value(&metadata.options).map_err(|e| invalid(&e.to_string()))?,
+    ).map_err(|e| invalid(&e.to_string()))?;
+    let ConnectorSource::TableFunction { arguments, .. } = &mut source else { return Ok(None); };
+    for (name, value) in supplied { arguments.insert(name.to_ascii_uppercase(), value.clone()); }
     source.provider(schema).map(Some)
 }
 fn connector(provider: &Arc<dyn TableProvider>) -> Option<&ConnectorProvider> {

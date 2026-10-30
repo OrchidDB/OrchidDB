@@ -47,6 +47,15 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
     ) -> SqlResult<Option<std::sync::Arc<dyn datafusion::catalog::TableProvider>>> {
         Ok(None)
     }
+    /// Bind explicitly declared pattern inputs; never called for SQL predicates.
+    fn bind_source_arguments(
+        &self,
+        _metadata: &crate::ir::rel::source_metadata::SourceMetadata,
+        _arguments: &std::collections::BTreeMap<String, serde_json::Value>,
+        _schema: arrow::datatypes::SchemaRef,
+    ) -> SqlResult<Option<std::sync::Arc<dyn datafusion::catalog::TableProvider>>> {
+        Ok(None)
+    }
     fn requires_scope_repair(&self) -> bool { false }
     fn create_table_keyword(&self) -> &'static str {
         "CREATE TEMPORARY TABLE"

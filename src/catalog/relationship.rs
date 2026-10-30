@@ -53,6 +53,31 @@ fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
         .build(schema)
         .map_err(|e| e.to_string())
 }
+pub(crate) fn validate_parameters(parameters: &[RelationshipParameter]) -> Result<(), String> {
+    let mut names = BTreeSet::new();
+    for parameter in parameters {
+        if parameter.name.is_empty() || !names.insert(&parameter.name) {
+            return Err("parameter names must be nonempty and unique".into());
+        }
+        let check = validator(&parameter.schema)?;
+        if let Some(value) = &parameter.default {
+            check.validate(value).map_err(|e| format!("default for {}: {e}", parameter.name))?;
+        }
+    }
+    Ok(())
+}
+pub(crate) fn bind_parameters(parameters: &[RelationshipParameter], supplied: &BTreeMap<String, Value>, context: &str) -> Result<BTreeMap<String, Value>, String> {
+    validate_parameters(parameters)?;
+    for name in supplied.keys() {
+        if !parameters.iter().any(|p| &p.name == name) { return Err(format!("unknown parameter {name} for {context}")); }
+    }
+    parameters.iter().map(|p| {
+        let value = supplied.get(&p.name).or(p.default.as_ref())
+            .ok_or_else(|| format!("missing pattern argument `{}` for {context}", p.name))?;
+        validator(&p.schema)?.validate(value).map_err(|e| format!("argument {} for {context}: {e}", p.name))?;
+        Ok((p.name.clone(), value.clone()))
+    }).collect()
+}
 impl CypherRelationship {
     pub fn new(name: impl Into<String>, source: impl Into<String>, target: impl Into<String>,
         cypher: impl Into<String>, description: impl Into<String>) -> Self {
@@ -78,18 +103,7 @@ impl CypherRelationship {
         if self.returns.properties.contains_key(&self.returns.target) {
             return Err("relationship target cannot also be a property".into());
         }
-        let mut names = BTreeSet::new();
-        for parameter in &self.parameters {
-            if parameter.name.is_empty() || !names.insert(&parameter.name) {
-                return Err("relationship parameter names must be nonempty and unique".into());
-            }
-            let validator = validator(&parameter.schema)?;
-            if let Some(default) = &parameter.default {
-                validator
-                    .validate(default)
-                    .map_err(|e| format!("default for {}: {e}", parameter.name))?;
-            }
-        }
+        validate_parameters(&self.parameters)?;
         for schema in self.returns.properties.values() {
             validator(schema)?;
         }
@@ -103,26 +117,7 @@ impl CypherRelationship {
         supplied: &BTreeMap<String, Value>,
     ) -> Result<BTreeMap<String, Value>, String> {
         self.validate()?;
-        for name in supplied.keys() {
-            if !self.parameters.iter().any(|p| &p.name == name) {
-                return Err(format!("unknown parameter `{name}` for {}", self.name));
-            }
-        }
-        self.parameters
-            .iter()
-            .map(|parameter| {
-                let value = supplied
-                    .get(&parameter.name)
-                    .or(parameter.default.as_ref())
-                    .ok_or_else(|| {
-                        format!("missing parameter `{}` for {}", parameter.name, self.name)
-                    })?;
-                validator(&parameter.schema)?
-                    .validate(value)
-                    .map_err(|e| format!("parameter {}: {e}", parameter.name))?;
-                Ok((parameter.name.clone(), value.clone()))
-            })
-            .collect()
+        bind_parameters(&self.parameters, supplied, &self.name)
     }
 }
 fn validate_body(

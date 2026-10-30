@@ -103,7 +103,7 @@ impl CompileRequest {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
     pub name: String,
@@ -112,7 +112,7 @@ pub struct Table {
     pub engine: Option<String>,
     pub columns: Vec<Column>,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Column {
     pub name: String,
@@ -126,6 +126,8 @@ fn yes() -> bool {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Node {
+    #[serde(default)]
+    pub parameters: Vec<crate::catalog::RelationshipParameter>,
     pub label: String,
     pub table: String,
     /// Optional SQL-only filtered source, while `table` keeps the mapped base source
@@ -243,6 +245,8 @@ fn default_subject_id_column() -> String {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
+    #[serde(default)]
+    pub parameters: Vec<crate::catalog::RelationshipParameter>,
     #[serde(default)]
     pub source_query: Option<String>,
     #[serde(default)]
@@ -841,6 +845,8 @@ fn prepare_graph_parsed(
             Some(sql) => NodeMapping::query(&node.label, sql, &node.id),
             None => NodeMapping::table(&node.label, &node.table, &node.id),
         };
+        n.parameters = node.parameters.clone();
+        crate::catalog::relationship::validate_parameters(&n.parameters)?;
         for (p, c) in &node.properties {
             check(&node.table, c, false)?;
             n = n.property(p, c);
@@ -882,6 +888,8 @@ fn prepare_graph_parsed(
             check(&edge.table, c, false)?;
             e = e.property(p, c);
         }
+        e.parameters = edge.parameters.clone();
+        crate::catalog::relationship::validate_parameters(&e.parameters)?;
         mapping.map_edge(e);
     }
     for source in &request.source_metadata {
@@ -988,6 +996,12 @@ async fn compile_parsed(
         operators,
         managed_table,
     } = prepare_graph_parsed(&request, &request.rule_context)?;
+    for (alias, original) in &mapping.bound_table_sources {
+        let mut table = request.tables.iter().find(|table| &table.name == original)
+            .ok_or_else(|| format!("missing bound source table {original}"))?.clone();
+        table.name = alias.clone();
+        request.tables.push(table);
+    }
     if managed_table.is_some() {
         return Err("Managed graph queries require the host compiled-kernel adapter".into());
     }
