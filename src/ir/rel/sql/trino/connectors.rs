@@ -13,6 +13,15 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "connector", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ConnectorSource {
+    /// A typed relation backed by a Trino table function. Arguments are literal
+    /// values from schema configuration; query predicates remain in SQL.
+    TableFunction {
+        catalog: String,
+        schema: String,
+        function: String,
+        #[serde(default)]
+        arguments: std::collections::BTreeMap<String, serde_json::Value>,
+    },
     Iceberg {
         catalog: String,
         schema: String,
@@ -90,6 +99,48 @@ impl ConnectorSource {
             format!("TABLE({}.system.{name}({arguments}))", q(catalog))
         };
         Ok(match self {
+            Self::TableFunction {
+                catalog,
+                schema,
+                function,
+                arguments,
+            } => {
+                if [catalog, schema, function]
+                    .iter()
+                    .any(|name| name.is_empty())
+                {
+                    return Err(invalid("table function identifiers must be nonempty"));
+                }
+                let arguments = arguments
+                    .iter()
+                    .map(|(name, value)| {
+                        if name.is_empty() {
+                            return Err(invalid("argument name must be nonempty"));
+                        }
+                        let literal = match value {
+                            serde_json::Value::Null => "NULL".into(),
+                            serde_json::Value::Bool(value) => {
+                                if *value { "TRUE" } else { "FALSE" }.into()
+                            }
+                            serde_json::Value::Number(value) => value.to_string(),
+                            serde_json::Value::String(value) => string(value),
+                            _ => {
+                                return Err(invalid(
+                                    "table function arguments must be scalar JSON literals",
+                                ));
+                            }
+                        };
+                        Ok(format!("{} => {literal}", q(name)))
+                    })
+                    .collect::<SqlResult<Vec<_>>>()?
+                    .join(", ");
+                format!(
+                    "TABLE({}.{}.{}({arguments}))",
+                    q(catalog),
+                    q(schema),
+                    q(function)
+                )
+            }
             Self::Iceberg {
                 catalog,
                 schema,
