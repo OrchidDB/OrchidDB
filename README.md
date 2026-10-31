@@ -56,6 +56,57 @@ The complete borrowed DuckDB session example is in
 [clients/rust/examples/borrowed_duckdb.rs](clients/rust/examples/borrowed_duckdb.rs).
 Schema configuration and query text are separate API inputs.
 
+## Declared table functions
+
+Declare a row-producing SQL function with
+`source_metadata.format = "table_function"`, its function name, arguments, and
+returned columns. The application supplies the function in its database session.
+The declaration and predicate binding are shared; SQL rendering currently supports
+DuckDB and PostgreSQL.
+
+For example, suppose the application provides `find_items(category)`, returning
+`id`, `name`, and `price`. Register it as a graph source:
+
+```json
+{
+  "tables": [{"name": "items", "columns": [
+    {"name": "id", "data_type": "string"},
+    {"name": "name", "data_type": "string"},
+    {"name": "price", "data_type": "float64"},
+    {"name": "category", "data_type": "string"}
+  ]}],
+  "nodes": [{"label": "Item", "table": "items", "id": "id", "properties": {
+    "name": "name", "price": "price", "category": "category"
+  }}],
+  "source_metadata": [{"table": "items", "format": "table_function", "options": {
+    "function": ["find_items"],
+    "arguments": [{"column": "category"}]
+  }}]
+}
+```
+
+Query it through the normal Rust or Go connection with a bound parameter:
+
+```cypher
+MATCH (i:Item)
+WHERE i.category = $category AND i.price < 100
+RETURN i.name, i.price
+```
+
+The `category` equality supplies the required function argument; the price
+predicate filters returned rows. Only columns explicitly declared in `arguments`
+can supply inputs. These virtual input columns project the supplied value.
+
+`function` is an array of identifier components, such as `["schema", "function"]`.
+Arguments are ordered; omitting `name` makes an argument positional. Named
+arguments follow positional arguments. Each argument references a declared
+column whose type controls the SQL cast. A scalar `value` fixes the argument;
+a conflicting query predicate still filters the result and never overrides it.
+Without `value`, a required argument must have a direct equality to a non-null
+literal or bound query parameter. An optional named argument (`"optional": true`)
+is omitted when unbound, and its virtual input column is null. OR predicates,
+ranges, and correlated expressions do not supply required arguments.
+
 ## Go
 
 The Go module is `github.com/OrchidDB/OrchidDB/clients/go`. Build its native

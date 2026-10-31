@@ -504,25 +504,17 @@ fn register_tables(
                 .iter()
                 .find(|m| m.table == table.name)
             {
-                let bound = match dialect {
-                    SqlDialect::Custom(adapter) => {
-                        adapter.source_provider(metadata, schema.clone())
-                    }
-                    SqlDialect::DuckDb => match crate::ir::rel::sql::duckdb_iceberg::provider(
-                        metadata,
-                        schema.clone(),
-                    )
-                    .map_err(|e| e.to_string())?
-                    {
-                        Some(provider) => Ok(Some(provider)),
-                        None => crate::ir::rel::sql::duckdb_observability::provider(
-                            metadata,
-                            schema.clone(),
-                        ),
-                    },
-                    _ => Ok(None),
-                }
-                .map_err(|e| e.to_string())?;
+                let generic = crate::ir::rel::sql::table_function_source::provider(metadata, schema.clone())
+                    .map_err(|e| e.to_string())?;
+                let bound = if generic.is_some() {
+                    generic
+                } else {
+                    match dialect {
+                        SqlDialect::Custom(adapter) => adapter.source_provider(metadata, schema.clone()),
+                        SqlDialect::DuckDb => crate::ir::rel::sql::duckdb_iceberg::provider(metadata, schema.clone()),
+                        _ => Ok(None),
+                    }.map_err(|e| e.to_string())?
+                };
                 if let Some(bound) = bound {
                     provider = bound;
                 }

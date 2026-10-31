@@ -15,7 +15,6 @@ pub mod catalog;
 pub mod execution;
 pub mod federation;
 pub mod operations;
-mod observability;
 pub mod grammar;
 pub mod ir;
 pub mod language;

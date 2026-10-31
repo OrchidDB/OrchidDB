@@ -38,7 +38,7 @@ mod correlation;
 mod capabilities;
 pub use capabilities::{SubqueryKind, SubqueryRequirements};
 pub mod trino;
-pub(crate) mod duckdb_observability;
+pub(crate) mod table_function_source;
 pub(crate) mod duckdb_iceberg;
 pub use dialect::{DialectAdapter, EngineAdapter};
 pub mod search;

@@ -144,9 +144,12 @@ pub fn builtin_lower_relation(
     ctx: &LoweringContext,
 ) -> SqlResult<Option<RelationLowering>> {
     if ctx.dialect == SqlDialect::DuckDb {
-        if let Some(statement) = super::duckdb_iceberg::lower(plan)?.or(super::duckdb_observability::lower(plan)?) {
+        if let Some(statement) = super::duckdb_iceberg::lower(plan)? {
             return Ok(Some(RelationLowering::Sql(statement)));
         }
+    }
+    if let Some(statement) = super::table_function_source::lower(plan, ctx.dialect)? {
+        return Ok(Some(RelationLowering::Sql(statement)));
     }
     let LogicalPlan::Extension(extension) = plan else {
         return Ok(None);
@@ -588,25 +591,21 @@ pub(crate) fn transform_relations(
     plan: LogicalPlan,
     dialect: SqlDialect,
 ) -> SqlResult<LogicalPlan> {
-    if !matches!(dialect, SqlDialect::Custom(_) | SqlDialect::DuckDb) {
-        return Ok(plan);
-    }
-    let plan = if dialect == SqlDialect::DuckDb {
-        let (plan, _) = super::duckdb_observability::push_filters(plan)?;
-        plan
-    } else { plan };
+    let (plan, _) = super::table_function_source::push_filters(plan)?;
     Ok(plan
         .transform_down_with_subqueries(|node| {
             if matches!(&node, LogicalPlan::Extension(extension) if extension.node.as_any().is::<SqlRelation>()) {
                 return Ok(Transformed::no(node));
             }
-            let lowered = if dialect == SqlDialect::DuckDb {
-                super::duckdb_iceberg::lower(&node).and_then(|s| match s {
-                    Some(s) => Ok(Some(RelationLowering::Sql(s))),
-                    None => super::duckdb_observability::lower(&node).map(|s| s.map(RelationLowering::Sql)),
-                })
-            } else {
+            let lowered = if let Some(statement) = super::table_function_source::lower(&node, dialect)
+                .map_err(|e| DataFusionError::Plan(e.to_string()))? {
+                Ok(Some(RelationLowering::Sql(statement)))
+            } else if dialect == SqlDialect::DuckDb {
+                super::duckdb_iceberg::lower(&node).map(|s| s.map(RelationLowering::Sql))
+            } else if matches!(dialect, SqlDialect::Custom(_)) {
                 lower_relation(&node, &LoweringContext { dialect, mode: LoweringMode::InIsland })
+            } else {
+                Ok(None)
             }.map_err(|e| DataFusionError::Plan(e.to_string()))?;
             match lowered {
                 Some(RelationLowering::Sql(statement)) => {
