@@ -7,6 +7,8 @@ pub use orchiddb::compiler::{Authorization, PermissionRelation, PermissionScope}
 pub use orchiddb::execution::{SqlDialect, SqlSession};
 pub use orchiddb::session::{Query, Schema};
 pub use orchiddb::streaming;
+#[cfg(feature = "opa")]
+pub use orchiddb::opa;
 pub use orchiddb::catalog::{Catalog, CatalogAuth, Credential, InMemoryCatalog, CatalogSnapshot, CatalogGraph, CatalogPublish, CatalogGrants, CatalogRecord, CatalogManifest, CatalogPrincipal, ResolvedCatalog, RelationshipDeclaration, CypherRelationship, RelationshipParameter, RelationshipReturns};
 #[cfg(feature = "orchid-catalog")]
 pub use orchiddb::catalog::OrchidCatalog;
@@ -25,6 +27,8 @@ pub enum Error<E> {
 pub struct Connection<S> {
     session: S,
     catalog: Arc<dyn Catalog>,
+    #[cfg(feature = "opa")]
+    opa: Option<opa::Policy>,
     statistics: statistics::Statistics,
 }
 impl<S: SqlSession> Connection<S> {
@@ -33,18 +37,28 @@ impl<S: SqlSession> Connection<S> {
             session,
             catalog: Arc::new(InMemoryCatalog::new(schema)),
             statistics: Default::default(),
+            #[cfg(feature = "opa")]
+            opa: None,
         }
     }
     pub fn with_catalog(session: S, catalog: Arc<dyn Catalog>) -> Self {
-        Self { session, catalog, statistics: Default::default() }
+        Self { session, catalog, statistics: Default::default(), #[cfg(feature = "opa")] opa: None }
+    }
+    /// Bind a host-authenticated identity and policy to every query on this connection.
+    #[cfg(feature = "opa")]
+    pub fn with_opa(mut self, policy: opa::Policy) -> Self {
+        self.opa = Some(policy);
+        self
     }
     pub async fn query(&mut self, query: Query) -> Result<S::Output<'_>, Error<S::Error>> {
         let snapshot = self.catalog.snapshot().await.map_err(Error::Query)?;
         let request = snapshot.schema.resolve().await.map_err(Error::Query)?.request(self.session.dialect().name(), &query)
             .map_err(Error::Query)?;
+        #[cfg(feature = "opa")]
+        let request = { let mut request = request; request.opa = self.opa.clone(); request };
         let work = self
             .statistics
-            .compile_plan(serde_json::to_value(request).map_err(|e| Error::Query(e.to_string()))?)
+            .compile_typed(request)
             .await
             .map_err(Error::Query)?;
         orchiddb::execution::execute(&mut self.session, &work)
@@ -55,6 +69,10 @@ impl<S: SqlSession> Connection<S> {
         &mut self,
         collector: C,
     ) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "opa")]
+        if self.opa.is_some() {
+            return Err("statistics collection requires a separate administrative connection".into());
+        }
         let snapshot = self.catalog.snapshot().await?;
         let request = snapshot.schema.resolve().await?.request(self.session.dialect().name(), &Query::cypher("RETURN 1"))?;
         self.statistics
@@ -87,6 +105,8 @@ pub use statistics::StatisticsCollector;
 pub use orchiddb::federation::Session as EngineSession;
 pub struct FederatedConnection {
     catalog: Arc<dyn Catalog>,
+    #[cfg(feature = "opa")]
+    opa: Option<opa::Policy>,
     target: String,
     dialect: String,
     sessions: std::collections::BTreeMap<String, Box<dyn EngineSession>>,
@@ -105,12 +125,20 @@ impl FederatedConnection {
         sessions: std::collections::BTreeMap<String, Box<dyn EngineSession>>,
     ) -> Result<Self, String> {
         let dialect = sessions.get(target).ok_or("Missing execution engine")?.dialect().to_owned();
-        Ok(Self { catalog, target: target.into(), dialect, sessions })
+        Ok(Self { catalog, target: target.into(), dialect, sessions, #[cfg(feature = "opa")] opa: None })
+    }
+    /// Bind a host-authenticated identity and policy to every query on this connection.
+    #[cfg(feature = "opa")]
+    pub fn with_opa(mut self, policy: opa::Policy) -> Self {
+        self.opa = Some(policy);
+        self
     }
     pub async fn query(&mut self, query: Query) -> Result<Vec<RecordBatch>, String> {
         let snapshot = self.catalog.snapshot().await?;
         let mut request = snapshot.schema.resolve().await?.request(&self.dialect, &query)?;
         request.execution_engine = Some(self.target.clone());
+        #[cfg(feature = "opa")]
+        { request.opa = self.opa.clone(); }
         let work = orchiddb::compiler::compile(request).await?;
         orchiddb::federation::execute(&work, &mut self.sessions).await
     }
@@ -120,6 +148,8 @@ impl FederatedConnection {
 /// application-owned; no database driver is opened or bundled by this client.
 pub struct SourceConnection {
     catalog: Arc<dyn Catalog>,
+    #[cfg(feature = "opa")]
+    opa: Option<opa::Policy>,
     sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>,
     functions: orchiddb::execution::plan::Functions,
     duckdb: Option<Box<dyn EngineSession>>,
@@ -130,7 +160,7 @@ impl SourceConnection {
         Self::with_catalog(Arc::new(InMemoryCatalog::new(schema)), sources)
     }
     pub fn with_catalog(catalog: Arc<dyn Catalog>, sources: std::collections::BTreeMap<String, Box<dyn EngineSession>>) -> Self {
-        Self { catalog, sources, functions: Default::default(), duckdb: None }
+        Self { catalog, sources, functions: Default::default(), duckdb: None, #[cfg(feature = "opa")] opa: None }
     }
     pub fn register_function(&mut self, name: impl Into<String>, function: Arc<dyn LocalFunction>) {
         self.functions.insert(name.into(), function);
@@ -142,12 +172,20 @@ impl SourceConnection {
         self.duckdb = Some(adapter);
         Ok(())
     }
+    /// Bind a host-authenticated identity and policy to every query on this connection.
+    #[cfg(feature = "opa")]
+    pub fn with_opa(mut self, policy: opa::Policy) -> Self {
+        self.opa = Some(policy);
+        self
+    }
     pub async fn query(&mut self, query: Query) -> Result<orchiddb::execution::stream::BatchStream, String> {
         let snapshot = self.catalog.snapshot().await?;
         // Dialect is a frontend compatibility context; per-source SQL emission
         // is selected by the source-first planner, never by this default.
         let mut request = snapshot.schema.resolve().await?.request("duckdb", &query)?;
         request.engine = Some(orchiddb::execution::ExecutableEngine::DuckDb);
+        #[cfg(feature = "opa")]
+        { request.opa = self.opa.clone(); }
         let work = orchiddb::compiler::compile(request).await?;
         let plan = work.execution_plan.as_ref().ok_or("missing execution plan")?;
         match self.duckdb.as_mut() {

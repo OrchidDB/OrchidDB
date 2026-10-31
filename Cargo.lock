@@ -2106,6 +2106,7 @@ version = "0.6.0"
 dependencies = [
  "arrow",
  "orchiddb",
+ "serde",
  "serde_json",
  "tokio",
 ]

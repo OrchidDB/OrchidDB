@@ -29,6 +29,10 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileRequest {
+    /// Host-owned policy binding. Never accepted from query/schema JSON.
+    #[cfg(feature = "opa")]
+    #[serde(skip)]
+    pub opa: Option<crate::opa::Policy>,
     #[doc(hidden)]
     #[serde(skip)]
     pub rule_context: crate::ir::rules::RuleContext,
@@ -577,6 +581,8 @@ pub(crate) async fn resolve_catalog(mut request: CompileRequest) -> Result<Compi
         if request.engine.is_some() {
             resolved.engine = request.engine;
         }
+        #[cfg(feature = "opa")]
+        { resolved.opa = request.opa; }
         resolved.rule_context = request.rule_context;
         resolved.version = request.version;
         resolved.bindings = request.bindings;
@@ -645,6 +651,10 @@ impl PreparedGraphBindings {
     }
 }
 pub fn prepare_graph(request: &CompileRequest) -> Result<PreparedGraphQuery, String> {
+    #[cfg(feature = "opa")]
+    if request.opa.is_some() {
+        return Err("OPA requires asynchronous query compilation and enforcement".into());
+    }
     let context = request.rule_context.new_query();
     prepare_graph_parsed(request, &context)
 }
@@ -966,6 +976,11 @@ async fn compile_parsed(
     mut request: CompileRequest,
 ) -> Result<CompiledSql, String> {
     request.rule_context = request.rule_context.new_query();
+    #[cfg(feature = "opa")]
+    let opa_context = match &request.opa {
+        Some(policy) => Some(policy.begin(&request).await?),
+        None => None,
+    };
     let PreparedGraphQuery {
         plan,
         graph,
@@ -996,6 +1011,10 @@ async fn compile_parsed(
         .lower_normalized_in_query(&plan, &graph)
         .map_err(|e| e.to_string())
     })?;
+    #[cfg(feature = "opa")]
+    if let (Some(policy), Some(context)) = (&request.opa, &opa_context) {
+        lowered.plan = policy.enforce(lowered.plan, &mapping, context).await?;
+    }
     let external: BTreeSet<_> = mapping
         .physical_table_names()
         .iter()

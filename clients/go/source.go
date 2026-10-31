@@ -58,6 +58,8 @@ type SQLSource struct {
 type LocalFunction func(context.Context, []any) (any, error)
 type DuckDBCompletion func(context.Context, string, map[string]RowCursor) (RowCursor, error)
 type SourceConfig struct {
+	// OPA binds trusted identity and policy endpoints for this connection.
+	OPA       *OPAConfig
 	Library   string
 	Sources   map[string]SQLSource
 	Functions map[string]LocalFunction
@@ -65,6 +67,7 @@ type SourceConfig struct {
 	Completion DuckDBCompletion
 }
 type SourceConnection struct {
+	opa     uint64
 	schema  map[string]json.RawMessage
 	config  SourceConfig
 	command commandFunc
@@ -90,9 +93,18 @@ func NewSourceConnection(schema json.RawMessage, config SourceConfig) (*SourceCo
 		functions[k] = v
 	}
 	config.Functions = functions
-	return &SourceConnection{schema: validated, config: config, command: command}, nil
+	handle, err := createOPA(command, config.OPA)
+	if err != nil {
+		return nil, err
+	}
+	return &SourceConnection{opa: handle, schema: validated, config: config, command: command}, nil
 }
-func (c *SourceConnection) Close() error { c.closed.Store(true); return nil }
+func (c *SourceConnection) Close() error {
+	if c.closed.Swap(true) {
+		return nil
+	}
+	return closeOPA(c.command, c.opa)
+}
 
 type sourceExpr struct {
 	Kind      string          `json:"kind"`
@@ -166,7 +178,7 @@ func (c *SourceConnection) Query(ctx context.Context, text string, options Query
 		Version int        `json:"version"`
 		Plan    sourcePlan `json:"execution_plan"`
 	}
-	if err := c.command(request, &work); err != nil {
+	if err := compileOPA(c.command, c.opa, request, &work); err != nil {
 		return nil, err
 	}
 	if work.Version != 2 {

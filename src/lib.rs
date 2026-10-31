@@ -10,6 +10,8 @@
 
 #[doc(hidden)]
 pub mod compiler;
+#[cfg(feature = "opa")]
+pub mod opa;
 pub mod session;
 pub mod catalog;
 pub mod execution;

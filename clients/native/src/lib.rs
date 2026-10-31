@@ -1,4 +1,15 @@
 //! Shared planning and statistics C ABI. Database sessions remain caller-owned.
+#[cfg(feature = "opa")]
+mod opa;
+
+async fn execution_command(input: &str) -> Result<String, String> {
+    #[cfg(feature = "opa")]
+    if let Some(result) = opa::command(input).await? {
+        return Ok(result);
+    }
+    orchiddb::compiler::compile_json(input).await
+}
+
 use std::{
     ffi::{CStr, CString, c_char},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -40,7 +51,7 @@ fn dispatch(input: String, operation: u8) -> Result<serde_json::Value, String> {
     runtime.spawn(async move {
         let result = match operation {
             1 => orchiddb::ir::rel::statistics::command(&input).await,
-            _ => orchiddb::compiler::compile_json(&input).await,
+            _ => execution_command(&input).await,
         };
         let _ = sender.send(result);
     });

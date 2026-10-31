@@ -23,6 +23,7 @@ duckdb = ["dep:duckdb"]
 duckdb-download = ["duckdb", "duckdb/download"]
 trino = ["dep:reqwest"]
 orchid-catalog = ["dep:reqwest"]
+opa = ["dep:reqwest"]
 kafka = ["dep:rdkafka"]
 
 [dependencies]

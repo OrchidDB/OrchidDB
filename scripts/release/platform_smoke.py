@@ -24,6 +24,20 @@ def verify(binaries, extension, version, commit, export_host_symbols=False):
         assert json.loads(ctypes.string_at(pointer)) == {'ok': True, 'result': {'tables': []}}
     finally:
         native.orchiddb_string_free(pointer)
+    def command(value):
+        pointer = native.orchiddb_execution_command(json.dumps(value).encode())
+        assert pointer
+        try:
+            response = json.loads(ctypes.string_at(pointer))
+            assert response['ok'], response
+            return response['result']
+        finally:
+            native.orchiddb_string_free(pointer)
+    # Every shipped native runtime must support host-bound OPA policies.
+    handle = command({'op': 'opa_create', 'config': {
+        'policy_uri': 'http://127.0.0.1:1/allow', 'user': 'release-smoke'}})
+    assert isinstance(handle, int) and handle > 0
+    command({'op': 'opa_close', 'handle': handle})
     assert not hasattr(native, 'orchiddb_compile_json')
     import duckdb
     if export_host_symbols:

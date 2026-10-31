@@ -21,6 +21,8 @@ type Session interface {
 // Config selects the session's SQL dialect and optional native runtime path.
 // Library defaults to ORCHIDDB_NATIVE_LIBRARY, then the platform library name.
 type Config struct {
+	// OPA binds trusted identity and policy endpoints for this connection.
+	OPA     *OPAConfig
 	Dialect string
 	Library string
 	// Engines supplies additional SQL or remote sessions for federation. The
@@ -50,6 +52,7 @@ type commandFunc func(any, any) error
 // Connection retains an immutable graph schema and borrows a database session.
 // Concurrent queries are subject to the session and driver's concurrency rules.
 type Connection struct {
+	opa     uint64
 	session Session
 	dialect string
 	schema  map[string]json.RawMessage
@@ -87,7 +90,11 @@ func New(session Session, schema json.RawMessage, config Config) (*Connection, e
 	for name, engine := range config.Engines {
 		engines[name] = engine
 	}
-	return &Connection{session: session, dialect: config.Dialect, schema: validated, command: command, engines: engines}, nil
+	handle, err := createOPA(command, config.OPA)
+	if err != nil {
+		return nil, err
+	}
+	return &Connection{opa: handle, session: session, dialect: config.Dialect, schema: validated, command: command, engines: engines}, nil
 }
 
 // Query executes graph text and returns driver-native rows. The caller must close
@@ -125,7 +132,7 @@ func (c *Connection) Query(ctx context.Context, text string, options QueryOption
 		SQL       string            `json:"sql"`
 		Transfers []json.RawMessage `json:"transfers"`
 	}
-	if err := c.command(request, &raw); err != nil {
+	if err := compileOPA(c.command, c.opa, request, &raw); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(raw, &plan); err != nil {
@@ -152,4 +159,9 @@ func (c *Connection) Query(ctx context.Context, text string, options QueryOption
 
 // Close prevents new queries. It does not close outstanding rows or the borrowed
 // session. Queries already in progress may finish. Close is safe to repeat.
-func (c *Connection) Close() error { c.closed.Store(true); return nil }
+func (c *Connection) Close() error {
+	if c.closed.Swap(true) {
+		return nil
+	}
+	return closeOPA(c.command, c.opa)
+}

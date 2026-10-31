@@ -117,23 +117,14 @@ impl Statistics {
         &self,
         request: Value,
     ) -> Result<orchiddb::compiler::CompiledSql, String> {
-        let catalog = match self.catalog_id.as_ref().and_then(Value::as_str) {
-            Some(id) => {
-                let catalog = orchiddb::ir::rel::statistics::catalog(id)?;
-                if orchiddb::ir::rel::statistics::mapping_fingerprint(&request) != catalog.mapping {
-                    return Err(
-                        "statistics snapshot mapping mismatch; regenerate or clear statistics"
-                            .into(),
-                    );
-                }
-                Some(catalog)
-            }
-            None => None,
-        };
-        let mut request: orchiddb::compiler::CompileRequest =
-            serde_json::from_value(request).map_err(|e| e.to_string())?;
-        if catalog.is_some() {
-            request.statistics = catalog;
+        self.compile_typed(serde_json::from_value(request).map_err(|e| e.to_string())?).await
+    }
+    pub async fn compile_typed(
+        &self,
+        mut request: orchiddb::compiler::CompileRequest,
+    ) -> Result<orchiddb::compiler::CompiledSql, String> {
+        if let Some(id) = self.catalog_id.as_ref().and_then(Value::as_str) {
+            request.statistics = Some(orchiddb::ir::rel::statistics::catalog(id)?);
         }
         orchiddb::compiler::compile(request).await
     }
