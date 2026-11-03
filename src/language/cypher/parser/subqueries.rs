@@ -2,7 +2,10 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(super) fn extract(input: &str) -> Result<(String, BTreeMap<String, CallSubquery>)> {
+// Retain source spelling for implicit projection names containing a CALL.
+type ExtractedCalls = BTreeMap<String, (CallSubquery, String)>;
+
+pub(super) fn extract(input: &str) -> Result<(String, ExtractedCalls)> {
     let tokens = tokenize(input)?;
     let tokens: Vec<_> = tokens.iter().filter(|t| t.symbolic_name != Some("SP") && !t.text.trim().is_empty()).collect();
     let mut prefix = "__orchid_call_subquery_".to_owned();
@@ -60,7 +63,8 @@ pub(super) fn extract(input: &str) -> Result<(String, BTreeMap<String, CallSubqu
             output.push_str(&input[copied..offset(input, tokens[i])]);
             output.push_str(&format!("CALL {name}() YIELD __subquery_placeholder"));
             copied = offset(input, tokens[end]) + 1;
-            queries.insert(name, CallSubquery { query: Box::new(query), imports, outputs });
+            queries.insert(name, (CallSubquery { query: Box::new(query), imports, outputs },
+                input[offset(input, tokens[i])..copied].to_owned()));
             i = end + 1;
         } else {
             i += 1;
@@ -70,9 +74,9 @@ pub(super) fn extract(input: &str) -> Result<(String, BTreeMap<String, CallSubqu
     Ok((output, queries))
 }
 
-pub(super) fn restore(query: &mut Query, calls: &mut BTreeMap<String, CallSubquery>) {
+pub(super) fn restore(query: &mut Query, calls: &mut ExtractedCalls) {
     for clause in &mut query.clauses {
-        if let Clause::Call(call) = clause && let Some(subquery) = calls.remove(&call.name) {
+        if let Clause::Call(call) = clause && let Some((subquery, _)) = calls.remove(&call.name) {
             *clause = Clause::Subquery(subquery);
         }
         restore_clause(clause, calls);
@@ -80,7 +84,7 @@ pub(super) fn restore(query: &mut Query, calls: &mut BTreeMap<String, CallSubque
     for branch in &mut query.unions { restore(&mut branch.query, calls); }
 }
 
-fn restore_clause(clause: &mut Clause, calls: &mut BTreeMap<String, CallSubquery>) {
+fn restore_clause(clause: &mut Clause, calls: &mut ExtractedCalls) {
     match clause {
         Clause::Subquery(c) => restore(&mut c.query, calls),
         Clause::Match(c) => {
@@ -104,7 +108,7 @@ fn restore_clause(clause: &mut Clause, calls: &mut BTreeMap<String, CallSubquery
     }
 }
 
-fn restore_set(item: &mut SetItem, calls: &mut BTreeMap<String, CallSubquery>) {
+fn restore_set(item: &mut SetItem, calls: &mut ExtractedCalls) {
     match item {
         SetItem::Property { target, value, .. } => { restore_expr(target, calls); restore_expr(value, calls); }
         SetItem::Replace { value, .. } | SetItem::Merge { value, .. } => restore_expr(value, calls),
@@ -112,13 +116,20 @@ fn restore_set(item: &mut SetItem, calls: &mut BTreeMap<String, CallSubquery>) {
     }
 }
 
-fn restore_projection(body: &mut ProjectionBody, calls: &mut BTreeMap<String, CallSubquery>) {
-    for item in &mut body.items { restore_expr(&mut item.expr, calls); }
+fn restore_projection(body: &mut ProjectionBody, calls: &mut ExtractedCalls) {
+    for item in &mut body.items {
+        if !item.explicit_alias && let Some(alias) = &mut item.alias {
+            for (name, (_, original)) in calls.iter() {
+                *alias = alias.replace(&format!("CALL {name}() YIELD __subquery_placeholder"), original);
+            }
+        }
+        restore_expr(&mut item.expr, calls);
+    }
     for item in &mut body.order_by { restore_expr(&mut item.expr, calls); }
     for e in body.skip.iter_mut().chain(&mut body.limit) { restore_expr(e, calls); }
 }
 
-fn restore_pattern(part: &mut PatternPart, calls: &mut BTreeMap<String, CallSubquery>) {
+fn restore_pattern(part: &mut PatternPart, calls: &mut ExtractedCalls) {
     if let Some(e) = &mut part.element.start.properties { restore_expr(e, calls); }
     for chain in &mut part.element.chains {
         for e in chain.node.properties.iter_mut().chain(&mut chain.relationship.properties) { restore_expr(e, calls); }
@@ -128,7 +139,7 @@ fn restore_pattern(part: &mut PatternPart, calls: &mut BTreeMap<String, CallSubq
     }
 }
 
-fn restore_expr(expr: &mut Expr, calls: &mut BTreeMap<String, CallSubquery>) {
+fn restore_expr(expr: &mut Expr, calls: &mut ExtractedCalls) {
     match expr {
         Expr::Star | Expr::Variable(_) | Expr::Parameter(_) | Expr::Literal(_) | Expr::CountStar => {}
         Expr::Property { target, .. } | Expr::LabelPredicate { target, .. } => restore_expr(target, calls),

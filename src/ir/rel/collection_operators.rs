@@ -545,6 +545,15 @@ impl<'a> LoweringContext<'a> {
         let list_type = list
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("quantifier input type: {err}")))?;
+        if list_type == DataType::Null {
+            // NULL has no element domain. Preserve evaluation of the operand,
+            // but never bind or evaluate the predicate over a null collection.
+            // This typing rule also applies when constant folding is disabled.
+            let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
+            columns.push(datafusion::logical_expr::cast(list, DataType::Boolean).alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
         if !matches!(
             list_type,
             DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)

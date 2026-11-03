@@ -166,7 +166,10 @@ async fn uniform_union_uses_sql_set_operations_without_coercing_mixed_values() {
     assert_eq!(result.stats.cost.native_relational_kernel_calls, 0, "{}", result.stats.physical_plan);
     assert!(result.stats.sql_queries.iter().any(|sql| sql.contains("UNION")));
     assert!(!result.stats.sql_queries.iter().any(|sql| sql.to_lowercase().contains("row_number")));
-    assert!(e.cypher("RETURN 1 AS x UNION RETURN '1' AS x").await.is_err());
+    let mixed = e.cypher("CALL { RETURN 1 AS x UNION RETURN '1' AS x } RETURN x=1 AS numeric,x='1' AS textual").await.unwrap();
+    let mut actual = rows(&mixed);
+    actual.sort();
+    assert_eq!(actual, ["false|true", "true|false"]);
     for query in [
         "RETURN 9007199254740993 AS x UNION RETURN 9007199254740992.0 AS x",
     ] {
