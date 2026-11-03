@@ -401,8 +401,25 @@ pub(super) fn encode_unprintable_literals(
     plan: LogicalPlan,
     dialect: SqlDialect,
 ) -> SqlResult<LogicalPlan> {
+    use datafusion::logical_expr::ExprSchemable;
     let transformed = plan.transform_up_with_subqueries(|node| {
-        node.map_expressions(|expr| encode_expression_literals(expr, dialect))
+        let mut schema = datafusion::common::DFSchema::empty();
+        for input in node.inputs() { schema.merge(input.schema()); }
+        schema.merge(node.schema());
+        node.map_expressions(|expr| {
+            let expr = expr.transform_down(|expr| {
+                if let Expr::ScalarFunction(call) = &expr {
+                    if matches!(call.func.name(), "__orchiddb_json_transform" | "__orchiddb_json_value") {
+                        let result = expr.get_type(&schema)?;
+                        if let Some(function) = crate::ir::functions::json::bind_result(&call.func, result) {
+                            return Ok(Transformed::yes(function.call(call.args.clone())));
+                        }
+                    }
+                }
+                Ok(Transformed::no(expr))
+            })?.data;
+            encode_expression_literals(expr, dialect)
+        })
     })?;
     Ok(transformed.data)
 }
@@ -563,10 +580,13 @@ pub(super) fn encode_expression_literals(
             }
             _ => {}
         }
-        let Expr::Literal(ScalarValue::Utf8(Some(value)), metadata) = &inner else {
+        let Expr::Literal(ScalarValue::Utf8(Some(value)) | ScalarValue::LargeUtf8(Some(value)) | ScalarValue::Utf8View(Some(value)), metadata) = &inner else {
             return Ok(Transformed::no(inner));
         };
-        let encode_nul = dialect == SqlDialect::DuckDb && value.contains('\0');
+        if dialect == SqlDialect::Postgres && value.contains('\0') {
+            return Err(DataFusionError::Plan("postgres text cannot contain a NUL character".into()));
+        }
+        let encode_nul = value.contains('\0');
         let encode_quote = value.contains('\'');
         if !encode_nul && !encode_quote {
             return Ok(Transformed::no(inner));
@@ -668,9 +688,9 @@ pub(super) fn apply_identifier_repairs(mut sql: String, repairs: &[(String, Stri
 pub(super) fn restore_aggregate_ordering(
     plan: &LogicalPlan,
     unparser: &Unparser<'_>,
-    dialect: SqlDialect,
+    _dialect: SqlDialect,
     mut statement: datafusion::sql::sqlparser::ast::Statement,
-) -> SqlResult<String> {
+) -> SqlResult<datafusion::sql::sqlparser::ast::Statement> {
     use datafusion::sql::sqlparser::ast;
     use std::ops::ControlFlow;
     let mut aggregates = Vec::new();
@@ -693,14 +713,12 @@ pub(super) fn restore_aggregate_ordering(
     for agg in aggregates {
         let mut plain = agg.clone();
         plain.params.order_by.clear();
-        let mut call = unparser.expr_to_sql(&Expr::AggregateFunction(plain))?;
-        functions::prepare_ast(&mut call, dialect)?;
+        let call = unparser.expr_to_sql(&Expr::AggregateFunction(plain))?;
         let mut ordered = call.clone();
         if !agg.params.order_by.is_empty() {
             let mut keys = Vec::new();
             for sort in &agg.params.order_by {
-                let mut expr = unparser.expr_to_sql(&sort.expr)?;
-                functions::prepare_ast(&mut expr, dialect)?;
+                let expr = unparser.expr_to_sql(&sort.expr)?;
                 keys.push(ast::OrderByExpr {
                     expr,
                     options: ast::OrderByOptions {
@@ -741,7 +759,7 @@ pub(super) fn restore_aggregate_ordering(
             return Err(SqlError::Unsupported(format!("cannot locate ordered aggregate `{call}` in emitted SQL")));
         }
     }
-    Ok(statement.to_string())
+    Ok(statement)
 }
 
 /// Remove projections that select every input column unchanged. The unparser
@@ -1110,7 +1128,7 @@ mod ordering_repair_tests {
         let dialect = SqlDialect::DuckDb.unparser_dialect();
         let unparser = Unparser::new(dialect.as_ref());
         let statement = Parser::parse_sql(&GenericDialect, sql).unwrap().remove(0);
-        restore_aggregate_ordering(plan, &unparser, SqlDialect::DuckDb, statement)
+        restore_aggregate_ordering(plan, &unparser, SqlDialect::DuckDb, statement).map(|statement| statement.to_string())
     }
     fn ordered(ascending: bool) -> Expr {
         array_agg(col("x")).order_by(vec![col("k").sort(ascending,false)]).build().unwrap()

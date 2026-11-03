@@ -12,7 +12,8 @@ mod lists;
 use lists::{normalize_colon_slices, normalize_lambda_list_functions};
 
 pub(super) fn normalize_cypher_extensions(input: &str) -> String {
-    let (protected, identifiers) = protect_escaped_identifiers(input);
+    let input = without_comments(input);
+    let (protected, identifiers) = protect_escaped_identifiers(&input);
     let normalized = json::normalize_json(&protected);
     let normalized = normalize_count_subqueries(&normalized);
     let normalized = normalize_named_function_args(&normalized);
@@ -30,6 +31,39 @@ pub(super) fn normalize_cypher_extensions(input: &str) -> String {
         normalized = normalized.replace(&placeholder, &original);
     }
     normalize_limit_parameter(&normalized)
+}
+
+// Extension syntax inside comments is not executable Cypher. Retain line
+// breaks, and leave unterminated comments for the lexer to diagnose.
+fn without_comments(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if matches!(bytes[i], b'\'' | b'"' | b'`') {
+            let quote = bytes[i];
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' { i = (i + 2).min(bytes.len()); }
+                else if bytes[i] == quote { i += 1; break; }
+                else { i += 1; }
+            }
+        } else if bytes[i..].starts_with(b"//") || bytes[i..].starts_with(b"/*") {
+            let start = i;
+            if bytes[i + 1] == b'/' {
+                while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+            } else {
+                let Some(end) = input[i + 2..].find("*/") else { break };
+                i += end + 4;
+            }
+            out.push_str(&input[copied..start]);
+            out.extend(input[start..i].chars().map(|ch| if matches!(ch, '\r' | '\n') { ch } else { ' ' }));
+            copied = i;
+        } else { i += 1; }
+    }
+    out.push_str(&input[copied..]);
+    out
 }
 
 /// Extension normalizers operate on source text. Hide escaped identifier

@@ -221,6 +221,9 @@ impl<'a> LoweringContext<'a> {
                 return Ok(folded);
             }
         }
+        if self.language == Language::Cypher && matches!(expr, IrExpr::ListReduce { .. }) {
+            return self.lower_sql_lambda(plan, expr);
+        }
         if let Some(value) = self.run_temporal_rules(plan, expr)? {
             return Ok(value);
         }
@@ -718,6 +721,16 @@ impl<'a> LoweringContext<'a> {
                     return self.lower_list_cast(plan, name, args, target);
                 }
                 let (mut value, data_type, lenient) = self.cast_parts(plan, name, args)?;
+                if value.get_type(plan.schema())? == DataType::Boolean && data_type.is_integer() {
+                    // PostgreSQL cannot cast BOOLEAN directly to BIGINT.
+                    // CASE gives every adapter the same 1/0/NULL semantics;
+                    // cast_to avoids a redundant cast for the Int64 result.
+                    let integer = Expr::Case(Case::new(Some(Box::new(value)), vec![
+                        (Box::new(lit(true)), Box::new(lit(1_i64))),
+                        (Box::new(lit(false)), Box::new(lit(0_i64))),
+                    ], None));
+                    return Ok(integer.cast_to(&data_type, plan.schema())?);
+                }
                 if name.eq_ignore_ascii_case("tointeger")
                     && matches!(
                         value.get_type(plan.schema())?,

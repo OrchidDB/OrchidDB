@@ -216,7 +216,8 @@ fn bind_slice_expr(expr:Expr,parameters:&BTreeMap<String,Value>)->Result<Expr,Pa
                 || otherwise.as_deref().is_some_and(parameterized),
             Expr::ListComprehension {collection,predicate,map,..}=>parameterized(collection)
                 ||predicate.as_deref().is_some_and(parameterized)||parameterized(map),
-            Expr::Quantifier {collection,predicate,..}=>parameterized(collection)||parameterized(predicate),
+            Expr::Quantifier {collection,predicate,..} | Expr::ListFilter {collection,predicate,..}=>parameterized(collection)||parameterized(predicate),
+            Expr::ListTransform {collection,map,..} | Expr::ListReduce {collection,map,..}=>parameterized(collection)||parameterized(map),
             _=>false,
         }
     }
@@ -415,7 +416,7 @@ fn bind_exists_subquery(
     Ok(ExistsSubquery {
         query: match exists.query {
             Some(mut query) => {
-                bind_parameters(&mut query, parameters)?;
+                bind_parameters_with_diagnostics(&mut query, parameters)?;
                 Some(query)
             }
             None => None,

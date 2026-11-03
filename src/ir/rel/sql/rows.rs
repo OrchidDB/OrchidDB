@@ -193,7 +193,9 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
                     other => return Err(mismatch(other)),
                 }
             }
-            Arc::new(builder.finish())
+            let array = builder.finish();
+            array.validate_decimal_precision(*precision)?;
+            Arc::new(array)
         }
         DataType::Binary | DataType::LargeBinary | DataType::BinaryView => {
             let mut builder = arrow::array::BinaryBuilder::new();

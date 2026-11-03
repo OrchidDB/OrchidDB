@@ -163,6 +163,12 @@ impl<'a> LoweringContext<'a> {
                 }
             }
         }
+        // Percentile functions need a concrete numeric overload even when
+        // the input consists entirely of untyped NULLs (including empty UNWIND).
+        if matches!(agg.kind, AggKind::PercentileCont | AggKind::PercentileDisc)
+            && args[0].get_type(plan.schema())? == DataType::Null {
+            args[0] = args[0].clone().cast_to(&DataType::Float64, plan.schema())?;
+        }
         let expr = crate::ir::functions::native_aggregate(name, args, plan.schema(), agg.distinct)?;
         // Cypher stdev variants return zero for an empty or singleton sample.
         Ok(if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) && !(self.language == Language::Cypher && self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative) {

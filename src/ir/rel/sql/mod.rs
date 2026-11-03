@@ -58,6 +58,8 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
     let target = dialect.sql_type(&ty)?;
     let literal = if value.is_null() { "NULL".into() } else {
         match value {
+            ScalarValue::Utf8(Some(text)) | ScalarValue::LargeUtf8(Some(text))
+            | ScalarValue::Utf8View(Some(text)) => literals::string_literal(dialect, &text)?,
             value @ (ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) => {
                 let items = match value {
                     ScalarValue::List(a) => a.value(0),
@@ -79,7 +81,8 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
                 }
                 format!("{}[{}]", if dialect == SqlDialect::Postgres {"ARRAY"} else {""}, values.join(", "))
             }
-            ScalarValue::Binary(Some(bytes)) => {
+            ScalarValue::Binary(Some(bytes)) | ScalarValue::LargeBinary(Some(bytes))
+            | ScalarValue::BinaryView(Some(bytes)) | ScalarValue::FixedSizeBinary(_, Some(bytes)) => {
                 let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')"), SqlDialect::Custom(_) => unreachable!() }
             }

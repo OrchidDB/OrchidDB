@@ -18,6 +18,7 @@ pub(super) struct Lambda {
     pub name: String,
     pub kind: String,
     pub parameter: String,
+    pub accumulator: Option<String>,
     pub body: Expr,
     pub captures: Vec<String>,
     pub result: DataType,
@@ -84,6 +85,9 @@ impl LoweringContext<'_> {
 
     pub(super) fn lower_sql_lambda(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         let (kind, list, item, body) = match expr {
+            IrExpr::ListReduce { collection, item, map, .. } => {
+                ("reduce", collection.as_ref(), item.as_str(), map.as_ref())
+            }
             IrExpr::ListTransform { list, item, map } => {
                 ("transform", list.as_ref(), item.as_str(), map.as_ref())
             }
@@ -113,7 +117,7 @@ impl LoweringContext<'_> {
         let source = self.lower_expr(plan, list)?;
         let source = if !matches!(source.get_type(plan.schema())?, DataType::List(_)) {
             native_values::typed::call(
-                if matches!(kind, "transform" | "filter") {
+                if matches!(kind, "transform" | "filter" | "reduce") {
                     "list"
                 } else {
                     "quantifier_list"
@@ -133,8 +137,15 @@ impl LoweringContext<'_> {
             return Ok(source);
         }
         let parameter = unique_internal_alias(plan, &BTreeSet::new(), "__orchid_lambda_item");
+        let accumulator = if let IrExpr::ListReduce { accumulator, .. } = expr {
+            Some((accumulator.as_str(), unique_internal_alias(plan,
+                &BTreeSet::from([parameter.clone()]), "__orchid_lambda_accumulator")))
+        } else { None };
         let mut columns = existing_columns(plan, &BTreeSet::new());
         columns.push(lit(ScalarValue::try_from(element.data_type())?).alias(&parameter));
+        if let Some((_, accumulator)) = &accumulator {
+            columns.push(lit(ScalarValue::try_from(element.data_type())?).alias(accumulator));
+        }
         let schema = LogicalPlanBuilder::from(plan.clone())
             .project(columns)?
             .build()?
@@ -148,9 +159,6 @@ impl LoweringContext<'_> {
         });
         let mut body = body.clone();
         crate::ir::rules::graph::walk_expr(&mut body, &Default::default(), &mut |part, scope| {
-            if scope.is_bound(item) {
-                return;
-            }
             match part {
                 IrExpr::Binding(binding)
                 | IrExpr::Property { binding, .. }
@@ -158,15 +166,18 @@ impl LoweringContext<'_> {
                 | IrExpr::Label(binding)
                 | IrExpr::HasLabel { binding, .. }
                 | IrExpr::IsBound(binding)
-                    if binding == item =>
-                {
-                    *binding = parameter.clone()
-                }
+                    if binding == item && !scope.is_bound(item) =>
+                { *binding = parameter.clone(); }
+                IrExpr::Binding(binding) | IrExpr::Property { binding, .. }
+                | IrExpr::Id(binding) | IrExpr::Label(binding)
+                | IrExpr::HasLabel { binding, .. } | IrExpr::IsBound(binding)
+                    if accumulator.as_ref().is_some_and(|(name, _)| binding == name && !scope.is_bound(name)) =>
+                { *binding = accumulator.as_ref().unwrap().1.clone(); }
                 _ => {}
             }
         });
         let source_body = body;
-        let body = if kind == "transform" {
+        let body = if matches!(kind, "transform" | "reduce") {
             self.lower_expr(&scope, &source_body)?
         } else {
             self.lower_case_condition(&scope, &source_body)?
@@ -194,6 +205,7 @@ impl LoweringContext<'_> {
                 true,
             ))),
             "filter" => source_type.clone(),
+            "reduce" => body.get_type(scope.schema())?,
             _ => DataType::Boolean,
         };
         let total_body = constraints::harmless_expression(&body, scope.schema());
@@ -201,10 +213,11 @@ impl LoweringContext<'_> {
         let mut captures = BTreeMap::new();
         let mut capture_names = Vec::new();
         let mut reserved = BTreeSet::from([parameter.clone()]);
+        if let Some((_, name)) = &accumulator { reserved.insert(name.clone()); }
         let body = body
             .transform_up(|expr| {
                 if let Expr::Column(column) = &expr {
-                    if column.name == parameter {
+                    if column.name == parameter || accumulator.as_ref().is_some_and(|(_, name)| &column.name == name) {
                         return Ok(Transformed::no(expr));
                     }
                     let next = args.len();
@@ -227,11 +240,12 @@ impl LoweringContext<'_> {
             })?
             .data;
         let mut hash = std::collections::hash_map::DefaultHasher::new();
-        (&kind, &parameter, &body, &result).hash(&mut hash);
+        (&kind, &parameter, &accumulator, &body, &result).hash(&mut hash);
         let function = Lambda {
             name: format!("__orchid_sql_lambda_{:x}", hash.finish()),
             kind: kind.into(),
             parameter,
+            accumulator: accumulator.map(|(_, name)| name),
             body,
             captures: capture_names,
             result,

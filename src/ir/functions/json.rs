@@ -69,6 +69,7 @@ pub fn function(name: &str) -> Option<Arc<ScalarUDF>> {
                     operation: (*name).into(),
                     name: format!("__orchiddb_json_{name}"),
                     aliases: vec![format!("json.{name}")],
+                    bound_result: None,
                     signature: Signature::one_of(
                         vec![TypeSignature::Exact(vec![]), TypeSignature::VariadicAny],
                         Volatility::Immutable,
@@ -90,12 +91,22 @@ pub fn function(name: &str) -> Option<Arc<ScalarUDF>> {
 pub fn error(message: impl std::fmt::Display) -> DataFusionError {
     DataFusionError::Execution(format!("JSON: {message}"))
 }
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct JsonFunction {
     operation: String,
     name: String,
     aliases: Vec<String>,
     signature: Signature,
+    bound_result: Option<DataType>,
+}
+
+/// Preserve the validated return type when SQL literal encoding turns a
+/// constant schema into a concatenation of quoted fragments.
+pub(crate) fn bind_result(function: &ScalarUDF, result: DataType) -> Option<ScalarUDF> {
+    let mut function = function.inner().as_any().downcast_ref::<JsonFunction>()?.clone();
+    if !matches!(function.operation.as_str(), "transform" | "value") { return None; }
+    function.bound_result = Some(result);
+    Some(ScalarUDF::from(function))
 }
 impl ScalarUDFImpl for JsonFunction {
     fn as_any(&self) -> &dyn Any {
@@ -112,6 +123,7 @@ impl ScalarUDFImpl for JsonFunction {
     }
     fn return_type(&self, args: &[DataType]) -> Result<DataType> {
         validate(&self.operation, args)?;
+        if let Some(result) = &self.bound_result { return Ok(result.clone()); }
         return_type(&self.operation, args, None)
     }
     fn return_field_from_args(&self, args: ReturnFieldArgs) -> Result<FieldRef> {
@@ -121,6 +133,9 @@ impl ScalarUDFImpl for JsonFunction {
             .map(|f| f.data_type().clone())
             .collect::<Vec<_>>();
         validate(&self.operation, &types)?;
+        if let Some(result) = &self.bound_result {
+            return Ok(Arc::new(Field::new(self.name(), result.clone(), true)));
+        }
         let literal = if self.operation == "value" {
             args.scalar_arguments.get(2)
         } else if self.operation == "transform" {

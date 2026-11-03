@@ -38,7 +38,7 @@ pub(super) fn normalize_lambda_list_functions(input: &str) -> String {
 }
 
 pub(super) fn rewrite_lambda_function_at(input: &str, index: usize) -> Option<(String, usize)> {
-    let (name, after_name) = ["list_transform", "list_filter", "list_reduce"]
+    let (name, after_name) = ["list_transform", "list_filter", "list_reduce", "reduce"]
         .into_iter()
         .find_map(|name| match_keyword_at(input, index, name).map(|after| (name, after)))?;
     let cursor = skip_space(input, after_name);
@@ -48,6 +48,26 @@ pub(super) fn rewrite_lambda_function_at(input: &str, index: usize) -> Option<(S
     let end = find_matching(input, cursor, '(', ')')?;
     let args = split_top_level_args(&input[cursor + 1..end]);
     let replacement = match name {
+        "reduce" => {
+            if args.len() != 2 { return None; }
+            let (accumulator, initial) = args[0].split_once('=')?;
+            let accumulator = accumulator.trim();
+            let iteration = args[1].trim();
+            let variable_end = iteration.find(char::is_whitespace)?;
+            let variable = &iteration[..variable_end];
+            let after_in = skip_space(iteration, variable_end);
+            let after_in = match_keyword_at(iteration, after_in, "IN")?;
+            let parts = split_top_level(&iteration[after_in..], '|');
+            if parts.len() < 2 || accumulator.is_empty() || initial.trim().is_empty()
+                || !accumulator.chars().all(is_identifier_continue)
+                || !variable.chars().all(is_identifier_continue) { return None; }
+            // Seeding the fold as its first element preserves the initial
+            // value for an empty collection and evaluates it exactly once.
+            format!("__list_reduce([{}] + ({}), '{}', '{}', {})",
+                normalize_lambda_list_functions(initial.trim()),
+                normalize_lambda_list_functions(parts[0]), accumulator, variable,
+                normalize_lambda_list_functions(&parts[1..].join("|")))
+        }
         "list_transform" => {
             if args.len() != 2 {
                 return None;
@@ -159,6 +179,10 @@ pub(super) fn find_matching(
 }
 
 pub(super) fn split_top_level_args(input: &str) -> Vec<&str> {
+    split_top_level(input, ',')
+}
+
+fn split_top_level(input: &str, separator: char) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut paren = 0i32;
@@ -185,7 +209,7 @@ pub(super) fn split_top_level_args(input: &str) -> Vec<&str> {
             ']' => bracket -= 1,
             '{' => brace += 1,
             '}' => brace -= 1,
-            ',' if paren == 0 && bracket == 0 && brace == 0 => {
+            c if c == separator && paren == 0 && bracket == 0 && brace == 0 => {
                 parts.push(input[start..index].trim());
                 start = index + ch.len_utf8();
             }

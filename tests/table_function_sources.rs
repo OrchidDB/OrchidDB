@@ -119,7 +119,9 @@ async fn declared_function_executes_with_residual_filters() {
         "MATCH (s:Sample) WHERE s.query = 'up' AND s.value > 3 RETURN s.value AS value",
     ))
     .await;
-    let setup = "CREATE MACRO rows_for_query(q, mode := 'default') AS TABLE SELECT 'a' AS id, 1.0 AS value UNION ALL SELECT 'b', 5.0;";
+    // The declared source column is Float64, not DECIMAL (whose JSON encoding
+    // deliberately uses a string to preserve precision).
+    let setup = "CREATE MACRO rows_for_query(q, mode := 'default') AS TABLE SELECT 'a' AS id, 1.0::DOUBLE AS value UNION ALL SELECT 'b', 5.0;";
     let output = std::process::Command::new("duckdb")
         .args(["-json", ":memory:", &format!("{setup} {rendered}")])
         .output()

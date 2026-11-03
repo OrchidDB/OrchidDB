@@ -306,7 +306,6 @@ impl LoweringContext<'_> {
                     && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Sum | AggKind::Avg));
                 let collect_ordinal = if native_ordered_collect || (self.language == Language::Cypher
                     && self.options.rule_context.profile.cypher_aggregates != crate::ir::rules::CypherAggregatePolicy::SqlNative
-                    && !self.options.native_values
                     && aggs.iter().any(|agg| !self.unordered_collects.contains(&(agg as *const AggCall as usize)) && !compact_collections.contains_key(&agg.alias) && crate::ir::rules::aggregate::CollectionContract::for_aggregate(agg)
                         .is_some_and(|contract| contract.order == crate::ir::rules::aggregate::CollectionOrder::PreserveInput)))
                 {
@@ -403,7 +402,7 @@ impl LoweringContext<'_> {
                 let mut collect_ranks = std::collections::BTreeMap::new();
                 if let Some(ordinal) = &collect_ordinal {
                     let mut windows = Vec::new();
-                    for agg in aggs.iter().filter(|agg| agg.kind == AggKind::CollectNonNull && agg.distinct && !compact_collections.contains_key(&agg.alias)) {
+                    for agg in aggs.iter().filter(|agg| !self.options.native_values && agg.kind == AggKind::CollectNonNull && agg.distinct && !compact_collections.contains_key(&agg.alias)) {
                         // These expressions can be repeated safely in the partition
                         // key and aggregate. More complex expressions need explicit
                         // materialization before extending this path.

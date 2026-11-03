@@ -42,7 +42,22 @@ pub(super) fn normalize_keyword_function_names(input: &str) -> String {
             }
             if ident.eq_ignore_ascii_case("contains") && next < chars.len() && chars[next].1 == '('
             {
-                out.push_str("contains_fn");
+                let prefix = out.trim_end();
+                let word_start = prefix.char_indices().rev()
+                    .find(|(_, ch)| !is_identifier_continue(*ch))
+                    .map_or(0, |(i, ch)| i + ch.len_utf8());
+                let word = &prefix[word_start..];
+                let keyword = ["return", "with", "where", "and", "or", "xor", "not", "when", "then", "else", "distinct"]
+                    .iter().any(|candidate| word.eq_ignore_ascii_case(candidate))
+                    && !prefix[..word_start].ends_with('.');
+                if prefix.ends_with('.') {
+                    out.push_str("`contains`");
+                } else if prefix.is_empty() || keyword || prefix.chars().next_back()
+                    .is_some_and(|ch| matches!(ch, '(' | '[' | '{' | ',' | ':' | '=' | '+' | '-' | '*' | '/' | '%' | '|')) {
+                    out.push_str("contains_fn");
+                } else {
+                    out.push_str(ident);
+                }
             } else {
                 out.push_str(ident);
             }

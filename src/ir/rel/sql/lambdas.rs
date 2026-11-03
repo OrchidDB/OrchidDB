@@ -40,6 +40,10 @@ pub(super) fn with_plan<T>(plan: &LogicalPlan, f: impl FnOnce() -> SqlResult<T>)
 }
 /// The same implementation contract is consulted by eligibility and emission.
 pub(super) fn capability(lambda: &Lambda, dialect: SqlDialect) -> Result<(), &'static str> {
+    if lambda.kind == "reduce" {
+        return if dialect == SqlDialect::DuckDb { Ok(()) }
+            else { Err("List folds require DuckDB completion") };
+    }
     if !matches!(lambda.kind.as_str(), "filter" | "transform" | "any" | "all" | "none" | "single" | "count") {
         return Err("Unknown typed list reduction");
     }
@@ -100,6 +104,15 @@ pub(super) fn adapt(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<bool
         ControlFlow::Continue(())
     }) {
         return Err(error);
+    }
+    if lambda.kind == "reduce" {
+        let accumulator = lambda.accumulator.as_ref()
+            .ok_or_else(|| SqlError::Unsupported("List fold requires an accumulator".into()))?;
+        *expr = super::functions::template(
+            &format!("list_reduce(__arg0, lambda \"{accumulator}\", \"{}\": __arg1)", lambda.parameter),
+            &[args[0].clone(), body],
+        )?;
+        return Ok(true);
     }
     if dialect == SqlDialect::Postgres {
         // Bind the collection once. MATERIALIZED also makes predicate

@@ -130,7 +130,7 @@ impl DialectAdapter for TrinoAdapter {
                 if tz.is_some() { " WITH TIME ZONE" } else { "" }
             ),
             DataType::Time32(unit) | DataType::Time64(unit) => format!("TIME({})", precision(unit)),
-            DataType::Binary | DataType::LargeBinary | DataType::BinaryView => "VARBINARY".into(),
+            DataType::Binary | DataType::LargeBinary | DataType::BinaryView | DataType::FixedSizeBinary(_) => "VARBINARY".into(),
             DataType::Decimal128(p, s) if *s >= 0 && (*s as u8) <= *p => {
                 format!("DECIMAL({p},{s})")
             }
@@ -170,7 +170,7 @@ impl DialectAdapter for TrinoAdapter {
                 | ScalarValue::Utf8View(Some(s)) => string(s),
                 ScalarValue::Binary(Some(b))
                 | ScalarValue::LargeBinary(Some(b))
-                | ScalarValue::BinaryView(Some(b)) => format!(
+                | ScalarValue::BinaryView(Some(b)) | ScalarValue::FixedSizeBinary(_, Some(b)) => format!(
                     "X'{}'",
                     b.iter().map(|x| format!("{x:02x}")).collect::<String>()
                 ),
@@ -230,6 +230,7 @@ impl DialectAdapter for TrinoAdapter {
             ),
             // MaxSim uses inner products, matching the shared scorer.
             "vector.maxsim" => maxsim(),
+            "fn.ends_with" => "starts_with(reverse(__arg0), reverse(__arg1))".into(),
             "fn.contains" => "strpos(__arg0, __arg1) > 0".into(),
             "fn.array_length" | "fn.cardinality" => "cardinality(__arg0)".into(),
             "fn.array_has" => "CASE WHEN __arg0 IS NULL OR __arg1 IS NULL THEN NULL ELSE coalesce(contains(__arg0, __arg1), false) END".into(),
@@ -298,10 +299,11 @@ impl DialectAdapter for TrinoAdapter {
             ("btrim", 2) => "trim(BOTH __arg1 FROM __arg0)",
             ("array_append", 2) => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])",
             ("array_prepend", 2) => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))",
+            ("ends_with", 2) => "starts_with(reverse(__arg0), reverse(__arg1))",
             ("contains", 2) => "strpos(__arg0, __arg1) > 0",
-            ("array_position", 2) => "nullif(array_position(__arg0, __arg1), 0)",
+            ("array_position", 2) => "(SELECT CASE WHEN v IS NULL THEN nullif(array_position(transform(a, __item -> __item IS NULL), true), 0) ELSE nullif(array_position(a,v), 0) END FROM (SELECT __arg0 AS a, __arg1 AS v) AS __local0)",
             ("array_position", 3) if args[2].to_string() == "1" => {
-                "nullif(array_position(__arg0, __arg1), 0)"
+                "(SELECT CASE WHEN v IS NULL THEN nullif(array_position(transform(a, __item -> __item IS NULL), true), 0) ELSE nullif(array_position(a,v), 0) END FROM (SELECT __arg0 AS a, __arg1 AS v) AS __local0)"
             }
             ("array_position", 3) => {
                 return Err(SqlError::Unsupported(
@@ -309,7 +311,7 @@ impl DialectAdapter for TrinoAdapter {
                 ));
             }
             ("left", 2) => "substr(__arg0, 1, __arg1)",
-            ("right", 2) => "substr(__arg0, -__arg1)",
+            ("right", 2) => "(SELECT CASE WHEN s IS NULL OR n IS NULL THEN NULL WHEN n < 0 THEN substr(s, 1-n) ELSE substr(s, greatest(1, length(s)-n+1)) END FROM (SELECT __arg0 AS s, __arg1 AS n) AS __local0)",
             ("encode", 2) if args[1].to_string() == "'hex'" => "lower(to_hex(__arg0))",
             _ => return Ok(None),
         };
@@ -525,7 +527,7 @@ fn precision(unit: &TimeUnit) -> u64 {
     }
 }
 fn string(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
+    s.split('\0').map(|part| format!("'{}'", part.replace('\'', "''"))).collect::<Vec<_>>().join(" || chr(0) || ")
 }
 impl TrinoAdapter {
     fn array_literal(&self, a: arrow::array::ArrayRef) -> SqlResult<String> {
@@ -541,6 +543,7 @@ impl TrinoAdapter {
 fn normalize_type(ty: &mut ast::DataType) {
     match ty {
         ast::DataType::Bool => *ty = ast::DataType::Boolean,
+        ast::DataType::Float(ast::ExactNumberInfo::None) => *ty = ast::DataType::Real,
         ast::DataType::BigIntUnsigned(_)
         | ast::DataType::Int8Unsigned(_)
         | ast::DataType::UInt64
@@ -654,6 +657,7 @@ fn trino_cast_type(
 #[derive(Debug)]
 struct TrinoParser;
 impl ParserDialect for TrinoParser {
+    fn supports_filter_during_aggregation(&self) -> bool { true }
     fn parse_prefix(&self, parser: &mut datafusion::sql::sqlparser::parser::Parser) -> Option<Result<ast::Expr, datafusion::sql::sqlparser::parser::ParserError>> {
         use datafusion::sql::sqlparser::{keywords::Keyword, tokenizer::Token};
         let kind = if parser.parse_keyword(Keyword::CAST) { ast::CastKind::Cast }

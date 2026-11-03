@@ -741,7 +741,7 @@ pub(super) fn lower(
                 .transpose()?;
             return Ok(Expr::Case(Case::new(None, arms, otherwise)));
         }
-        IrExpr::ListTransform { .. } | IrExpr::ListFilter { .. } | IrExpr::Quantifier { .. } => {
+        IrExpr::ListTransform { .. } | IrExpr::ListFilter { .. } | IrExpr::ListReduce { .. } | IrExpr::Quantifier { .. } => {
             return context.lower_sql_lambda(plan, expr);
         }
         _ => {}

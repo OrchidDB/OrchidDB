@@ -336,13 +336,16 @@ fn unparse_one(
             }
         }
     }
+    // Match logical aggregate calls before scope/dialect rewriting changes
+    // their qualifiers. The attached ordering is then rewritten in that same scope.
+    statement = restore_aggregate_ordering(plan, unparser, dialect, statement)?;
     prepare_ranges(plan, &mut statement, dialect)?;
     super::functions::prepare_scoped_ast(&mut statement, dialect, repair_scopes)?;
     if dialect == SqlDialect::DuckDb {
         strip_identity_aliases(&mut statement);
         super::compact_blocks::rewrite(&mut statement);
     }
-    restore_aggregate_ordering(plan, unparser, dialect, statement)
+    Ok(statement.to_string())
 }
 
 /// Remove only exact, unqualified projection aliases. SQL scope, expression

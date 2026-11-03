@@ -18,7 +18,8 @@ pub(super) fn validate_grouping(body: &ProjectionBody) -> CypherPlanResult<()> {
                 contains_aggregate(&root) || args.iter().all(|arg| visit(arg, keys, aliases))
             }
             Expr::Variable(name) => keys.contains(&expr) || aliases.contains(&name),
-            Expr::Property { .. } => keys.contains(&expr),
+            Expr::Property { target, .. } => keys.contains(&expr)
+                || (contains_aggregate(target) && visit(target, keys, aliases)),
             Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => visit(expr, keys, aliases),
             Expr::Binary { lhs, rhs, .. } | Expr::StringPredicate { target: lhs, pattern: rhs, .. } =>
                 visit(lhs, keys, aliases) && visit(rhs, keys, aliases),

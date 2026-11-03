@@ -327,6 +327,12 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     }
     if dialect == SqlDialect::Postgres {
         if let ast::Expr::Cast { kind: ast::CastKind::Cast, expr: value, data_type, .. } = expr {
+            if data_type.to_string() == "TINYINT" {
+                // SMALLINT is PostgreSQL's physical carrier for Arrow Int8.
+                // Retain the logical range and the strict cast's error behavior.
+                *expr = template("(SELECT CASE WHEN v IS NULL THEN NULL WHEN v BETWEEN -128 AND 127 THEN v ELSE CAST('Int8 overflow: ' || CAST(v AS TEXT) AS SMALLINT) END FROM (SELECT CAST(__arg0 AS SMALLINT) AS v OFFSET 0) AS __local0)", &[value.as_ref().clone()])?;
+                return Ok(());
+            }
             // DF's FLOAT spelling denotes Arrow Float32; PostgreSQL FLOAT
             // without a precision denotes Float64. Preserve the Arrow width.
             let ty = match data_type.to_string().as_str() {
