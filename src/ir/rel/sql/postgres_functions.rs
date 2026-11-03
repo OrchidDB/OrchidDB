@@ -36,6 +36,9 @@ pub(super) fn adapt(expr: &mut ast::Expr, name: &str, args: &[ast::Expr]) -> Sql
         // DataFusion generate_series is list-valued; PostgreSQL's function
         // returns rows. Keep the scalar list boundary before UNNEST.
         ("generate_series", 3) => "(SELECT CASE WHEN a IS NULL OR b IS NULL OR c IS NULL THEN NULL ELSE ARRAY(SELECT v FROM generate_series(a,b,c) WITH ORDINALITY AS __local1(v,n) ORDER BY n) END FROM (SELECT __arg0 AS a, __arg1 AS b, __arg2 AS c OFFSET 0) AS __local0)",
+        // Range excludes its upper bound. Guard the subtraction so an empty
+        // range ending at BIGINT_MIN cannot overflow before producing [].
+        ("range", 3) if args[2].to_string() == "1" => "(SELECT CASE WHEN a IS NULL OR b IS NULL THEN CAST(NULL AS BIGINT[]) WHEN a >= b THEN CAST(ARRAY[] AS BIGINT[]) ELSE ARRAY(SELECT v FROM generate_series(a,b-1,1) WITH ORDINALITY AS __local1(v,n) ORDER BY n) END FROM (SELECT __arg0 AS a, __arg1 AS b OFFSET 0) AS __local0)",
         ("quantile_disc", 2) => "percentile_disc(__arg1) WITHIN GROUP (ORDER BY __arg0)",
         ("quantile_cont", 2) => "percentile_cont(__arg1) WITHIN GROUP (ORDER BY __arg0)",
         ("list_extract", 2) => "(__arg0)[__arg1]",

@@ -300,6 +300,7 @@ impl DialectAdapter for TrinoAdapter {
             ("btrim", 2) => "trim(BOTH __arg1 FROM __arg0)",
             ("array_append", 2) => "concat(coalesce(__arg0, ARRAY[]), ARRAY[__arg1])",
             ("array_prepend", 2) => "concat(ARRAY[__arg0], coalesce(__arg1, ARRAY[]))",
+            ("range", 3) if args[2].to_string() == "1" => "(SELECT CASE WHEN a IS NULL OR b IS NULL THEN CAST(NULL AS ARRAY(BIGINT)) WHEN a >= b THEN CAST(ARRAY[] AS ARRAY(BIGINT)) ELSE sequence(a,b-1) END FROM (SELECT __arg0 AS a, __arg1 AS b) AS __local0)",
             ("ends_with", 2) => "starts_with(reverse(__arg0), reverse(__arg1))",
             ("contains", 2) => "strpos(__arg0, __arg1) > 0",
             ("array_position", 2) => "(SELECT CASE WHEN v IS NULL THEN nullif(array_position(transform(a, __item -> __item IS NULL), true), 0) ELSE nullif(array_position(a,v), 0) END FROM (SELECT __arg0 AS a, __arg1 AS v) AS __local0)",
