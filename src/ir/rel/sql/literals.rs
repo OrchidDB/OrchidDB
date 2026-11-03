@@ -2,6 +2,41 @@
 
 use super::*;
 
+/// Recover static text after the unparser's quote/NUL-safe literal encoding.
+/// Only literal concatenation and character constructors are recognized;
+/// column references and other calls remain dynamic.
+pub(super) fn literal_text(expr: &datafusion::sql::sqlparser::ast::Expr) -> Option<String> {
+    use datafusion::sql::sqlparser::ast;
+    match expr {
+        ast::Expr::Value(value) => match &value.value {
+            ast::Value::SingleQuotedString(text) => Some(text.clone()),
+            _ => None,
+        },
+        ast::Expr::Nested(inner) | ast::Expr::Cast { expr: inner, .. } => literal_text(inner),
+        ast::Expr::BinaryOp { left, op: ast::BinaryOperator::StringConcat, right } => {
+            Some(literal_text(left)? + &literal_text(right)?)
+        }
+        ast::Expr::Function(call) => {
+            let name = call.name.to_string().to_ascii_lowercase();
+            let ast::FunctionArguments::List(arguments) = &call.args else { return None };
+            let args = arguments.args.iter().map(|arg| match arg {
+                ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(expr)) => Some(expr),
+                _ => None,
+            }).collect::<Option<Vec<_>>>()?;
+            match name.as_str() {
+                "concat" => args.into_iter().map(literal_text).collect::<Option<Vec<_>>>().map(|parts| parts.concat()),
+                "chr" if args.len() == 1 => {
+                    let ast::Expr::Value(value) = args[0] else { return None };
+                    let ast::Value::Number(number, _) = &value.value else { return None };
+                    Some(char::from_u32(number.parse().ok()?)?.to_string())
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
     if let SqlDialect::Custom(adapter) = dialect { return adapter.exchange_literal(value, &value.data_type()); }
     if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
@@ -152,6 +187,23 @@ pub(super) fn float_literal(dialect: SqlDialect, value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn static_text_decodes_literal_encoding_without_evaluating_dynamic_calls() {
+        use datafusion::sql::sqlparser::{dialect::GenericDialect, parser::Parser};
+        let parse = |sql| Parser::new(&GenericDialect).try_with_sql(sql).unwrap().parse_expr().unwrap();
+        for (sql, expected) in [
+            ("concat('a', chr(39), 'b')", "a'b"),
+            ("('a' || chr(0)) || 'b'", "a\0b"),
+            ("CAST(concat('猫',chr(233)) AS TEXT)", "猫é"),
+        ] {
+            assert_eq!(literal_text(&parse(sql)).as_deref(), Some(expected));
+        }
+        for sql in ["name", "concat('a',name)", "chr(code)", "chr(1114112)",
+            "chr('39')", "random()", "NULL", "42"] {
+            assert_eq!(literal_text(&parse(sql)), None, "{sql}");
+        }
+    }
 
     #[test]
     fn nested_empty_literals_share_expression_cast_types() {

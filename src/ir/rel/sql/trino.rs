@@ -348,6 +348,15 @@ impl DialectAdapter for TrinoAdapter {
                     SqlDialect::Custom(&TRINO),
                 )?;
             }
+            ast::Expr::BinaryOp { left, op, right }
+                if matches!(op, ast::BinaryOperator::BitwiseAnd | ast::BinaryOperator::BitwiseOr) => {
+                let name = if *op == ast::BinaryOperator::BitwiseAnd { "bitwise_and" } else { "bitwise_or" };
+                *expression = super::functions::portable_template(
+                    &format!("{name}(__arg0, __arg1)"),
+                    &[left.as_ref().clone(), right.as_ref().clone()],
+                    SqlDialect::Custom(&TRINO),
+                )?;
+            }
             ast::Expr::Array(a) => a.named = true,
             ast::Expr::Cast { data_type, .. } => normalize_type(data_type),
             ast::Expr::Function(f) => {

@@ -623,3 +623,11 @@ mod dynamic_slice;
 pub(crate) mod entity_values;
 
 mod lowering_stage;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_constants.rs"]
+mod coverage_constants;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_collections.rs"]
+mod coverage_collections;

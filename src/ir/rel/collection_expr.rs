@@ -714,6 +714,10 @@ pub(super) fn constant_list_sum(args: &[IrExpr]) -> RelResult<Option<Value>> {
         Value::Null => return Ok(Some(Value::Null)),
         _ => return Ok(None),
     };
+    // Match runtime evaluation without rounding integer operands through f64.
+    if let Some(sum) = crate::ir::runtime::scalar::exact_integer_sum(&items) {
+        return Ok(Some(sum));
+    }
     let mut sum = 0.0;
     let mut int_only = true;
     for item in &items {

@@ -242,10 +242,19 @@ fn normalize_projection_names(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         projection.expr = projection.expr.into_iter().zip(projection.schema.iter())
             .map(|(expr, (qualifier, field))| {
                 let expr = expr.transform_up(|expr| {
-                    if let Expr::Cast(cast) = &expr {
-                        if let Expr::Cast(inner) = cast.expr.as_ref()
-                            && inner.data_type == cast.data_type {
-                            return Ok(Transformed::yes(*cast.expr.clone()));
+                    let cast = match &expr {
+                        Expr::Cast(cast) => Some((&cast.expr, &cast.data_type)),
+                        Expr::TryCast(cast) => Some((&cast.expr, &cast.data_type)),
+                        _ => None,
+                    };
+                    if let Some((value, ty)) = cast {
+                        let inner_type = match value.as_ref() {
+                            Expr::Cast(inner) => Some(&inner.data_type),
+                            Expr::TryCast(inner) => Some(&inner.data_type),
+                            _ => None,
+                        };
+                        if inner_type == Some(ty) {
+                            return Ok(Transformed::yes(*value.clone()));
                         }
                     }
                     Ok(Transformed::no(expr))
@@ -922,23 +931,33 @@ fn sort_scope(input: LogicalPlan, alias: String) -> datafusion::common::Result<L
 
 fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     let mut boundary = 0;
+    let mut scopes: Vec<(LogicalPlan, String, LogicalPlan)> = Vec::new();
+    let mut scope = |input: LogicalPlan, kind: &str| -> datafusion::common::Result<LogicalPlan> {
+        let repeatable = super::super::list_comparison::immutable_source_plan(&input);
+        if repeatable {
+            if let Some((_, _, scoped)) = scopes.iter().find(|(existing, existing_kind, _)|
+                existing == &input && existing_kind == kind) {
+                return Ok(scoped.clone());
+            }
+        }
+        let scoped = sort_scope(input.clone(), format!("__w_sql_cte_{kind}_{boundary}"))?;
+        boundary += 1;
+        if repeatable { scopes.push((input, kind.to_owned(), scoped.clone())); }
+        Ok(scoped)
+    };
     Ok(plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Sort(mut sort) = node else { return Ok(Transformed::no(node)); };
         // SQL ORDER BY expressions can resolve a shadowed name against the
         // projection input instead of its output. Materialize that scope.
         if matches!(sort.input.as_ref(), LogicalPlan::Projection(_)) {
-            sort.input = Arc::new(sort_scope(sort.input.as_ref().clone(),
-                format!("__w_sql_cte_sort_input_{boundary}"))?);
-            boundary += 1;
+            sort.input = Arc::new(scope(sort.input.as_ref().clone(), "sort_input")?);
         }
         let Some(fetch) = sort.fetch.take() else { return Ok(Transformed::yes(LogicalPlan::Sort(sort))); };
         let columns = sort.input.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
         let keys = sort.expr.clone();
         let limited = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Sort(sort))
             .limit(0, Some(fetch))?.project(columns)?.build()?;
-        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(sort_scope(limited,
-            format!("__w_sql_cte_topk_{boundary}"))?).sort(keys)?.build()?;
-        boundary += 1;
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(scope(limited, "topk")?).sort(keys)?.build()?;
         Ok(Transformed::yes(plan))
     })?.data)
 }
@@ -1052,6 +1071,31 @@ mod ordering_repair_tests {
         let LogicalPlan::Projection(projection) = fixed else { panic!() };
         assert_eq!(projection.expr[0].to_string(), "CAST(kind AS Utf8) AS kind");
         assert_eq!(projection.schema.field(0).name(), "kind");
+    }
+
+    #[test]
+    fn repeated_casts_preserve_inner_failure_semantics_and_type_changes() {
+        use datafusion::logical_expr::expr::{Cast, TryCast};
+        for inner_try in [false, true] {
+            for outer_try in [false, true] {
+                let inner = if inner_try {
+                    Expr::TryCast(TryCast::new(Box::new(lit("invalid")), DataType::Int64))
+                } else {
+                    Expr::Cast(Cast::new(Box::new(lit("invalid")), DataType::Int64))
+                };
+                for ty in [DataType::Int64, DataType::Int32] {
+                    let expression = if outer_try {
+                        Expr::TryCast(TryCast::new(Box::new(inner.clone()), ty.clone()))
+                    } else {
+                        Expr::Cast(Cast::new(Box::new(inner.clone()), ty.clone()))
+                    };
+                    let plan = LogicalPlanBuilder::empty(true).project(vec![expression.clone().alias("v")]).unwrap().build().unwrap();
+                    let LogicalPlan::Projection(fixed) = normalize_projection_names(plan).unwrap() else { panic!() };
+                    let expected = if ty == DataType::Int64 { inner.clone() } else { expression };
+                    assert_eq!(fixed.expr[0], expected.alias("v"));
+                }
+            }
+        }
     }
 
     use datafusion::functions_aggregate::expr_fn::array_agg;

@@ -12,6 +12,24 @@ use crate::ir::runtime::expr::compare_values;
 use crate::ir::runtime::{RuntimeError, IrResult};
 use crate::ir::value::Value;
 
+/// Exact integer reduction shared by runtime evaluation and constant lowering.
+/// None means the list needs the floating-point or invalid-type path.
+pub(crate) fn exact_integer_sum(items: &[Value]) -> Option<Value> {
+    use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
+    let mut sum = BigInt::from(0);
+    for item in items {
+        match item {
+            Value::Null => continue,
+            Value::Byte(_) | Value::UInt8(_) | Value::Short(_) | Value::UInt16(_)
+            | Value::Int(_) | Value::Long(_) | Value::UInt32(_) | Value::UInt64(_)
+            | Value::BigInt(_) | Value::UInt128(_) => sum += value_as_bigint(item)?,
+            _ => return None,
+        }
+    }
+    Some(sum.to_i64().map(Value::Long).unwrap_or(Value::BigInt(sum)))
+}
+
 pub(super) fn list_semantic_eq(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Null, Value::Null) => true,

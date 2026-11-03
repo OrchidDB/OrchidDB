@@ -126,8 +126,7 @@ fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)
     // Reject a numeric token immediately followed by identifier characters.
     // This catches malformed decimal/hex/octal literals without inspecting
     // strings, comments, or the parser's human-readable error wording.
-    for (index, pair) in tokens.windows(2).enumerate() {
-        let [number,suffix]=pair else {unreachable!()};
+    for (index, (number, suffix)) in tokens.iter().zip(tokens.iter().skip(1)).enumerate() {
         if matches!(number.symbolic_name,Some("DecimalInteger"|"HexInteger"|"OctalInteger"|"ExponentDecimalReal"|"RegularDecimalReal"))
             && matches!(suffix.symbolic_name,Some("UnescapedSymbolicName"|"IdentifierStart"|"IdentifierPart"))
             && number.line==suffix.line && number.column+number.text.len() as isize==suffix.column {
@@ -204,9 +203,6 @@ pub fn tokenize(input: &str) -> Result<Vec<CypherToken>> {
 }
 
 fn token_name(names: &[Option<&'static str>], token_type: i32) -> Option<&'static str> {
-    if token_type < 0 {
-        return None;
-    }
     names
         .get(token_type as usize)
         .and_then(|name| name.as_ref().copied())

@@ -743,6 +743,9 @@ pub(super) fn cypher_call(
         }
         ("list_any_value", [Value::Null]) => Ok(Some(Value::Null)),
         ("list_sum", [Value::List(items)]) => {
+            if let Some(sum) = super::exact_integer_sum(items) {
+                return Ok(Some(sum));
+            }
             let mut sum: f64 = 0.0;
             let mut int_only = true;
             for item in items {

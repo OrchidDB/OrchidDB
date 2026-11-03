@@ -283,12 +283,16 @@ impl SqlDialect {
             DataType::UInt64 => "NUMERIC(20,0)",
             DataType::Float32 => "REAL",
             DataType::Float64 => self.double_type(),
-            DataType::Date32 => "DATE",
+            DataType::Date32 | DataType::Date64 => "DATE",
+            DataType::Decimal32(precision, scale) | DataType::Decimal64(precision, scale)
+            | DataType::Decimal128(precision, scale) | DataType::Decimal256(precision, scale) => {
+                return Ok(format!("NUMERIC({precision},{scale})"));
+            }
             DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, None) => "TIMESTAMP",
             DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None) if self == Self::DuckDb => "TIMESTAMP_NS",
             DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, Some(_)) => "TIMESTAMP WITH TIME ZONE",
             DataType::Time32(_) | DataType::Time64(arrow::datatypes::TimeUnit::Microsecond) => "TIME",
-            DataType::Binary | DataType::LargeBinary | DataType::BinaryView => if self == Self::Postgres { "BYTEA" } else { "BLOB" },
+            DataType::Binary | DataType::LargeBinary | DataType::BinaryView | DataType::FixedSizeBinary(_) => if self == Self::Postgres { "BYTEA" } else { "BLOB" },
 
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => match self {
                 Self::DuckDb => "VARCHAR",

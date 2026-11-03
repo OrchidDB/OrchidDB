@@ -10,6 +10,8 @@
 //! existing AST, it should construct a `CypherQuery` value here and call
 //! `lower_query`.
 
+use std::collections::BTreeSet;
+
 use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
 use crate::ir::plan::{
     ApplyKind, Direction, DistinctBulk, GraphPlan, JoinKind, LabelExpr, Length, Node, NullsOrder,
@@ -125,9 +127,13 @@ pub enum Predicate {
 pub fn lower_query(query: &CypherQuery) -> GraphPlan {
     let policy = GraphPlanPolicy::cypher();
     let mut plan: Option<Node> = None;
-    let mut all_optional = false;
+    let mut visible = BTreeSet::new();
     for clause in &query.matches {
-        let mut sub = lower_pattern(&clause.pattern);
+        let bindings = pattern_visible_bindings(&clause.pattern);
+        let seed = (clause.optional && plan.is_some()).then(|| Node::GraphCorrelate {
+            bindings: vec![clause.pattern.start.binding.clone()],
+        });
+        let mut sub = lower_pattern(&clause.pattern, seed);
         if let Some(predicate) = &clause.r#where {
             sub = Node::GraphFilter {
                 condition: lower_predicate(predicate),
@@ -142,7 +148,6 @@ pub fn lower_query(query: &CypherQuery) -> GraphPlan {
         }
         plan = Some(match plan.take() {
             None if clause.optional => {
-                all_optional = true;
                 // OPTIONAL as the very first clause emits a single
                 // null-extended row when the pattern is empty.
                 let outputs = pattern_visible_bindings(&clause.pattern);
@@ -160,15 +165,15 @@ pub fn lower_query(query: &CypherQuery) -> GraphPlan {
                 kind: ApplyKind::Optional,
                 correlation: pattern_visible_bindings(&clause.pattern)
                     .into_iter()
-                    .filter(|b| binding_in(&prev, b))
+                    .filter(|b| visible.contains(b))
                     .collect(),
                 outputs: pattern_visible_bindings(&clause.pattern)
                     .into_iter()
-                    .filter(|b| !binding_in(&prev, b))
+                    .filter(|b| !visible.contains(b))
                     .collect(),
                 optional_missing: OptionalMissing::Null,
                 left: prev.boxed(),
-                right: rewrite_pattern_to_correlated(&clause.pattern, sub),
+                right: sub.boxed(),
             },
             Some(prev) => Node::GraphJoin {
                 kind: JoinKind::Inner,
@@ -177,9 +182,9 @@ pub fn lower_query(query: &CypherQuery) -> GraphPlan {
                 condition: None,
             },
         });
+        visible.extend(bindings);
     }
     let mut node = plan.unwrap_or(Node::GraphOneRow);
-    let _ = all_optional;
     if let Some(predicate) = &query.r#where {
         node = Node::GraphFilter {
             condition: lower_predicate(predicate),
@@ -227,15 +232,15 @@ fn node_property_filters(pattern: &NodePattern) -> Vec<IrExpr> {
         .collect()
 }
 
-fn lower_pattern(pattern: &Pattern) -> Node {
-    let mut node = Node::GraphNodeScan {
+fn lower_pattern(pattern: &Pattern, seed: Option<Node>) -> Node {
+    let mut node = seed.unwrap_or_else(|| Node::GraphNodeScan {
         graph: "default".into(),
         binding: pattern.start.binding.clone(),
         labels: match &pattern.start.label {
             Some(label) => LabelExpr::label(label),
             None => LabelExpr::Any,
         },
-    };
+    });
     let mut current_source = pattern.start.binding.clone();
     for chain in &pattern.chains {
         node = Node::GraphExpand {
@@ -268,198 +273,43 @@ fn lower_pattern(pattern: &Pattern) -> Node {
     node
 }
 
-/// Replace the bottom-most `NodeScan` of `sub` with a `Correlate` so the
-/// pattern can be applied per outer row in `OPTIONAL MATCH`.
-fn rewrite_pattern_to_correlated(pattern: &Pattern, sub: Node) -> Box<Node> {
-    let correlate = Node::GraphCorrelate {
-        bindings: vec![pattern.start.binding.clone()],
-    };
-    Box::new(replace_leaf_scan(sub, &pattern.start.binding, correlate))
-}
-
-fn replace_leaf_scan(node: Node, binding: &str, replacement: Node) -> Node {
-    match node {
-        Node::GraphNodeScan { binding: b, .. } if b == binding => replacement,
-        Node::GraphFilter { condition, input } => Node::GraphFilter {
-            condition,
-            input: Box::new(replace_leaf_scan(*input, binding, replacement)),
-        },
-        Node::GraphBind {
-            bind,
-            kind,
-            expr,
-            input,
-        } => Node::GraphBind {
-            bind,
-            kind,
-            expr,
-            input: Box::new(replace_leaf_scan(*input, binding, replacement)),
-        },
-        Node::GraphExpand {
-            graph,
-            source,
-            target,
-            target_mode,
-            target_labels,
-            rel_binding,
-            rel_types,
-            dir,
-            length,
-            history,
-            path,
-            path_mode,
-            match_mode,
-            path_materialization,
-            path_update,
-            input,
-        } => Node::GraphExpand {
-            graph,
-            source,
-            target,
-            target_mode,
-            target_labels,
-            rel_binding,
-            rel_types,
-            dir,
-            length,
-            history,
-            path,
-            path_mode,
-            match_mode,
-            path_materialization,
-            path_update,
-            input: Box::new(replace_leaf_scan(*input, binding, replacement)),
-        },
-        Node::GraphProject {
-            mode,
-            items,
-            error_policy,
-            input,
-        } => Node::GraphProject {
-            mode,
-            items,
-            error_policy,
-            input: Box::new(replace_leaf_scan(*input, binding, replacement)),
-        },
-        other => other,
-    }
-}
-
-fn binding_in(node: &Node, binding: &str) -> bool {
-    match node {
-        Node::GraphNodeScan { binding: b, .. } | Node::GraphRelScan { binding: b, .. } => {
-            b == binding
-        }
-        Node::GraphBind { bind, input, .. } => bind == binding || binding_in(input, binding),
-        Node::GraphExpand {
-            target,
-            rel_binding,
-            history,
-            path,
-            input,
-            ..
-        } => {
-            target == binding
-                || rel_binding.as_deref() == Some(binding)
-                || history.as_deref() == Some(binding)
-                || path.as_deref() == Some(binding)
-                || binding_in(input, binding)
-        }
-        Node::GraphFilter { input, .. }
-        | Node::GraphSort { input, .. }
-        | Node::GraphSlice { input, .. }
-        | Node::GraphSliceExpr { input, .. }
-        | Node::GraphDistinct { input, .. } => binding_in(input, binding),
-        Node::GraphProject { items, input, .. } => {
-            items.iter().any(|i| i.alias == binding) || binding_in(input, binding)
-        }
-        Node::GraphAggregate { group, aggs, .. } => {
-            group.iter().any(|i| i.alias == binding) || aggs.iter().any(|a| a.alias == binding)
-        }
-        Node::GraphApply { outputs, left, .. } => {
-            outputs.iter().any(|s| s == binding) || binding_in(left, binding)
-        }
-        Node::GraphJoin { left, right, .. } | Node::GraphUnion { left, right, .. } => {
-            binding_in(left, binding) || binding_in(right, binding)
-        }
-        Node::GraphUnwind { bind, input, .. } => bind == binding || binding_in(input, binding),
-        Node::GraphOneRow
-        | Node::GraphEmpty
-        | Node::GraphCorrelate { .. }
-        | Node::GraphValues { .. } => false,
-        _ => false,
-    }
-}
-
 fn lower_return(clause: &ReturnClause, mut input: Node) -> Node {
-    // Aggregates first.
-    let has_agg = clause.items.iter().any(|item| {
-        matches!(
-            item.value,
-            ReturnValue::CountStar | ReturnValue::Aggregate { .. }
-        )
-    });
-    if has_agg {
-        let group: Vec<ProjectionItem> = clause
-            .items
-            .iter()
-            .filter_map(|item| match &item.value {
-                ReturnValue::Expr(predicate) => Some(ProjectionItem {
-                    alias: item.alias.clone(),
-                    expr: lower_predicate(predicate),
-                }),
-                _ => None,
-            })
-            .collect();
-        let aggs: Vec<AggCall> = clause
-            .items
-            .iter()
-            .filter_map(|item| match &item.value {
-                ReturnValue::CountStar => Some(AggCall {
-                    kind: AggKind::CountRows,
-                    alias: item.alias.clone(),
-                    arg: None,
-                    distinct: false,
-                }),
-                ReturnValue::Aggregate { kind, arg } => Some(AggCall {
-                    kind: *kind,
-                    alias: item.alias.clone(),
-                    arg: Some(lower_predicate(arg)),
-                    distinct: false,
-                }),
-                ReturnValue::Expr(_) => None,
-            })
-            .collect();
-        let agg_fields: Vec<String> = group
-            .iter()
-            .map(|i| i.alias.clone())
-            .chain(aggs.iter().map(|a| a.alias.clone()))
-            .collect();
-        input = Node::GraphAggregate {
-            group,
-            aggs,
-            fields: agg_fields,
-            input: input.boxed(),
-        };
-    } else {
-        let items = clause
-            .items
-            .iter()
-            .map(|item| match &item.value {
-                ReturnValue::Expr(predicate) => ProjectionItem {
-                    alias: item.alias.clone(),
-                    expr: lower_predicate(predicate),
-                },
-                _ => unreachable!("aggregates handled above"),
-            })
-            .collect();
-        input = Node::GraphProject {
+    // Partition once: the non-aggregate path then consumes only projections,
+    // without an impossible aggregate fallback in a second item traversal.
+    let mut group = Vec::new();
+    let mut aggs = Vec::new();
+    for item in &clause.items {
+        match &item.value {
+            ReturnValue::Expr(predicate) => group.push(ProjectionItem {
+                alias: item.alias.clone(),
+                expr: lower_predicate(predicate),
+            }),
+            ReturnValue::CountStar => aggs.push(AggCall {
+                kind: AggKind::CountRows,
+                alias: item.alias.clone(),
+                arg: None,
+                distinct: false,
+            }),
+            ReturnValue::Aggregate { kind, arg } => aggs.push(AggCall {
+                kind: *kind,
+                alias: item.alias.clone(),
+                arg: Some(lower_predicate(arg)),
+                distinct: false,
+            }),
+        }
+    }
+    input = if aggs.is_empty() {
+        Node::GraphProject {
             mode: ProjectMode::PreserveVisible,
-            items,
+            items: group,
             error_policy: ProjectErrorPolicy::PropagateError,
             input: input.boxed(),
-        };
-    }
+        }
+    } else {
+        let fields = group.iter().map(|item| item.alias.clone())
+            .chain(aggs.iter().map(|agg| agg.alias.clone())).collect();
+        Node::GraphAggregate { group, aggs, fields, input: input.boxed() }
+    };
     if clause.distinct {
         input = Node::GraphDistinct {
             keys: clause.items.iter().map(|i| i.alias.clone()).collect(),

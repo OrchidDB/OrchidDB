@@ -81,6 +81,14 @@ impl LoweringContext<'_> {
                     .iter()
                     .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
                     .collect::<RelResult<Vec<_>>>()?;
+                if self.language == Language::Cypher {
+                    // SQL concatenation propagates null and evaluates each operand once.
+                    return Ok(args.into_iter().reduce(|lhs, rhs| {
+                        Expr::BinaryExpr(BinaryExpr::new(
+                            Box::new(lhs), Operator::StringConcat, Box::new(rhs),
+                        ))
+                    }).unwrap_or_else(|| lit("")));
+                }
                 Ok(df_string::concat(args))
             }
             "concat_ws" => {

@@ -448,7 +448,11 @@ fn apply<'a>(m: &Match<'a>, step: &Step, out: &mut Vec<Match<'a>>) -> Result<()>
                     if at >= 0 && at < len {
                         out.push(child(m, &a[at as usize], None, Some(at)));
                     }
-                    at += stride;
+                    let Some(next) = at.checked_add(*stride) else {
+                        // An overflowing step is already beyond every possible array index.
+                        break;
+                    };
+                    at = next;
                 }
             }
         }

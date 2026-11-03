@@ -18,8 +18,10 @@ pub(super) fn normalize_cypher_extensions(input: &str) -> String {
     let normalized = normalize_named_function_args(&normalized);
     let normalized = normalize_keyword_function_names(&normalized);
     let normalized = normalize_not_string_predicates(&normalized);
-    let normalized = normalize_regex_match_operator(&normalized);
     let normalized = normalize_lambda_list_functions(&normalized);
+    // Remove lambda arrows before scanning regex operands: the arrow's left
+    // parameter is not part of the regex's left-hand expression.
+    let normalized = normalize_regex_match_operator(&normalized);
     let normalized = normalize_spaced_unary_signs(&normalized);
     let normalized = normalize_postfix_factorial(&normalized);
     let normalized = normalize_bitwise_operators(&normalized);

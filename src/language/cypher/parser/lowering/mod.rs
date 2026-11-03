@@ -41,3 +41,7 @@ use crate::language::cypher::parser::Result;
 pub(crate) fn lower_cypher(_ctx: &OC_CypherContext<'_>) -> Result<Query> {
     statements::lower_cypher(_ctx)
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/cypher_lowering.rs"]
+mod coverage_contracts;

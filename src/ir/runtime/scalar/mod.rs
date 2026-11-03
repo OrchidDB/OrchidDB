@@ -19,6 +19,7 @@ mod hashing;
 pub(crate) mod import;
 pub(crate) mod export;
 mod lists;
+pub(crate) use lists::exact_integer_sum;
 mod maps;
 pub(crate) mod mutations;
 mod numeric;

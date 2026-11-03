@@ -9,16 +9,7 @@ fn error(message: impl Into<String>) -> SqlError {
 fn string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
-fn literal(expr: &ast::Expr) -> Option<&str> {
-    match expr {
-        ast::Expr::Value(value) => match &value.value {
-            ast::Value::SingleQuotedString(s) => Some(s),
-            _ => None,
-        },
-        ast::Expr::Nested(expr) | ast::Expr::Cast { expr, .. } => literal(expr),
-        _ => None,
-    }
-}
+use super::literals::literal_text as literal;
 fn failure(dialect: SqlDialect, doc: &str, ty: &str) -> String {
     if dialect == SqlDialect::DuckDb {
         format!("CAST(error('invalid JSON transform value') AS {ty})")
@@ -216,7 +207,7 @@ pub(crate) fn lower(args: &[ast::Expr], dialect: SqlDialect) -> SqlResult<ast::E
     let schema = literal(&args[1])
         .ok_or_else(|| error("JSON transform schema must be constant JSON/text"))?;
     let schema: Value =
-        serde_json::from_str(schema).map_err(|e| error(format!("JSON transform schema: {e}")))?;
+        serde_json::from_str(&schema).map_err(|e| error(format!("JSON transform schema: {e}")))?;
     let canonical = super::json::canonical_sql("__arg0", dialect)?;
     let value = render("__local0.document", &schema, dialect, &mut 0)?;
     let sql = format!("(SELECT {value} FROM (SELECT {canonical} AS document) AS __local0)");

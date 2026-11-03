@@ -737,6 +737,20 @@ impl<'a> LoweringContext<'a> {
                 };
                 Ok(cast)
             }
+            IrExpr::Call { name, args }
+                if matches!(name.as_str(), "bitwise_and" | "bitwise_or") && args.len() == 2 => {
+                let lhs = self.lower_expr(plan, &args[0])?;
+                let rhs = self.lower_expr(plan, &args[1])?;
+                if [&lhs, &rhs].iter().any(|value| !matches!(value.get_type(plan.schema()),
+                    Ok(DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Null))) {
+                    return Err(RelError::Unsupported("Bitwise operands require integral SQL types".into()));
+                }
+                Ok(Expr::BinaryExpr(BinaryExpr::new(
+                    Box::new(lhs.cast_to(&DataType::Int64, plan.schema())?),
+                    if name == "bitwise_and" { Operator::BitwiseAnd } else { Operator::BitwiseOr },
+                    Box::new(rhs.cast_to(&DataType::Int64, plan.schema())?),
+                )))
+            }
             IrExpr::Call { name, args } if is_mod_function(name) && args.len() == 2 => {
                 Ok(Expr::BinaryExpr(BinaryExpr::new(
                     Box::new(self.lower_expr(plan, &args[0])?),

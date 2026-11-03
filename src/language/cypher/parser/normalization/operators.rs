@@ -112,19 +112,19 @@ pub(super) fn normalize_bitwise_operators(input: &str) -> String {
 
     let mut out = input.to_string();
     let mut search_from = 0;
-    while let Some((keyword_start, expr_start)) = find_projection_keyword(&out, search_from) {
+    while let Some((_, expr_start)) = find_projection_keyword(&out, search_from) {
         let expr_end = expr_start + projection_body_len(&out[expr_start..]);
         let body = &out[expr_start..expr_end];
         let rewritten = rewrite_projection_bitwise(body);
         out.replace_range(expr_start..expr_end, &rewritten);
-        search_from = keyword_start + rewritten.len();
+        search_from = expr_start + rewritten.len();
     }
     out
 }
 
 pub(super) fn contains_bitwise_operator(input: &str) -> bool {
     find_outside_quotes(input, |rest| {
-        rest.starts_with('&') || rest.starts_with("<<") || rest.starts_with(">>")
+        rest.starts_with('&') || rest.starts_with('|') || rest.starts_with("<<") || rest.starts_with(">>")
     })
     .is_some()
 }
@@ -205,6 +205,8 @@ pub(super) fn projection_clause_boundary(input: &str) -> bool {
         " match ",
         " where ",
         " unwind ",
+        " return ",
+        " with ",
     ]
     .iter()
     .any(|needle| lower.starts_with(needle))
@@ -252,6 +254,9 @@ pub(super) fn split_top_level_commas(input: &str) -> Vec<&str> {
 
 pub(super) fn rewrite_bitwise_expr(input: &str) -> String {
     let expr = input.trim();
+    if let Some(idx) = top_level_token(expr, |rest| keyword_at(rest, "AS")) {
+        return format!("{} {}", rewrite_bitwise_expr(&expr[..idx]), &expr[idx..]);
+    }
     if let Some((inner_start, inner_end)) = enclosing_parens(expr) {
         let inner = rewrite_bitwise_expr(&expr[inner_start..inner_end]);
         return format!("({inner})");
@@ -277,7 +282,64 @@ pub(super) fn rewrite_bitwise_expr(input: &str) -> String {
             rewrite_bitwise_expr(&expr[idx + op_len..])
         );
     }
-    expr.to_string()
+    // Operators in function arguments and comprehensions are hidden from the
+    // top-level precedence scan. Recurse into balanced, quote-aware groups.
+    let mut output = String::new();
+    let mut copied = 0;
+    let mut offset = 0;
+    while let Some(relative) = find_outside_quotes(&expr[offset..], |rest| {
+        rest.starts_with('(') || rest.starts_with('[') || rest.starts_with('{')
+    }) {
+        let start = offset + relative;
+        let open = expr[start..].chars().next().unwrap();
+        let close = match open { '(' => ')', '[' => ']', _ => '}' };
+        let Some(end) = super::lists::find_matching(expr, start, open, close) else { break };
+        let body = &expr[start + 1..end];
+        let pipe = top_level_token(body, |rest| rest.starts_with('|'));
+        let pattern = open == '[' && (body.trim_start().starts_with('(')
+            || body.split_once('=').is_some_and(|(name, rest)|
+                name.trim().chars().all(is_ident_continue) && rest.trim_start().starts_with('(')));
+        let comprehension = pipe.filter(|idx| {
+            top_level_token(&body[..*idx], |rest| keyword_at(rest, "IN")).is_some()
+                || pattern
+        });
+        let rewritten = if let Some(pipe) = comprehension {
+            let prefix = if pattern {
+                body[..pipe].trim().to_string()
+            } else {
+                rewrite_projection_bitwise(&body[..pipe])
+            };
+            format!("{prefix} | {}", rewrite_bitwise_expr(&body[pipe + 1..]))
+        } else {
+            rewrite_projection_bitwise(body)
+        };
+        output.push_str(&expr[copied..start + 1]);
+        output.push_str(&rewritten);
+        output.push(close);
+        copied = end + 1;
+        offset = copied;
+    }
+    output.push_str(&expr[copied..]);
+    output
+}
+
+fn top_level_token(input: &str, matches: impl Fn(&str) -> bool) -> Option<usize> {
+    let mut offset = 0;
+    while let Some(relative) = find_outside_quotes(&input[offset..], |rest| {
+        rest.starts_with('(') || rest.starts_with('[') || rest.starts_with('{') || matches(rest)
+    }) {
+        let idx = offset + relative;
+        let ch = input[idx..].chars().next().unwrap();
+        if matches!(ch, '(' | '[' | '{') {
+            let close = match ch { '(' => ')', '[' => ']', _ => '}' };
+            offset = super::lists::find_matching(input, idx, ch, close)? + 1;
+        } else if keyword_start(input, idx) || !ch.is_ascii_alphabetic() {
+            return Some(idx);
+        } else {
+            offset = idx + ch.len_utf8();
+        }
+    }
+    None
 }
 
 pub(super) fn find_top_level_bitwise(
@@ -328,20 +390,7 @@ pub(super) fn enclosing_parens(input: &str) -> Option<(usize, usize)> {
     if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
         return None;
     }
-    let mut depth = 0i32;
-    for (byte_idx, ch) in trimmed.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 && byte_idx != trimmed.len() - 1 {
-                    return None;
-                }
-            }
-            _ => {}
-        }
-    }
-    if depth == 0 {
+    if super::lists::find_matching(trimmed, 0, '(', ')') == Some(trimmed.len() - 1) {
         Some((1, trimmed.len() - 1))
     } else {
         None
@@ -483,13 +532,61 @@ pub(super) fn normalize_regex_match_operator(input: &str) -> String {
     out
 }
 
+// Keywords start at expression boundaries, never inside names or property access.
+fn keyword_start(input: &str, index: usize) -> bool {
+    index == 0 || input[..index].chars().next_back().is_some_and(|ch|
+        ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | ':' | '|'))
+}
+
 pub(super) fn predicate_lhs_start(prefix: &str) -> usize {
-    let lower = prefix.to_ascii_lowercase();
-    [" where ", " and ", " or ", " return ", " with ", "("]
-        .iter()
-        .filter_map(|needle| lower.rfind(needle).map(|idx| idx + needle.len()))
-        .max()
-        .unwrap_or(0)
+    // Track the operand boundary at each nesting level. A completed function
+    // call belongs to its parent operand, even when its arguments contain words
+    // such as RETURN or parentheses inside string literals.
+    let mut start = 0;
+    let mut parents = Vec::new();
+    let mut cases = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for (idx, ch) in prefix.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' | '`' => quote = Some(ch),
+            '(' | '[' | '{' => {
+                parents.push(start);
+                start = idx + ch.len_utf8();
+            }
+            ')' | ']' | '}' => start = parents.pop().unwrap_or(start),
+            ',' | ':' | '|' => start = idx + ch.len_utf8(),
+            _ if ch.is_ascii_alphabetic() && keyword_start(prefix, idx) => {
+                let word = prefix[idx..]
+                    .split(|c: char| !is_ident_continue(c))
+                    .next()
+                    .unwrap_or("");
+                if word.eq_ignore_ascii_case("case") {
+                    cases.push((parents.len(), start));
+                } else if word.eq_ignore_ascii_case("end") {
+                    if cases.last().is_some_and(|(depth, _)| *depth == parents.len()) {
+                        start = cases.pop().unwrap().1;
+                    }
+                } else if [
+                    "where", "and", "or", "xor", "return", "with", "when", "then", "else", "not",
+                ].iter().any(|keyword| word.eq_ignore_ascii_case(keyword)) {
+                    start = idx + word.len();
+                }
+            }
+            _ => {}
+        }
+    }
+    start + prefix[start..].len() - prefix[start..].trim_start().len()
 }
 
 pub(super) fn find_predicate_rhs_len(input: &str) -> usize {
@@ -497,6 +594,7 @@ pub(super) fn find_predicate_rhs_len(input: &str) -> usize {
     let mut quote: Option<char> = None;
     let mut escaped = false;
     let mut depth = 0i32;
+    let mut case_depth = 0usize;
     let mut i = 0;
     while i < chars.len() {
         let (byte_idx, ch) = chars[i];
@@ -511,11 +609,19 @@ pub(super) fn find_predicate_rhs_len(input: &str) -> usize {
             i += 1;
             continue;
         }
+        if ch.is_ascii_alphabetic() && keyword_start(input, byte_idx) {
+            if keyword_at(&input[byte_idx..], "CASE") {
+                case_depth += 1;
+            } else if keyword_at(&input[byte_idx..], "END") {
+                case_depth = case_depth.saturating_sub(1);
+            }
+        }
         match ch {
-            '\'' | '"' => quote = Some(ch),
+            '\'' | '"' | '`' => quote = Some(ch),
+            ')' | ']' | '}' | ',' if depth == 0 && case_depth == 0 => return byte_idx,
             '(' | '[' | '{' => depth += 1,
             ')' | ']' | '}' => depth -= 1,
-            _ if depth == 0 && is_clause_boundary(&input[byte_idx..]) => return byte_idx,
+            _ if depth == 0 && case_depth == 0 && is_clause_boundary(&input[byte_idx..]) => return byte_idx,
             _ => {}
         }
         i += 1;
@@ -524,14 +630,18 @@ pub(super) fn find_predicate_rhs_len(input: &str) -> usize {
 }
 
 pub(super) fn is_clause_boundary(input: &str) -> bool {
-    if !input.starts_with(char::is_whitespace) { return false; }
+    if !input.starts_with(char::is_whitespace) {
+        return false;
+    }
     let lower = input.trim_start().to_ascii_lowercase();
     [
-        "return", "with", "and", "or", "order", "limit", "skip", "as",
+        "return", "with", "and", "or", "xor", "order", "limit", "skip", "as", "then", "else", "end",
     ]
     .iter()
     .any(|needle| {
-        lower.strip_prefix(needle).is_some_and(|rest| rest.starts_with(char::is_whitespace))
+        lower
+            .strip_prefix(needle)
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
     })
 }
 

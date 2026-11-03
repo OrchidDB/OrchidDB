@@ -314,16 +314,18 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
             Ok(())
         }
         Expr::ListComprehension {
+            variable,
             collection,
             predicate,
             map,
-            ..
         } => {
             validate_expr_kinds(collection, scope)?;
+            let mut local = scope.clone();
+            local.insert(variable.clone(), unwind_element_kind(collection, scope));
             if let Some(predicate) = predicate {
-                validate_expr_kinds(predicate, scope)?;
+                validate_expr_kinds(predicate, &local)?;
             }
-            validate_expr_kinds(map, scope)
+            validate_expr_kinds(map, &local)
         }
         Expr::ListReduce {
             collection, map, ..
@@ -921,6 +923,7 @@ pub(super) fn function_result_kind(
         }
         "count" | "count_if" | "size" | "length" | "rowid" => BindingKind::Int,
         "id" => BindingKind::Int,
+        "range" => BindingKind::ListInt,
         "avg" | "tofloat" | "to_float" | "todouble" | "to_double" => BindingKind::Float,
         "sum" => args
             .first()

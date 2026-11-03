@@ -120,8 +120,11 @@ pub(super) fn safe_cast(ty: &str) -> SqlResult<String> {
                 format!("(SELECT CASE WHEN f IN (CAST('NaN' AS DOUBLE PRECISION),CAST('Infinity' AS DOUBLE PRECISION),CAST('-Infinity' AS DOUBLE PRECISION)) THEN CAST(f AS REAL) WHEN abs(f)>=3.4028235677973366e38 THEN CASE WHEN f<0 THEN CAST('-Infinity' AS REAL) ELSE CAST('Infinity' AS REAL) END WHEN abs(f)<=7.006492321624085e-46 THEN CASE WHEN f<0 OR left(CAST(f AS TEXT),1)='-' THEN CAST('-0' AS REAL) ELSE CAST('0' AS REAL) END ELSE CAST(f AS REAL) END FROM (SELECT {double} AS f) AS __local4)")
             } else { double })
         }
-        "BIGINT" | "INTEGER" | "SMALLINT" => {
-            let (lo,hi) = match ty { "BIGINT" => ("-9223372036854775808","9223372036854775807"), "INTEGER" => ("-2147483648","2147483647"), _ => ("-32768","32767") };
+        "BIGINT" | "INTEGER" | "SMALLINT" | "TINYINT" => {
+            let (lo,hi) = match ty { "BIGINT" => ("-9223372036854775808","9223372036854775807"), "INTEGER" => ("-2147483648","2147483647"), "TINYINT" => ("-128", "127"), _ => ("-32768","32767") };
+            // PostgreSQL stores Arrow Int8 in SMALLINT, but the conversion
+            // must still reject values outside the logical Int8 range.
+            let ty = if ty == "TINYINT" { "SMALLINT" } else { ty };
             Ok(format!("(SELECT CASE WHEN v ~ '^[+-]?[0-9]+$' AND length(digits)<=19 THEN CASE WHEN CAST(coalesce(nullif(digits,''),'0') AS NUMERIC) * CASE WHEN left(v,1)='-' THEN -1 ELSE 1 END BETWEEN {lo} AND {hi} THEN CAST(CASE WHEN left(v,1)='-' THEN '-' ELSE '' END || coalesce(nullif(digits,''),'0') AS {ty}) ELSE NULL END ELSE NULL END FROM (SELECT v,ltrim(ltrim(v,'+-'),'0') AS digits FROM (SELECT btrim(CAST(__arg0 AS TEXT)) AS v OFFSET 0) AS __local1) AS __local0)"))
         }
         _ if ty.starts_with("DECIMAL(") || ty.starts_with("NUMERIC(") => {
@@ -133,7 +136,7 @@ pub(super) fn safe_cast(ty: &str) -> SqlResult<String> {
             let value = format!("CASE WHEN {numeric} THEN CASE WHEN digits='' OR power<{} THEN 0 WHEN power>={} THEN NULL ELSE round(CAST((CASE WHEN left(v,1)='-' THEN '-' ELSE '' END) || left(digits,{}) || 'e' || CAST(power-least(length(digits),{})+1 AS TEXT) AS NUMERIC),{s}) END ELSE NULL END", -s-1,p-s,p+2,p+2);
             Ok(format!("(SELECT CASE WHEN abs(n)<power(CAST(10 AS NUMERIC),{}) THEN CAST(n AS {ty}) ELSE NULL END FROM (SELECT {value} AS n {parts}) AS __local4)",p-s))
         }
-        "BOOLEAN" => Ok("(SELECT CASE WHEN lower(v) IN ('true','false') THEN CAST(v AS BOOLEAN) ELSE NULL END FROM (SELECT CAST(__arg0 AS TEXT) AS v OFFSET 0) AS __local0)".into()),
+        "BOOL" | "BOOLEAN" => Ok("(SELECT CASE WHEN lower(v) IN ('true','false') THEN CAST(v AS BOOLEAN) ELSE NULL END FROM (SELECT CAST(__arg0 AS TEXT) AS v OFFSET 0) AS __local0)".into()),
         _ if ty.starts_with("VARCHAR") || ty == "TEXT" => Ok(format!("CAST(__arg0 AS {ty})")),
         _ => Err(super::SqlError::Unsupported(format!("PostgreSQL safe cast to {ty}"))),
     }

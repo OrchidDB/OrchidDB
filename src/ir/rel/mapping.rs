@@ -2047,6 +2047,13 @@ impl GraphMapping {
         fn quote(value: &str) -> String {
             serde_json::to_string(value).expect("serializable mapping string")
         }
+        fn key(value: &str) -> String {
+            if !value.is_empty() && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+                value.to_owned()
+            } else {
+                quote(value)
+            }
+        }
         fn source_line(source: &MappedSource) -> String {
             match source {
                 MappedSource::Table(table) => format!("table = {}", quote(table)),
@@ -2062,7 +2069,7 @@ impl GraphMapping {
             out.push_str(&toml::to_string(&BTreeMap::from([("cypher_relationships",self.cypher_relationships.values().collect::<Vec<_>>())])).map_err(|e|RelError::Unsupported(format!("Cypher relationship TOML: {e}")))?);
         }
         for (label, node) in &self.nodes {
-            out.push_str(&format!("[node.{label}]\n"));
+            out.push_str(&format!("[node.{}]\n", key(label)));
             out.push_str(&source_line(&node.source));
             out.push('\n');
             out.push_str(&format!("id = {}\n", node.id_column.toml()));
@@ -2070,9 +2077,9 @@ impl GraphMapping {
                 out.push_str(&format!("labels_column = {}\n", quote(column)));
             }
             if !node.properties.is_empty() {
-                out.push_str(&format!("\n[node.{label}.properties]\n"));
+                out.push_str(&format!("\n[node.{}.properties]\n", key(label)));
                 for (property, column) in &node.properties {
-                    out.push_str(&format!("{property} = {}\n", quote(column)));
+                    out.push_str(&format!("{} = {}\n", key(property), quote(column)));
                 }
             }
             out.push('\n');
@@ -2087,7 +2094,7 @@ impl GraphMapping {
                 out.push('\n');
                 continue;
             }
-            out.push_str(&format!("[edge.{rel_type}]\n"));
+            out.push_str(&format!("[edge.{}]\n", key(rel_type)));
             out.push_str(&source_line(&edge.source));
             out.push('\n');
             out.push_str(&format!("src = {}\n", edge.src_column.toml()));
@@ -2107,9 +2114,9 @@ impl GraphMapping {
                 out.push_str(&format!("edge_id = {}\n", id.toml()));
             }
             if !edge.properties.is_empty() {
-                out.push_str(&format!("\n[edge.{rel_type}.properties]\n"));
+                out.push_str(&format!("\n[edge.{}.properties]\n", key(rel_type)));
                 for (property, column) in &edge.properties {
-                    out.push_str(&format!("{property} = {}\n", quote(column)));
+                    out.push_str(&format!("{} = {}\n", key(property), quote(column)));
                 }
             }
             out.push('\n');

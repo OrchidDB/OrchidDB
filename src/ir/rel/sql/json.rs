@@ -15,21 +15,12 @@ fn expression(sql: &str, args: &[ast::Expr], dialect: SqlDialect) -> SqlResult<a
 fn string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
-fn literal(expr: &ast::Expr) -> Option<&str> {
-    match expr {
-        ast::Expr::Value(value) => match &value.value {
-            ast::Value::SingleQuotedString(s) => Some(s),
-            _ => None,
-        },
-        ast::Expr::Nested(inner) | ast::Expr::Cast { expr: inner, .. } => literal(inner),
-        _ => None,
-    }
-}
+use super::literals::literal_text as literal;
 use crate::ir::functions::json::path::Step;
 fn path(expr: &ast::Expr) -> SqlResult<Vec<Step>> {
     let source =
         literal(expr).ok_or_else(|| unsupported("dynamic JSON paths require native evaluation"))?;
-    let steps = crate::ir::functions::json::path::parse(source)?;
+    let steps = crate::ir::functions::json::path::parse(&source)?;
     if !crate::ir::functions::json::path::singular(&steps) {
         return Err(unsupported(
             "non-definite JSON paths require native evaluation",
@@ -316,7 +307,7 @@ pub(crate) fn lower(
             if args.len() == 3 {
                 let ty = literal(&args[2])
                     .ok_or_else(|| unsupported("json.value requires a literal output type"))?;
-                let ty = crate::ir::functions::json::scalar_type(ty)?;
+                let ty = crate::ir::functions::json::scalar_type(&ty)?;
                 if crate::ir::functions::domain::is_json(&ty) {
                     return expression(&format!("(SELECT CASE WHEN j IS NULL OR {} IN ('null','array','object') THEN CAST(NULL AS {json_type}) ELSE j END FROM (SELECT {selected} AS j) AS __local0)",kind("j")),args,dialect).map(Some);
                 }

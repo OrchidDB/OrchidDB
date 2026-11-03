@@ -1225,3 +1225,7 @@ pub(super) fn pattern_contains_aggregate(pattern: &PatternPart) -> bool {
                     .is_some_and(contains_aggregate)
         })
 }
+
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/cypher_aggregate.rs"]
+mod coverage_aggregate;

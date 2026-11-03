@@ -208,8 +208,11 @@ impl Accumulator for JsonAccumulator {
         ))])
     }
     fn merge_batch(&mut self, states: &[ArrayRef]) -> Result<()> {
-        for row in 0..states[0].len() {
-            let Some(state) = text(&ScalarValue::try_from_array(states[0].as_ref(), row)?)? else {
+        let [state_column] = states else {
+            return Err(error("JSON aggregate state requires one column"));
+        };
+        for row in 0..state_column.len() {
+            let Some(state) = text(&ScalarValue::try_from_array(state_column.as_ref(), row)?)? else {
                 continue;
             };
             let Value::Array(mut values) = serde_json::from_str(&state).map_err(error)? else {
@@ -222,26 +225,27 @@ impl Accumulator for JsonAccumulator {
                     let pair = value
                         .as_array()
                         .ok_or_else(|| error("invalid ordered aggregate state"))?;
-                    self.values.push(pair[0].clone());
-                    if self.distinct {
-                        self.distinct_keys.push(
-                            pair[2]
-                                .as_str()
-                                .ok_or_else(|| error("invalid distinct state"))?
-                                .into(),
-                        );
+                    let [value, ordering, distinct_key] = pair.as_slice() else {
+                        return Err(error("invalid ordered aggregate state"));
+                    };
+                    let ordering = ordering.as_array()
+                        .filter(|keys| keys.len() == self.order_types.len())
+                        .ok_or_else(|| error("invalid ordering state"))?;
+                    let ordering = ordering.iter().zip(&self.order_types)
+                        .map(|(value, ty)| crate::federation::json_scalar(value, ty).map_err(error))
+                        .collect::<Result<Vec<_>>>()?;
+                    let distinct_key = if self.distinct {
+                        Some(distinct_key.as_str()
+                            .ok_or_else(|| error("invalid distinct state"))?.to_owned())
+                    } else {
+                        None
+                    };
+                    // Validate the complete entry before changing any parallel state vectors.
+                    self.values.push(value.clone());
+                    if let Some(key) = distinct_key {
+                        self.distinct_keys.push(key);
                     }
-                    self.ordering.push(
-                        pair[1]
-                            .as_array()
-                            .ok_or_else(|| error("invalid ordering state"))?
-                            .iter()
-                            .zip(&self.order_types)
-                            .map(|(value, ty)| {
-                                crate::federation::json_scalar(value, ty).map_err(error)
-                            })
-                            .collect::<Result<Vec<_>>>()?,
-                    );
+                    self.ordering.push(ordering);
                 }
             }
         }

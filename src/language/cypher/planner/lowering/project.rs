@@ -740,3 +740,7 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/cypher_projection.rs"]
+mod coverage_projection;

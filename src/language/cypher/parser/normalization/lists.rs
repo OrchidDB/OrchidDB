@@ -345,6 +345,9 @@ pub(super) fn top_level_colon_slice(input: &str) -> Option<usize> {
                     return None;
                 }
             }
+            // A comprehension can contain label predicates at this depth.
+            // Its ':' belongs to the predicate, not to a subscript slice.
+            '|' if paren == 0 && bracket == 0 && brace == 0 => return None,
             '.' if paren == 0 && bracket == 0 && brace == 0 && input[index..].starts_with("..") => {
                 return None;
             }

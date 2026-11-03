@@ -291,6 +291,7 @@ pub(crate) fn build(
     let mut builder = Builder {
         request,
         bound: BTreeMap::new(),
+        shared_occurrences: Vec::new(),
         plan: ExecutionPlan {
             version: 1,
             nodes: vec![],
@@ -303,6 +304,7 @@ pub(crate) fn build(
 struct Builder<'a> {
     request: &'a CompileRequest,
     bound: BTreeMap<String, usize>,
+    shared_occurrences: Vec<(LogicalPlan, BTreeMap<String, usize>, usize)>,
     plan: ExecutionPlan,
 }
 impl Builder<'_> {
@@ -332,6 +334,24 @@ impl Builder<'_> {
         self.lower_with_demand(plan, true)
     }
     fn lower_with_demand(&mut self, plan: &LogicalPlan, prune_local_input: bool) -> Result<usize, String> {
+        // An apply frontier assigns occurrence identities once. Rebuilding it
+        // for each consumer lets unordered windows assign different identities
+        // after aggregates or source transfers, corrupting correlated joins.
+        let shared = matches!(plan, LogicalPlan::SubqueryAlias(alias)
+            if alias.alias.table().starts_with("__w_sql_cte_apply_row_"));
+        if shared {
+            if let Some((_, _, id)) = self.shared_occurrences.iter()
+                .find(|(existing, bound, _)| existing == plan && bound == &self.bound) {
+                return Ok(*id);
+            }
+        }
+        let id = self.lower_uncached(plan, prune_local_input)?;
+        if shared {
+            self.shared_occurrences.push((plan.clone(), self.bound.clone(), id));
+        }
+        Ok(id)
+    }
+    fn lower_uncached(&mut self, plan: &LogicalPlan, prune_local_input: bool) -> Result<usize, String> {
         if let LogicalPlan::TableScan(scan) = plan {
             if let Some(id) = self.bound.get(&scan.table_name.to_string()) {
                 return Ok(*id);
@@ -983,7 +1003,13 @@ pub async fn execute(
                     .iter()
                     .any(|n| matches!(n.operation, Operation::Duckdb { .. }))
         };
-        let replay = plan.nodes.iter().any(|consumer| match &consumer.operation {
+        let consumers = plan.nodes.iter().map(|consumer| match &consumer.operation {
+            Operation::LocalProject { input, .. } => usize::from(*input == id),
+            Operation::SourceRequest { input, .. } => usize::from(*input == Some(id)),
+            Operation::Duckdb { inputs, .. } => inputs.iter().filter(|input| input.node == id).count(),
+            _ => 0,
+        }).sum::<usize>() + usize::from(plan.result == id);
+        let replay = consumers > 1 || plan.nodes.iter().any(|consumer| match &consumer.operation {
             Operation::Duckdb { inputs, .. } => inputs.iter().any(|input| input.node == id && input.replay),
             _ => false,
         });

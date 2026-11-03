@@ -26,6 +26,15 @@ use crate::language::cypher::ast::{
 };
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 
+// UNION branches and CALL subqueries are query boundaries, not read-only boundaries.
+fn query_updates_graph(query: &Query) -> bool {
+    query.clauses.iter().any(|clause| match clause {
+        Clause::Create(_) | Clause::Merge(_) | Clause::Set(_) | Clause::Delete(_) => true,
+        Clause::Subquery(subquery) => query_updates_graph(&subquery.query),
+        _ => false,
+    }) || query.unions.iter().any(|branch| query_updates_graph(&branch.query))
+}
+
 pub const DEFAULT_GRAPH: &str = "default";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -776,8 +785,7 @@ impl SemanticAnalyzer {
     ) -> CypherPlanResult<()> {
         let mut scope = scope_from_candidates(candidates);
         if let Some(query) = &exists.query {
-            if query.clauses.iter().any(|clause| matches!(clause,
-                Clause::Create(_) | Clause::Merge(_) | Clause::Set(_) | Clause::Delete(_))) {
+            if query_updates_graph(query) {
                 return Err(CypherPlanError::Invalid("EXISTS subqueries cannot update the graph".into())
                     .classified(CypherSemanticError::InvalidClauseComposition));
             }
