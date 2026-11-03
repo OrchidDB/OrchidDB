@@ -1022,7 +1022,8 @@ pub(super) fn requires_plan_scope_repair(plan: &LogicalPlan) -> bool {
     let mut found = has_rdf_source(plan);
     let _ = plan.apply_with_subqueries(|node| {
         if let LogicalPlan::SubqueryAlias(alias) = node {
-            found |= alias.alias.table().starts_with("__w_sql_cte_cypher_collect_input_");
+            found |= alias.alias.table().starts_with("__w_sql_cte_cypher_collect_input_")
+                || alias.alias.table().starts_with("__w_sql_cte_apply_row_");
         }
         Ok(TreeNodeRecursion::Continue)
     });

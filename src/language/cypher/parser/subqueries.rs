@@ -75,6 +75,93 @@ pub(super) fn restore(query: &mut Query, calls: &mut BTreeMap<String, CallSubque
         if let Clause::Call(call) = clause && let Some(subquery) = calls.remove(&call.name) {
             *clause = Clause::Subquery(subquery);
         }
+        restore_clause(clause, calls);
     }
     for branch in &mut query.unions { restore(&mut branch.query, calls); }
+}
+
+fn restore_clause(clause: &mut Clause, calls: &mut BTreeMap<String, CallSubquery>) {
+    match clause {
+        Clause::Subquery(c) => restore(&mut c.query, calls),
+        Clause::Match(c) => {
+            for p in &mut c.patterns { restore_pattern(p, calls); }
+            if let Some(e) = &mut c.predicate { restore_expr(e, calls); }
+        }
+        Clause::Create(c) => for p in &mut c.patterns { restore_pattern(p, calls); },
+        Clause::Merge(c) => {
+            restore_pattern(&mut c.pattern, calls);
+            for item in c.on_create.iter_mut().chain(&mut c.on_match) { restore_set(item, calls); }
+        }
+        Clause::Set(c) => for item in &mut c.items { restore_set(item, calls); },
+        Clause::Delete(c) => for e in &mut c.expressions { restore_expr(e, calls); },
+        Clause::Unwind(c) => restore_expr(&mut c.expr, calls),
+        Clause::Call(c) => for e in c.args.iter_mut().chain(&mut c.predicate) { restore_expr(e, calls); },
+        Clause::With(c) => {
+            restore_projection(&mut c.projection, calls);
+            if let Some(e) = &mut c.predicate { restore_expr(e, calls); }
+        }
+        Clause::Return(c) => restore_projection(&mut c.projection, calls),
+    }
+}
+
+fn restore_set(item: &mut SetItem, calls: &mut BTreeMap<String, CallSubquery>) {
+    match item {
+        SetItem::Property { target, value, .. } => { restore_expr(target, calls); restore_expr(value, calls); }
+        SetItem::Replace { value, .. } | SetItem::Merge { value, .. } => restore_expr(value, calls),
+        SetItem::Labels { .. } => {}
+    }
+}
+
+fn restore_projection(body: &mut ProjectionBody, calls: &mut BTreeMap<String, CallSubquery>) {
+    for item in &mut body.items { restore_expr(&mut item.expr, calls); }
+    for item in &mut body.order_by { restore_expr(&mut item.expr, calls); }
+    for e in body.skip.iter_mut().chain(&mut body.limit) { restore_expr(e, calls); }
+}
+
+fn restore_pattern(part: &mut PatternPart, calls: &mut BTreeMap<String, CallSubquery>) {
+    if let Some(e) = &mut part.element.start.properties { restore_expr(e, calls); }
+    for chain in &mut part.element.chains {
+        for e in chain.node.properties.iter_mut().chain(&mut chain.relationship.properties) { restore_expr(e, calls); }
+        if let Some(recursive) = &mut chain.relationship.recursive {
+            if let Some(e) = &mut recursive.predicate { restore_expr(e, calls); }
+        }
+    }
+}
+
+fn restore_expr(expr: &mut Expr, calls: &mut BTreeMap<String, CallSubquery>) {
+    match expr {
+        Expr::Star | Expr::Variable(_) | Expr::Parameter(_) | Expr::Literal(_) | Expr::CountStar => {}
+        Expr::Property { target, .. } | Expr::LabelPredicate { target, .. } => restore_expr(target, calls),
+        Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => restore_expr(expr, calls),
+        Expr::Binary { lhs, rhs, .. } => { restore_expr(lhs, calls); restore_expr(rhs, calls); }
+        Expr::StringPredicate { target, pattern, .. } => { restore_expr(target, calls); restore_expr(pattern, calls); }
+        Expr::List(items) | Expr::Function { args: items, .. } => for e in items { restore_expr(e, calls); },
+        Expr::Map(items) => for (_, e) in items { restore_expr(e, calls); },
+        Expr::Case { case, arms, otherwise } => {
+            for e in case.iter_mut().chain(otherwise) { restore_expr(e, calls); }
+            for (a, b) in arms { restore_expr(a, calls); restore_expr(b, calls); }
+        }
+        Expr::Exists(exists) => {
+            if let Some(query) = &mut exists.query { restore(query, calls); }
+            for p in &mut exists.patterns { restore_pattern(p, calls); }
+            if let Some(e) = &mut exists.predicate { restore_expr(e, calls); }
+        }
+        Expr::PatternPredicate(parts) => for p in parts { restore_pattern(p, calls); },
+        Expr::ListComprehension { collection, predicate, map, .. } => {
+            restore_expr(collection, calls);
+            if let Some(e) = predicate { restore_expr(e, calls); }
+            restore_expr(map, calls);
+        }
+        Expr::ListReduce { collection, map, .. } | Expr::ListTransform { collection, map, .. } => {
+            restore_expr(collection, calls); restore_expr(map, calls);
+        }
+        Expr::ListFilter { collection, predicate, .. } | Expr::Quantifier { collection, predicate, .. } => {
+            restore_expr(collection, calls); restore_expr(predicate, calls);
+        }
+        Expr::PatternComprehension { pattern, predicate, map, .. } => {
+            restore_pattern(pattern, calls);
+            if let Some(e) = predicate { restore_expr(e, calls); }
+            restore_expr(map, calls);
+        }
+    }
 }

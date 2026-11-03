@@ -173,7 +173,7 @@ impl SemanticAnalyzer {
         scope: &mut SemanticScope,
     ) -> CypherPlanResult<Vec<SemanticOutput>> {
         let initial_scope = scope.clone();
-        let root_outputs = self.analyze_query_body(query, scope)?;
+        let mut root_outputs = self.analyze_query_body(query, scope)?;
         let union_mode = query.unions.first().map(|branch| branch.all);
         for branch in &query.unions {
             if union_mode.is_some_and(|all| all != branch.all) {
@@ -184,6 +184,9 @@ impl SemanticAnalyzer {
             let mut branch_scope = initial_scope.clone();
             let branch_outputs = self.analyze_query_with_scope(&branch.query, &mut branch_scope)?;
             validate_union_outputs(&root_outputs, &branch_outputs)?;
+            for (output, branch) in root_outputs.iter_mut().zip(&branch_outputs) {
+                if output.kind != branch.kind { output.kind = BindingKind::Value; }
+            }
         }
         Ok(root_outputs)
     }

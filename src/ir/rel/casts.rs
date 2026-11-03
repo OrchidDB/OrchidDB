@@ -1,17 +1,15 @@
 //! Cast lowerings whose relational form has to be proven against the
 //! scalar evaluator before it is used.
 //!
-//! List values cross the relational boundary as the runtime value display
-//! text (`[1,9]`), so a list cast is a rewrite of that text rather than a
-//! typed SQL cast. A rewrite is only emitted after checking, for every value
-//! the property actually stores, that it produces exactly the text the
-//! scalar cast renders; anything else declines.
+//! Stored collections use their typed shadow columns when available, avoiding
+//! display-text rewrites and redundant casts. Legacy text-only values retain
+//! the verified display rewrite below.
 
 use std::collections::BTreeSet;
 
 use arrow::datatypes::DataType;
 use datafusion::functions::regex::expr_fn as df_regex;
-use datafusion::logical_expr::{Expr, LogicalPlan};
+use datafusion::logical_expr::{Expr, ExprSchemable, LogicalPlan};
 use datafusion::prelude::lit;
 
 use crate::ir::expr::IrExpr;
@@ -64,6 +62,17 @@ impl LoweringContext<'_> {
         let Some(source) = args.first() else {
             return Err(RelError::Unsupported("list cast arity".into()));
         };
+        if let Some(value) = super::collections::native_list_property(plan, source) {
+            let element_type = super::scalar_types::data_type_for_cast_target(&element)?;
+            let target_type = DataType::List(std::sync::Arc::new(
+                arrow::datatypes::Field::new("item", element_type, true),
+            ));
+            return Ok(if value.get_type(plan.schema())? == target_type {
+                value
+            } else {
+                datafusion::logical_expr::cast(value, target_type)
+            });
+        }
         match source {
             IrExpr::Property { name: property, .. } => {
                 self.verify_stored_list_cast(property, name, args, rewrite)?;

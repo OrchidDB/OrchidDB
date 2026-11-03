@@ -81,17 +81,6 @@ pub(super) fn validate_union_outputs(
             "UNION branches must return the same column names in the same order.".to_string(),
         ).classified(CypherSemanticError::DifferentColumnsInUnion));
     }
-    for (expected, actual) in left.iter().zip(right.iter()) {
-        if union_output_kinds_compatible(expected.kind, actual.kind) {
-            continue;
-        }
-        return Err(CypherPlanError::Invalid(format!(
-            "Binder exception: {} has data type {} but {} was expected.",
-            actual.name,
-            actual.kind.cypher_type_name(),
-            expected.kind.cypher_type_name()
-        )));
-    }
     Ok(())
 }
 
@@ -123,16 +112,6 @@ pub(super) fn order_by_type_name(kind: BindingKind) -> &'static str {
         BindingKind::Relationship | BindingKind::RecursiveRelationship => "REL",
         _ => kind.cypher_type_name(),
     }
-}
-
-pub(super) fn union_output_kinds_compatible(left: BindingKind, right: BindingKind) -> bool {
-    left == right
-        || matches!(left, BindingKind::Unknown | BindingKind::Value)
-        || matches!(right, BindingKind::Unknown | BindingKind::Value)
-        || matches!(
-            (left, right),
-            (BindingKind::Int, BindingKind::Float) | (BindingKind::Float, BindingKind::Int)
-        )
 }
 
 pub(super) fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<()> {

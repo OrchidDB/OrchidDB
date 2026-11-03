@@ -52,7 +52,12 @@ impl<'a> LoweringContext<'a> {
             let boxed = left.plan.schema().fields().iter().zip(right.plan.schema().fields())
                 .enumerate().filter_map(|(i, (a, b))| (a.data_type() != b.data_type()).then_some(i))
                 .collect::<BTreeSet<_>>();
-            cypher_boxed = !boxed.is_empty();
+            // Collections can contain maps whose insertion order differs even
+            // when their Arrow types match. Compare recursive language keys.
+            cypher_boxed = !boxed.is_empty() || left.plan.schema().fields().iter()
+                .any(|field| native_values::is_value(field.data_type()) || matches!(field.data_type(),
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                    | DataType::Struct(_) | DataType::Map(_, _)));
             for input in [&mut left, &mut right] {
                 if !cypher_boxed { break; }
                 let expressions = input.plan.schema().fields().iter().enumerate().map(|(i, field)| {

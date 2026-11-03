@@ -25,7 +25,7 @@ fn rewrite_body(body: &mut ast::SetExpr, occupied: &str) -> SqlResult<()> {
     }
     let ast::SetExpr::Select(select) = body else { return Ok(()) };
     let mut expansions = Vec::new();
-    for (index, item) in select.projection.iter().enumerate() {
+    for item in &mut select.projection {
         let expr = match item {
             ast::SelectItem::ExprWithAlias { expr, .. } | ast::SelectItem::UnnamedExpr(expr) => expr,
             _ => continue,
@@ -38,7 +38,8 @@ fn rewrite_body(body: &mut ast::SetExpr, occupied: &str) -> SqlResult<()> {
         let [ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(array))] = args.args.as_slice() else {
             return Err(SqlError::Unsupported("Trino projection UNNEST requires one array".into()));
         };
-        expansions.push((index, array.clone()));
+        let array = array.clone();
+        expansions.push((expr, array));
     }
     if expansions.is_empty() { return Ok(()) }
     let mut suffix = 0;
@@ -54,22 +55,16 @@ fn rewrite_body(body: &mut ast::SetExpr, occupied: &str) -> SqlResult<()> {
     }).collect::<Vec<_>>().join(", ");
     let columns = (0..expansions.len()).map(|i| format!("{prefix}_value_{i}"))
         .collect::<Vec<_>>();
-    let sql = format!("SELECT * FROM UNNEST({arguments}) AS {prefix}({})", columns.join(", "));
-    let mut statements = Parser::parse_sql(&TrinoParser, &sql)
+    let sql = format!("UNNEST({arguments}) AS {prefix}({})", columns.join(", "));
+    let relation = Parser::new(&TrinoParser).try_with_sql(&sql)
+        .and_then(|mut parser| parser.parse_table_factor())
         .map_err(|e| SqlError::Unsupported(e.to_string()))?;
-    let ast::Statement::Query(parsed) = statements.remove(0) else { unreachable!() };
-    let ast::SetExpr::Select(mut parsed) = *parsed.body else { unreachable!() };
-    // A single multi-array UNNEST zips arrays and pads shorter arrays with NULL,
-    // matching the shared plan's row expansion rather than a Cartesian product.
-    select.from.append(&mut parsed.from);
-    for ((index, _), column) in expansions.into_iter().zip(columns) {
-        let replacement = ast::Expr::CompoundIdentifier(vec![
+    // One multi-array UNNEST zips arrays and pads shorter arrays with NULL.
+    select.from.push(ast::TableWithJoins { relation, joins: vec![] });
+    for ((expr, _), column) in expansions.into_iter().zip(columns) {
+        *expr = ast::Expr::CompoundIdentifier(vec![
             ast::Ident::new(&prefix), ast::Ident::new(column),
         ]);
-        match &mut select.projection[index] {
-            ast::SelectItem::ExprWithAlias { expr, .. } | ast::SelectItem::UnnamedExpr(expr) => *expr = replacement,
-            _ => unreachable!(),
-        }
     }
     Ok(())
 }
