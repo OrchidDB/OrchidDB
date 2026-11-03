@@ -17,6 +17,7 @@ use datafusion::{
 
 pub mod connectors;
 mod typed;
+mod unnest;
 pub(super) use typed::specialize;
 
 #[derive(Debug)]
@@ -322,6 +323,7 @@ impl DialectAdapter for TrinoAdapter {
         )?))
     }
     fn rewrite_query(&self, query: &mut ast::Query) -> SqlResult<()> {
+        unnest::rewrite(query)?;
         if let Some(ast::LimitClause::LimitOffset {
             limit,
             offset: Some(_),
@@ -459,6 +461,7 @@ impl DialectAdapter for TrinoAdapter {
                     | "element_at"
                     | "slice"
                     | "sequence"
+                    | "unnest"
                     | "row_number"
                     | "rank"
                     | "dense_rank"
