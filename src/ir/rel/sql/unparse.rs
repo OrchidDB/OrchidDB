@@ -44,6 +44,8 @@ fn prepare_region(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::r
     }
     let plan = super::super::pipeline::typed_sql(plan, context, "adapter.projection_cleanup", false, |p| Ok(super::cleanup::simplify(p)?))?;
     let plan = super::lowering::transform_relations(plan, dialect)?;
+    // Relation expansion may introduce new struct constructors and accessors.
+    let plan = if dialect.name() == "trino" { super::trino::specialize(plan)? } else { plan };
     crate::ir::rules::RuleSession::new(context.clone()).invalidate();
     let plan = crate::ir::rel::pipeline::placement(plan, context).map_err(|e| match e {
         crate::ir::rel::RelError::RulePipeline(error) => SqlError::RulePipeline(error),

@@ -608,6 +608,11 @@ pub(crate) fn transform_relations(
             let lowered = if let Some(statement) = super::table_function_source::lower(&node, dialect)
                 .map_err(|e| DataFusionError::Plan(e.to_string()))? {
                 Ok(Some(RelationLowering::Sql(statement)))
+            } else if matches!(&node, LogicalPlan::Extension(extension)
+                if extension.node.as_any().downcast_ref::<TableFunction>().is_some_and(|function| function.native_list.is_some())) {
+                // Expand native rows before dialect expression specialization;
+                // late unparser rewrites bypass typed struct and field codecs.
+                lower_relation(&node, &LoweringContext { dialect, mode: LoweringMode::InIsland })
             } else if dialect == SqlDialect::DuckDb {
                 super::duckdb_iceberg::lower(&node).map(|s| s.map(RelationLowering::Sql))
             } else if matches!(dialect, SqlDialect::Custom(_)) {

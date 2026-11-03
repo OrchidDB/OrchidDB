@@ -101,8 +101,18 @@ impl TableFunction {
                 "native row function schema differs from declared output".into(),
             ));
         }
+        // A nullable native row or field can emit NULL even in an inner
+        // expansion. Retain that evidence in the declared output contract.
+        let output = fields.iter().zip(self.output_schema.fields()).map(|(native, declared)|
+            declared.as_ref().clone().with_nullable(declared.is_nullable() || item.is_nullable() || native.is_nullable())
+        ).collect::<Vec<_>>();
+        self.output_schema = Arc::new(datafusion::common::DFSchema::try_from(
+            arrow::datatypes::Schema::new(output),
+        )?);
         self.native_list = Some(expression);
-        Ok(self)
+        let outer = self.outer;
+        let ordinality = self.ordinality.clone();
+        self.with_expansion(outer, ordinality)
     }
     pub fn with_expansion(mut self, outer: bool, ordinality: Option<String>) -> Result<Self> {
         use arrow::datatypes::{DataType, Field, Schema};
@@ -179,8 +189,20 @@ impl TableFunction {
         let list = datafusion::logical_expr::col(row);
         projection.push(
             if self.outer {
-                super::collections::outer_list(list.clone(), &DataType::List(item.clone()))
-                    .map_err(|e| DataFusionError::Plan(e.to_string()))?
+                // Only the emitted fields are observable. Padding with a row
+                // of typed null fields avoids an opaque null-struct literal.
+                let mut null_fields = Vec::new();
+                for field in fields {
+                    null_fields.push(lit(field.name().clone()));
+                    null_fields.push(lit(datafusion::common::ScalarValue::try_from(field.data_type())?));
+                }
+                let null_row = datafusion::functions::core::expr_fn::named_struct(null_fields);
+                let empty = list.clone().is_null().or(
+                    datafusion::functions_nested::expr_fn::array_length(list.clone()).eq(lit(0_u64)),
+                );
+                datafusion::logical_expr::when(empty,
+                    datafusion::functions_nested::expr_fn::make_array(vec![null_row]))
+                    .otherwise(list.clone())?
             } else {
                 list.clone()
             }
@@ -245,13 +267,9 @@ impl TableFunction {
             fields
                 .iter()
                 .zip(self.output_schema.fields())
-                .enumerate()
-                .map(|(index, (_, output))| {
-                    native_row_field(
-                        datafusion::logical_expr::col(row),
-                        item.data_type(),
-                        index,
-                        output.data_type(),
+                .map(|(field, output)| {
+                    datafusion::functions::core::expr_fn::get_field(
+                        datafusion::logical_expr::col(row), field.name().as_str(),
                     )
                     .alias(output.name())
                 }),
@@ -341,62 +359,6 @@ impl UserDefinedLogicalNodeCore for TableFunction {
         }
         node.with_expansion(self.outer, self.ordinality.clone())
     }
-}
-
-// The generic row-expansion kernel extracts a field after UNNEST. A normal
-// get_field call is incorrectly moved below list-to-struct UNNEST by DF53's
-// leaf-projection rule; this typed native kernel preserves that cardinality
-// boundary while retaining the parent's validity mask.
-fn native_row_field(
-    input: Expr,
-    row_type: &arrow::datatypes::DataType,
-    index: usize,
-    output_type: &arrow::datatypes::DataType,
-) -> Expr {
-    use arrow::array::Array;
-    use datafusion::common::ScalarValue;
-    use datafusion::logical_expr::{
-        ColumnarValue, ScalarUDF, Signature, Volatility, expr_fn::SimpleScalarUDF,
-    };
-    let output_type = output_type.clone();
-    ScalarUDF::from(SimpleScalarUDF::new_with_signature(
-        format!("__orchiddb_row_field_{index}"),
-        Signature::exact(vec![row_type.clone()], Volatility::Immutable),
-        output_type.clone(),
-        Arc::new(move |args| {
-            let scalar = matches!(args[0], ColumnarValue::Scalar(_));
-            let arrays = ColumnarValue::values_to_arrays(args)?;
-            let rows = arrays[0]
-                .as_any()
-                .downcast_ref::<arrow::array::StructArray>()
-                .ok_or_else(|| {
-                    DataFusionError::Internal("row field requires expanded struct".into())
-                })?;
-            let values = (0..rows.len())
-                .map(|i| {
-                    if rows.is_null(i) {
-                        ScalarValue::try_from(&output_type)
-                    } else {
-                        ScalarValue::try_from_array(rows.column(index), i)
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            if scalar {
-                return Ok(ColumnarValue::Scalar(
-                    values
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| DataFusionError::Internal("empty scalar row".into()))?,
-                ));
-            }
-            Ok(ColumnarValue::Array(if values.is_empty() {
-                arrow::array::new_empty_array(&output_type)
-            } else {
-                ScalarValue::iter_to_array(values)?
-            }))
-        }),
-    ))
-    .call(vec![input])
 }
 
 /// Execute a typed SQL template once for each source row, using the operation's

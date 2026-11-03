@@ -218,7 +218,16 @@ fn extract_single_field(base: ColumnarValue, name: ScalarValue) -> Result<Column
             let as_struct_array = as_struct_array(&array)?;
             match as_struct_array.column_by_name(&k) {
                 None => exec_err!("Field {k} not found in struct"),
-                Some(col) => Ok(ColumnarValue::Array(Arc::clone(col))),
+                Some(col) => {
+                    if as_struct_array.null_count() == 0 {
+                        return Ok(ColumnarValue::Array(Arc::clone(col)));
+                    }
+                    // Children may contain valid values underneath a null
+                    // parent. Field access must retain both validity masks.
+                    let nulls = NullBuffer::union(as_struct_array.nulls(), col.nulls());
+                    let data = col.to_data().into_builder().nulls(nulls).build()?;
+                    Ok(ColumnarValue::Array(make_array(data)))
+                }
             }
         }
         (DataType::Struct(_), name, _) => exec_err!(
