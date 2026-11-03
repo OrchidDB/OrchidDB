@@ -79,6 +79,8 @@ pub const CALLS: &[&str] = &[
     "path_extend_after",
     "path_from",
     "path_or_self",
+    "path_pairs",
+    "path_intermediate_pairs",
     "properties",
     "property",
     "recursive_relationship_path",
@@ -162,7 +164,8 @@ pub fn output(operation: &str) -> Output {
         | "quantifier_list"
         | "cypher_nodes"
         | "cypher_relationships"
-        | "cypher_relationship_list" => Output::List,
+        | "cypher_relationship_list"
+        | "path_pairs" | "path_intermediate_pairs" => Output::List,
         _ => Output::Value,
     }
 }

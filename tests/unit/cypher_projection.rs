@@ -605,7 +605,6 @@ fn scalar_lowering_rejects_out_of_range_literals_and_unmaterialized_scopes() {
     }
     for text in [
         "EXISTS {MATCH (n) RETURN n}",
-        "[x IN [1] | x]",
         "[(a)-->(b) | b]",
     ] {
         assert!(
@@ -615,6 +614,12 @@ fn scalar_lowering_rejects_out_of_range_literals_and_unmaterialized_scopes() {
                 .contains("without materialization")
         );
     }
+    // Pure comprehensions retain lexical scope and can now be lowered inside
+    // another lambda without introducing a separate relation.
+    assert!(matches!(
+        lower_expr(&Lowerer::new(), &expr("[x IN [1] | x]")).unwrap(),
+        IrExpr::ListTransform { .. }
+    ));
     let e = Expr::Function {
         name: "abs".into(),
         distinct: true,

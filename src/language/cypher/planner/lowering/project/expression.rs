@@ -366,9 +366,23 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             item: variable.clone(),
             predicate: Box::new(lower_expr(lowerer, predicate)?),
         },
+        Expr::ListComprehension { variable, collection, predicate, map } => {
+            // Collection-local scopes can remain scalar inside another lambda.
+            // Graph expressions below still require relational materialization.
+            let mut list = lower_expr(lowerer, collection)?;
+            if let Some(predicate) = predicate {
+                list = IrExpr::ListFilter {
+                    list: Box::new(list), item: variable.clone(),
+                    predicate: Box::new(lower_expr(lowerer, predicate)?),
+                };
+            }
+            IrExpr::ListTransform {
+                list: Box::new(list), item: variable.clone(),
+                map: Box::new(lower_expr(lowerer, map)?),
+            }
+        }
         Expr::Exists(_)
         | Expr::PatternPredicate(_)
-        | Expr::ListComprehension { .. }
         | Expr::PatternComprehension { .. } => {
             return Err(CypherPlanError::Unsupported(
                 "scoped Cypher expression reached scalar lowering without materialization"

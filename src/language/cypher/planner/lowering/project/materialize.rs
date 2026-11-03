@@ -1230,9 +1230,13 @@ pub(super) fn requires_scoped_materialization(expr: &Expr) -> bool {
     match expr {
         Expr::Exists(_)
         | Expr::PatternPredicate(_)
-        | Expr::ListComprehension { .. }
-        | Expr::PatternComprehension { .. }
-        | Expr::Quantifier { .. } => true,
+        | Expr::PatternComprehension { .. } => true,
+        Expr::ListComprehension { collection, predicate, map, .. } =>
+            requires_scoped_materialization(collection)
+                || predicate.as_deref().is_some_and(requires_scoped_materialization)
+                || requires_scoped_materialization(map),
+        Expr::Quantifier { collection, predicate, .. } =>
+            requires_scoped_materialization(collection) || requires_scoped_materialization(predicate),
         Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => {
             requires_scoped_materialization(expr)
         }

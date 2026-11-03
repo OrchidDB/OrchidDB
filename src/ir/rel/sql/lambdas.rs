@@ -88,7 +88,9 @@ pub(super) fn adapt(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<bool
     let unparser_dialect = dialect.unparser_dialect();
     let mut body = datafusion::sql::unparser::Unparser::new(unparser_dialect.as_ref())
         .expr_to_sql(&encoded)?;
-    super::functions::prepare_ast(&mut body, dialect)?;
+    super::logical_functions::with_expression(&encoded, &lambda.body_schema, dialect, || {
+        super::functions::prepare_ast(&mut body, dialect)
+    })?;
     if let ControlFlow::Break(error) = ast::visit_expressions_mut(&mut body, |expr| {
         if let ast::Expr::Identifier(name) = expr
             && let Some(index) = lambda

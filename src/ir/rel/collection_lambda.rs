@@ -20,6 +20,7 @@ pub(super) struct Lambda {
     pub parameter: String,
     pub accumulator: Option<String>,
     pub body: Expr,
+    pub body_schema: datafusion::common::DFSchemaRef,
     pub captures: Vec<String>,
     pub result: DataType,
     pub source: DataType,
@@ -239,6 +240,12 @@ impl LoweringContext<'_> {
                 Ok(Transformed::no(expr))
             })?
             .data;
+        let mut body_schema = scope.schema().as_ref().clone();
+        for (name, argument) in capture_names.iter().zip(args.iter().skip(1)) {
+            body_schema.merge(&datafusion::common::DFSchema::try_from(Schema::new(vec![
+                Field::new(name, argument.get_type(plan.schema())?, true),
+            ]))?);
+        }
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         (&kind, &parameter, &accumulator, &body, &result).hash(&mut hash);
         let function = Lambda {
@@ -247,6 +254,7 @@ impl LoweringContext<'_> {
             parameter,
             accumulator: accumulator.map(|(_, name)| name),
             body,
+            body_schema: Arc::new(body_schema),
             captures: capture_names,
             result,
             source: source_type,

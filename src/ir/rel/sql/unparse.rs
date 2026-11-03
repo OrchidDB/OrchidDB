@@ -122,6 +122,32 @@ fn prepare_region(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::r
     let plan = strip_identity_projections(plan)?;
     let plan = preserve_postgres_text_extrema(plan, dialect)?;
     let plan = preserve_portable_numeric_types(plan, dialect)?;
+    // The generic unparser cannot emit a VALUES relation inside a query.
+    // Singleton SELECT branches preserve cell expressions, duplicate rows,
+    // and the declared schema (including typed graph-value carriers).
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Values(values) = node else { return Ok(Transformed::no(node)); };
+        if values.values.is_empty() {
+            return Ok(Transformed::yes(LogicalPlan::EmptyRelation(
+                datafusion::logical_expr::EmptyRelation { produce_one_row: false, schema: values.schema },
+            )));
+        }
+        let mut inputs = Vec::with_capacity(values.values.len());
+        for row in values.values {
+            let expressions = row.into_iter().zip(values.schema.iter())
+                .map(|(expr, (qualifier, field))| expr.alias_qualified(qualifier.cloned(), field.name()))
+                .collect();
+            let unit = datafusion::logical_expr::LogicalPlanBuilder::empty(true).build()?;
+            inputs.push(Arc::new(LogicalPlan::Projection(
+                datafusion::logical_expr::Projection::try_new_with_schema(
+                    expressions, Arc::new(unit), values.schema.clone(),
+                )?,
+            )));
+        }
+        let replacement = if inputs.len() == 1 { inputs.pop().unwrap().as_ref().clone() }
+            else { LogicalPlan::Union(datafusion::logical_expr::Union { inputs, schema: values.schema }) };
+        Ok(Transformed::yes(replacement))
+    })?.data;
     // DF's unparser renders an EmptyRelation as a SELECT of typed NULLs,
     // irrespective of produce_one_row. Preserve zero cardinality explicitly.
     let plan = plan.transform_up_with_subqueries(|node| {
@@ -437,10 +463,18 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
         }
         if let Expr::Literal(value, _) = &inner {
+            // Custom adapters own their structured transport, including typed
+            // nulls. The generic unparser cannot render Trino ROW/ARRAY types.
+            if matches!(dialect, SqlDialect::Custom(_))
+                && (super::structured::is_structured(&value.data_type())
+                    || matches!(value.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(..))) {
+                return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
+                    .map_err(|e| DataFusionError::Plan(e.to_string()))?));
+            }
             // DataFusion's generic list unparser loses nested null-list
             // validity (it renders such elements as empty arrays). Use the
             // adapter's recursive, schema-aware literal codec instead.
-            if dialect == SqlDialect::DuckDb && matches!(value, ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) && !value.is_null() {
+            if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) && matches!(value, ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) && !value.is_null() {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
                     .map_err(|e| DataFusionError::Plan(e.to_string()))?));
             }
