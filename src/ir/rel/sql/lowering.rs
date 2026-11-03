@@ -258,6 +258,14 @@ fn lower_table_function_inner(
                 .map(|name| format!("__relation_result.{}", dialect.quote_ident(name))),
         )
         .collect::<Vec<_>>();
+    // The parser's LATERAL-function branch does not consume WITH ORDINALITY.
+    // A lateral derived relation retains correlation and lets the ordinary
+    // table-function parser attach ordinality before the result alias.
+    let lateral_call = if function.ordinality.is_some() {
+        format!("(SELECT * FROM {call})")
+    } else {
+        call.clone()
+    };
     let mut columns = Vec::new();
     let from =
         if let Some(source) = &function.source {
@@ -288,13 +296,13 @@ fn lower_table_function_inner(
             // Bound operations substitute all column references below, making the
             // function arguments literals before the engine prepares this SQL.
             format!(
-                "({source_sql}) AS __relation_source {} JOIN LATERAL {call} AS {result_alias}{}",
+                "({source_sql}) AS __relation_source {} JOIN LATERAL {lateral_call} AS {result_alias}{}",
                 if function.outer { "LEFT" } else { "CROSS" },
                 if function.outer { " ON TRUE" } else { "" }
             )
         } else if function.outer {
             format!(
-                "(SELECT 1) AS __relation_source LEFT JOIN LATERAL {call} AS {result_alias} ON TRUE"
+                "(SELECT 1) AS __relation_source LEFT JOIN LATERAL {lateral_call} AS {result_alias} ON TRUE"
             )
         } else {
             format!("{call} AS {result_alias}")
