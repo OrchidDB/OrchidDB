@@ -773,3 +773,117 @@ pub(crate) fn source_access_cost(
     };
     Some((s.rows?, s.bytes?, ndv, s.work?))
 }
+
+#[cfg(test)]
+mod distribution_contracts {
+    use super::*;
+    use datafusion::logical_expr::{col, lit, expr::{Cast, TryCast, Case}};
+    use arrow::datatypes::DataType;
+
+    fn sample() -> ColumnStatistics {
+        ColumnStatistics {
+            observations: 10, nulls: 2, sample_distinct: 3,
+            estimated_distinct: Some(3.0),
+            frequent: vec![("1".into(), 4), ("2".into(), 3)],
+            histogram: vec!["1".into(), "2".into(), "3".into(), "4".into()],
+            average_width: 8.0, ..Default::default()
+        }
+    }
+    fn close(actual: Option<f64>, expected: f64) {
+        assert!((actual.expect("known estimate")-expected).abs()<1e-12, "{actual:?} != {expected}");
+    }
+    #[test]
+    fn sampled_predicates_handle_nulls_symmetry_duplicates_and_unknowns() {
+        let columns = BTreeMap::from([("x".into(), sample())]);
+        for (expression, expected) in [
+            (col("x").eq(lit(1)), 0.4), (lit(1).eq(col("x")), 0.4),
+            (col("x").not_eq(lit(1)), 0.4),
+            (col("x").lt(lit(3)), 0.5), (lit(3).gt(col("x")), 0.5),
+            (col("x").lt_eq(lit(3)), 0.75), (lit(3).gt_eq(col("x")), 0.75),
+            (col("x").gt(lit(3)), 0.25), (lit(3).lt(col("x")), 0.25),
+            (col("x").gt_eq(lit(3)), 0.5), (lit(3).lt_eq(col("x")), 0.5),
+            (col("x").is_null(), 0.2), (col("x").is_not_null(), 0.8),
+            (col("x").eq(lit(1)).and(col("x").eq(lit(2))), 0.12),
+            (col("x").eq(lit(1)).or(col("x").eq(lit(2))), 0.58),
+            (!col("x").eq(lit(1)), 0.6),
+            (col("x").in_list(vec![lit(1),lit(1),lit(2)],false),0.7),
+            (col("x").in_list(vec![lit(1),lit(1),lit(2)],true),0.3),
+            (Expr::IsTrue(Box::new(col("x").eq(lit(1)))),0.4),
+            (lit(true),1.0), (lit(false),0.0),
+        ] { close(selectivity(&expression,&columns),expected); }
+        for expression in [col("missing").eq(lit(1)), col("x").eq(col("x")),
+            col("x")+lit(1), col("x").in_list(vec![col("x")],false), col("x")] {
+            assert!(selectivity(&expression,&columns).is_none(),"{expression}");
+        }
+        assert!(equality(&ColumnStatistics::default(),"1").is_none());
+        assert!(equality(&sample(),"99").unwrap()>0.0);
+        let fallback=ColumnStatistics {estimated_distinct:None,..sample()};
+        assert!(equality(&fallback,"99").unwrap()>0.0);
+    }
+
+    #[test]
+    fn projections_preserve_distributions_and_distinguish_null_literals() {
+        let state=State { rows:Some(100.0), columns:BTreeMap::from([("x".into(),sample())]),..Default::default() };
+        for expression in [col("x").alias("renamed"),
+            Expr::Cast(Cast::new(Box::new(col("x")),DataType::Float64)),
+            Expr::TryCast(TryCast::new(Box::new(col("x")),DataType::Float64))] {
+            assert_eq!(column(&expression,&state.columns).unwrap().nulls,2);
+        }
+        for value in [ScalarValue::Utf8(Some("quoted\"value".into())),
+            ScalarValue::LargeUtf8(Some("large".into())),ScalarValue::Utf8View(Some("view".into())),
+            ScalarValue::Boolean(Some(true)),ScalarValue::Int64(Some(42)),ScalarValue::Int64(None)] {
+            let stats=projected_column(&lit(value.clone()),&state).unwrap();
+            assert_eq!(stats.nulls,u64::from(value.is_null()));
+            assert_eq!(stats.sample_distinct,u64::from(!value.is_null()));
+            assert_eq!(stats.frequent[0].1,1);
+        }
+        let case=Expr::Case(Case::new(None,vec![(Box::new(col("x").eq(lit(1))),Box::new(lit(1)))],None));
+        close(nonnull(&case,&state.columns),0.4);
+        let stats=projected_column(&case.alias("choice"),&state).unwrap();
+        assert_eq!(stats.nulls,6000);
+        assert_eq!(stats.estimated_distinct,Some(3.0));
+        assert!(projected_column(&(col("x")+lit(1)),&state).is_none());
+        assert!(nonnull(&col("missing"),&state.columns).is_none());
+        close(nonnull(&lit(1).alias("one"),&state.columns),1.0);
+        close(nonnull(&Expr::Cast(Cast::new(Box::new(lit(1)),DataType::Float64)),&state.columns),1.0);
+    }
+
+    #[test]
+    fn correlated_tuple_filters_are_counted_once_and_unknowns_stay_unknown() {
+        let group=GroupStatistics {columns:vec!["x".into(),"y".into()], observations:10,sample_distinct:2,
+            frequent:vec![(vec!["1".into(),"2".into()],8),(vec!["2".into(),"3".into()],2)]};
+        let mut state=State {rows:Some(100.0),groups:vec![group],..Default::default()};
+        let condition=col("x").eq(lit(1)).and(lit(2).eq(col("y")));
+        close(joint_selectivity(&condition,&state),0.8);
+        filter(&mut state,&condition); filter(&mut state,&condition);
+        close(state.rows,80.0);
+        assert!(joint_selectivity(&col("x").eq(lit(1)),&state).is_none());
+        assert!(joint_selectivity(&col("x").gt(lit(1)),&state).is_none());
+        close(joint_selectivity(&col("x").eq(lit(99)).and(col("y").eq(lit(99))),&state),1.0/11.0);
+        let mut state=State {rows:Some(100.0),columns:BTreeMap::from([("x".into(),sample())]),..Default::default()};
+        filter(&mut state,&col("x").eq(lit(1)));
+        filter(&mut state,&col("source.x").eq(lit(1)));
+        close(state.rows,40.0);
+        filter(&mut state,&col("unknown").eq(lit(1)));
+        assert!(state.rows.is_none());
+    }
+
+    #[test]
+    fn join_estimates_follow_skew_and_reordered_tuple_keys() {
+        let single=State {columns:BTreeMap::from([("x".into(),ColumnStatistics {
+            observations:10,sample_distinct:2,frequent:vec![("1".into(),8),("2".into(),2)],..Default::default()
+        })]),..Default::default()};
+        close(join_probability(&single,&single,&[(col("x"),col("x"))]),0.68);
+        close(join_probability(&single,&single,&[]),1.0);
+        assert!(join_probability(&single,&single,&[(lit(1),col("x"))]).is_none());
+        let tuple=State {groups:vec![GroupStatistics {
+            columns:vec!["x".into(),"y".into()],observations:10,sample_distinct:2,
+            frequent:vec![(vec!["1".into(),"2".into()],8),(vec!["2".into(),"3".into()],2)]
+        }],..Default::default()};
+        close(join_probability(&tuple,&tuple,&[(col("y"),col("y")),(col("x"),col("x"))]),0.68);
+        let empty=State {columns:BTreeMap::from([("x".into(),ColumnStatistics::default())]),..Default::default()};
+        assert!(join_probability(&empty,&single,&[(col("x"),col("x"))]).is_none());
+        close(add(Some(9e299),Some(9e299)),1e300);
+        assert!(add(None,Some(1.0)).is_none());
+    }
+}
