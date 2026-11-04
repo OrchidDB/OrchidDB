@@ -11,6 +11,12 @@ fn nullable_collection_type(left: &DataType, right: &DataType) -> Option<DataTyp
     if left == right { return Some(left.clone()); }
     match (left, right) {
         (DataType::Null, kind) | (kind, DataType::Null) => Some(kind.clone()),
+        (DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64,
+         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64) => {
+            // Cypher integers may acquire different Arrow widths during
+            // constant inference. Widen without changing their value domain.
+            Some(DataType::Int64)
+        }
         (DataType::List(left), DataType::List(right)) => Some(DataType::List(Arc::new(
             left.as_ref().clone()
                 .with_data_type(nullable_collection_type(left.data_type(), right.data_type())?)
@@ -301,7 +307,7 @@ impl<'a> LoweringContext<'a> {
                     .collect::<datafusion::common::Result<Vec<_>>>()?;
                 let common = types.iter().try_fold(DataType::Null, |common, kind| {
                     nullable_collection_type(&common, kind).ok_or_else(|| RelError::Unsupported(
-                        "heterogeneous Cypher collection requires runtime values".into(),
+                        format!("heterogeneous Cypher collection requires runtime values ({common:?} and {kind:?})"),
                     ))
                 })?;
                 let values = values.into_iter().zip(types).map(|(value, kind)| {

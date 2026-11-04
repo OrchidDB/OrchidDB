@@ -44,7 +44,7 @@ pub(super) fn capability(lambda: &Lambda, dialect: SqlDialect) -> Result<(), &'s
         return if dialect == SqlDialect::DuckDb { Ok(()) }
             else { Err("List folds require DuckDB completion") };
     }
-    if !matches!(lambda.kind.as_str(), "filter" | "transform" | "any" | "all" | "none" | "single" | "count") {
+    if !matches!(lambda.kind.as_str(), "filter" | "transform" | "any" | "all" | "none" | "single" | "count" | "sum") {
         return Err("Unknown typed list reduction");
     }
     if dialect == SqlDialect::DuckDb || dialect.name() == "trino" { return Ok(()); }
@@ -114,6 +114,16 @@ pub(super) fn adapt(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<bool
             &format!("list_reduce(__arg0, lambda \"{accumulator}\", \"{}\": __arg1)", lambda.parameter),
             &[args[0].clone(), body],
         )?;
+        return Ok(true);
+    }
+    if lambda.kind == "sum" {
+        let ty = dialect.sql_type(&lambda.result)?;
+        let template = match dialect {
+            SqlDialect::DuckDb => format!("list_extract(list_transform([__arg0], lambda __local0: CASE WHEN __local0 IS NULL THEN NULL ELSE CAST(coalesce(list_sum(__local0),0) AS {ty}) END),1)"),
+            SqlDialect::Postgres => format!("(WITH __local0 AS MATERIALIZED (SELECT __arg0 AS items) SELECT CASE WHEN items IS NULL THEN NULL ELSE (SELECT CAST(coalesce(sum(__local1),0) AS {ty}) FROM unnest(items) AS __local2(__local1)) END FROM __local0)"),
+            _ => format!("reduce(__arg0, CAST(0 AS {ty}), (__local0,__local1) -> __local0 + coalesce(__local1,0), __local2 -> __local2)"),
+        };
+        *expr = super::functions::portable_template(&template, &[args[0].clone()], dialect)?;
         return Ok(true);
     }
     if dialect == SqlDialect::Postgres {

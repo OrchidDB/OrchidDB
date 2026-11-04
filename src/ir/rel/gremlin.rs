@@ -183,17 +183,20 @@ pub(super) fn with_empty_count_defaults(
     let mut renamed = Vec::new();
     let mut projections = Vec::new();
     let mut join_exprs = Vec::new();
+    let determinant = key_cols.iter().position(|key|
+        rules::unique_on(correlate_plan, &[col_exact(key)]));
     for (idx, key) in key_cols.iter().enumerate() {
+        if determinant.is_some_and(|index| index != idx) { continue; }
         let alias =
             unique_internal_alias(&aggregated, &BTreeSet::new(), format!("__agg_key_{idx}"));
         projections.push(col_exact(key).alias(&alias));
         let left = col_exact(key);
         let right = col_exact(&alias);
-        join_exprs.push(
+        if determinant.is_none_or(|index| index == idx) { join_exprs.push(
             left.clone()
                 .eq(right.clone())
                 .or(left.is_null().and(right.is_null())),
-        );
+        ); }
         renamed.push(alias);
     }
     for agg in aggs {

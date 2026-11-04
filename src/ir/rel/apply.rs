@@ -606,6 +606,9 @@ pub(super) fn with_row_identity(
     // Keep volatile sources on the materialized occurrence-identity path.
     if !key_cols.is_empty() && rules::unique_on(&plan, &key_cols.iter().map(col_exact).collect::<Vec<_>>())
         && super::list_comparison::immutable_source_plan(&plan) {
+        if let Some(key) = key_cols.iter().find(|key| rules::unique_on(&plan, &[col_exact(*key)])) {
+            *key_cols = vec![key.clone()];
+        }
         return Ok(plan);
     }
     let key = unique_internal_alias(&plan, cleanup, "__apply_corr_key_row");

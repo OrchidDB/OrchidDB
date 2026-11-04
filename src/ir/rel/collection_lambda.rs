@@ -85,7 +85,11 @@ impl LoweringContext<'_> {
     }
 
     pub(super) fn lower_sql_lambda(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        let sum_item = IrExpr::Binding("__sum_item".into());
         let (kind, list, item, body) = match expr {
+            IrExpr::Call { name, args } if name == "list_sum" && args.len() == 1 => {
+                ("sum", &args[0], "__sum_item", &sum_item)
+            }
             IrExpr::ListReduce { collection, item, map, .. } => {
                 ("reduce", collection.as_ref(), item.as_str(), map.as_ref())
             }
@@ -116,6 +120,11 @@ impl LoweringContext<'_> {
             _ => return Err(RelError::Unsupported("Expected list lambda".into())),
         };
         let source = self.lower_expr(plan, list)?;
+        let source_type = source.get_type(plan.schema())?;
+        let source = if kind == "sum" && (source_type == DataType::Null
+            || matches!(&source_type, DataType::List(field) if field.data_type() == &DataType::Null)) {
+            source.cast_to(&DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), plan.schema())?
+        } else { source };
         let source = if !matches!(source.get_type(plan.schema())?, DataType::List(_)) {
             native_values::typed::call(
                 if matches!(kind, "transform" | "filter" | "reduce") {
@@ -178,7 +187,7 @@ impl LoweringContext<'_> {
             }
         });
         let source_body = body;
-        let body = if matches!(kind, "transform" | "reduce") {
+        let body = if matches!(kind, "transform" | "reduce" | "sum") {
             self.lower_expr(&scope, &source_body)?
         } else {
             self.lower_case_condition(&scope, &source_body)?
@@ -200,6 +209,11 @@ impl LoweringContext<'_> {
             body
         };
         let result = match kind {
+            "sum" => match element.data_type() {
+                DataType::Null | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => DataType::Int64,
+                DataType::Float32 | DataType::Float64 => DataType::Float64,
+                other => return Err(RelError::Unsupported(format!("list_sum requires a signed integer or floating-point list, got {other}"))),
+            },
             "transform" => DataType::List(Arc::new(Field::new(
                 "item",
                 body.get_type(scope.schema())?,

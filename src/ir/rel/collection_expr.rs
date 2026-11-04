@@ -64,6 +64,10 @@ impl<'a> LoweringContext<'a> {
         name: &str,
         args: &[IrExpr],
     ) -> RelResult<Expr> {
+        if normalize_function_name(name) == "list_sum"
+            && let Some(expr) = self.lower_dynamic_collection_function(plan, name, args)? {
+            return Ok(expr);
+        }
         if let Some(value) = constant_collection_function_value(name, args)? {
             return Ok(constant_result_expr(
                 &value,
@@ -87,6 +91,9 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<Option<Expr>> {
         let normalized = normalize_function_name(name);
         match normalized.as_str() {
+            "list_sum" if args.len() == 1 => Ok(Some(self.lower_sql_lambda(plan, &IrExpr::Call {
+                name: "list_sum".into(), args: args.to_vec(),
+            })?)),
             "list_append" | "array_append" | "array_push_back" => {
                 let [items, item] = args else {
                     return Ok(None);

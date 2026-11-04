@@ -340,9 +340,17 @@ impl LoweringContext<'_> {
                 {
                     return self.lower_first_distinct_collect(input, group, &aggs[0]);
                 }
-                let mut group_exprs = apply_correlation_key_columns(&input.plan)
+                let correlation_keys = apply_correlation_key_columns(&input.plan);
+                let correlation_determinant = if group.is_empty() && !aggs.is_empty()
+                    && aggs.iter().all(|agg| matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none()) {
+                    self.correlate_plan.as_ref().and_then(|correlated|
+                        correlation_keys.iter().position(|key| rules::unique_on(correlated, &[col_exact(key)])))
+                } else { None };
+                let mut group_exprs = correlation_keys
                     .iter()
-                    .map(|key| col_exact(key).alias(key))
+                    .enumerate()
+                    .filter(|(index, _)| correlation_determinant.is_none_or(|key| key == *index))
+                    .map(|(_, key)| col_exact(key).alias(key))
                     .collect::<Vec<_>>();
                 let sql_native_aggregates = self.language == Language::Cypher
                     && self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative;
@@ -490,7 +498,8 @@ impl LoweringContext<'_> {
                                 };
                                 let operand = self.lower_distinct_count_operand(&input.plan, arg)?;
                                 datafusion::functions_aggregate::count::count_distinct(
-                                    if cypher_keys && self.options.native_values {
+                                    if cypher_keys && self.options.native_values
+                                        && !language_functions::native_grouping_type(&operand.get_type(input.plan.schema())?) {
                                         super::varlen::case_when(operand.clone().is_null(), lit(ScalarValue::Utf8(None)), native_values::key_expr(operand, true))
                                     }
                                     else if cypher_keys { language_functions::key(operand, &input.plan)? } else { operand },

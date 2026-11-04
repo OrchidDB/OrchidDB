@@ -140,7 +140,8 @@ impl<'a> LoweringContext<'a> {
             ApplyKind::Scalar | ApplyKind::Optional => true,
             ApplyKind::Inner => returning_subquery || gremlin::has_per_input_barrier(right)
                 || (self.language == Language::Gremlin && !outputs.iter().any(|name| name == "current")),
-            ApplyKind::Semi | ApplyKind::Anti => key_cols.is_empty() || self.language == Language::Gremlin,
+            ApplyKind::Semi | ApplyKind::Anti => key_cols.is_empty() || self.language == Language::Gremlin
+                || key_cols.iter().any(|key| plan_column_type(&left_plan, key).is_some_and(|ty| ty.is_nested() || ty == DataType::Null)),
         };
         let left_plan = if per_row_identity && first_correlate_bindings(right).is_some() {
             let barrier_id = self.scan_counter;
@@ -621,7 +622,13 @@ pub(super) fn with_apply_correlation_keys(
     for (idx, key) in key_cols.iter().enumerate() {
         let alias = unique_internal_alias(&plan, &cleanup, format!("__apply_corr_key_{idx}"));
         cleanup.insert(alias.clone());
-        projections.push(col_exact(key).alias(alias.clone()));
+        let value = col_exact(key);
+        // SQL grouping/join operators require a concrete type even when a
+        // correlation binding is an untyped null. Its value stays null.
+        let value = if plan_column_type(&plan, key) == Some(DataType::Null) {
+            value.cast_to(&DataType::Int64, plan.schema())?
+        } else { value };
+        projections.push(value.alias(alias.clone()));
         aliases.push(alias);
     }
     let plan = LogicalPlanBuilder::from(plan)
@@ -732,6 +739,8 @@ pub(super) fn prepare_apply_join_inputs(
     let join_exprs = key_pairs
         .into_iter()
         .map(|(left_key, right_key)| {
+            let nested = left.schema().field_with_unqualified_name(&left_key)
+                .is_ok_and(|field| field.data_type().is_nested());
             // A non-null key needs only equality, exposing a hash-join key
             // even when other correlations require null-safe matching.
             // In particular the per-occurrence row number is never null.
@@ -741,7 +750,11 @@ pub(super) fn prepare_apply_join_inputs(
                     .is_ok_and(|index| proven_non_null.contains(&index));
             let left = col_exact(left_key);
             let right = col_exact(right_key);
-            if non_null {
+            if nested {
+                // A non-null collection may contain null elements. Correlation
+                // matches the original value, including those nested nulls.
+                Expr::BinaryExpr(BinaryExpr::new(Box::new(left), Operator::IsNotDistinctFrom, Box::new(right)))
+            } else if non_null {
                 left.eq(right)
             } else {
                 left.clone().eq(right.clone()).or(left.is_null().and(right.is_null()))

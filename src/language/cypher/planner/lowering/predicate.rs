@@ -75,42 +75,7 @@ pub(crate) fn lower_exists_apply(
     kind: ApplyKind,
 ) -> CypherPlanResult<Node> {
     let right = lowerer.with_preserved_scope(|lowerer| {
-        lowerer.with_child_traversal(CypherTraversalKind::ExistsSubquery, |lowerer| {
-            if let Some(query) = &exists.query {
-                lowerer.lower_query_with_unions(query).map(|(node, _)| node)
-            } else {
-                let mut right = Node::GraphCorrelate {
-                    bindings: lowerer.visible_fields(),
-                };
-                let history = exists
-                    .patterns
-                    .iter()
-                    .any(|part| !part.element.chains.is_empty())
-                    .then(|| lowerer.synthetic("exists_history"));
-                for part in &exists.patterns {
-                    right = pattern::lower_pattern_part(
-                        lowerer,
-                        right,
-                        part,
-                        false,
-                        history.as_deref(),
-                        false,
-                    )?;
-                }
-                if let Some(predicate) = &exists.predicate {
-                    right = lowerer.with_child_traversal(
-                        CypherTraversalKind::WherePredicate,
-                        |lowerer| {
-                            let right = lower_where_predicate(lowerer, right, predicate)?;
-                            lowerer.record_current_imports(lowerer.visible_fields());
-                            lowerer.record_current_correlation(lowerer.visible_fields());
-                            Ok(right)
-                        },
-                    )?;
-                }
-                Ok(right)
-            }
-        })
+        project::lower_exists_right_plan(lowerer, exists)
     })?;
     Ok(Node::GraphApply {
         kind,

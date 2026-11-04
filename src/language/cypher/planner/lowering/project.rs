@@ -17,7 +17,7 @@ use aliases::{projection_aliases, shadowed_projection_fields, substitute_project
 mod materialize;
 mod constant_quantifier;
 mod quantifier_domains;
-pub(crate) use materialize::lower_expr_with_input;
+pub(crate) use materialize::{lower_exists_right_plan, lower_expr_with_input};
 use materialize::requires_scoped_materialization;
 
 use crate::ir::expr::{AggCall, AggKind, BinaryOp as IrBinaryOp, IrExpr, Lit, StringOp};

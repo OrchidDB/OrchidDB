@@ -40,6 +40,7 @@ pub(super) fn lower_aggregate(
             }
             for item in &body.items {
                 validate_expression_scope(lowerer, &item.expr, "aggregate projection expression")?;
+                let original_refs = free_variable_names(&item.expr);
                 let (next, expr) = materialize_pre_aggregate_expr(lowerer, input, &item.expr)?;
                 input = next;
                 // Scoped expressions can introduce temporary result bindings
@@ -47,8 +48,8 @@ pub(super) fn lower_aggregate(
                 // columns for grouping, even though they are not user-visible
                 // projection names. Keep them in this aggregation's local
                 // scope so rewriting does not treat them as constants.
-                for binding in free_variable_names(&expr) {
-                    lowerer.add_visible(binding);
+                for binding in free_variable_names(&expr).difference(&original_refs) {
+                    lowerer.add_visible(binding.clone());
                 }
                 let alias = item
                     .alias

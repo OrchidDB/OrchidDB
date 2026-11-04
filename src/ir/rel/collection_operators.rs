@@ -384,15 +384,6 @@ impl<'a> LoweringContext<'a> {
             .enumerate()
             .map(|(index, _)| format!("__w_collect_key_{index}"))
             .collect::<Vec<_>>();
-        let group_exprs = correlation_keys
-            .iter()
-            .zip(&right_key_aliases)
-            .map(|(key, alias)| col_exact(key).alias(alias))
-            .collect::<Vec<_>>();
-        let grouped = LogicalPlanBuilder::from(input.plan.clone())
-            .aggregate(group_exprs, vec![list_expr.alias("__w_collect_values")])?
-            .build()?;
-
         // Reintroduce correlated input rows whose collection became empty
         // after UNWIND/filter. Using distinct correlation identities prevents
         // the inner result from multiplying duplicate outer rows.
@@ -409,6 +400,21 @@ impl<'a> LoweringContext<'a> {
                 "GraphCollect correlation keys are unavailable from the outer input".into(),
             ));
         }
+        // Group by a proved occurrence determinant when available. Correlated
+        // payload values remain on the left and need no equality/grouping work.
+        let determinant = correlation_keys.iter().position(|key|
+            rules::unique_on(correlated, &[col_exact(key)]));
+        let group_exprs = correlation_keys
+            .iter()
+            .zip(&right_key_aliases)
+            .enumerate()
+            .filter(|(index, _)| determinant.is_none_or(|key| key == *index))
+            .map(|(_, (key, alias))| col_exact(key).alias(alias))
+            .collect::<Vec<_>>();
+        let grouped = LogicalPlanBuilder::from(input.plan.clone())
+            .aggregate(group_exprs, vec![list_expr.alias("__w_collect_values")])?
+            .build()?;
+
         let base = LogicalPlanBuilder::from(correlated.clone())
             .project(correlation_keys.iter().map(col_exact).collect::<Vec<_>>())?
             .build()?;
@@ -424,7 +430,12 @@ impl<'a> LoweringContext<'a> {
         let join_conditions = correlation_keys
             .iter()
             .zip(&right_key_aliases)
-            .map(|(left, right)| col_exact(left).eq(col_exact(right)))
+            .enumerate()
+            .filter(|(index, _)| determinant.is_none_or(|key| key == *index))
+            .map(|(_, pair)| pair)
+            .map(|(left, right)| Expr::BinaryExpr(BinaryExpr::new(
+                Box::new(col_exact(left)), Operator::IsNotDistinctFrom, Box::new(col_exact(right)),
+            )))
             .collect::<Vec<_>>();
         let joined = LogicalPlanBuilder::from(base)
             .join_on(grouped, JoinType::Left, join_conditions)?
@@ -824,12 +835,17 @@ impl<'a> LoweringContext<'a> {
         bind: &str,
         outer: bool,
     ) -> RelResult<LoweredNode> {
-        let list_expr = if let IrExpr::List(_) = input_expr {
-            self.lower_list_operand(&input.plan, input_expr)?
-        } else {
-            self.lower_list_operand(&input.plan, input_expr)?
-        };
-        let list_expr=if self.options.native_values && self.language==Language::Cypher
+        let list_expr = self.lower_list_operand(&input.plan, input_expr)?;
+        // An untyped null has no items. Give UNNEST a concrete list type
+        // without routing the value through a runtime collection decoder.
+        let list_type = list_expr.get_type(input.plan.schema())?;
+        let list_expr = if list_type == DataType::Null
+            || matches!(&list_type, DataType::List(field) if field.data_type() == &DataType::Null) {
+            datafusion::logical_expr::cast(
+                list_expr,
+                DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
+            )
+        } else if self.options.native_values && self.language==Language::Cypher
             && !matches!(list_expr.get_type(input.plan.schema())?,DataType::List(_)|DataType::LargeList(_)|DataType::FixedSizeList(..)) {
             native_values::typed::call("items", vec![list_expr])
         } else {list_expr};

@@ -225,6 +225,11 @@ pub(super) fn materialize_expr(
             collection,
             map,
         } => {
+            if requires_scoped_materialization(map) {
+                return materialize_list_comprehension(
+                    lowerer, input, variable, collection, None, map,
+                );
+            }
             let (input, collection) = materialize_expr(lowerer, input, collection)?;
             Ok((
                 input,
@@ -240,6 +245,16 @@ pub(super) fn materialize_expr(
             collection,
             predicate,
         } => {
+            if requires_scoped_materialization(predicate) {
+                return materialize_list_comprehension(
+                    lowerer,
+                    input,
+                    variable,
+                    collection,
+                    Some(predicate),
+                    &Expr::Variable(variable.clone()),
+                );
+            }
             let (input, collection) = materialize_expr(lowerer, input, collection)?;
             Ok((
                 input,
@@ -1183,13 +1198,23 @@ pub(super) fn quantifier_result_expr(
     }
 }
 
-pub(super) fn lower_exists_right_plan(
+pub(crate) fn lower_exists_right_plan(
     lowerer: &mut Lowerer,
     exists: &ExistsSubquery,
 ) -> CypherPlanResult<Node> {
     lowerer.with_child_traversal(CypherTraversalKind::ExistsSubquery, |lowerer| {
         if let Some(query) = &exists.query {
-            lowerer.lower_query_with_unions(query).map(|(node, _)| node)
+            let (mut node, _) = lowerer.lower_query_with_unions(query)?;
+            // Presence consumes rows, not returned values. Keep operators that
+            // change cardinality, but discard result formatting and pure aliases.
+            loop {
+                node = match node {
+                    Node::GraphReturn { input, .. } => *input,
+                    Node::GraphProject { items, input, .. }
+                        if items.iter().all(|item| matches!(item.expr, IrExpr::Binding(_) | IrExpr::Lit(_))) => *input,
+                    other => return Ok(other),
+                };
+            }
         } else {
             let mut right = Node::GraphCorrelate {
                 bindings: lowerer.visible_fields(),
