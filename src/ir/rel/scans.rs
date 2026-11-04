@@ -214,7 +214,9 @@ impl<'a> LoweringContext<'a> {
         if (self.language == Language::Cypher || (self.options.native_values && self.language == Language::Gremlin)) && !rows.is_empty()
             && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()
                 && (self.language != Language::Cypher
-                    || collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none())) {
+                    || collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none())
+                && (self.language != Language::Cypher
+                    || rows.iter().filter_map(|row| row.get(i)).any(|value| !matches!(value, Value::Null)))) {
             let mut ordinal = "__orchid_values_ordinal".to_owned();
             while bindings.contains(&ordinal) { ordinal.push('_'); }
             let mut plans = rows.iter().enumerate().map(|(index, row)| {

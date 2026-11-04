@@ -11,6 +11,9 @@ async fn collected_map_field_keeps_nulls_order_and_empty_groups() {
         ("UNWIND [2,null,1] AS x WITH x ORDER BY x WITH head(collect({v:x})) AS m RETURN m.v", "1"),
         ("UNWIND [] AS x WITH head(collect({v:x})) AS m RETURN m.v", ""),
         ("UNWIND [null,null] AS x WITH head(collect({v:x})) AS m RETURN m.v", ""),
+        ("UNWIND [null] AS x WITH head(collect({v:x})) AS m RETURN m.v", ""),
+        ("UNWIND [null,null] AS x RETURN count(x)", "0"),
+        ("UNWIND [null,null] AS x RETURN count(*)", "2"),
         ("UNWIND [1,2] AS x WITH head(collect({v:x,unused:42})) AS m RETURN m.missing", ""),
         ("UNWIND [1,2] AS x WITH head(collect({v:x})) AS m RETURN m.v AS a,m.v AS b", "1|1"),
     ] {
