@@ -1,6 +1,10 @@
 //! Finite physical discriminator domains. Unknown is never an empty domain.
 use super::*;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_query_domains.rs"]
+mod domain_contracts;
+
 pub(super) fn strings(plan: &LogicalPlan, name: &str) -> Option<BTreeSet<String>> {
     let index = plan
         .schema()
