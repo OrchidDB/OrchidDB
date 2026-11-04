@@ -211,7 +211,7 @@ impl<'a> LoweringContext<'a> {
         // Cypher lists may use homogeneous Arrow arrays. Gremlin collections
         // retain their native carrier: integer widths are observable, and inject
         // can union a collection traverser with a scalar traverser.
-        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) && !rows.is_empty()
+        if (self.language == Language::Cypher || (self.options.native_values && self.language == Language::Gremlin)) && !rows.is_empty()
             && (0..bindings.len()).any(|i| homogeneous_scalar_type(rows.iter().filter_map(|row|row.get(i))).is_none()
                 && (self.language != Language::Cypher
                     || collections::uniform_list_type(rows.iter().filter_map(|row|row.get(i))).is_none())) {
