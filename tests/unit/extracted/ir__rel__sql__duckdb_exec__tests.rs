@@ -104,3 +104,34 @@ fn driver_list_offsets_preserve_null_empty_and_sliced_large_lists() {
         }
     }
 }
+
+#[test]
+fn file_backed_executors_share_committed_data_and_survive_reopening() {
+    let path=std::env::temp_dir().join(format!("orchid-coverage-file-session-{}-{}.duckdb",std::process::id(),NEXT_SCAN.fetch_add(1,Ordering::Relaxed)));
+    {
+        let mut first=DuckDbExecutor::open(&path).unwrap();
+        first.run(&["CREATE TABLE persistent_values(v BIGINT)".into(),"INSERT INTO persistent_values VALUES (7), (NULL)".into()],"SELECT 1").unwrap();
+        let mut second=DuckDbExecutor::open(&path).unwrap();
+        assert_eq!(second.run(&[],"SELECT v FROM persistent_values ORDER BY v NULLS LAST").unwrap(),vec![vec![SqlValue::Int(7)],vec![SqlValue::Null]]);
+        first.begin().unwrap();
+        first.run(&[],"INSERT INTO persistent_values VALUES (9)").unwrap();
+        first.rollback().unwrap();
+    }
+    {
+        let mut reopened=DuckDbExecutor::open(&path).unwrap();
+        assert_eq!(reopened.run(&[],"SELECT count(*) FROM persistent_values").unwrap(),vec![vec![SqlValue::Int(2)]]);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn lost_session_never_silently_opens_an_empty_replacement_database() {
+    let mut executor=DuckDbExecutor::new();
+    executor.lost_connection=true;
+    assert!(executor.connection.is_none());
+    for _ in 0..2 {
+        let error=executor.run(&[],"SELECT 1").unwrap_err().to_string();
+        assert!(error.contains("session was lost after interruption"),"{error}");
+        assert!(executor.connection.is_none());
+    }
+}
