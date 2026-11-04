@@ -203,6 +203,9 @@ impl DialectAdapter for TrinoAdapter {
                 ScalarValue::Float32(Some(v)) => string(&v.to_string()),
                 ScalarValue::Float64(Some(v)) => string(&v.to_string()),
                 ScalarValue::Boolean(Some(v)) => v.to_string(),
+                // Trino parses bare integers as BIGINT before applying CAST.
+                // The upper UINT64 range therefore needs a decimal text input.
+                ScalarValue::UInt64(Some(v)) if *v > i64::MAX as u64 => string(&v.to_string()),
                 _ if ty.is_integer() => value.to_string(),
                 ScalarValue::Decimal128(..)
                 | ScalarValue::Date32(_)
@@ -401,6 +404,11 @@ impl DialectAdapter for TrinoAdapter {
                 }
 
                 let name = f.name.to_string().trim_matches('"').to_ascii_lowercase();
+                if name == "first_value" && f.over.is_none()
+                    && f.null_treatment == Some(ast::NullTreatment::IgnoreNulls) {
+                    // ARBITRARY already selects a non-null representative.
+                    f.null_treatment = None;
+                }
                 let renamed = match name.as_str() {
                     "character_length" | "char_length" => "length",
                     "btrim" => "trim",

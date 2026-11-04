@@ -250,6 +250,21 @@ impl Context {
         Ok(())
     }
     pub fn decode(&mut self, text: &str) -> Result<Value, String> {
+        // A source can nest a typed graph descriptor inside a collected list.
+        // Restore the canonical carrier before scalar evaluation, preserving the
+        // descriptor's graph context exactly as at the final result boundary.
+        if text.starts_with(crate::execution::graph_values::ELEMENT_PREFIX)
+            || text.starts_with(crate::execution::graph_values::PATH_PREFIX)
+        {
+            let cell = serde_json::json!({super::FIELD: text});
+            let scalar = crate::federation::json_scalar(&cell, &value_type())?;
+            let array = crate::execution::graph_values::decode_array(
+                scalar.to_array().map_err(|e| e.to_string())?,
+            )?;
+            let scalar = ScalarValue::try_from_array(&array, 0).map_err(|e| e.to_string())?;
+            let canonical = crate::federation::scalar_json(&scalar).map_err(|e| e.to_string())?;
+            return super::from_json(&canonical, self);
+        }
         let Some(text) = text.strip_prefix("g1:") else {
             return decode(text);
         };

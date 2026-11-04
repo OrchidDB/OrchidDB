@@ -57,7 +57,8 @@ impl<'a> LoweringContext<'a> {
             } else if let Some(star_cols) = star_expansion_columns(plan, field) {
                 projections.extend(star_cols);
             } else if let Some(shape) = has_binding_shape(plan, field) {
-                if self.language == Language::Cypher && self.options.mapping.is_none() {
+                if self.language == Language::Cypher
+                    && (self.options.mapping.is_none() || self.correlate_plan.is_some()) {
                     projections.extend(self.graph_return_columns(plan, field)?);
                     continue;
                 }

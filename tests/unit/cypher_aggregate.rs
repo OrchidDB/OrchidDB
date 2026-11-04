@@ -471,6 +471,6 @@ fn legacy_typed_negation_and_label_predicates_retain_their_operations() {
         None,
     )
     .unwrap();
-    assert!(matches!(ir,IrExpr::Call{name,..} if name=="in"));
+    assert!(matches!(ir,IrExpr::Call{name,args} if name=="cypher_has_label" && args.len()==2));
     assert_eq!(rewrite.aggs[0].kind, AggKind::CollectNonNull);
 }

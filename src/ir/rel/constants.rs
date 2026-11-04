@@ -184,6 +184,8 @@ pub(super) fn constant_fold_result_expr(value: &Value, language: Language) -> Ex
         }
         Value::Int(value) | Value::Long(value) => lit(*value),
         Value::UInt32(value) => lit(*value as i64),
+        Value::UInt64(value) if matches!(language, Language::Cypher | Language::Gql) =>
+            lit(ScalarValue::UInt64(Some(*value))),
         Value::UInt64(value) => match i64::try_from(*value) {
             Ok(value) => lit(value),
             Err(_) => lit(value.to_string()),
@@ -554,6 +556,25 @@ pub(super) fn constant_result_expr(
     language: Language,
     context: DisplayContext,
 ) -> Expr {
+    if matches!(language, Language::Cypher | Language::Gql) {
+        // A scalar collection result remains a scalar when folding is disabled.
+        // Formatting belongs only to the legacy collection display boundary.
+        let scalar = match value {
+            Value::Bool(value) => Some(ScalarValue::Boolean(Some(*value))),
+            Value::Byte(value) => Some(ScalarValue::Int8(Some(*value))),
+            Value::UInt8(value) => Some(ScalarValue::UInt8(Some(*value))),
+            Value::Short(value) => Some(ScalarValue::Int16(Some(*value))),
+            Value::UInt16(value) => Some(ScalarValue::UInt16(Some(*value))),
+            Value::Int(value) | Value::Long(value) => Some(ScalarValue::Int64(Some(*value))),
+            Value::UInt32(value) => Some(ScalarValue::UInt32(Some(*value))),
+            Value::UInt64(value) => Some(ScalarValue::UInt64(Some(*value))),
+            Value::Float32(value) => Some(ScalarValue::Float32(Some(*value))),
+            Value::Float(value) => Some(ScalarValue::Float64(Some(*value))),
+            Value::Scalar(value) if !value.data_type().is_nested() => Some(value.clone()),
+            _ => None,
+        };
+        if let Some(scalar) = scalar { return lit(scalar); }
+    }
     match value {
         Value::Null => lit(ScalarValue::Utf8(None)),
         _ => lit(rel_display_value(value, language, context)),

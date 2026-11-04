@@ -372,8 +372,8 @@ impl LoweringContext<'_> {
                         // identical payload for subsequent traversal/projection.
                         for column in binding_column_names(&input.plan, binding)? {
                             let suffix = column.strip_prefix(binding).expect("binding prefix");
-                            representatives.push(datafusion::functions_aggregate::first_last::first_value(
-                                col_exact(&column), vec![],
+                            representatives.push(graph_scalars::invariant_group_value(
+                                col_exact(&column),
                             ).alias(format!("{}{suffix}", item.alias)));
                         }
                         continue;
@@ -715,7 +715,13 @@ impl LoweringContext<'_> {
                     return Ok(input);
                 }
                 if self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin)
-                    && input.plan.schema().fields().iter().any(|field| native_values::is_value(field.data_type())) {
+                    && (input.plan.schema().fields().iter().any(|field| native_values::is_value(field.data_type()))
+                        || keys.iter().any(|key| self.lower_expr(&input.plan, &key.expr)
+                            .and_then(|expr| expr.get_type(input.plan.schema()).map_err(RelError::from))
+                            .is_ok_and(|ty| native_values::is_value(&ty)))) {
+                    // Computed keys can produce a carrier even when every input
+                    // column is primitive. Its serialized bytes are not ordered
+                    // by the language comparator.
                     return self.native_sort(input, keys);
                 }
                 let mut sorts = Vec::new();

@@ -107,9 +107,9 @@ impl<'a> LoweringContext<'a> {
         if let Some(value) = self.lower_graph_scalar(plan, expr)? {
             return Ok(value);
         }
-        if self.options.native_values && self.language == Language::Cypher
+        if self.language == Language::Cypher
             && let Some(value) = self.lower_list_consumer(plan, expr)? { return Ok(value); }
-        if self.options.native_values && self.language == Language::Cypher
+        if self.language == Language::Cypher
             && matches!(expr,IrExpr::ListTransform{..}|IrExpr::ListFilter{..}|IrExpr::Quantifier{..}) {
             return self.lower_sql_lambda(plan,expr);
         }

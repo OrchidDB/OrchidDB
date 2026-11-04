@@ -76,23 +76,10 @@ pub(super) fn lower_string_predicate_expr(
 }
 
 pub(super) fn lower_label_predicate_expr(target: IrExpr, labels: &[String]) -> IrExpr {
-    let parts = labels
-        .iter()
-        .map(|label| match &target {
-            IrExpr::Binding(binding) => IrExpr::Call { name: "cypher_has_label".into(), args: vec![IrExpr::Binding(binding.clone()), IrExpr::Lit(Lit::String(label.clone()))] },
-            _ => IrExpr::Call {
-                name: "in".to_string(),
-                args: vec![
-                    IrExpr::Lit(Lit::String(label.clone())),
-                    IrExpr::Call {
-                        name: "labels".to_string(),
-                        args: vec![target.clone()],
-                    },
-                ],
-            },
-        })
-        .collect();
-    IrExpr::and(parts)
+    IrExpr::and(labels.iter().map(|label| IrExpr::Call {
+        name: "cypher_has_label".into(),
+        args: vec![target.clone(), IrExpr::Lit(Lit::String(label.clone()))],
+    }).collect())
 }
 
 pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {

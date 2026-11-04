@@ -56,6 +56,18 @@ impl LoweringContext<'_> {
     pub(super) fn lower_list_consumer(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Option<Expr>> {
         let IrExpr::Call { name, args } = expr else { return Ok(None); };
         let [input] = args.as_slice() else { return Ok(None); };
+        let simplified_head = name == "head" && matches!(input,
+            IrExpr::ListTransform { item, map, .. }
+                if matches!(map.as_ref(), IrExpr::Binding(binding) if binding == item)
+                    || matches!(map.as_ref(), IrExpr::Lit(Lit::Null | Lit::Bool(_) | Lit::Int(_) | Lit::Float(_) | Lit::String(_))));
+        if matches!(name.as_str(), "head" | "last") && !simplified_head {
+            let source = self.lower_expr(plan, input)?;
+            if matches!(source.get_type(plan.schema())?, DataType::List(_)) {
+                return Ok(Some(datafusion::functions_nested::expr_fn::array_element(
+                    source, lit(if name == "head" { 1_i64 } else { -1_i64 }),
+                )));
+            }
+        }
         if name == "size" && matches!(input, IrExpr::ListFilter { .. }) {
             let Expr::ScalarFunction(call) = self.lower_sql_lambda(plan, input)? else { return Ok(None); };
             let Some(mut lambda) = definition(&call.func).cloned() else { return Ok(None); };

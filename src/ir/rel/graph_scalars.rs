@@ -53,7 +53,7 @@ impl<'a> LoweringContext<'a> {
     /// contract, rather than allowing UNION's implicit coercion.
     pub(super) fn lower_graph_union(&self, all: bool, left: LoweredNode, right: LoweredNode) -> RelResult<LoweredNode> {
         let unsupported = || RelError::Unsupported("Cypher graph UNION requires matching typed identity layouts".into());
-        if self.options.mapping.is_some() || left.fields != right.fields { return Err(unsupported()); }
+        if left.fields != right.fields { return Err(unsupported()); }
         let fields = left.fields.as_ref().ok_or_else(unsupported)?;
         for field in fields {
             let a = has_binding_shape(&left.plan, field);
@@ -88,6 +88,8 @@ impl<'a> LoweringContext<'a> {
             for field in fields {
                 let keys = match self.graph_group_keys(&plan, &IrExpr::Binding(field.clone()))? {
                     Some(keys) => keys,
+                    None if has_binding_shape(&plan, field).is_some() && self.options.native_values =>
+                        vec![native_values::key_expr(self.native_element(&plan, field)?, true)],
                     None if has_binding_shape(&plan, field).is_some() => return Err(unsupported()),
                     None => vec![language_functions::key(col_exact(field), &plan)?],
                 };
@@ -98,7 +100,7 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             let representatives: Vec<_> = columns.keys().map(|column|
-                datafusion::functions_aggregate::first_last::first_value(col_exact(column), vec![]).alias(column)
+                invariant_group_value(col_exact(column)).alias(column)
             ).collect();
             plan = LogicalPlanBuilder::from(plan).aggregate(groups, representatives)?.project(project())?.build()?;
         }
@@ -115,7 +117,7 @@ impl<'a> LoweringContext<'a> {
         plan: &LogicalPlan,
         expr: &IrExpr,
     ) -> RelResult<Option<Vec<Expr>>> {
-        if self.language != Language::Cypher || self.options.mapping.is_some() {
+        if self.language != Language::Cypher {
             return Ok(None);
         }
         let IrExpr::Binding(binding) = expr else { return Ok(None) };
@@ -319,4 +321,14 @@ mod tests {
             assert_eq!(rows, vec![expected]);
         }
     }
+}
+
+/// Graph payload is fixed within an identity group. Select any non-null
+/// representative (or NULL when every row is NULL), without imposing order.
+pub(super) fn invariant_group_value(value: Expr) -> Expr {
+    let mut expression = datafusion::functions_aggregate::first_last::first_value(value, vec![]);
+    if let Expr::AggregateFunction(call) = &mut expression {
+        call.params.null_treatment = Some(datafusion::logical_expr::expr::NullTreatment::IgnoreNulls);
+    }
+    expression
 }

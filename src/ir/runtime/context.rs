@@ -250,6 +250,12 @@ pub(crate) fn procedure_call_op(
         _ => Vec::new(),
     };
 
+    // A known table procedure with no results emits no rows. Only the legacy
+    // unknown-procedure fallback produces a null-yield placeholder.
+    if values_per_call.is_empty() && matches!(normalized.as_str(),
+        "db.labels" | "db.relationshiptypes" | "db.propertykeys") {
+        return Ok(Vec::new());
+    }
     let mut out = Vec::new();
     for row in upstream {
         if values_per_call.is_empty() {

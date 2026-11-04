@@ -1198,6 +1198,20 @@ pub(super) fn quantifier_result_expr(
     }
 }
 
+// Constructors made solely from already-bound values cannot change row
+// cardinality or raise an evaluation error. Presence consumers do not need
+// their representation; keep all other expressions to preserve errors/effects.
+fn total_presence_projection(expr: &IrExpr) -> bool {
+    match expr {
+        IrExpr::Binding(_) | IrExpr::Lit(_) => true,
+        IrExpr::List(items) => items.iter().all(total_presence_projection),
+        IrExpr::Call { name, args } if name == "map" && args.len() % 2 == 0 =>
+            args.chunks_exact(2).all(|pair| matches!(&pair[0], IrExpr::Lit(Lit::String(_)))
+                && total_presence_projection(&pair[1])),
+        _ => false,
+    }
+}
+
 pub(crate) fn lower_exists_right_plan(
     lowerer: &mut Lowerer,
     exists: &ExistsSubquery,
@@ -1211,7 +1225,7 @@ pub(crate) fn lower_exists_right_plan(
                 node = match node {
                     Node::GraphReturn { input, .. } => *input,
                     Node::GraphProject { items, input, .. }
-                        if items.iter().all(|item| matches!(item.expr, IrExpr::Binding(_) | IrExpr::Lit(_))) => *input,
+                        if items.iter().all(|item| total_presence_projection(&item.expr)) => *input,
                     other => return Ok(other),
                 };
             }

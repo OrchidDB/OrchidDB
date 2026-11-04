@@ -118,8 +118,16 @@ impl<'a> LoweringContext<'a> {
         }
         // CALL returns only its exports, so it must rejoin the outer row by
         // occurrence identity even when its body is a streaming projection.
+        fn returns_from_subquery(node: &Node) -> bool {
+            match node {
+                Node::GraphReturn { .. } => true,
+                Node::GraphUnion { left, right, .. } =>
+                    returns_from_subquery(left) && returns_from_subquery(right),
+                _ => false,
+            }
+        }
         let returning_subquery = self.language == Language::Cypher
-            && matches!(right, Node::GraphReturn { .. });
+            && returns_from_subquery(right);
         let (left_plan, mut key_cols, mut cleanup) =
             if self.language == Language::Cypher && kind == ApplyKind::Inner
                 && !gremlin::has_per_input_barrier(right) && !returning_subquery
@@ -848,6 +856,13 @@ pub(super) fn unordered_distinct_partition(plan: LogicalPlan, mut keys: Vec<Expr
     }).collect::<Vec<_>>();
     let values = original.iter().map(|c| datafusion::functions_aggregate::first_last::first_value(
         Expr::Column(c.clone()), vec![]).alias(&c.name)).collect::<Vec<_>>();
+    let plan = collections::unnest_scope(plan, format!("__w_sql_cte_distinct_input_{barrier_id}"))?;
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let unqualified = |expr: Expr| expr.transform_up(|expr| Ok(Transformed::yes(match expr {
+        Expr::Column(column) => col_exact(column.name), other => other,
+    }))).map(|result| result.data);
+    let groups = groups.into_iter().map(unqualified).collect::<datafusion::common::Result<Vec<_>>>()?;
+    let values = values.into_iter().map(unqualified).collect::<datafusion::common::Result<Vec<_>>>()?;
     let aggregate=LogicalPlanBuilder::from(plan).aggregate(groups,values)?.build()?;
     Ok(LogicalPlanBuilder::from(aggregate).project(original.iter().map(|c|col_exact(&c.name)).collect::<Vec<_>>())?.build()?)
 }

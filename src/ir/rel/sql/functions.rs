@@ -188,21 +188,33 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         }
         fn post_visit_query(&mut self, query: &mut ast::Query) -> ControlFlow<Self::Break> {
             self.scopes.pop();
-            if let ast::SetExpr::Select(select) = query.body.as_mut() {
-                if select.projection.is_empty() {
-                    // DataFusion can omit the projection around a limited join.
-                    // Retain its input columns; only a FROM-less empty tuple
-                    // needs a unit column to preserve cardinality.
-                    if select.from.is_empty() {
-                        select.projection.push(ast::SelectItem::ExprWithAlias {
-                            expr: ast::Expr::Value(ast::Value::Number("1".into(), false).into()),
-                            alias: ast::Ident::new("__orchiddb_unit"),
-                        });
-                    } else {
-                        select.projection.push(ast::SelectItem::Wildcard(Default::default()));
+            fn repair_unit_projection(body: &mut ast::SetExpr) {
+                match body {
+                    ast::SetExpr::Select(select) => {
+                        let empty_tuple = select.from.is_empty() && matches!(select.projection.as_slice(),
+                            [ast::SelectItem::Wildcard(_)]);
+                        if select.projection.is_empty() || empty_tuple {
+                            select.projection.clear();
+                            if select.from.is_empty() {
+                                select.projection.push(ast::SelectItem::ExprWithAlias {
+                                    expr: ast::Expr::Value(ast::Value::Number("1".into(), false).into()),
+                                    alias: ast::Ident::new("__orchiddb_unit"),
+                                });
+                            } else {
+                                select.projection.push(ast::SelectItem::Wildcard(Default::default()));
+                            }
+                        }
                     }
+                    // Set operands are Select nodes, not necessarily nested
+                    // Queries, so the query visitor does not repair them alone.
+                    ast::SetExpr::SetOperation { left, right, .. } => {
+                        repair_unit_projection(left);
+                        repair_unit_projection(right);
+                    }
+                    _ => {}
                 }
             }
+            repair_unit_projection(query.body.as_mut());
             ControlFlow::Continue(())
         }
     }
@@ -434,6 +446,29 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         && matches!(&value.value, ast::Value::Number(n, _) if n == "1")
     {
         arguments.args = vec![ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Wildcard)];
+        return Ok(());
+    }
+    if name.trim_matches('"') == "first_value" && function.over.is_none()
+        && function.null_treatment == Some(ast::NullTreatment::IgnoreNulls)
+        && let ast::FunctionArguments::List(arguments) = &function.args
+        && !arguments.clauses.iter().any(|clause| matches!(clause, ast::FunctionArgumentClause::OrderBy(_)))
+    {
+        let aggregate = match dialect {
+            SqlDialect::DuckDb | SqlDialect::Postgres => Some("any_value"),
+            _ => None,
+        };
+        if let Some(aggregate) = aggregate {
+            function.name = ast::ObjectName::from(vec![ast::Ident::new(aggregate)]);
+            function.null_treatment = None;
+            return Ok(());
+        }
+    }
+    if dialect == SqlDialect::Postgres && name.trim_matches('"') == "first_value" && function.over.is_none() {
+        // PostgreSQL FIRST_VALUE is window-only. ARRAY_AGG retains the first
+        // value (including NULL), as well as the aggregate's ordering/filter.
+        let mut aggregate = function.clone();
+        aggregate.name = ast::ObjectName::from(vec![ast::Ident::new("array_agg")]);
+        *expr = template("(__arg0)[1]", &[ast::Expr::Function(aggregate)])?;
         return Ok(());
     }
     if dialect == SqlDialect::DuckDb && name.trim_matches('"') == "first_value" && function.over.is_none() {
@@ -746,6 +781,32 @@ pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_rows_are_preserved_inside_union_operands() {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres, SqlDialect::Custom(&crate::ir::rel::sql::trino::TRINO)] {
+            let sql = rewrite("SELECT count(*) FROM (SELECT * UNION ALL SELECT *) AS units", dialect);
+            assert!(!sql.contains("SELECT *"), "{sql}");
+            assert_eq!(sql.matches("1 AS __orchiddb_unit").count(), 2, "{sql}");
+        }
+    }
+
+    #[test]
+    fn postgres_first_value_aggregate_preserves_order_filter_and_nulls() {
+        let sql = rewrite("SELECT first_value(v ORDER BY k) FILTER (WHERE keep) FROM source", SqlDialect::Postgres);
+        assert!(sql.contains("array_agg(v ORDER BY k)") && sql.contains("FILTER (WHERE keep)") && sql.contains("[1]"), "{sql}");
+        let window = rewrite("SELECT first_value(v) OVER (ORDER BY k) FROM source", SqlDialect::Postgres);
+        assert!(window.contains("first_value(v) OVER") && !window.contains("array_agg"), "{window}");
+    }
+
+    #[test]
+    fn unordered_non_null_representatives_use_native_aggregates() {
+        for (dialect, name) in [(SqlDialect::DuckDb, "any_value"), (SqlDialect::Postgres, "any_value"), (SqlDialect::Custom(&crate::ir::rel::sql::trino::TRINO), "arbitrary")] {
+            let sql = rewrite("SELECT first_value(v) IGNORE NULLS FROM source", dialect);
+            assert!(sql.contains(&format!("{name}(v)")), "{sql}");
+            assert!(!sql.contains("IGNORE NULLS"), "{sql}");
+        }
+    }
 
     #[test]
     fn templates_preserve_argument_identifiers_and_reject_missing_arguments() {

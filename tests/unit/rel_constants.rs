@@ -516,10 +516,10 @@ fn scalar_fold_results_preserve_values_and_numeric_text_boundaries() {
         (Value::UInt8(8), ScalarValue::Int64(Some(8))),
         (Value::UInt16(16), ScalarValue::Int64(Some(16))),
         (Value::UInt32(32), ScalarValue::Int64(Some(32))),
-        (Value::UInt64(64), ScalarValue::Int64(Some(64))),
+        (Value::UInt64(64), ScalarValue::UInt64(Some(64))),
         (
             Value::UInt64(u64::MAX),
-            ScalarValue::Utf8(Some(u64::MAX.to_string())),
+            ScalarValue::UInt64(Some(u64::MAX)),
         ),
         (Value::Int(42), ScalarValue::Int64(Some(42))),
         (Value::Long(42), ScalarValue::Int64(Some(42))),
@@ -664,7 +664,7 @@ fn cypher_value_rendering_preserves_widths_nulls_and_nested_maps() {
         assert_eq!(rel_display_value(&value, Language::Cypher, DisplayContext::Scalar), plain);
     }
     assert_eq!(scalar(constant_result_expr(&Value::Null, Language::Cypher, DisplayContext::Scalar)), ScalarValue::Utf8(None));
-    assert_eq!(scalar(constant_result_expr(&Value::Int(42), Language::Cypher, literal_collection_context(Language::Cypher))), ScalarValue::Utf8(Some("42".into())));
+    assert_eq!(scalar(constant_result_expr(&Value::Int(42), Language::Cypher, literal_collection_context(Language::Cypher))), ScalarValue::Int64(Some(42)));
 }
 
 #[test]

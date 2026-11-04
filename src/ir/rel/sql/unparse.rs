@@ -469,6 +469,7 @@ pub(super) fn encode_expression_literals(
             // nulls. The generic unparser cannot render Trino ROW/ARRAY types.
             if matches!(dialect, SqlDialect::Custom(_))
                 && (super::structured::is_structured(&value.data_type())
+                    || matches!(value, ScalarValue::UInt64(Some(number)) if *number > i64::MAX as u64)
                     || matches!(value.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(..))) {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
                     .map_err(|e| DataFusionError::Plan(e.to_string()))?));
@@ -771,14 +772,21 @@ pub(super) fn restore_aggregate_ordering(
             };
             args.clauses.push(ast::FunctionArgumentClause::OrderBy(keys));
         }
+        if let Some(treatment) = agg.params.null_treatment
+            && let ast::Expr::Function(function) = &mut ordered {
+            function.null_treatment = Some(match treatment {
+                datafusion::logical_expr::expr::NullTreatment::IgnoreNulls => ast::NullTreatment::IgnoreNulls,
+                datafusion::logical_expr::expr::NullTreatment::RespectNulls => ast::NullTreatment::RespectNulls,
+            });
+        }
         if let Some((_, existing, _, _)) = repairs.iter().find(|(plain, _, _, _)| plain == &call) {
             if existing != &ordered {
                 return Err(SqlError::Unsupported(format!(
-                    "cannot place different ORDER BY contracts on indistinguishable aggregate `{call}`"
+                    "cannot place different ordering/null contracts on indistinguishable aggregate `{call}`"
                 )));
             }
         } else {
-            repairs.push((call, ordered, !agg.params.order_by.is_empty(), 0));
+            repairs.push((call, ordered, !agg.params.order_by.is_empty() || agg.params.null_treatment.is_some(), 0));
         }
     }
     let _: ControlFlow<()> = ast::visit_expressions_mut(&mut statement, |expr| {

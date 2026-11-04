@@ -69,6 +69,24 @@ impl<'a> LoweringContext<'a> {
             }
         }
         if self.language == Language::Cypher && !self.options.native_values {
+            // Untyped NULL has no non-null value to coerce. Give only those
+            // columns the other branch's type; retain the lossless-type check
+            // for every pair of concrete types below.
+            let types = left.plan.schema().fields().iter().zip(right.plan.schema().fields())
+                .map(|(a, b)| (a.data_type().clone(), b.data_type().clone())).collect::<Vec<_>>();
+            for (input, left_side) in [(&mut left, true), (&mut right, false)] {
+                if !types.iter().any(|(a, b)| if left_side {
+                    a == &DataType::Null && b != &DataType::Null
+                } else { b == &DataType::Null && a != &DataType::Null }) { continue; }
+                let columns = input.plan.schema().fields().iter().enumerate().map(|(index, field)| {
+                    let target = types.get(index).map(|(a, b)| if left_side { b } else { a });
+                    if field.data_type() == &DataType::Null
+                        && let Some(target) = target.filter(|target| **target != DataType::Null) {
+                        Ok(col_exact(field.name()).cast_to(target, input.plan.schema())?.alias(field.name()))
+                    } else { Ok(col_exact(field.name())) }
+                }).collect::<RelResult<Vec<_>>>()?;
+                input.plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            }
             // SQL UNION type coercion can merge distinct Cypher values (e.g.
             // 1 and '1'), or round a large integer through DOUBLE. Only use
             // SQL set equality for matching, lossless scalar column types.
