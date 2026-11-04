@@ -93,3 +93,39 @@
         }
     }
 
+
+#[test]
+fn temporal_type_precision_and_timezone_survive_trino_type_lowering() {
+    let unparser=TRINO.unparser_dialect();
+    assert_eq!(TRINO.double_type(),"DOUBLE");
+    assert!(TRINO.supports_scalar_function("random"));
+    assert!(!TRINO.supports_scalar_function("not_registered"));
+    assert!(unparser.use_timestamp_for_date64());
+    assert_eq!(unparser.large_utf8_cast_dtype(),ast::DataType::Varchar(None));
+    for (unit,digits) in [(TimeUnit::Second,0),(TimeUnit::Millisecond,3),(TimeUnit::Microsecond,6),(TimeUnit::Nanosecond,9)] {
+        for zone in [None,Some(std::sync::Arc::<str>::from("UTC"))] {
+            let suffix=if zone.is_some(){" WITH TIME ZONE"}else{""};
+            assert_eq!(TRINO.sql_type(&DataType::Timestamp(unit.clone(),zone.clone())).unwrap(),format!("TIMESTAMP({digits}){suffix}"));
+            assert_eq!(unparser.timestamp_cast_dtype(&unit,&zone),ast::DataType::Timestamp(Some(digits),if zone.is_some(){ast::TimezoneInfo::WithTimeZone}else{ast::TimezoneInfo::None}));
+        }
+        let ty=if digits<6 {DataType::Time32(unit)} else {DataType::Time64(unit)};
+        assert_eq!(TRINO.sql_type(&ty).unwrap(),format!("TIME({digits})"));
+    }
+}
+
+#[test]
+fn trino_map_and_decimal_types_reject_invalid_or_unsupported_domains() {
+    use arrow::datatypes::Field;
+    use std::sync::Arc;
+    let valid=DataType::Map(Arc::new(Field::new("entries",DataType::Struct(vec![
+        Field::new("key",DataType::Utf8,false),Field::new("value",DataType::Int64,true)].into()),false)),false);
+    assert_eq!(TRINO.sql_type(&valid).unwrap(),"MAP(VARCHAR, BIGINT)");
+    for (inner,message) in [(DataType::Int64,"entries must be a struct"),
+        (DataType::Struct(vec![Field::new("key",DataType::Utf8,false)].into()),"requires key and value fields")] {
+        assert!(TRINO.sql_type(&DataType::Map(Arc::new(Field::new("entries",inner,false)),false)).unwrap_err().to_string().contains(message));
+    }
+    assert_eq!(TRINO.sql_type(&DataType::Decimal128(12,3)).unwrap(),"DECIMAL(12,3)");
+    for ty in [DataType::Decimal128(12,-1),DataType::Decimal128(12,13),DataType::Duration(TimeUnit::Second)] {
+        assert!(TRINO.sql_type(&ty).unwrap_err().to_string().contains("trino type"));
+    }
+}

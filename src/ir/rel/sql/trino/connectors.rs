@@ -468,10 +468,20 @@ pub(super) fn lower(plan: &LogicalPlan) -> SqlResult<Option<ast::Statement>> {
     let Some(provider) = connector(&provider) else {
         return Ok(None);
     };
-    let columns = scan
-        .projected_schema
-        .fields()
-        .iter()
+    // Scan predicates can reference columns omitted from the output projection.
+    // Convert those source columns before filtering, then project only the
+    // requested outputs so COUNT-style scans retain their zero-column shape.
+    let mut fields = scan.projected_schema.fields().iter().cloned().collect::<Vec<_>>();
+    let mut names = fields.iter().map(|field| field.name().clone()).collect::<std::collections::BTreeSet<_>>();
+    let filter_names = scan.filters.iter().flat_map(|filter| filter.column_refs().into_iter().map(|column| column.name.clone()))
+        .collect::<std::collections::BTreeSet<_>>();
+    for name in filter_names {
+        if names.insert(name.clone()) {
+            let index = provider.schema.index_of(&name).map_err(|error| invalid(&error.to_string()))?;
+            fields.push(provider.schema.fields()[index].clone());
+        }
+    }
+    let columns = fields.iter()
         .map(|f| {
             Ok(format!(
                 "{} AS {}",
@@ -511,8 +521,11 @@ pub(super) fn lower(plan: &LogicalPlan) -> SqlResult<Option<ast::Statement>> {
         provider.source.relation(true)?
     );
     if !filters.is_empty() {
+        let outputs = scan.projected_schema.fields().iter()
+            .map(|field| TRINO.quote_ident(field.name())).collect::<Vec<_>>();
         sql = format!(
-            "SELECT * FROM ({sql}) AS __connector WHERE {}",
+            "SELECT {} FROM ({sql}) AS __connector WHERE {}",
+            if outputs.is_empty() { "1".into() } else { outputs.join(", ") },
             filters.join(" AND ")
         );
     }
@@ -524,3 +537,7 @@ pub(super) fn lower(plan: &LogicalPlan) -> SqlResult<Option<ast::Statement>> {
             .map_err(|e| invalid(&e.to_string()))?;
     Ok(Some(statements.remove(0)))
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/trino_connector_boundaries.rs"]
+mod boundary_tests;
