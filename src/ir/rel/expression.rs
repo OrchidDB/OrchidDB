@@ -782,7 +782,13 @@ impl<'a> LoweringContext<'a> {
                     }
                 }
                 let (mut value, data_type, lenient) = self.cast_parts(plan, name, args)?;
-                if native_values::is_value(&value.get_type(plan.schema())?) {
+                let source_type = value.get_type(plan.schema())?;
+                if native_values::is_value(&source_type)
+                    || (!lenient && matches!(data_type, DataType::Float32 | DataType::Float64)
+                        && matches!(source_type, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)) {
+                    // SQL accepts non-finite float spellings which strict Cypher
+                    // text casts reject. Use the same checked conversion as
+                    // constant folding before exposing a primitive SQL float.
                     // Validate the conversion against the language's actual
                     // value first, then unbox its canonical scalar text. SQL
                     // must never cast the carrier struct itself.

@@ -971,8 +971,11 @@ pub(super) fn rewrite_aggregate_projection(
                     args: vec![expr],
                 },
                 UnaryOp::Neg => IrExpr::Binary {
-                    op: IrBinaryOp::Sub,
-                    lhs: Box::new(IrExpr::Lit(Lit::Int(0))),
+                    // IEEE negation must flip +0.0 to -0.0; subtraction from
+                    // positive zero does not. Multiplication also retains the
+                    // existing integer widening and checked-overflow behavior.
+                    op: IrBinaryOp::Mul,
+                    lhs: Box::new(IrExpr::Lit(Lit::Int(-1))),
                     rhs: Box::new(expr),
                 },
             })

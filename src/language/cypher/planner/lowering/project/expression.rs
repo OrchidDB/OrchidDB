@@ -230,8 +230,11 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 args: vec![lower_expr(lowerer, expr)?],
             },
             UnaryOp::Neg => IrExpr::Binary {
-                op: IrBinaryOp::Sub,
-                lhs: Box::new(IrExpr::Lit(Lit::Int(0))),
+                // IEEE negation must flip +0.0 to -0.0; subtraction from
+                // positive zero does not. Multiplication also retains the
+                // existing integer widening and checked-overflow behavior.
+                op: IrBinaryOp::Mul,
+                lhs: Box::new(IrExpr::Lit(Lit::Int(-1))),
                 rhs: Box::new(lower_expr(lowerer, expr)?),
             },
         },
