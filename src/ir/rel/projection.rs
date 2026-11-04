@@ -246,10 +246,10 @@ impl<'a> LoweringContext<'a> {
                 .chunks(2)
                 .all(|pair| matches!(pair[0], IrExpr::Lit(Lit::String(_))))
         {
-            if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
+            if self.language == Language::Cypher || (self.options.native_values && self.language == Language::Gremlin) {
                 return Ok(vec![self.native_expr(plan,expr)?.alias(alias)]);
             }
-            if matches!(self.language, Language::Cypher | Language::Gremlin) {
+            if self.language == Language::Gremlin {
                 return Err(RelError::Unsupported(
                     "Map projection requires native runtime values".into(),
                 ));

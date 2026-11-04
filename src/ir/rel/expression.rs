@@ -141,7 +141,7 @@ impl<'a> LoweringContext<'a> {
         }
         if self.language == Language::Cypher
             && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(),
-                "path_or_self" | "path_extend_after" | "path_from" | "path_append" | "cypher_path")) {
+                "path_or_self" | "path_extend_after" | "path_from" | "path_append" | "cypher_path" | "map")) {
             return self.native_expr(plan, expr);
         }
         if self.language == Language::Cypher && !matches!(expr, IrExpr::Binding(_) | IrExpr::Lit(_))
@@ -162,10 +162,6 @@ impl<'a> LoweringContext<'a> {
         }
         if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
             if self.language == Language::Gremlin {
-            // Map literals must retain their typed runtime value across collect/UNWIND.
-            if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(), "map" | "cypher_subscript")) {
-                return self.native_expr(plan, expr);
-            }
             // These functions return predicates, although the generic scalar
             // function catalog exposes an opaque value. Their shared runtime
             // implementation owns promotion, NaN and heterogeneous equality.
