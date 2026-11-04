@@ -343,3 +343,7 @@ impl LoweringContext<'_> {
         Ok(ScalarUDF::from(function).call(args))
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/collection_lambda_boundaries.rs"]
+mod boundary_tests;
