@@ -48,11 +48,48 @@ pub fn lower_with(
         .map(|predicate| lower_with_predicate_placement(lowerer, &clause.projection, predicate))
         .transpose()?;
 
+    if matches!(predicate_placement, Some(WithPredicatePlacement::MaterializeAliases)) {
+        // Subqueries have their own lexical scopes. Keep projected aliases as
+        // columns instead of substituting expressions through those scopes.
+        let aliases = projection_aliases(&clause.projection);
+        let mut extended = clause.projection.clone();
+        extended.distinct = false;
+        extended.order_by.clear();
+        extended.skip = None;
+        extended.limit = None;
+        extended.include_existing = false;
+        extended.items.splice(0..0, lowerer.visible_fields().into_iter()
+            .filter(|name| !aliases.contains_key(name))
+            .map(|name| crate::language::cypher::ast::ProjectionItem {
+                expr: Expr::Variable(name.clone()), alias: Some(name), explicit_alias: true,
+            }));
+        let (node, fields) = lower_with_projection_body(lowerer, input, &extended)?;
+        lowerer.replace_scope(fields);
+        let node = if clause.projection.items.iter().any(|item|
+            crate::language::cypher::semantics::aggregates::contains_volatile(&item.expr)) {
+            Node::GraphBarrier {
+                partition: Vec::new(), order: Vec::new(), slice: Slice::NONE,
+                materialize: true, bulk_policy: crate::ir::plan::BarrierBulkPolicy::ProviderDefined,
+                input: node.boxed(),
+            }
+        } else { node };
+        let node = lower_with_where_predicate(lowerer, node, clause.predicate.as_ref().unwrap())?;
+        let mut final_projection = clause.projection.clone();
+        for item in &mut final_projection.items {
+            let name = item.alias.clone().or_else(|| item.expr.variable_name().map(str::to_owned))
+                .expect("validated WITH alias");
+            item.expr = Expr::Variable(name);
+        }
+        let (node, fields) = lower_with_projection_body(lowerer, node, &final_projection)?;
+        lowerer.replace_scope(fields);
+        return Ok(node);
+    }
+
     let input = match &predicate_placement {
         Some(WithPredicatePlacement::BeforeProjection(predicate)) => {
             lower_with_where_predicate(lowerer, input, &predicate)?
         }
-        Some(WithPredicatePlacement::AfterProjection) | None => input,
+        Some(WithPredicatePlacement::AfterProjection) | Some(WithPredicatePlacement::MaterializeAliases) | None => input,
     };
     let (node, fields) = lower_with_projection_body(lowerer, input, &clause.projection)?;
     lowerer.replace_scope(fields.clone());
@@ -68,6 +105,7 @@ pub fn lower_with(
 enum WithPredicatePlacement {
     BeforeProjection(Expr),
     AfterProjection,
+    MaterializeAliases,
 }
 
 fn lower_with_projection_body(
@@ -117,9 +155,18 @@ fn lower_with_predicate_placement(
         return Ok(WithPredicatePlacement::AfterProjection);
     }
 
+    if materialize::contains_exists_subquery(predicate) {
+        let available = source_fields.union(&projected_fields).cloned().collect();
+        validate_expression_refs(predicate, &available, "WHERE predicate")?;
+        return Ok(WithPredicatePlacement::MaterializeAliases);
+    }
     let substituted = substitute_projection_aliases(predicate, &projection_aliases(body));
-    validate_expression_refs(&substituted, &source_fields, "WHERE predicate")?;
-    Ok(WithPredicatePlacement::BeforeProjection(substituted))
+    if validate_expression_refs(&substituted, &source_fields, "WHERE predicate").is_ok() {
+        return Ok(WithPredicatePlacement::BeforeProjection(substituted));
+    }
+    let available = source_fields.union(&projected_fields).cloned().collect();
+    validate_expression_refs(predicate, &available, "WHERE predicate")?;
+    Ok(WithPredicatePlacement::MaterializeAliases)
 }
 
 fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<()> {

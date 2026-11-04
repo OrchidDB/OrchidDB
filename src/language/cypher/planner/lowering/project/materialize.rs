@@ -1266,60 +1266,66 @@ pub(crate) fn lower_exists_right_plan(
 }
 
 pub(super) fn requires_scoped_materialization(expr: &Expr) -> bool {
+    needs_scoped_expression(expr, true)
+}
+pub(super) fn contains_exists_subquery(expr: &Expr) -> bool {
+    needs_scoped_expression(expr, false)
+}
+
+fn needs_scoped_expression(expr: &Expr, patterns: bool) -> bool {
     match expr {
-        Expr::Exists(_)
-        | Expr::PatternPredicate(_)
-        | Expr::PatternComprehension { .. } => true,
+        Expr::Exists(_) => true,
+        Expr::PatternPredicate(_) | Expr::PatternComprehension { .. } => patterns,
         Expr::ListComprehension { collection, predicate, map, .. } =>
-            requires_scoped_materialization(collection)
-                || predicate.as_deref().is_some_and(requires_scoped_materialization)
-                || requires_scoped_materialization(map),
+            needs_scoped_expression(collection, patterns)
+                || predicate.as_deref().is_some_and(|expr| needs_scoped_expression(expr, patterns))
+                || needs_scoped_expression(map, patterns),
         Expr::Quantifier { collection, predicate, .. } =>
-            requires_scoped_materialization(collection) || requires_scoped_materialization(predicate),
+            needs_scoped_expression(collection, patterns) || needs_scoped_expression(predicate, patterns),
         Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => {
-            requires_scoped_materialization(expr)
+            needs_scoped_expression(expr, patterns)
         }
         Expr::Binary { lhs, rhs, .. }
         | Expr::StringPredicate {
             target: lhs,
             pattern: rhs,
             ..
-        } => requires_scoped_materialization(lhs) || requires_scoped_materialization(rhs),
+        } => needs_scoped_expression(lhs, patterns) || needs_scoped_expression(rhs, patterns),
         Expr::Property { target, .. } | Expr::LabelPredicate { target, .. } => {
-            requires_scoped_materialization(target)
+            needs_scoped_expression(target, patterns)
         }
         Expr::Function { args, .. } | Expr::List(args) => {
-            args.iter().any(requires_scoped_materialization)
+            args.iter().any(|expr| needs_scoped_expression(expr, patterns))
         }
         Expr::ListReduce {
             collection, map, ..
-        } => requires_scoped_materialization(collection) || requires_scoped_materialization(map),
+        } => needs_scoped_expression(collection, patterns) || needs_scoped_expression(map, patterns),
         Expr::ListTransform {
             collection, map, ..
-        } => requires_scoped_materialization(collection) || requires_scoped_materialization(map),
+        } => needs_scoped_expression(collection, patterns) || needs_scoped_expression(map, patterns),
         Expr::ListFilter {
             collection,
             predicate,
             ..
         } => {
-            requires_scoped_materialization(collection)
-                || requires_scoped_materialization(predicate)
+            needs_scoped_expression(collection, patterns)
+                || needs_scoped_expression(predicate, patterns)
         }
         Expr::Map(items) => items
             .iter()
-            .any(|(_, value)| requires_scoped_materialization(value)),
+            .any(|(_, value)| needs_scoped_expression(value, patterns)),
         Expr::Case {
             case,
             arms,
             otherwise,
         } => {
-            case.as_deref().is_some_and(requires_scoped_materialization)
+            case.as_deref().is_some_and(|expr| needs_scoped_expression(expr, patterns))
                 || arms.iter().any(|(when, then)| {
-                    requires_scoped_materialization(when) || requires_scoped_materialization(then)
+                    needs_scoped_expression(when, patterns) || needs_scoped_expression(then, patterns)
                 })
                 || otherwise
                     .as_deref()
-                    .is_some_and(requires_scoped_materialization)
+                    .is_some_and(|expr| needs_scoped_expression(expr, patterns))
         }
         _ => false,
     }
