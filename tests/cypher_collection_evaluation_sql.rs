@@ -68,39 +68,19 @@ async fn filtered_size_uses_plain_sql_and_preserves_scope_and_occurrences() {
     }
 }
 
-#[test]
-fn volatile_filter_stays_out_of_pure_sql_cardinality_rewrite() {
-    let graph = PropertyGraph::new();
-    let ir = CypherPlanner::new()
-        .plan(
-            &parse_query("WITH [1,2,3] AS xs RETURN size([x IN xs WHERE rand() < 0.5]) AS n")
-                .unwrap(),
-        )
-        .unwrap();
-    assert!(
-        RelBackend::new()
-            .with_language_functions(true)
-            .lower(&ir, &graph)
-            .is_err()
-    );
-}
-
-#[test]
-fn untyped_null_collection_keeps_native_validation() {
-    let graph = PropertyGraph::new();
-    for query in [
-        "WITH null AS xs RETURN size([x IN xs WHERE x = 1]) AS n",
+#[tokio::test]
+async fn volatile_filters_and_null_inputs_execute_with_correct_cardinality() {
+    for (query, expected) in [
+        ("WITH [1,2,3] AS xs RETURN size([x IN xs WHERE rand() < 0]) AS n", Some(0)),
+        ("WITH [1,2,3] AS xs RETURN size([x IN xs WHERE rand() >= 0]) AS n", Some(3)),
+        ("WITH null AS xs RETURN size([x IN xs WHERE x = 1]) AS n", None),
     ] {
-        let ir = CypherPlanner::new()
-            .plan(&parse_query(query).unwrap())
-            .unwrap();
-        assert!(
-            RelBackend::new()
-                .with_language_functions(true)
-                .lower(&ir, &graph)
-                .is_err(),
-            "{query}"
-        );
+        let ir=CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+        let lowered=RelBackend::new().with_language_functions(true).lower(&ir,&PropertyGraph::new()).unwrap();
+        let result=execute_lowered_sql(&mut DuckDbExecutor::default(),&lowered).await.unwrap();
+        assert_eq!(result.batch.num_rows(),1,"{query}");
+        let value=arrow::util::display::array_value_to_string(result.batch.column(0),0).unwrap();
+        assert_eq!(value,expected.map(|x|x.to_string()).unwrap_or_default(),"{query}");
     }
 }
 

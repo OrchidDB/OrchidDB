@@ -155,7 +155,7 @@ async fn nested_list_quantifiers_use_scalar_sql_without_occurrence_identity() {
         assert!(!sql.contains("JOIN"), "{sql}");
         assert!(!sql.contains("GROUP BY"), "{sql}");
         assert!(!sql.contains("__w_sql_cte_apply"), "{sql}");
-        assert!(sql.to_lowercase().contains("unnest"), "{sql}");
+        assert!(sql.to_lowercase().contains("unnest") || sql.to_lowercase().contains("list_transform"), "{sql}");
         assert!(sql.len() < 4000, "{} bytes: {sql}", sql.len());
     }
 }

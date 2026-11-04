@@ -20,7 +20,7 @@ fn compact(sql:&str) {
     assert!(!sql.to_lowercase().contains("row_number"),"{sql}");
     assert!(!sql.contains("GROUP BY"),"{sql}");
     assert!(!sql.contains("JOIN"),"{sql}");
-    assert!(sql.to_lowercase().contains("unnest"),"{sql}");
+    assert!(sql.to_lowercase().contains("unnest") || sql.to_lowercase().contains("list_transform"),"{sql}");
 }
 #[tokio::test]
 async fn string_length_is_evaluated_once_in_compact_quantifier_sql() {

@@ -81,22 +81,18 @@ async fn map_scalarization_preserves_outer_row_occurrences() {
     );
 }
 
-#[test]
-fn map_scalarization_keeps_unproved_map_evaluation_native() {
-    for query in [
-        "WITH {x:42,unused:rand()} AS m RETURN m.x",
-        "WITH {x:42,unused:1/0} AS m RETURN m.x",
-        "RETURN {x:42}",
-    ] {
-        let plan = CypherPlanner::new()
-            .plan(&parse_query(query).unwrap())
-            .unwrap();
-        assert!(
-            RelBackend::new()
-                .lower(&plan, &PropertyGraph::new())
-                .is_err(),
-            "{query}"
-        );
+#[tokio::test]
+async fn map_scalarization_keeps_volatile_values_bound_to_each_map() {
+    assert_eq!(sql_rows("WITH {x:42,unused:rand()} AS m RETURN CAST(m.x AS INT64)").await, ["42"]);
+    assert_eq!(sql_rows("UNWIND [1,1,2] AS k WITH k,{x:rand()} AS m RETURN k,m.x=m.x ORDER BY k").await,
+        ["1|true", "1|true", "2|true"]);
+    let query="WITH {x:42,unused:CAST('invalid' AS INT64)} AS m RETURN m.x";
+    let plan=CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+    let result=RelBackend::new().with_language_functions(true).lower(&plan,&PropertyGraph::new());
+    // Validation may reject the constant cast before SQL execution; neither
+    // route may silently discard the failing field while selecting m.x.
+    if let Ok(lowered)=result {
+        assert!(execute_lowered_sql(&mut DuckDbExecutor::default(),&lowered).await.is_err());
     }
 }
 
