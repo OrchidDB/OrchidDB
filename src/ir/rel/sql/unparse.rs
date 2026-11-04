@@ -489,10 +489,12 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
         }
         if let Expr::Literal(value, _) = &inner {
-            // Custom adapters own their structured transport, including typed
-            // nulls. The generic unparser cannot render Trino ROW/ARRAY types.
+            // Custom adapters own structured and floating-point transport.
+            // The generic unparser cannot render Trino ROW/ARRAY types,
+            // and its decimal spelling of floats can exceed Trino precision.
             if matches!(dialect, SqlDialect::Custom(_))
                 && (super::structured::is_structured(&value.data_type())
+                    || matches!(value, ScalarValue::Float32(_) | ScalarValue::Float64(_))
                     || matches!(value, ScalarValue::UInt64(Some(number)) if *number > i64::MAX as u64)
                     || matches!(value.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(..))) {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
@@ -632,9 +634,9 @@ pub(super) fn encode_expression_literals(
                     DataType::Float32,
                 )));
             }
-            Expr::Literal(value @ (ScalarValue::Float64(_) | ScalarValue::Float32(_)), _) if dialect == SqlDialect::DuckDb => {
-                // DuckDB parses decimal-looking SQL literals as DECIMAL. A
-                // typed ANY-argument helper must receive the declared float.
+            Expr::Literal(value @ (ScalarValue::Float64(_) | ScalarValue::Float32(_)), _) if matches!(dialect, SqlDialect::DuckDb | SqlDialect::Postgres) => {
+                // These engines parse decimal-looking SQL literals as exact
+                // numerics. Preserve the float type and its rounding semantics.
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     inner.clone(), value.data_type(), dialect.name(),
                 )?));

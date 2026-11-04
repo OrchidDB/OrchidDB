@@ -200,8 +200,8 @@ impl DialectAdapter for TrinoAdapter {
                 ScalarValue::List(a) => self.array_literal(a.value(0))?,
                 ScalarValue::LargeList(a) => self.array_literal(a.value(0))?,
                 ScalarValue::FixedSizeList(a) => self.array_literal(a.value(0))?,
-                ScalarValue::Float32(Some(v)) => string(&v.to_string()),
-                ScalarValue::Float64(Some(v)) => string(&v.to_string()),
+                ScalarValue::Float32(Some(v)) => string(&if v.is_infinite() { if v.is_sign_negative() { "-Infinity".into() } else { "Infinity".into() } } else { v.to_string() }),
+                ScalarValue::Float64(Some(v)) => string(&if v.is_infinite() { if v.is_sign_negative() { "-Infinity".into() } else { "Infinity".into() } } else { v.to_string() }),
                 ScalarValue::Boolean(Some(v)) => v.to_string(),
                 // Trino parses bare integers as BIGINT before applying CAST.
                 // The upper UINT64 range therefore needs a decimal text input.
@@ -446,6 +446,20 @@ impl DialectAdapter for TrinoAdapter {
                 }
 
                 let name = f.name.to_string().trim_matches('"').to_ascii_lowercase();
+                if name == "regexp_replace" {
+                    // DataFusion replaces the first match unless 'g' is supplied;
+                    // Trino's three-argument form always replaces every match.
+                    let ast::FunctionArguments::List(arguments) = &mut f.args else {
+                        return Err(SqlError::Unsupported("Trino regex replacement arguments".into()));
+                    };
+                    if arguments.args.len() == 4 && matches!(arguments.args.last(),
+                        Some(ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(ast::Expr::Value(value))))
+                        if matches!(&value.value, ast::Value::SingleQuotedString(flag) if flag == "g")) {
+                        arguments.args.pop();
+                    } else {
+                        return Err(SqlError::Unsupported("Trino first-match regex replacement requires completion".into()));
+                    }
+                }
                 if name == "first_value" && f.over.is_none()
                     && f.null_treatment == Some(ast::NullTreatment::IgnoreNulls) {
                     // ARBITRARY already selects a non-null representative.
@@ -769,6 +783,38 @@ impl ParserDialect for TrinoParser {
 #[cfg(test)]
 mod parser_tests {
     use super::*;
+
+    #[test]
+    fn float_literals_keep_their_type_without_decimal_precision_limits() {
+        use datafusion::logical_expr::lit;
+        use datafusion::sql::unparser::Unparser;
+        let dialect = SqlDialect::Custom(&TRINO);
+        let unparser_dialect = dialect.unparser_dialect();
+        let unparser = Unparser::new(unparser_dialect.as_ref());
+        for value in [
+            ScalarValue::Float64(Some(f64::MAX)),
+            ScalarValue::Float64(Some(f64::MIN_POSITIVE)),
+            ScalarValue::Float64(Some(f64::from_bits(1))),
+            ScalarValue::Float64(Some(-0.0)),
+            ScalarValue::Float64(Some(f64::INFINITY)),
+            ScalarValue::Float64(None),
+            ScalarValue::Float32(Some(f32::MAX)),
+            ScalarValue::Float32(Some(f32::from_bits(1))),
+            ScalarValue::Float32(None),
+        ] {
+            let expected = TRINO.exchange_literal(&value, &value.data_type()).unwrap();
+            let encoded = super::super::unparse::encode_expression_literals(lit(value), dialect).unwrap();
+            assert!(encoded.transformed);
+            let sql = super::super::logical_functions::with_expression(
+                &encoded.data, &datafusion::common::DFSchema::empty(), dialect, || {
+                    let mut expression = unparser.expr_to_sql(&encoded.data)?;
+                    super::super::functions::prepare_ast(&mut expression, dialect)?;
+                    Ok(expression.to_string())
+                },
+            ).unwrap();
+            assert_eq!(sql, format!("({expected})"));
+        }
+    }
 
     #[test]
     fn nested_trino_cast_types_survive_template_and_final_sql_parsing() {

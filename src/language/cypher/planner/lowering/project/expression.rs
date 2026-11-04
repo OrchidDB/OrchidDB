@@ -218,6 +218,11 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 .ok_or_else(||CypherPlanError::Invalid("Negated integer literal out of signed 64-bit range".into()).classified(CypherSemanticError::IntegerOverflow))?;
             IrExpr::Lit(Lit::Int(value))
         }
+        Expr::Unary { op: UnaryOp::Neg, expr } if matches!(expr.as_ref(), Expr::Literal(Literal::Float(_))) => {
+            let Expr::Literal(Literal::Float(value)) = expr.as_ref() else { unreachable!() };
+            // Subtraction from positive zero loses the sign of -0.0.
+            lower_expr(lowerer, &Expr::Literal(Literal::Float(-value)))?
+        }
         Expr::Unary { op, expr } => match op {
             UnaryOp::Not => IrExpr::Not(Box::new(lower_expr(lowerer, expr)?)),
             UnaryOp::Neg if is_typed_negate_operand(expr) => IrExpr::Call {
