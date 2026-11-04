@@ -404,6 +404,11 @@ impl LoweringContext<'_> {
         }
         let lt = lhs.get_type(plan.schema())?;
         let rt = rhs.get_type(plan.schema())?;
+        // Checked scalar operations can return a typed carrier even when
+        // native-value mode is disabled. Compare its value, never its storage.
+        if native_values::is_value(&lt) || native_values::is_value(&rt) {
+            return Ok(native_values::typed::call(name, vec![lhs, rhs]));
+        }
         // List helpers compare native elements without coercing either list's
         // payload or requiring identical Arrow field names/nullability.
         if let Some(value) = self.lower_primitive_list_equality(plan, lhs.clone(), rhs.clone(), op)? {

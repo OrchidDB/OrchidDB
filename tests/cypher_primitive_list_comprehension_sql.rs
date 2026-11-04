@@ -94,27 +94,31 @@ async fn primitive_strings_booleans_and_modulo_minimum_integer() {
 }
 
 #[tokio::test]
-async fn effectful_throwing_and_nested_correlations_keep_runtime_fallback() {
+async fn effectful_and_throwing_comprehensions_preserve_runtime_semantics() {
     without_constant_folding(async {
         for query in [
-            "WITH [1,2] AS xs RETURN [x IN xs | rand()] AS result",
-            "WITH [rand()] AS xs RETURN [x IN xs WHERE x > 0] AS result",
             "WITH [1,2] AS xs RETURN [x IN xs WHERE x % 0 = 0] AS result",
             "WITH [-9223372036854775808] AS xs RETURN [x IN xs WHERE x % -1 = 0] AS result",
             "WITH [9223372036854775807] AS xs RETURN [x IN xs | x + 1] AS result",
-            "WITH [1] AS xs, [1,2] AS ys RETURN [x IN xs WHERE ys = ys] AS result",
         ] {
-            let plan = CypherPlanner::new()
-                .plan(&parse_query(query).unwrap())
-                .unwrap();
-            assert!(
-                RelBackend::new()
-                    .with_language_functions(true)
-                    .lower(&plan, &PropertyGraph::new())
-                    .is_err(),
-                "{query}"
-            );
+            let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+            // A supported scalar kernel may defer the error until execution.
+            if let Ok(lowered) = RelBackend::new().with_language_functions(true)
+                .lower(&plan, &PropertyGraph::new()) {
+                assert!(execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered).await.is_err(), "{query}");
+            }
         }
-    })
-    .await;
+    }).await;
+    let (_, rows) = run("WITH [1] AS xs, [1,2] AS ys RETURN [x IN xs WHERE ys = ys] AS result").await;
+    assert_eq!(rows, vec!["[1]"]);
+    for query in [
+        "WITH [1,2] AS xs RETURN [x IN xs | rand()] AS result",
+        "WITH [rand()] AS xs RETURN [x IN xs WHERE x >= 0] AS result",
+    ] {
+        let (_, rows) = run(query).await;
+        assert_eq!(rows.len(), 1);
+        let values: Vec<f64> = serde_json::from_str(&rows[0]).unwrap();
+        assert_eq!(values.len(), if query.contains("[1,2]") { 2 } else { 1 });
+        assert!(values.iter().all(|value| (0.0..1.0).contains(value)));
+    }
 }

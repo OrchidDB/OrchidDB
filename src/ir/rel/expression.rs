@@ -845,6 +845,12 @@ impl<'a> LoweringContext<'a> {
                 )))
             }
             IrExpr::Call { name, args } if is_mod_function(name) && args.len() == 2 => {
+                // SQL engines may return NULL for division by zero and zero
+                // for MIN_INT % -1. Cypher requires checked runtime errors.
+                if self.language == Language::Cypher
+                    && !matches!(&args[1], IrExpr::Lit(Lit::Int(divisor)) if !matches!(*divisor, 0 | -1)) {
+                    return self.native_expr(plan, expr);
+                }
                 Ok(Expr::BinaryExpr(BinaryExpr::new(
                     Box::new(self.lower_expr(plan, &args[0])?),
                     Operator::Modulo,
