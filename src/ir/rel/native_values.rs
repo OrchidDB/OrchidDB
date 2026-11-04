@@ -936,3 +936,11 @@ impl ScalarUDFImpl for NativeFunction {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_native_wire.rs"]
+mod wire_contracts;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_native_procedure.rs"]
+mod procedure_contracts;

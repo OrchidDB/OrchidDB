@@ -57,9 +57,14 @@ async fn count_distinct_keeps_null_group_and_avoids_representative_windows() {
 }
 
 #[tokio::test]
-async fn ordered_distinct_still_preserves_first_encounter() {
-    let (rows, _) = run("UNWIND [2,1,2] AS x WITH DISTINCT x RETURN x").await;
+async fn distinct_preserves_observed_order_and_terminal_membership() {
+    let (mut rows, _) = run("UNWIND [2,1,2] AS x WITH DISTINCT x RETURN x").await;
+    rows.sort();
+    assert_eq!(rows, vec![vec!["1"], vec!["2"]]);
+    let (rows, _) = run("UNWIND [2,1,2] AS x WITH DISTINCT x RETURN x ORDER BY x DESC").await;
     assert_eq!(rows, vec![vec!["2"], vec!["1"]]);
+    let (rows, _) = run("UNWIND [2,1,2] AS x WITH DISTINCT x RETURN collect(x)").await;
+    assert_eq!(rows, vec![vec!["[2, 1]"]]);
 }
 
 #[tokio::test]

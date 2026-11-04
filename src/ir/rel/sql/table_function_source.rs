@@ -290,3 +290,7 @@ pub(super) fn lower(plan: &LogicalPlan, dialect: SqlDialect) -> SqlResult<Option
         Parser::parse_sql(dialect.parser_dialect().as_ref(), &sql).map_err(invalid)?;
     Ok(Some(statements.remove(0)))
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_table_function_source.rs"]
+mod source_contracts;
