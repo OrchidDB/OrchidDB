@@ -99,3 +99,42 @@ fn scalar_abs_folding_preserves_null_and_rejects_invalid_values() {
         assert_eq!(evaluator.expression(&call, &scope), expected);
     }
 }
+
+fn project(input: Node, mode: ProjectMode, items: Vec<(&str, IrExpr)>) -> Node {
+    Node::GraphProject {
+        mode,
+        items: items.into_iter().map(|(alias, expr)| crate::ir::plan::ProjectionItem { alias: alias.into(), expr }).collect(),
+        error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+        input: Box::new(input),
+    }
+}
+
+#[test]
+fn alias_discovery_observes_original_scope_and_invalidates_rebound_constants() {
+    let initial = project(Node::GraphOneRow, ProjectMode::ReplaceScope,
+        vec![("x", IrExpr::Lit(Lit::Int(1))), ("keep", IrExpr::Lit(Lit::Bool(true)))]);
+    let changed = project(initial.clone(), ProjectMode::PreserveVisible,
+        vec![("x", IrExpr::Binding("unknown".into())), ("original", IrExpr::Binding("x".into()))]);
+    let graph = PropertyGraph::new();
+    let constants = input_constants(&changed, &graph, &mut 100).unwrap();
+    assert!(!constants.bindings.contains_key("x"));
+    assert_eq!(constants.bindings.get("original"), Some(&Value::Int(1)));
+    assert_eq!(constants.bindings.get("keep"), Some(&Value::Bool(true)));
+    let replaced = project(initial.clone(), ProjectMode::ReplaceScope,
+        vec![("renamed", IrExpr::Binding("x".into()))]);
+    let constants = input_constants(&replaced, &graph, &mut 100).unwrap();
+    assert_eq!(constants.bindings.len(), 1);
+    assert_eq!(constants.bindings.get("renamed"), Some(&Value::Int(1)));
+    let unwind = Node::GraphUnwind { input_expr: IrExpr::List(vec![]), bind: "x".into(), outer: false, input: Box::new(initial.clone()) };
+    let quantified = Node::GraphQuantifier {
+        kind: crate::ir::plan::QuantifierKind::All, item_binding: "item".into(),
+        input_expr: IrExpr::List(vec![]), predicate: IrExpr::Lit(Lit::Bool(true)),
+        output: "x".into(), input: Box::new(initial),
+    };
+    for node in [unwind, quantified] {
+        let constants = input_constants(&node, &graph, &mut 100).unwrap();
+        assert!(!constants.bindings.contains_key("x"));
+        assert_eq!(constants.bindings.get("keep"), Some(&Value::Bool(true)));
+    }
+    assert!(input_constants(&changed, &graph, &mut 0).is_none());
+}

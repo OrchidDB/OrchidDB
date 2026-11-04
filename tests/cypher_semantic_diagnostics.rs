@@ -115,3 +115,23 @@ fn known_non_property_values_have_type_diagnostics() {
         assert_eq!(error.classification(),Some(("TypeError","InvalidArgumentType")),"{error}");
     }
 }
+
+#[test]
+fn semantic_error_context_preserves_the_original_source_chain() {
+    use std::error::Error;
+    let original = CypherPlanError::Invalid("unknown procedure argument".into());
+    assert!(original.source().is_none());
+    let inner = original.clone().classified(CypherSemanticError::InvalidArgumentPassingMode);
+    let outer = inner.clone().classified(CypherSemanticError::ProcedureNotFound);
+    assert_eq!(outer.classification(), Some(("ProcedureError", "ProcedureNotFound")));
+    assert_eq!(inner.classification(), Some(("SyntaxError", "InvalidArgumentPassingMode")));
+    assert_eq!(outer.to_string(), original.to_string());
+    let first = outer.source().unwrap();
+    assert_eq!(first.to_string(), inner.to_string());
+    let second = first.source().unwrap();
+    assert_eq!(second.to_string(), original.to_string());
+    assert!(second.source().is_none());
+    let unsupported = CypherPlanError::Unsupported("unavailable feature".into());
+    assert!(unsupported.source().is_none());
+    assert_ne!(unsupported, original);
+}
