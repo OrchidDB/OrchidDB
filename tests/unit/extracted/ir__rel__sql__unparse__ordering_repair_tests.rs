@@ -97,3 +97,61 @@
         }
     }
 
+
+#[test]
+fn postgres_text_extrema_use_binary_collation_without_changing_native_values() {
+    use datafusion::functions_aggregate::expr_fn::{min,max};
+    use datafusion::logical_expr::{ColumnarValue,ScalarFunctionArgs};
+    for ty in [DataType::Utf8,DataType::LargeUtf8,DataType::Utf8View] {
+        let literal=|value:Option<&str>|lit(match ty {
+            DataType::Utf8=>ScalarValue::Utf8(value.map(str::to_owned)),
+            DataType::LargeUtf8=>ScalarValue::LargeUtf8(value.map(str::to_owned)),
+            _=>ScalarValue::Utf8View(value.map(str::to_owned)),
+        });
+        let input=LogicalPlanBuilder::values(vec![vec![literal(Some("z"))],vec![literal(Some("ä"))],
+            vec![literal(Some("A"))],vec![literal(None)]]).unwrap().build().unwrap();
+        let column=input.schema().field(0).name().clone();
+        let plan=LogicalPlanBuilder::from(input).aggregate(Vec::<Expr>::new(),vec![min(col(&column)).alias("lo"),max(col(&column)).alias("hi")]).unwrap().build().unwrap();
+        let fixed=preserve_postgres_text_extrema(plan.clone(),SqlDialect::Postgres).unwrap();
+        let debug=format!("{fixed:?}");
+        assert!(debug.contains("__postgres_binary_text"),"{debug}");
+        let unchanged=preserve_postgres_text_extrema(plan.clone(),SqlDialect::DuckDb).unwrap();
+        assert_eq!(unchanged,plan);
+        let LogicalPlan::Aggregate(aggregate)=fixed else {panic!()};
+        for expression in aggregate.aggr_expr {
+            let Expr::Alias(alias)=expression else {panic!()};
+            let Expr::AggregateFunction(aggregate)=*alias.expr else {panic!()};
+            let Expr::ScalarFunction(call)=&aggregate.params.args[0] else {panic!()};
+            for value in [None,Some("ä"),Some("A")] {
+                let Expr::Literal(value,_)=literal(value) else {panic!()};
+                let output=call.func.invoke_with_args(ScalarFunctionArgs{
+                    args:vec![ColumnarValue::Scalar(value.clone())],
+                    arg_fields:vec![Arc::new(Field::new("value",ty.clone(),true))],number_rows:1,
+                    return_field:Arc::new(Field::new("result",ty.clone(),true)),config_options:Default::default(),
+                }).unwrap();
+                let ColumnarValue::Scalar(actual)=output else {panic!()};
+                assert_eq!(actual,value);
+            }
+        }
+    }
+}
+
+#[test]
+fn literal_encoding_rejects_postgres_nul_and_retains_null_collection_types() {
+    use datafusion::logical_expr::ExprSchemable;
+    use arrow::array::{Array,ArrayRef,new_null_array};
+    for ty in [DataType::List(Arc::new(Field::new("item",DataType::Int64,true))),
+        DataType::LargeList(Arc::new(Field::new("item",DataType::Int64,true))),
+        DataType::FixedSizeList(Arc::new(Field::new("item",DataType::Int64,true)),2)] {
+        let array:ArrayRef=new_null_array(&ty,1);
+        let value=ScalarValue::try_from_array(array.as_ref(),0).unwrap();
+        assert!(array.is_null(0));
+        for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres] {
+            let output=encode_expression_literals(lit(value.clone()),dialect).unwrap().data;
+            assert_eq!(output.get_type(&datafusion::common::DFSchema::empty()).unwrap(),ty);
+        }
+    }
+    for value in [ScalarValue::Utf8(Some("a\0b".into())),ScalarValue::LargeUtf8(Some("\0".into())),ScalarValue::Utf8View(Some("x\0".into()))] {
+        assert!(encode_expression_literals(lit(value),SqlDialect::Postgres).unwrap_err().to_string().contains("postgres text cannot contain a NUL character"));
+    }
+}

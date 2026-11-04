@@ -51,3 +51,24 @@
             "SELECT UNNEST(\"items\") AS \"items\", UNNEST(\"items\") AS \"copy\", array_min(\"items\"), array_intersect(\"items\", \"other\")"
         );
     }
+
+#[test]
+fn sql_row_reconstruction_preserves_wide_strings_and_rejects_type_mismatches() {
+    for ty in [DataType::Utf8,DataType::LargeUtf8,DataType::Utf8View] {
+        let field=Field::new("value",ty.clone(),true);
+        let values=vec![vec![SqlValue::Text("雪\0'".into())],vec![SqlValue::Null],vec![SqlValue::Text("".into())]];
+        let array=rows::build_column(&field,&values,0).unwrap();
+        assert_eq!(array.data_type(),&ty);
+        assert!(array.is_null(1));
+        assert_eq!(arrow::util::display::array_value_to_string(array.as_ref(),0).unwrap(),"雪\0'");
+        assert_eq!(arrow::util::display::array_value_to_string(array.as_ref(),2).unwrap(),"");
+    }
+    for (ty,value) in [(DataType::Int8,SqlValue::Text("7".into())),
+        (DataType::UInt64,SqlValue::Bool(true)),(DataType::Float32,SqlValue::Binary(vec![1])),
+        (DataType::Decimal128(10,2),SqlValue::Float(1.25))] {
+        let error=rows::build_column(&Field::new("value",ty,true),&[vec![value]],0).unwrap_err();
+        assert!(error.to_string().contains("value"),"{error}");
+    }
+    assert!(rows::build_column(&Field::new("value",DataType::Duration(arrow::datatypes::TimeUnit::Second),true),&[vec![SqlValue::Int(1)]],0).unwrap_err().to_string().contains("result column"));
+    assert!(rows::parse_decimal_i128("12",-1).is_err());
+}
