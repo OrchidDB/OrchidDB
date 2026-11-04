@@ -208,6 +208,11 @@ impl<'a> LoweringContext<'a> {
             has_binding_shape(plan, name).map(|shape| (name.clone(), shape))
         };
         match expr {
+            // Recursive relationship projections are compiler-owned path
+            // operations, not user-defined functions in the source catalog.
+            IrExpr::Call { name, .. } if name == "path_project_edges" => {
+                return self.native_expr(plan, expr).map(Some);
+            }
             // Extracting an identity does not evaluate temporal semantics even
             // when the mapped primary key itself is DATE/TIME/TIMESTAMP.
             IrExpr::Call { name, args } if name == "cypher_id" && self.options.mapping.is_some() => {

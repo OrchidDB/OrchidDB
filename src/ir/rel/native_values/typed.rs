@@ -85,6 +85,7 @@ pub const CALLS: &[&str] = &[
     "path_or_self",
     "path_pairs",
     "path_intermediate_pairs",
+    "path_project_edges",
     "properties",
     "property",
     "recursive_relationship_path",

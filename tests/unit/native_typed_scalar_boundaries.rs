@@ -42,3 +42,36 @@ fn temporal_domains_enforce_the_same_declared_kind_for_arrow_and_json() {
         assert_eq!(scalar(domain(&name,text.clone()),&mut Context::default()).unwrap_err(),expected);
     }
 }
+
+#[test]
+fn recursive_edge_projection_preserves_path_identity_and_property_data() {
+    let graph=PropertyGraph::new();
+    let a=graph.insert_node("N",BTreeMap::from([("name".into(),Value::String("a".into()))]));
+    let b=graph.insert_node("N",BTreeMap::from([("name".into(),Value::String("b".into()))]));
+    let edge=graph.insert_edge("R",&a,&b,BTreeMap::from([("weight".into(),Value::Int(7)),("hidden".into(),Value::Int(9))])).unwrap();
+    for items in [vec![],vec![a.clone()],vec![a.clone(),edge.clone(),b.clone()]] {
+        let path=Value::Path(items.clone());
+        let mut context=Context::default();context.capture(&path,&graph).unwrap();
+        for names in [vec![],vec!["weight"],vec!["missing","weight"]] {
+            let keys=Value::List(names.iter().map(|name|Value::String((*name).into())).collect());
+            let result=evaluate("path_project_edges",&[values_array(&[path.clone()],&context),values_array(&[keys],&context)],1).unwrap();
+            let mut decoded=Context::default();
+            let actual=scalar(ScalarValue::try_from_array(&result,0).unwrap(),&mut decoded).unwrap();
+            let Value::Path(values)=actual else {panic!("expected path")};
+            assert_eq!(values.len(),items.len());
+            for (original,projected) in items.iter().zip(&values) {
+                let mut expected=original.clone();
+                if let Value::Edge{projected_properties,..}=&mut expected {
+                    *projected_properties=Some(names.iter().map(|s|(*s).into()).collect());
+                }
+                assert_eq!(*projected,expected);
+                assert_eq!(context.cypher_identity(original),decoded.cypher_identity(projected));
+            }
+            if let Some(edge)=values.get(1) {
+                let Value::Edge{rel_type,id,..}=edge else {panic!("edge identity")};
+                assert_eq!(decoded.graph.edge_property(rel_type,id.clone(),"weight"),Value::Int(7));
+                assert_eq!(decoded.graph.edge_property(rel_type,id.clone(),"hidden"),Value::Int(9));
+            }
+        }
+    }
+}
