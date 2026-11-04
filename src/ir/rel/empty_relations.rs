@@ -3,6 +3,10 @@ use super::*;
 use datafusion::common::tree_node::Transformed;
 use datafusion::logical_expr::{EmptyRelation, Projection};
 
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_empty_relations.rs"]
+mod execution_contracts;
+
 fn empty(plan: &LogicalPlan) -> bool {
     matches!(plan, LogicalPlan::EmptyRelation(e) if !e.produce_one_row)
 }

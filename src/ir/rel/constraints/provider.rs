@@ -7,6 +7,10 @@ use datafusion::{
 };
 use std::{any::Any, borrow::Cow, sync::Arc};
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_constrained_provider.rs"]
+mod delegation_contracts;
+
 pub(crate) struct ConstrainedProvider {
     pub inner: Arc<dyn TableProvider>,
     pub table: String,
