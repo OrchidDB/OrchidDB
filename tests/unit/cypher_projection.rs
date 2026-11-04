@@ -806,3 +806,27 @@ fn procedure_default_yields_shadow_candidates_in_query_reference_analysis() {
 
 query_refs!(match_edge_properties, "MATCH (fresh)-[edge:R {value:outer}]->(other) RETURN edge", &["outer"]);
 query_refs!(match_target_properties, "MATCH (fresh)-[:R]->(other {value:outer}) RETURN other", &["outer"]);
+
+#[test]
+fn static_slice_bounds_fold_safe_integer_arithmetic_and_defer_dynamic_values() {
+    for (text,expected) in [("9-4",Some(5)),("3*4",Some(12)),("9/2",Some(4)),
+        ("0-1",None),("18446744073709551615+1",None),("18446744073709551615*2",None),
+        ("9/0",None),("9%2",None),("-outside",None),("NOT outside",None),
+        ("1+outside",None),("outside+1",None)] {
+        assert_eq!(literal_u64(&expr(text)).unwrap(),expected,"{text}");
+    }
+    assert!(literal_u64(&Expr::Literal(Literal::Integer("18446744073709551616".into()))).is_err());
+}
+
+#[test]
+fn projected_sort_rewrites_null_and_string_predicates_to_aggregate_outputs() {
+    let query=parse_query("RETURN count(*) AS total, min(name) AS smallest").unwrap();
+    let Clause::Return(clause)=&query.clauses[0] else {panic!()};
+    let fields=vec!["total".into(),"smallest".into()];
+    for (source,expected) in [("count(*) IS NULL","total IS NULL"),
+        ("count(*) IS NOT NULL","total IS NOT NULL"),
+        ("min(name) STARTS WITH 'A'","smallest STARTS WITH 'A'"),
+        ("'Ada' ENDS WITH min(name)","'Ada' ENDS WITH smallest")] {
+        assert_eq!(rewrite_projected_sort_expr(&clause.projection,&fields,&expr(source)),expr(expected),"{source}");
+    }
+}
