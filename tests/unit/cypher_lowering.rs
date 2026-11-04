@@ -1192,3 +1192,20 @@ truncated_expression_list!(case_recovery_missing_then, oC_CaseAlternative,
     "WHEN true THEN 1", expressions::lower_case_alternative, "missing THEN expression");
 truncated_expression_list!(map_recovery_missing_last_value, oC_MapLiteral,
     "{first:1,last:2}", expressions::lower_map_literal, "key/value count mismatch");
+
+#[test]
+fn range_recovery_rejects_multiple_bounds_without_a_range_separator() {
+    use antlr4rust::{parser_rule_context::ParserRuleContext, tree::{ParseTree,Tree}};
+    let errors=super::super::SyntaxErrors::default();
+    let mut lexer=CypherLexer::new(InputStream::new("*1..2"));
+    lexer.remove_error_listeners();lexer.add_error_listener(Box::new(errors.listener()));
+    let mut parser=CypherParser::new(CommonTokenStream::new(lexer));
+    parser.remove_error_listeners();parser.add_error_listener(Box::new(errors.listener()));
+    let context=parser.oC_RangeLiteral().unwrap();
+    errors.into_result().unwrap();
+    let children=(0..context.get_child_count()).map(|i|context.get_child(i).unwrap()).collect::<Vec<_>>();
+    assert_eq!(children.iter().filter(|child|child.get_text()=="..").count(),1);
+    while context.get_child_count()>0 {context.remove_last_child();}
+    for child in children {if child.get_text()!=".." {context.add_child(child);}}
+    assert!(ranges::lower_range_literal(context.as_ref()).unwrap_err().to_string().contains("too many bounds"));
+}

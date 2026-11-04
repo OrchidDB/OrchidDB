@@ -2,6 +2,33 @@
     use super::*;
     use crate::language::cypher::parser::parse_query;
 
+#[test]
+fn implicit_procedure_outputs_match_standalone_and_yield_star_contracts() {
+    for (name,field) in [("db.labels","label"),("DB.RELATIONSHIPTYPES","relationshipType"),
+        ("db.propertyKeys","propertyKey"),("custom.write","value")] {
+        let mut query=parse_query(&format!("CALL {name}()")).unwrap();
+        let Clause::Call(clause)=&mut query.clauses[0] else {panic!()};
+        clause.signature=None;
+        clause.yields.clear();
+        for standalone in [false,true] {
+            clause.standalone=standalone;
+            clause.yield_all=!standalone;
+            assert_eq!(procedure_yields(clause),(vec![field.to_string()],vec![field.to_string()]));
+        }
+    }
+}
+
+#[test]
+fn relationship_order_diagnostics_identify_fixed_and_recursive_bindings() {
+    for relationship in ["r:R","r:R*1..2"] {
+        let query=parse_query(&format!("MATCH (a)-[{relationship}]->(b) RETURN r ORDER BY r")).unwrap();
+        let error=analyze_query(&query).unwrap_err();
+        assert!(error.to_string().contains("Order by REL is not supported"),"{error}");
+    }
+    analyze_query(&parse_query("MATCH (a)-[r:R]->(b) RETURN r.weight ORDER BY r.weight").unwrap()).unwrap();
+    analyze_query(&parse_query("MATCH (a)-[r:R*1..2]->(b) RETURN size(r) AS hops ORDER BY hops").unwrap()).unwrap();
+}
+
     fn analyze_outputs(source: &str) -> CypherPlanResult<Vec<String>> {
         let query = parse_query(source).expect("parse query");
         analyze_query(&query).map(|analyzed| analyzed.output_fields)
