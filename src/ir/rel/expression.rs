@@ -111,11 +111,17 @@ impl<'a> LoweringContext<'a> {
             && let Some(value) = self.lower_list_consumer(plan, expr)? { return Ok(value); }
         if self.language == Language::Cypher
             && matches!(expr,IrExpr::ListTransform{..}|IrExpr::ListFilter{..}|IrExpr::Quantifier{..}) {
-            let mut wide_cast = false;
-            crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |part, _| {
-                wide_cast |= expression_has_wide_numeric_cast(part);
+            let mut typed_input = false;
+            crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |part, scope| {
+                typed_input |= expression_has_wide_numeric_cast(part);
+                if let IrExpr::Binding(binding) = part
+                    && !scope.is_bound(binding)
+                    && let Some(column) = resolve_column_name(plan, binding)
+                    && let Ok(kind) = col_exact(column).get_type(plan.schema()) {
+                    typed_input |= native_values::is_value(&kind);
+                }
             });
-            if self.options.native_values || wide_cast {
+            if self.options.native_values || typed_input {
                 return self.lower_sql_lambda(plan,expr);
             }
         }
@@ -133,8 +139,13 @@ impl<'a> LoweringContext<'a> {
         {
             return self.lower_cypher_subscript(plan, &args[0], &args[1]);
         }
-        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
-            if self.language == Language::Cypher && !matches!(expr, IrExpr::Binding(_) | IrExpr::Lit(_)) {
+        if self.language == Language::Cypher
+            && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(),
+                "path_or_self" | "path_extend_after" | "path_from" | "path_append" | "cypher_path")) {
+            return self.native_expr(plan, expr);
+        }
+        if self.language == Language::Cypher && !matches!(expr, IrExpr::Binding(_) | IrExpr::Lit(_))
+            && (self.options.native_values || !matches!(expr, IrExpr::Call {name,args} if is_cast_function(name,args))) {
                 let mut opaque_operand = false;
                 crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |part, scope| {
                     let binding = match part {
@@ -148,7 +159,8 @@ impl<'a> LoweringContext<'a> {
                     }
                 });
                 if opaque_operand && let Ok(value) = self.native_expr(plan,expr) { return Ok(value); }
-            }
+        }
+        if self.options.native_values && matches!(self.language,Language::Cypher|Language::Gremlin) {
             if self.language == Language::Gremlin {
             // Map literals must retain their typed runtime value across collect/UNWIND.
             if self.language == Language::Cypher && matches!(expr, IrExpr::Call { name, .. } if matches!(name.as_str(), "map" | "cypher_subscript")) {

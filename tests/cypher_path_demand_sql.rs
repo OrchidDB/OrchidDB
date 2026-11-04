@@ -60,26 +60,33 @@ async fn dead_paths_and_fixed_lengths_preserve_bags_and_trails_in_plain_sql() {
     }
 }
 
-#[test]
-fn observed_paths_optional_lengths_and_distinct_paths_keep_the_typed_fence() {
+#[tokio::test]
+async fn observed_paths_optional_lengths_and_distinct_paths_execute_in_text_mode() {
     let graph = graph();
-    for query in [
-        "MATCH p=(a)-[:R]->(b) RETURN p",
-        "MATCH p=(a)-[:R]->(b) RETURN count(DISTINCT p)",
-        "MATCH (a:A) OPTIONAL MATCH p=(a)-[:Missing]->(b) RETURN count(p)",
-        "MATCH (a:A) OPTIONAL MATCH p=(a)-[:Missing]->(b) RETURN length(p)",
-        "MATCH p=(a)-[:R]->(b)-[:R]->(c) RETURN length(p)",
+    for (query, expected) in [
+        ("MATCH p=(a)-[:R]->(b) RETURN count(DISTINCT p)", vec!["3"]),
+        ("MATCH (a:A) OPTIONAL MATCH p=(a)-[:Missing]->(b) RETURN count(p)", vec!["0"]),
+        ("MATCH (a:A) OPTIONAL MATCH p=(a)-[:Missing]->(b) RETURN length(p)", vec![""]),
+        ("MATCH p=(a)-[:R]->(b)-[:R]->(c) RETURN length(p)", vec!["2", "2"]),
     ] {
-        let plan = CypherPlanner::new()
-            .plan(&parse_query(query).unwrap())
-            .unwrap();
-        assert!(
-            RelBackend::new()
-                .with_language_functions(true)
-                .lower(&plan, &graph)
-                .is_err(),
-            "{query}"
-        );
+        let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+        let lowered = RelBackend::new().with_language_functions(true)
+            .lower(&plan, &graph).unwrap_or_else(|error| panic!("{query}: {error}"));
+        let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered)
+            .await.unwrap_or_else(|error| panic!("{query}: {error}"));
+        let actual: Vec<_> = (0..result.batch.num_rows()).map(|row|
+            arrow::util::display::array_value_to_string(result.batch.column(0), row).unwrap()
+        ).collect();
+        assert_eq!(actual, expected, "{query}");
+    }
+    let plan = CypherPlanner::new().plan(
+        &parse_query("MATCH p=(a)-[:R]->(b) RETURN p").unwrap()).unwrap();
+    let lowered = RelBackend::new().with_language_functions(true).lower(&plan, &graph).unwrap();
+    let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered).await.unwrap();
+    let rows = orchiddb::ir::rel::native_values::decode_rows(&result.batch, &lowered.fields, &graph).unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        assert!(matches!(row.get("p"), Value::Path(items) if items.len() == 3));
     }
 }
 

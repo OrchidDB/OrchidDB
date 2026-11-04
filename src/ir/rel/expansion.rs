@@ -347,7 +347,7 @@ impl<'a> LoweringContext<'a> {
         target: &str,
         rel: &str,
     ) -> RelResult<LoweredNode> {
-        if self.options.native_values {
+        if self.options.native_values || self.language == Language::Cypher {
             let previous=if has_exact_col(&expanded.plan,path){IrExpr::binding(path)}else{IrExpr::Lit(Lit::Null)};
             let source=IrExpr::binding(source);
             use crate::ir::runtime::ops::expand::{path_step,PathStep};

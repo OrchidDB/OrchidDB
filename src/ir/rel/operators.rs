@@ -161,13 +161,6 @@ impl LoweringContext<'_> {
                 input,
                 ..
             } => {
-                if self.language == Language::Cypher
-                    && path.is_some() && !self.options.native_values
-                {
-                    return Err(RelError::Unsupported(
-                        "Cypher paths require typed SQL IR residual values".into(),
-                    ));
-                }
                 let sql_history = if self.language == Language::Cypher
                     && matches!(match_mode, crate::ir::policy::MatchMode::DifferentRelationships)
                 { history.as_deref() } else { None };
@@ -354,8 +347,10 @@ impl LoweringContext<'_> {
                     .collect::<Vec<_>>();
                 let sql_native_aggregates = self.language == Language::Cypher
                     && self.options.rule_context.profile.cypher_aggregates == crate::ir::rules::CypherAggregatePolicy::SqlNative;
-                let cypher_keys = !sql_native_aggregates && ((self.options.language_functions && self.language == Language::Cypher)
-                    || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin)));
+                let carrier_keys = self.language == Language::Cypher && input.plan.schema().fields().iter()
+                    .any(|field| native_values::is_value(field.data_type()));
+                let cypher_keys = carrier_keys || (!sql_native_aggregates && ((self.options.language_functions && self.language == Language::Cypher)
+                    || (self.options.native_values && matches!(self.language, Language::Cypher | Language::Gremlin))));
                 let mut representatives = Vec::new();
                 let mut hidden_keys = BTreeSet::new();
                 for (i, item) in group.iter().enumerate() {
@@ -685,7 +680,8 @@ impl LoweringContext<'_> {
                         order_session.changed(order_rule, || "native values retain query-root order demand across SQL island placement".into());
                         unordered_distinct_partition(input.plan.clone(), partition, barrier_id)?
                     } else { keyed_distinct_partition(input.plan.clone(), partition, barrier_id)? }
-                } else if self.options.language_functions && self.language == Language::Cypher {
+                } else if self.language == Language::Cypher && (self.options.language_functions
+                    || input.plan.schema().fields().iter().any(|field| native_values::is_value(field.data_type()))) {
                     let partition = distinct_partition(&input.plan, &distinct_keys).into_iter()
                         .map(|e| language_functions::key(e, &input.plan)).collect::<RelResult<Vec<_>>>()?;
                     let order_rule = pipeline::descriptor("rel.distinct.order_demand", crate::ir::rules::Stage::RelationalOptimize,

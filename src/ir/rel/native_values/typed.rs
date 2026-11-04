@@ -637,7 +637,12 @@ pub(super) fn lower(
     plan: &LogicalPlan,
     expr: &IrExpr,
 ) -> RelResult<Expr> {
-    let lower = |expr| -> RelResult<Expr> {
+    let lower = |expr: &IrExpr| -> RelResult<Expr> {
+        if let IrExpr::Binding(binding) = expr
+            && resolve_column_name(plan, binding).is_none()
+            && has_binding_shape(plan, binding).is_some() {
+            return context.native_element(plan, binding);
+        }
         let value = context.lower_expr(plan, expr)?;
         let ty = value.get_type(plan.schema())?;
         Ok(

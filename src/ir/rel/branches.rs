@@ -48,7 +48,9 @@ impl<'a> LoweringContext<'a> {
         // heterogeneous branches. DISTINCT then compares language keys, not
         // serialized carriers (integer 1 and float 1.0 are equal in Cypher).
         let mut cypher_boxed = false;
-        if self.language == Language::Cypher && self.options.native_values {
+        let typed_columns = self.options.native_values || [&left, &right].iter().any(|input|
+            input.plan.schema().fields().iter().any(|field| native_values::is_value(field.data_type())));
+        if self.language == Language::Cypher && typed_columns {
             let boxed = left.plan.schema().fields().iter().zip(right.plan.schema().fields())
                 .enumerate().filter_map(|(i, (a, b))| (a.data_type() != b.data_type()).then_some(i))
                 .collect::<BTreeSet<_>>();
@@ -68,7 +70,7 @@ impl<'a> LoweringContext<'a> {
                 input.plan = LogicalPlanBuilder::from(input.plan.clone()).project(expressions)?.build()?;
             }
         }
-        if self.language == Language::Cypher && !self.options.native_values {
+        if self.language == Language::Cypher && !typed_columns {
             // Untyped NULL has no non-null value to coerce. Give only those
             // columns the other branch's type; retain the lossless-type check
             // for every pair of concrete types below.

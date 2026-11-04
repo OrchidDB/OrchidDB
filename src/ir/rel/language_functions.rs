@@ -145,6 +145,15 @@ pub(super) fn native_grouping_type(ty: &DataType) -> bool {
 }
 
 pub(super) fn key(expr: Expr, plan: &LogicalPlan) -> RelResult<Expr> {
+    if super::native_values::is_value(&expr.get_type(plan.schema())?) {
+        // Internal path carriers also occur with text output. Preserve language
+        // identity while keeping SQL NULL absent from COUNT(DISTINCT ...).
+        return Ok(super::varlen::case_when(
+            expr.clone().is_null(),
+            lit(ScalarValue::Utf8(None)),
+            super::native_values::key_expr(expr, true),
+        ));
+    }
     if native_grouping_type(&expr.get_type(plan.schema())?) {
         return Ok(expr);
     }

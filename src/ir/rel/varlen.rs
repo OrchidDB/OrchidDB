@@ -150,7 +150,7 @@ impl LoweringContext<'_> {
         let effective_upper = length.max;
         // The accumulator holds intermediate nodes only; the endpoints are
         // already bound and are added when the full path is rendered.
-        let native_path = self.options.native_values && self.language == Language::Cypher;
+        let native_path = self.language == Language::Cypher;
         let prior_path = rel_binding.filter(|name| has_exact_col(&input.plan, name));
         let seed_nodes = if native_path {
             match prior_path { Some(name) => col_exact(name), None => native_values::literal(&Value::Path(vec![]))? }
@@ -541,7 +541,7 @@ impl LoweringContext<'_> {
         direction: Direction, rel_types: &LabelExpr, max_distance: Option<f64>,
         include_edges: bool, output: &str, all_paths: bool,
     ) -> RelResult<LoweredNode> {
-        if !self.options.native_values {
+        if !self.options.native_values && self.language != Language::Cypher {
             return Err(RelError::Unsupported("shortest paths require typed path values".into()));
         }
         let input = self.lower_node(input)?;
