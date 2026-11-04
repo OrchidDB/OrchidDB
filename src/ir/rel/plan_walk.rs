@@ -2,6 +2,10 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/cypher_plan_walk.rs"]
+mod cypher_contracts;
+
 /// Bindings consumed by the first `GraphCorrelate` leaf under `node`.
 pub(super) fn first_correlate_bindings(node: &Node) -> Option<Vec<String>> {
     let mut stack = vec![node];

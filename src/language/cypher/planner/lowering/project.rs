@@ -170,17 +170,9 @@ fn lower_with_predicate_placement(
 }
 
 fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<()> {
-    let missing = body
-        .items
-        .iter()
-        .filter(|item| !item.explicit_alias && !matches!(item.expr, Expr::Variable(_)))
-        .map(|item| {
-            item.alias
-                .clone()
-                .unwrap_or_else(|| "<expression>".to_string())
-        })
-        .collect::<Vec<_>>();
-    if missing.is_empty() {
+    let missing = body.items.iter().any(|item|
+        !item.explicit_alias && !matches!(item.expr, Expr::Variable(_)));
+    if !missing {
         Ok(())
     } else {
         Err(CypherPlanError::Invalid(

@@ -3,6 +3,25 @@ use super::*;
 use crate::language::cypher::parser::parse_query;
 
 #[test]
+fn projection_validation_requires_explicit_expression_aliases_and_unique_outputs() {
+    let query=parse_query("RETURN 1+2 AS result").unwrap();
+    let Clause::Return(clause)=&query.clauses[0] else {panic!()};
+    let mut projection=clause.projection.clone();
+    validate_with_projection_aliases(&projection).unwrap();
+    projection.items[0].explicit_alias=false;
+    for alias in [None,Some("generated_name".to_string())] {
+        projection.items[0].alias=alias;
+        assert!(validate_with_projection_aliases(&projection).unwrap_err().to_string().contains("Expression in WITH must be aliased"));
+    }
+    projection.items[0].expr=Expr::Variable("source".into());
+    validate_with_projection_aliases(&projection).unwrap();
+    validate_unique_fields(&[]).unwrap();
+    validate_unique_fields(&["a".into(),"A".into()]).unwrap();
+    assert!(validate_unique_fields(&["b".into(),"a".into(),"b".into(),"a".into()])
+        .unwrap_err().to_string().contains("duplicate column names: b, a"));
+}
+
+#[test]
 fn with_filters_choose_scope_safe_placement_and_reject_hidden_aggregate_inputs() {
     let mut lowerer=Lowerer::new();lowerer.add_visible("source");lowerer.add_visible("other");
     for (query,expected) in [

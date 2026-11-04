@@ -5,6 +5,10 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/cypher_union_boundaries.rs"]
+mod cypher_contracts;
+
 impl<'a> LoweringContext<'a> {
     pub(super) fn lower_union(
         &mut self,
