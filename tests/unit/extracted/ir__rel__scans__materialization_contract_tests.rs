@@ -165,3 +165,83 @@
         assert!(materialize_edge_scan_batch("v","R",&[999_i64.into()],&graph,&defs,edge_schema("v",&defs),Language::Cypher)
             .unwrap_err().to_string().contains("has no endpoints"));
     }
+
+#[test]
+fn encoded_struct_fields_preserve_values_and_treat_absent_or_invalid_members_as_null() {
+    let encode = |value: Value| Some(format!("{value:?}"));
+    let values = vec![None, Some("not a value".into()), encode(Value::Int(7)),
+        encode(Value::Map(BTreeMap::new())),
+        encode(Value::Map(BTreeMap::from([("field".into(), Value::Null)]))),
+        encode(Value::Map(BTreeMap::from([("field".into(), Value::Long(i64::MAX)), ("__tag".into(), Value::String("choice".into()))]))),
+        encode(Value::Map(BTreeMap::from([("field".into(), Value::Bool(true)), ("__tag".into(), Value::Int(7))]))),
+    ];
+    let batch = RecordBatch::try_from_iter(vec![("payload", Arc::new(StringArray::from(values)) as ArrayRef)]).unwrap();
+    let fields = property_struct_field_array(&batch, "payload", "field", 7, Language::Cypher).unwrap();
+    let expected = [None, None, None, None, None, Some(i64::MAX.to_string()), Some("True".into())];
+    for (row, value) in expected.into_iter().enumerate() {
+        assert_eq!(ScalarValue::try_from_array(&fields, row).unwrap(), ScalarValue::Utf8(value));
+    }
+    let tags = property_union_tag_array(&batch, "payload", 7).unwrap();
+    assert_eq!(tags.null_count(), 6);
+    assert_eq!(ScalarValue::try_from_array(&tags, 5).unwrap(), ScalarValue::Utf8(Some("choice".into())));
+    let absent = property_struct_field_array(&batch, "payload", "absent", 7, Language::Cypher).unwrap();
+    assert_eq!(absent.null_count(), 7);
+}
+
+#[test]
+fn encoded_property_fields_validate_source_types_and_missing_column_cardinality() {
+    let batch = RecordBatch::try_from_iter(vec![("payload", Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef)]).unwrap();
+    assert!(property_struct_field_array(&batch, "payload", "x", 2, Language::Cypher).unwrap_err().to_string().contains("is not text"));
+    assert!(property_union_tag_array(&batch, "payload", 2).unwrap_err().to_string().contains("not a string column"));
+    for rows in [0, 3] {
+        for values in [property_struct_field_array(&batch, "missing", "x", rows, Language::Cypher).unwrap(),
+            property_union_tag_array(&batch, "missing", rows).unwrap()] {
+            assert_eq!(values.len(), rows);
+            assert_eq!(values.null_count(), rows);
+        }
+    }
+}
+
+#[test]
+fn base_table_normalization_retains_structured_properties_and_endpoint_identity() {
+    let payload = Value::Map(BTreeMap::from([("field".into(), Value::Int(7)), ("__tag".into(), Value::String("choice".into()))]));
+    let values = Arc::new(StringArray::from(vec![Some(format!("{payload:?}")), None])) as ArrayRef;
+    let field = Field::new("payload", DataType::Utf8, true).with_metadata(
+        std::collections::HashMap::from([("orchiddb.value_type".into(), "value".into())]));
+    let nodes = NodeTable { label: "Alpha".into(), batch: RecordBatch::try_new(Arc::new(Schema::new(vec![field.clone()])), vec![values.clone()]).unwrap() };
+    let edges = EdgeTable { rel_type: "R".into(), src_label: "Alpha".into(), dst_label: "Beta".into(),
+        batch: RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("__src_id", DataType::Int64, false), Field::new("__dst_id", DataType::Int64, false), field])),
+            vec![Arc::new(Int64Array::from(vec![0, 1])), Arc::new(Int64Array::from(vec![1, 0])), values]).unwrap() };
+    let props = vec![PropertyDef { name: "payload".into(), data_type: DataType::Utf8,
+        carries_union_tag: true, struct_fields: vec!["field".into(), "missing".into()] }];
+    for (output, first_id) in [
+        (normalize_node_table("v", &nodes, &props, node_schema("v", &props), Language::Cypher).unwrap(), 0),
+        (normalize_edge_table("v", &edges, 40, &props, edge_schema("v", &props), Language::Cypher).unwrap(), 40),
+    ] {
+        let cell = |name: String, row| ScalarValue::try_from_array(output.column(output.schema().index_of(&name).unwrap()), row).unwrap();
+        assert_eq!(output.num_rows(), 2);
+        assert_eq!(cell(id_col("v"), 0), ScalarValue::Int64(Some(first_id)));
+        assert_eq!(cell(id_col("v"), 1), ScalarValue::Int64(Some(first_id + 1)));
+        assert_eq!(cell(struct_field_col("v", "payload", "field"), 0), ScalarValue::Utf8(Some("7".into())));
+        assert_eq!(cell(union_tag_col("v", "payload"), 0), ScalarValue::Utf8(Some("choice".into())));
+        assert!(cell(struct_field_col("v", "payload", "missing"), 0).is_null());
+        assert!(cell(struct_field_col("v", "payload", "field"), 1).is_null());
+        if first_id == 40 {
+            assert_eq!(cell(src_id_col("v"), 0), ScalarValue::Int64(Some(0)));
+            assert_eq!(cell(dst_id_col("v"), 0), ScalarValue::Int64(Some(1)));
+            assert_eq!(cell(src_label_col("v"), 0), ScalarValue::Utf8(Some("Alpha".into())));
+            assert_eq!(cell(dst_label_col("v"), 0), ScalarValue::Utf8(Some("Beta".into())));
+        }
+    }
+}
+
+#[test]
+fn base_edge_normalization_reports_missing_endpoint_columns() {
+    for present in ["__src_id", "__dst_id"] {
+        let batch = RecordBatch::try_from_iter(vec![(present, Arc::new(Int64Array::from(vec![0])) as ArrayRef)]).unwrap();
+        let table = EdgeTable { rel_type: "R".into(), src_label: "P".into(), dst_label: "P".into(), batch };
+        let error = normalize_edge_table("r", &table, 0, &[], edge_schema("r", &[]), Language::Cypher).unwrap_err().to_string();
+        let missing = if present == "__src_id" { "__dst_id" } else { "__src_id" };
+        assert!(error.contains(&format!("missing {missing}")), "{error}");
+    }
+}
