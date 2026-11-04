@@ -779,3 +779,56 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         ext.node.name()
     )))
 }
+
+#[cfg(test)]
+mod conversion_contracts {
+    use super::*;
+    use crate::language::cypher::{parser::parse_query, planner::CypherPlanner};
+
+    #[test]
+    fn cypher_operator_trees_round_trip_without_losing_semantics() {
+        for query in [
+            "RETURN 1 AS value",
+            "UNWIND [1,null,2] AS x RETURN x",
+            "MATCH (n:Person) WHERE n.age > 20 RETURN DISTINCT n.name ORDER BY n.name SKIP 1 LIMIT 2",
+            "MATCH (a)-[r:KNOWS]->(b) RETURN a,r,b",
+            "MATCH p=(a)-[:KNOWS*0..3]->(b) RETURN p",
+            "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) RETURN a,b,r",
+            "MATCH (a),(b) WHERE a.id=b.id RETURN a,b",
+            "UNWIND [1,2,2] AS x RETURN x,count(*) AS n,collect(x) AS xs",
+            "RETURN 1 AS x UNION RETURN 2 AS x",
+            "RETURN 1 AS x UNION ALL RETURN 2 AS x",
+            "UNWIND [[1,2],[],null] AS xs RETURN [x IN xs WHERE x>1 | x+1] AS ys",
+            "MATCH (n) WHERE EXISTS { MATCH (n)-->(m) RETURN m } RETURN n",
+            "CREATE (n:Person {name:'Ada'}) SET n.age=42 RETURN n",
+            "MATCH (n) DELETE n RETURN count(*)",
+        ] {
+            let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+            let logical = to_logical_plan(&plan).unwrap_or_else(|e| panic!("{query}: {e}"));
+            assert_eq!(from_logical_plan_with_policy(plan.policy.clone(), &logical).unwrap(), plan, "{query}");
+            // Sort/limit/union may be outside the output boundary; these use
+            // the explicit-policy entry point. Output roots embed the policy.
+            if !matches!(plan.root.as_ref(), Node::GraphReturn { .. }) {
+                assert!(from_logical_plan(&logical).is_err(), "{query}");
+                continue;
+            }
+            assert_eq!(from_logical_plan(&logical).unwrap(), plan, "{query}");
+            // An embedded policy wins over a caller's legacy fallback.
+            let mut fallback = plan.policy.clone();
+            fallback.provider_features.push(crate::ir::policy::ProviderFeature::Custom("fallback".into()));
+            assert_eq!(from_logical_plan_with_policy(fallback, &logical).unwrap(), plan, "{query}");
+        }
+    }
+
+    #[test]
+    fn legacy_roots_require_explicit_policy_and_sql_nodes_are_rejected() {
+        let legacy = node_to_plan(&Node::GraphOneRow).unwrap();
+        assert!(from_logical_plan(&legacy).unwrap_err().to_string().contains("GraphPlanPolicy"));
+        let policy = GraphPlanPolicy::cypher();
+        assert_eq!(from_logical_plan_with_policy(policy.clone(), &legacy).unwrap(),
+            GraphPlan::new(policy.clone(), Node::GraphOneRow));
+        let sql = datafusion::logical_expr::LogicalPlanBuilder::empty(true).build().unwrap();
+        assert!(from_logical_plan(&sql).is_err());
+        assert!(from_logical_plan_with_policy(policy, &sql).unwrap_err().to_string().contains("expected GraphIR Extension"));
+    }
+}
