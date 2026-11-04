@@ -4,6 +4,10 @@ use datafusion::common::{DFSchema, tree_node::Transformed};
 use datafusion::logical_expr::{JoinType, Projection, SubqueryAlias};
 use datafusion::logical_expr::ExprSchemable;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_optional_filter.rs"]
+mod execution_contracts;
+
 fn total(expr: &Expr, schema: &DFSchema) -> bool {
     match expr {
         Expr::Column(_) | Expr::Literal(..) => true,

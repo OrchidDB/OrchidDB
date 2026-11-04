@@ -2,6 +2,10 @@
 //! Inputs arrive as typed Arrow relations; adapters own their engine binding.
 use super::*;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_region_session.rs"]
+mod session_contracts;
+
 pub trait RegionSession: std::fmt::Debug + Send {
     #[doc(hidden)]
     fn validate_float_helper(
