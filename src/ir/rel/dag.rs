@@ -24,6 +24,7 @@ use futures::stream;
 
 mod exchange;
 #[cfg(all(test, feature = "duckdb"))]
+#[path = "../../../tests/unit/rel_dag_scalar_inputs.rs"]
 mod scalar_inputs;
 
 #[derive(Debug, Clone, serde::Serialize)]

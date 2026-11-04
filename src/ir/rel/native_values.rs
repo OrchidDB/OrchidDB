@@ -935,6 +935,7 @@ impl ScalarUDFImpl for NativeFunction {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/unit/rel_native_value_contracts.rs"]
 mod tests;
 
 #[cfg(test)]

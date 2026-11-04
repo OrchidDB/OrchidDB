@@ -32,6 +32,7 @@ mod scalar_semantics;
 pub(crate) mod conversion_rules;
 mod scalar_rule_program;
 #[cfg(all(test, feature = "duckdb"))]
+#[path = "../../../tests/unit/rel_pipeline_contracts.rs"]
 mod pipeline_tests;
 pub(crate) mod pipeline;
 mod list_comparison;
