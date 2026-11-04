@@ -297,4 +297,59 @@ mod tests {
         ));
         assert!(!direct(&Node::GraphOneRow, "x", &source, &nested(vec![])));
     }
+
+    #[test]
+    fn proven_domains_survive_row_operators_but_not_rebinding() {
+        use crate::ir::plan::{ProjectionItem, ProjectErrorPolicy, Slice, DistinctMode, DistinctBulk, QuantifierKind};
+        let project = |input: Node, mode, name: &str, expr| Node::GraphProject {
+            mode, items: vec![ProjectionItem { alias: name.into(), expr }],
+            error_policy: ProjectErrorPolicy::PropagateError, input: input.boxed(),
+        };
+        let source = || project(Node::GraphOneRow, ProjectMode::ReplaceScope, "xs",
+            IrExpr::List(vec![IrExpr::Lit(Lit::Int(-3)), IrExpr::Lit(Lit::Null), IrExpr::Lit(Lit::Int(4))]));
+        let body = op(BinaryOp::Lt,
+            op(BinaryOp::Mul, Expr::Variable("x".into()), Expr::Variable("x".into())), value(17));
+        let safe = |input: &Node, name: &str| direct(input, "x", &Expr::Variable(name.into()), &body);
+        assert!(safe(&source(), "xs"));
+        for node in [
+            Node::GraphFilter {condition: IrExpr::Lit(Lit::Bool(true)), input: source().boxed()},
+            Node::GraphSort {keys: vec![], input: source().boxed()},
+            Node::GraphSlice {slice: Slice::NONE, input: source().boxed()},
+            Node::GraphSliceExpr {offset: None, fetch: Some(IrExpr::Lit(Lit::Int(1))), input: source().boxed()},
+            Node::GraphDistinct {keys: vec!["xs".into()], mode: DistinctMode::Row, bulk: DistinctBulk::NotApplicable, input: source().boxed()},
+            project(source(), ProjectMode::PreserveVisible, "other", IrExpr::Lit(Lit::String("s".into()))),
+        ] {
+            assert!(safe(&node, "xs"));
+        }
+        let renamed = project(source(), ProjectMode::ReplaceScope, "ys", IrExpr::Binding("xs".into()));
+        assert!(safe(&renamed, "ys"));
+        assert!(!safe(&renamed, "xs"));
+        for node in [
+            project(source(), ProjectMode::PreserveVisible, "xs", IrExpr::Binding("unknown".into())),
+            Node::GraphUnwind {input_expr: IrExpr::List(vec![]), bind: "xs".into(), outer: false, input: source().boxed()},
+            Node::GraphQuantifier {kind: QuantifierKind::All, item_binding: "item".into(), input_expr: IrExpr::List(vec![]), predicate: IrExpr::Lit(Lit::Bool(true)), output: "xs".into(), input: source().boxed()},
+        ] {
+            assert!(!safe(&node, "xs"));
+        }
+    }
+
+    #[test]
+    fn arithmetic_bounds_enclose_every_value_in_small_signed_domains() {
+        let x = Expr::Variable("x".into());
+        let y = Expr::Variable("y".into());
+        for (a,b) in [(-4,-1),(-2,3),(0,0),(1,4)] {
+            for (c,d) in [(-4,-1),(-2,3),(0,0),(1,4)] {
+                let scope = Scope::from([("x".into(),Domain::Integer(a,b)),("y".into(),Domain::Integer(c,d))]);
+                for operator in [BinaryOp::Add,BinaryOp::Sub,BinaryOp::Mul] {
+                    let (lo,hi) = bounds(&op(operator, x.clone(), y.clone()), &scope).unwrap();
+                    for left in a..=b {
+                        for right in c..=d {
+                            let actual = match operator {BinaryOp::Add => left+right, BinaryOp::Sub => left-right, _ => left*right};
+                            assert!((lo..=hi).contains(&actual));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
