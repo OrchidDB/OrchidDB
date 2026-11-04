@@ -135,6 +135,19 @@ fn encode_plan(plan: LogicalPlan, source_id: &std::cell::Cell<usize>) -> SqlResu
                                 )));
                             }
                         }
+                        if let Expr::AggregateFunction(function) = &expr
+                            && function.func.name() == "array_agg"
+                            && let [argument] = function.params.args.as_slice()
+                            && let Some(ty) = schemas.iter().find_map(|schema| argument.get_type(schema).ok())
+                            && matches!(ty, DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _))
+                            && !matches!(argument, Expr::ScalarFunction(f) if f.name() == "__orchiddb_pg_list_child") {
+                            // PostgreSQL array_agg(array) constructs a rectangular
+                            // multidimensional array. Cypher collect preserves
+                            // ragged, empty and null children as individual cells.
+                            let mut function = function.clone();
+                            function.params.args = vec![placeholder("__orchiddb_pg_list_child",vec![argument.clone()],ty)];
+                            return Ok(Transformed::yes(Expr::AggregateFunction(function)));
+                        }
                         if let Expr::ScalarFunction(f) = &expr {
                             if f.name() == "make_array" {
                                 if let Some(ty) = schemas
@@ -246,6 +259,10 @@ pub(super) fn adapt(
     args: &[datafusion::sql::sqlparser::ast::Expr],
 ) -> SqlResult<bool> {
     use datafusion::sql::sqlparser::ast;
+    if name == "__orchiddb_pg_list_child" && args.len() == 1 {
+        *expr = super::functions::template("to_jsonb(__arg0)",args)?;
+        return Ok(true);
+    }
     if name == "__orchiddb_pg_list_normalize" && args.len() == 1 {
         *expr = super::functions::template(
             "(SELECT CASE WHEN a IS NULL THEN CAST(NULL AS JSONB[]) ELSE ARRAY(SELECT nullif(v,CAST('null' AS JSONB)) FROM jsonb_array_elements(to_jsonb(a)) WITH ORDINALITY AS __local1(v,n) ORDER BY n) END FROM (SELECT __arg0 AS a) AS __local0)",

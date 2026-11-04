@@ -79,6 +79,28 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
             ControlFlow::Continue(())
         }
         fn pre_visit_query(&mut self, query: &mut ast::Query) -> ControlFlow<Self::Break> {
+            // sqlparser visits a UNION's bare SELECT arms without a Query
+            // callback. Give each arm its own scope so generated derived-table
+            // aliases are unique and qualifiers cannot leak across branches.
+            fn scope_set_arms(body: &mut ast::SetExpr) {
+                if let ast::SetExpr::SetOperation { left, right, .. } = body {
+                    for arm in [left, right] {
+                        match arm.as_mut() {
+                            ast::SetExpr::SetOperation { .. } => scope_set_arms(arm),
+                            ast::SetExpr::Select(_) => {
+                                **arm = ast::SetExpr::Query(Box::new(ast::Query {
+                                    with: None, body: arm.clone(), order_by: None,
+                                    limit_clause: None, fetch: None, locks: vec![],
+                                    for_clause: None, settings: None, format_clause: None,
+                                    pipe_operators: vec![],
+                                }));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            if self.repair_qualifiers { scope_set_arms(query.body.as_mut()); }
             let mut scope = Scope {
                 names: Default::default(),
                 derived: Default::default(),
@@ -236,12 +258,23 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         impl ast::VisitorMut for EmptyArrays {
             type Break = SqlError;
             fn pre_visit_expr(&mut self, expr: &mut ast::Expr) -> ControlFlow<Self::Break> {
-                if let ast::Expr::Cast { expr: inner, .. } = expr {
-                    if let ast::Expr::Array(a) = inner.as_ref() {
-                        if a.elem.iter().all(|v| matches!(v, ast::Expr::Value(v) if v.value == ast::Value::Null)) {
-                            **inner = ast::Expr::Value(ast::Value::SingleQuotedString(format!("{{{}}}", vec!["NULL"; a.elem.len()].join(","))).into());
-                        }
+                fn null_array_literal(expr: &ast::Expr) -> Option<String> {
+                    match expr {
+                        ast::Expr::Nested(inner) => null_array_literal(inner),
+                        ast::Expr::Cast {expr: inner, data_type: ast::DataType::Array(_), ..} => null_array_literal(inner),
+                        ast::Expr::Array(array) if array.elem.iter().all(|v| matches!(v, ast::Expr::Value(v) if v.value == ast::Value::Null)) =>
+                            Some(format!("{{{}}}",vec!["NULL";array.elem.len()].join(","))),
+                        ast::Expr::Value(value) => match &value.value {
+                            ast::Value::SingleQuotedString(text) if text == "{}" || text.strip_prefix('{').and_then(|s|s.strip_suffix('}'))
+                                .is_some_and(|s| s.split(',').all(|item| item == "NULL")) => Some(text.clone()),
+                            _ => None,
+                        },
+                        _ => None,
                     }
+                }
+                if let ast::Expr::Cast {expr: inner,data_type: ast::DataType::Array(_), ..} = expr
+                    && let Some(literal) = null_array_literal(inner) {
+                    **inner = ast::Expr::Value(ast::Value::SingleQuotedString(literal).into());
                 }
                 ControlFlow::Continue(())
             }
@@ -791,6 +824,26 @@ pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn postgres_empty_arrays_use_the_declared_outer_type() {
+        for value in ["ARRAY[]", "(ARRAY[])", "((ARRAY[]))", "(ARRAY[NULL,NULL])", "(CAST('{}' AS INTEGER[]))", "(CAST('{NULL,NULL}' AS INTEGER[]))"] {
+            let sql=rewrite(&format!("SELECT CAST({value} AS JSONB[])"),SqlDialect::Postgres);
+            assert!(sql.contains("AS JSONB[]"),"{sql}");
+            assert!(!sql.contains("INTEGER[]"),"{sql}");
+            assert_eq!(sql.matches("CAST(").count(),1,"{sql}");
+        }
+    }
+
+    #[test]
+    fn set_operation_arms_repair_derived_aliases_in_separate_scopes() {
+        let arm="SELECT x,y FROM (SELECT 1 AS x) derived_projection JOIN (SELECT 2 AS y) derived_projection ON x<y";
+        for operator in ["UNION", "UNION ALL", "INTERSECT", "EXCEPT"] {
+            let sql=rewrite(&format!("{arm} {operator} {arm}"),SqlDialect::Postgres);
+            assert!(!sql.contains("derived_projection"),"{sql}");
+            for index in 1..=4 { assert!(sql.contains(&format!("__orchiddb_derived_{index}")),"{sql}"); }
+        }
+    }
 
     #[test]
     fn unit_rows_are_preserved_inside_union_operands() {
