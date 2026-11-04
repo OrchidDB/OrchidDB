@@ -1,5 +1,50 @@
-
 use super::*;
+
+#[test]
+fn temporal_list_cardinality_is_safe_only_for_direct_typed_operands() {
+    let plan = LogicalPlanBuilder::empty(true).build().unwrap();
+    let date = ScalarValue::Date32(Some(0));
+    let list = ScalarValue::List(ScalarValue::new_list(
+        &[date.clone()],
+        &DataType::Date32,
+        true,
+    ));
+    let call = |name: &str, args| IrExpr::Call {
+        name: name.into(),
+        args,
+    };
+    let field = Arc::new(Field::new("item", DataType::Date32, true));
+    for kind in [
+        DataType::List(field.clone()),
+        DataType::LargeList(field.clone()),
+        DataType::FixedSizeList(field, 1),
+    ] {
+        let values = arrow::compute::cast(&list.to_array().unwrap(), &kind).unwrap();
+        for scalar in [
+            ScalarValue::try_from_array(&values, 0).unwrap(),
+            ScalarValue::try_from(&kind).unwrap(),
+        ] {
+            let literal = IrExpr::Lit(Lit::Scalar(scalar));
+            assert!(needs_temporal_semantics(&plan, &literal));
+            assert!(!needs_temporal_semantics(
+                &plan,
+                &call("size", vec![literal.clone()])
+            ));
+            assert!(needs_temporal_semantics(
+                &plan,
+                &call("size", vec![call("reverse", vec![literal.clone()])])
+            ));
+            assert!(needs_temporal_semantics(
+                &plan,
+                &call("size", vec![literal, IrExpr::Lit(Lit::Int(1))])
+            ));
+        }
+    }
+    assert!(needs_temporal_semantics(
+        &plan,
+        &call("size", vec![IrExpr::Lit(Lit::Scalar(date))])
+    ));
+}
 
 #[test]
 fn finite_domains_include_null_extension_and_survive_limits() {

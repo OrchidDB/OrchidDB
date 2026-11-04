@@ -48,17 +48,22 @@ pub(super) fn materialize_expr(
             query: None, patterns: vec![*pattern.clone()], predicate: None,
         });
     }
+    if let Expr::Function { name, distinct, args } = expr {
+        match args.as_slice() {
+            [Expr::Exists(exists)] if name.eq_ignore_ascii_case("count_subquery") => {
+                return materialize_count_exists(lowerer, input, exists);
+            }
+            [Expr::PatternPredicate(patterns)] if !distinct && name.eq_ignore_ascii_case("size") => {
+                return materialize_pattern_count(lowerer, input, patterns);
+            }
+            [Expr::PatternPredicate(patterns)] if !distinct && name.eq_ignore_ascii_case("exists") => {
+                return materialize_pattern_predicate(lowerer, input, patterns);
+            }
+            _ => {}
+        }
+    }
     match expr {
         Expr::Exists(exists) => materialize_exists(lowerer, input, exists),
-        Expr::Function { name, args, .. }
-            if name.eq_ignore_ascii_case("count_subquery")
-                && matches!(args.as_slice(), [Expr::Exists(_)]) =>
-        {
-            let Some(Expr::Exists(exists)) = args.first() else {
-                unreachable!("guard matched count_subquery(EXISTS ...)");
-            };
-            materialize_count_exists(lowerer, input, exists)
-        }
         Expr::PatternPredicate(patterns) => materialize_pattern_predicate(lowerer, input, patterns),
         Expr::ListComprehension {
             variable,
@@ -92,30 +97,6 @@ pub(super) fn materialize_expr(
             collection,
             predicate,
         } => materialize_quantifier(lowerer, input, *kind, variable, collection, predicate),
-        Expr::Function {
-            name,
-            distinct: false,
-            args,
-        } if name.eq_ignore_ascii_case("size")
-            && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
-        {
-            let [Expr::PatternPredicate(patterns)] = args.as_slice() else {
-                unreachable!("size(pattern) guard matched");
-            };
-            materialize_pattern_count(lowerer, input, patterns)
-        }
-        Expr::Function {
-            name,
-            distinct: false,
-            args,
-        } if name.eq_ignore_ascii_case("exists")
-            && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
-        {
-            let [Expr::PatternPredicate(patterns)] = args.as_slice() else {
-                unreachable!("exists(pattern) guard matched");
-            };
-            materialize_pattern_predicate(lowerer, input, patterns)
-        }
         Expr::Unary { op, expr } => {
             let (input, expr) = materialize_expr(lowerer, input, expr)?;
             Ok((

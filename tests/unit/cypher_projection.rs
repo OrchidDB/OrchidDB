@@ -553,6 +553,25 @@ fn static_integer_types_change_at_signed_64_and_128_bit_boundaries() {
 }
 
 #[test]
+fn literal_negation_preserves_signed_minimum_overflow_and_float_zero_bits() {
+    let lower=|literal|lower_expr(&Lowerer::new(),&Expr::Unary {
+        op:UnaryOp::Neg,expr:Box::new(Expr::Literal(literal)),
+    });
+    for (input,expected) in [("0",0),("9223372036854775807",-9223372036854775807),
+        ("9223372036854775808",i64::MIN),("-9223372036854775807",i64::MAX)] {
+        assert_eq!(lower(Literal::Integer(input.into())).unwrap(),IrExpr::Lit(Lit::Int(expected)));
+    }
+    for input in ["9223372036854775809","-9223372036854775808","invalid"] {
+        assert_eq!(lower(Literal::Integer(input.into())).unwrap_err().classification(),
+            Some(("SyntaxError","IntegerOverflow")));
+    }
+    for value in [0.0_f64,-0.0,1.25,-1.25] {
+        let IrExpr::Lit(Lit::Float(result))=lower(Literal::Float(value)).unwrap() else {panic!()};
+        assert_eq!(result.to_bits(),(-value).to_bits());
+    }
+}
+
+#[test]
 fn nested_unknown_functions_keep_their_diagnostic_through_scalar_containers() {
     for text in [
         "absent_fn().value", "absent_fn():Person", "keys(absent_fn())",

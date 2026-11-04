@@ -211,31 +211,29 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 })
                 .collect::<CypherPlanResult<_>>()?,
         },
-        Expr::Unary { op: UnaryOp::Neg, expr } if matches!(expr.as_ref(),Expr::Literal(Literal::Integer(_))) => {
-            use num_traits::ToPrimitive;
-            let Expr::Literal(Literal::Integer(value))=expr.as_ref() else {unreachable!()};
-            let value=value.parse::<num_bigint::BigInt>().ok().and_then(|v|(-v).to_i64())
-                .ok_or_else(||CypherPlanError::Invalid("Negated integer literal out of signed 64-bit range".into()).classified(CypherSemanticError::IntegerOverflow))?;
-            IrExpr::Lit(Lit::Int(value))
-        }
-        Expr::Unary { op: UnaryOp::Neg, expr } if matches!(expr.as_ref(), Expr::Literal(Literal::Float(_))) => {
-            let Expr::Literal(Literal::Float(value)) = expr.as_ref() else { unreachable!() };
-            // Subtraction from positive zero loses the sign of -0.0.
-            lower_expr(lowerer, &Expr::Literal(Literal::Float(-value)))?
-        }
-        Expr::Unary { op, expr } => match op {
-            UnaryOp::Not => IrExpr::Not(Box::new(lower_expr(lowerer, expr)?)),
-            UnaryOp::Neg if is_typed_negate_operand(expr) => IrExpr::Call {
+        Expr::Unary { op: UnaryOp::Not, expr } => IrExpr::Not(Box::new(lower_expr(lowerer, expr)?)),
+        Expr::Unary { op: UnaryOp::Neg, expr } => match expr.as_ref() {
+            Expr::Literal(Literal::Integer(value)) => {
+                use num_traits::ToPrimitive;
+                let value=value.parse::<num_bigint::BigInt>().ok().and_then(|v|(-v).to_i64())
+                    .ok_or_else(||CypherPlanError::Invalid("Negated integer literal out of signed 64-bit range".into()).classified(CypherSemanticError::IntegerOverflow))?;
+                IrExpr::Lit(Lit::Int(value))
+            }
+            Expr::Literal(Literal::Float(value)) => {
+                // Subtraction from positive zero loses the sign of -0.0.
+                lower_expr(lowerer, &Expr::Literal(Literal::Float(-value)))?
+            }
+            operand if is_typed_negate_operand(operand) => IrExpr::Call {
                 name: "negate".to_string(),
-                args: vec![lower_expr(lowerer, expr)?],
+                args: vec![lower_expr(lowerer, operand)?],
             },
-            UnaryOp::Neg => IrExpr::Binary {
+            operand => IrExpr::Binary {
                 // IEEE negation must flip +0.0 to -0.0; subtraction from
                 // positive zero does not. Multiplication also retains the
                 // existing integer widening and checked-overflow behavior.
                 op: IrBinaryOp::Mul,
                 lhs: Box::new(IrExpr::Lit(Lit::Int(-1))),
-                rhs: Box::new(lower_expr(lowerer, expr)?),
+                rhs: Box::new(lower_expr(lowerer, operand)?),
             },
         },
         Expr::Binary { op, lhs, rhs } => {
