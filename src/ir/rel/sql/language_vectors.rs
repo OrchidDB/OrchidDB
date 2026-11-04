@@ -232,7 +232,27 @@ pub(super) fn arrays(input: &DataChunkHandle) -> Result<Vec<ArrayRef>> {
                     input.len(),
                 );
             }
-            array(v, &ty, input.len())
+            if input.len() == 0 || !matches!(ty, DataType::List(_) | DataType::Struct(_)) {
+                return array(v, &ty, input.len());
+            }
+            // A flat outer vector can still contain constant or dictionary
+            // children (notably a folded INTEGER[] of NULLs). Reading their
+            // buffers directly loses the selection/validity information.
+            // DuckDB's copy operation materializes nested children as well.
+            struct OwnedVector(ffi::duckdb_vector);
+            impl Drop for OwnedVector {
+                fn drop(&mut self) { unsafe { ffi::duckdb_destroy_vector(&mut self.0) } }
+            }
+            struct Selection(ffi::duckdb_selection_vector);
+            impl Drop for Selection {
+                fn drop(&mut self) { unsafe { ffi::duckdb_destroy_selection_vector(self.0) } }
+            }
+            let copied = OwnedVector(ffi::duckdb_create_vector(t.0, input.len() as u64));
+            let selection = Selection(ffi::duckdb_create_selection_vector(input.len() as u64));
+            let indices = ffi::duckdb_selection_vector_get_data_ptr(selection.0);
+            for row in 0..input.len() { *indices.add(row) = row as ffi::sel_t; }
+            ffi::duckdb_vector_copy_sel(v, copied.0, selection.0, input.len() as u64, 0, 0);
+            array(copied.0, &ty, input.len())
         })
         .collect()
 }
