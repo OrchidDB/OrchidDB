@@ -577,32 +577,6 @@ pub(super) fn materialize_pre_aggregate_expr(
                 },
             ))
         }
-        Expr::PatternComprehension {
-            variable,
-            pattern,
-            predicate,
-            map,
-        } => {
-            let pattern = materialize_pre_aggregate_pattern(lowerer, pattern)?;
-            let (input, predicate) = match predicate {
-                Some(predicate) => {
-                    let (next, predicate) =
-                        materialize_pre_aggregate_expr(lowerer, input, predicate)?;
-                    (next, Some(Box::new(predicate)))
-                }
-                None => (input, None),
-            };
-            let (input, map) = materialize_pre_aggregate_expr(lowerer, input, map)?;
-            Ok((
-                input,
-                Expr::PatternComprehension {
-                    variable: variable.clone(),
-                    pattern: Box::new(pattern),
-                    predicate,
-                    map: Box::new(map),
-                },
-            ))
-        }
         Expr::Quantifier {
             kind,
             variable,
@@ -621,22 +595,16 @@ pub(super) fn materialize_pre_aggregate_expr(
                 },
             ))
         }
+        // Scoped expressions returned above; these arms keep the AST match exhaustive.
         Expr::Exists(_)
         | Expr::PatternPredicate(_)
+        | Expr::PatternComprehension { .. }
         | Expr::Star
         | Expr::Variable(_)
         | Expr::Parameter(_)
         | Expr::Literal(_)
         | Expr::CountStar => Ok((input, expr.clone())),
     }
-}
-
-pub(super) fn materialize_pre_aggregate_pattern(
-    lowerer: &mut Lowerer,
-    pattern: &PatternPart,
-) -> CypherPlanResult<PatternPart> {
-    let _ = lowerer;
-    Ok(pattern.clone())
 }
 
 pub(super) fn materialize_exists(

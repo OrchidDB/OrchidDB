@@ -641,3 +641,20 @@ fn regex_predicate_uses_regex_call_without_scalar_operator_conversion() {
     );
     assert!(matches!(expression,IrExpr::Call{name,args} if name=="regex_match" && args.len()==2));
 }
+
+#[test]
+fn preaggregate_patterns_use_the_existing_scoped_materialization_boundary() {
+    for text in ["[(a)-->(b) | b]", "[(a)-->(b) WHERE b.x > 0 | b.x]"] {
+        let expression = expr(text);
+        assert!(requires_scoped_materialization(&expression));
+        let expected = materialize::materialize_expr(&mut Lowerer::new(), Node::GraphOneRow, &expression);
+        let actual = materialize::materialize_pre_aggregate_expr(&mut Lowerer::new(), Node::GraphOneRow, &expression);
+        assert_eq!(actual, expected, "{text}");
+        assert!(actual.is_ok(), "{text}: {actual:?}");
+    }
+    let expression = expr("[(a)-->(b) | count(*)]");
+    assert!(requires_scoped_materialization(&expression));
+    let (input, output) = materialize::materialize_pre_aggregate_expr(&mut Lowerer::new(), Node::GraphOneRow, &expression).unwrap();
+    assert_eq!(input, Node::GraphOneRow);
+    assert_eq!(output, expression);
+}
