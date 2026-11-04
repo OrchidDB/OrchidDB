@@ -423,6 +423,16 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    // PostgreSQL cannot infer a polymorphic aggregate's input from a bare
+    // string literal (including graph labels). Columns and typed expressions
+    // already carry their type and need no extra cast.
+    if dialect == SqlDialect::Postgres
+        && matches!(name.trim_matches('"'), "first_value" | "last_value" | "any_value" | "array_agg")
+        && let ast::FunctionArguments::List(arguments) = &mut function.args
+        && let [ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(value))] = arguments.args.as_mut_slice()
+        && matches!(value, ast::Expr::Value(v) if matches!(v.value, ast::Value::SingleQuotedString(_))) {
+        *value = template("CAST(__arg0 AS TEXT)", &[value.clone()])?;
+    }
     if name.trim_matches('"') == super::super::conversion_rules::NATIVE_FLOAT {
         if dialect != SqlDialect::DuckDb {
             return Err(SqlError::Unsupported("native string-to-float requires its owning DuckDB adapter".into()));
@@ -805,6 +815,19 @@ mod tests {
             let sql = rewrite("SELECT first_value(v) IGNORE NULLS FROM source", dialect);
             assert!(sql.contains(&format!("{name}(v)")), "{sql}");
             assert!(!sql.contains("IGNORE NULLS"), "{sql}");
+        }
+    }
+
+    #[test]
+    fn postgres_polymorphic_aggregates_type_only_bare_string_literals() {
+        for call in ["first_value('Person') IGNORE NULLS", "any_value('Person')", "array_agg('Person')",
+            "first_value('Person') OVER (ORDER BY k)", "last_value('Person') OVER (ORDER BY k)"] {
+            let sql = rewrite(&format!("SELECT {call} FROM source"), SqlDialect::Postgres);
+            assert!(sql.contains("AS TEXT") && sql.contains("'Person'") && sql.matches("CAST(").count() == 1, "{sql}");
+        }
+        for call in ["any_value(v)", "any_value(1)", "any_value(CAST('Person' AS TEXT))"] {
+            let sql = rewrite(&format!("SELECT {call} FROM source"), SqlDialect::Postgres);
+            assert_eq!(sql.matches("CAST(").count(), usize::from(call.contains("CAST(")), "{sql}");
         }
     }
 
