@@ -90,7 +90,16 @@ impl LoweringContext<'_> {
         if !matches!(name.as_str(), "size" | "head") { return Ok(None); }
         let identity = matches!(map.as_ref(), IrExpr::Binding(binding) if binding == item);
         let constant = matches!(map.as_ref(), IrExpr::Lit(Lit::Null | Lit::Bool(_) | Lit::Int(_) | Lit::Float(_) | Lit::String(_)));
-        if !identity && !constant { return Ok(None); }
+        if !identity && !constant {
+            if name == "size" {
+                // Evaluate the mapped values before counting: the body may
+                // throw, and counting only the source would hide that error.
+                let mapped = self.lower_sql_lambda(plan, input)?;
+                return Ok(Some(datafusion::functions_nested::expr_fn::array_length(mapped)
+                    .cast_to(&DataType::Int64, plan.schema())?));
+            }
+            return Ok(None);
+        }
         // A filter can be counted directly, even through the frontend's identity map.
         if name == "size" && matches!(list.as_ref(), IrExpr::ListFilter { .. }) {
             return self.lower_list_consumer(plan, &IrExpr::Call { name: name.clone(), args: vec![*list.clone()] });
@@ -141,13 +150,17 @@ impl LoweringContext<'_> {
             ),
             _ => return Err(RelError::Unsupported("Expected list lambda".into())),
         };
-        let source = self.lower_expr(plan, list)?;
+        let source = self.lower_typed_list_input(plan, list)?;
         let source_type = source.get_type(plan.schema())?;
         let source = if kind == "sum" && (source_type == DataType::Null
             || matches!(&source_type, DataType::List(field) if field.data_type() == &DataType::Null)) {
             source.cast_to(&DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), plan.schema())?
         } else { source };
-        let source = if !matches!(source.get_type(plan.schema())?, DataType::List(_)) {
+        // An untyped empty/all-null list must not acquire a VARCHAR element
+        // type from a dialect's empty-array literal. Its elements retain the
+        // Cypher null domain until the body establishes its result type.
+        let kind_type = source.get_type(plan.schema())?;
+        let source = if !matches!(&kind_type, DataType::List(field) if field.data_type() != &DataType::Null) {
             native_values::typed::call(
                 if matches!(kind, "transform" | "filter" | "reduce") {
                     "list"

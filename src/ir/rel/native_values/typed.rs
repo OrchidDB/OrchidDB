@@ -125,6 +125,7 @@ pub const INTERNAL: &[&str] = &[
     "scalar_text",
     "source_id",
     "json_document",
+    "json_query_text",
     "node_path",
     "argument_valid",
     "validate_argument",
@@ -157,7 +158,7 @@ pub fn sql_name(operation: &str) -> String {
 }
 pub fn output(operation: &str) -> Output {
     match operation {
-        "json_document" | "scalar_text" => Output::Text,
+        "json_document" | "json_query_text" | "scalar_text" => Output::Text,
         "order_indices" => Output::Indices,
         "key" => Output::Text,
         "argument_valid" | "string_starts_with" | "string_ends_with" | "string_contains"
@@ -481,6 +482,22 @@ pub fn evaluate(operation: &str, arguments: &[ArrayRef], rows: usize) -> Result<
             ("scalar_text", [Value::Null]) => Value::Null,
             ("scalar_text", [_]) => crate::ir::runtime::scalar::eval_call("to_string", args, &context.graph)
                 .map_err(|e| crate::ir::diagnostics::QueryExecutionError::from_error(e).sql_error())?,
+            ("json_query_text", [document, path]) => {
+                let document = match document {
+                    Value::Null => Value::Null,
+                    Value::String(text) => Value::Scalar(crate::ir::functions::domain::json_scalar(text)
+                        .map_err(|error| error.to_string())?),
+                    _ => return Err("JSON query helper requires serialized JSON text".into()),
+                };
+                let result = crate::ir::functions::json::runtime_call("json.query", &[document, path.clone()])
+                    .map_err(|error| error.to_string())?;
+                match result {
+                    Value::Null => Value::Null,
+                    Value::Scalar(value) => crate::ir::functions::domain::json_text(&value)
+                        .map_err(|error| error.to_string())?.map(Value::String).unwrap_or(Value::Null),
+                    _ => return Err("JSON query returned a non-JSON value".into()),
+                }
+            }
             ("json_document", [Value::Null]) => Value::Null,
             ("json_document", [Value::Scalar(scalar)]) if crate::ir::functions::domain::is_json(&scalar.data_type()) =>
                 crate::ir::functions::domain::json_text(scalar).map_err(|e| e.to_string())?.map(Value::String).unwrap_or(Value::Null),

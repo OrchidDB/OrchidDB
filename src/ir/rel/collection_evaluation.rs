@@ -122,9 +122,15 @@ impl LoweringContext<'_> {
             ty,
             DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
         ) {
-            return Err(RelError::Unsupported(
-                "filtered size requires a homogeneous SQL list".into(),
-            ));
+            let filtered = IrExpr::ListFilter {
+                list: Box::new(source.clone()), item: binding.to_owned(), predicate: Box::new(predicate.clone()),
+            };
+            let expression = IrExpr::Call {name: "size".into(), args: vec![filtered]};
+            let value = self.lower_expr(&input.plan, &expression)?;
+            let mut columns = existing_columns(&input.plan, &BTreeSet::new());
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
         }
         let mut reserved = BTreeSet::from([binding.to_owned(), output.to_owned()]);
         let mut fresh = |base: &str| {

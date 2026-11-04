@@ -287,6 +287,8 @@ impl<'a> LoweringContext<'a> {
         match expr {
             IrExpr::ListTransform { .. } if self.language == Language::Cypher
                 && collection_evaluation::lowercase_label_transform(expr).is_some() => self.lower_label_transform(plan, expr),
+            IrExpr::ListTransform { .. } | IrExpr::ListFilter { .. }
+                if self.language == Language::Cypher => self.lower_sql_lambda(plan, expr),
             IrExpr::Lit(Lit::Int(value))
                 if self.language == Language::Gremlin && i32::try_from(*value).is_ok() =>
             {
@@ -1349,6 +1351,24 @@ impl<'a> LoweringContext<'a> {
                             *arg = crate::ir::functions::json::function("json.parse").unwrap()
                                 .call(vec![native_values::typed::call("json_document", vec![arg.clone()])]);
                         }
+                    }
+                }
+                if crate::ir::functions::json::operation(name) == Some("query") && args.len() == 2 {
+                    let native_path = match &args[1] {
+                        Expr::Literal(ScalarValue::Utf8(Some(path)), _) =>
+                            !crate::ir::functions::json::path::singular(&crate::ir::functions::json::path::parse(path)?),
+                        Expr::Literal(value, _) if value.is_null() => false,
+                        _ => true,
+                    };
+                    if native_path {
+                        // Non-singular and dynamic paths share the native JSON
+                        // evaluator. Restore the JSON domain for SQL consumers.
+                        // SQL JSON values cross scalar UDF boundaries as text;
+                        // serialize explicitly while their domain is still known.
+                        args[0] = crate::ir::functions::json::function("json.stringify").unwrap()
+                            .call(vec![args[0].clone()]);
+                        let text = native_values::typed::call("json_query_text", args);
+                        return Ok(crate::ir::functions::json::function("json.parse").unwrap().call(vec![text]));
                     }
                 }
                 Ok(crate::ir::functions::native_scalar(
