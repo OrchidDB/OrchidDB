@@ -617,7 +617,7 @@ impl Builder<'_> {
         if plan
             .expressions()
             .iter()
-            .any(|e| e.to_string().contains(LOCAL))
+            .any(expr_has_local)
         {
             return Err(
                 "local UDF must be an explicit projection before relational completion".into(),

@@ -436,6 +436,33 @@ async fn residual_filter_executes_over_arrow_with_one_lazy_duckdb_session() {
 }
 
 struct FortyTwo;
+
+struct Marker;
+impl plan::LocalFunction for Marker {
+    fn call(&self,args:&[ArrayRef],_:usize)->Result<ArrayRef,String> {
+        let values=args[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        Ok(Arc::new(arrow::array::StringArray::from(values.iter().map(|value|
+            value.map(|v|format!("__engine_function___orchid_local_{v}"))).collect::<Vec<_>>())))
+    }
+}
+
+#[tokio::test]
+async fn local_function_marker_is_allowed_inside_user_string_literals() {
+    let mut value=request("MATCH (p:Person) WHERE marker(p.id) = '__engine_function___orchid_local_1' RETURN p.id AS id");
+    value["functions"]=json!([{"name":"marker","target":"marker","parameters":["int64"],"returns":"string","local":true}]);
+    let plan=compile(value).await.unwrap().execution_plan.unwrap();
+    let source_columns=plan.nodes.iter().find(|n|matches!(n.operation,Operation::SourceSql{..})).unwrap().columns.clone();
+    let calls=Arc::new(AtomicUsize::new(0));
+    let mut sources:BTreeMap<String,Box<dyn Session>>=BTreeMap::from([("db".into(),
+        Box::new(Source(calls.clone(),source_columns,"postgres")) as Box<dyn Session>)]);
+    let functions:plan::Functions=BTreeMap::from([("marker".into(),Arc::new(Marker) as Arc<dyn plan::LocalFunction>)]);
+    let mut completion=plan::LazyDuckdb::new(||Ok(Box::new(orchiddb::ir::rel::sql::DuckDbSession::default())));
+    let batches=plan::execute(&plan,&mut sources,&functions,Some(&mut completion)).await.unwrap().collect_batches().await.unwrap();
+    let values=batches.iter().flat_map(|batch|batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+    assert_eq!(values,vec![1]);
+    assert_eq!(calls.load(Ordering::SeqCst),1);
+}
+
 impl plan::LocalFunction for FortyTwo {
     fn call(&self, args: &[ArrayRef], rows: usize) -> Result<ArrayRef, String> {
         assert!(args.is_empty());

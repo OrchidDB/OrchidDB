@@ -13,6 +13,33 @@
     }
 
     #[test]
+    fn completion_detects_local_calls_structurally_without_reserving_string_contents() {
+        use datafusion::logical_expr::{create_udf,lit,Volatility};
+        let request:CompileRequest=serde_json::from_value(serde_json::json!({
+            "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]
+        })).unwrap();
+        let function=create_udf(&format!("{LOCAL}identity"),vec![DataType::Int64],DataType::Int64,
+            Volatility::Immutable,Arc::new(|args|Ok(args[0].clone())));
+        for (expr,is_local) in [
+            (lit(format!("{LOCAL}payload")).alias("value"),false),
+            (lit(1_i64).alias(format!("{LOCAL}alias")),false),
+            (function.call(vec![lit(1_i64)]).alias("value"),true),
+        ] {
+            let plan=LogicalPlanBuilder::empty(true).project(vec![expr]).unwrap().build().unwrap();
+            let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
+                plan:ExecutionPlan{version:1,nodes:vec![],result:0}};
+            let result=builder.complete_in_duckdb(&plan);
+            if is_local {
+                assert_eq!(result.unwrap_err(),"local UDF must be an explicit projection before relational completion");
+                assert!(builder.plan.nodes.is_empty());
+            } else {
+                let id=result.expect("literal contents and output aliases must not be treated as function calls");
+                assert!(matches!(builder.plan.nodes[id].operation,Operation::Duckdb{..}));
+            }
+        }
+    }
+
+    #[test]
     fn source_requests_reject_legacy_completion_engine_selection() {
         let base=serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb",
             "query":"RETURN 1","tables":[],"sources":{"db":{"adapter":"trino"}}});
