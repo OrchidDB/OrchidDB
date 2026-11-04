@@ -2,6 +2,10 @@
 use super::{SqlResult, functions::template};
 use datafusion::sql::sqlparser::ast;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_postgres_functions.rs"]
+mod execution_contracts;
+
 pub(super) fn adapt(expr: &mut ast::Expr, name: &str, args: &[ast::Expr]) -> SqlResult<()> {
     if super::postgres_lists::adapt(expr, name, args)? {
         return Ok(());
@@ -23,7 +27,7 @@ pub(super) fn adapt(expr: &mut ast::Expr, name: &str, args: &[ast::Expr]) -> Sql
             ));
         }
         *expr = template(
-            "(SELECT CASE WHEN s IS NULL THEN NULL ELSE coalesce((SELECT string_agg(CASE WHEN p >= lo AND p + w <= hi THEN ch ELSE '�' END, '' ORDER BY p) FROM (SELECT ch, w, sum(w) OVER (ORDER BY ord ROWS UNBOUNDED PRECEDING) - w AS p FROM (SELECT ch, ord, CASE WHEN ascii(ch) > 65535 THEN 2 ELSE 1 END AS w FROM regexp_split_to_table(s, '') WITH ORDINALITY AS __local3(ch,ord)) AS __local2) AS __local1 WHERE hi > lo AND p < hi AND p + w > lo), '') END FROM (SELECT s, greatest(0,least(n,CASE WHEN a < 0 THEN n+a ELSE a END)) AS lo, greatest(0,least(n,CASE WHEN b < 0 THEN n+b ELSE b END)) AS hi FROM (SELECT s,a,b,coalesce((SELECT sum(CASE WHEN ascii(ch)>65535 THEN 2 ELSE 1 END) FROM regexp_split_to_table(s,'') AS __local2(ch)),0) AS n FROM (SELECT __arg0 AS s,coalesce(__arg1,0) AS a,coalesce(__arg2,9223372036854775807) AS b) AS __local1) AS __local2) AS __local0)",
+            "(SELECT CASE WHEN s IS NULL THEN NULL ELSE coalesce((SELECT string_agg(CASE WHEN p >= lo AND p + w <= hi THEN ch ELSE '�' END, '' ORDER BY p) FROM (SELECT ch, w, sum(w) OVER (ORDER BY ord ROWS UNBOUNDED PRECEDING) - w AS p FROM (SELECT ch, ord, CASE WHEN ch = '' THEN 0 WHEN ascii(ch) > 65535 THEN 2 ELSE 1 END AS w FROM regexp_split_to_table(s, '') WITH ORDINALITY AS __local3(ch,ord)) AS __local2) AS __local1 WHERE hi > lo AND p < hi AND p + w > lo), '') END FROM (SELECT s, greatest(0,least(n,CASE WHEN a < 0 THEN n+a ELSE a END)) AS lo, greatest(0,least(n,CASE WHEN b < 0 THEN n+b ELSE b END)) AS hi FROM (SELECT s,a,b,coalesce((SELECT sum(CASE WHEN ch='' THEN 0 WHEN ascii(ch)>65535 THEN 2 ELSE 1 END) FROM regexp_split_to_table(s,'') AS __local2(ch)),0) AS n FROM (SELECT __arg0 AS s,coalesce(__arg1,0) AS a,coalesce(__arg2,9223372036854775807) AS b) AS __local1) AS __local2) AS __local0)",
             &args,
         )?;
         return Ok(());
@@ -99,7 +103,7 @@ pub(super) fn adapt(expr: &mut ast::Expr, name: &str, args: &[ast::Expr]) -> Sql
             "(SELECT CASE WHEN s IS NULL OR r IS NULL OR f IS NULL THEN NULL ELSE regexp_match(s,r,f) IS NOT NULL END FROM (SELECT __arg0 AS s,__arg1 AS r,__arg2 AS f) AS __local0)"
         }
         ("__orchiddb_utf16_length", 1) => {
-            "(SELECT CASE WHEN s IS NULL THEN NULL ELSE CAST(coalesce((SELECT sum(CASE WHEN ascii(c) > 65535 THEN 2 ELSE 1 END) FROM regexp_split_to_table(s, '') AS __local1(c)), 0) AS INTEGER) END FROM (SELECT __arg0 AS s) AS __local0)"
+            "(SELECT CASE WHEN s IS NULL THEN NULL ELSE CAST(coalesce((SELECT sum(CASE WHEN c = '' THEN 0 WHEN ascii(c) > 65535 THEN 2 ELSE 1 END) FROM regexp_split_to_table(s, '') AS __local1(c)), 0) AS INTEGER) END FROM (SELECT __arg0 AS s) AS __local0)"
         }
         _ => return Ok(()),
     };

@@ -276,3 +276,83 @@ fn input_equalities_push_through_filters_without_absorbing_output_predicates() {
         .unwrap();
     assert_eq!(scans, 1);
 }
+
+#[test]
+#[ignore = "requires local PostgreSQL fixture and GRAPH_PG_URL"]
+fn postgres_executes_quoted_table_functions_and_optional_named_defaults() {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("flag", DataType::Boolean, false),
+        Field::new("message", DataType::Utf8, false),
+        Field::new("out", DataType::Utf8, false),
+    ]));
+    let source = provider(
+        &metadata(json!({"function":["pg_temp","f\"n"],"arguments":[
+            {"column":"flag","value":false},
+            {"column":"message","name":"text\"arg","value":"O'Reilly"}
+        ]})),
+        schema,
+    )
+    .unwrap()
+    .unwrap();
+    let plan = scan(
+        source,
+        Some(vec![2]),
+        vec![col("source.out").eq(lit("O'Reilly"))],
+        Some(1),
+    );
+    let sql = lower(&plan, SqlDialect::Postgres)
+        .unwrap()
+        .unwrap()
+        .to_string();
+    let optional = provider(
+        &metadata(json!({"function":["pg_temp","optional_input"],"arguments":[
+            {"column":"flag","name":"flag","optional":true}
+        ]})),
+        Arc::new(Schema::new(vec![
+            Field::new("flag", DataType::Int64, true),
+            Field::new("out", DataType::Int64, false),
+        ])),
+    )
+    .unwrap()
+    .unwrap();
+    let optional_sql = lower(&scan(optional, None, vec![], None), SqlDialect::Postgres)
+        .unwrap()
+        .unwrap()
+        .to_string();
+    let script = format!(
+        r#"BEGIN;
+CREATE FUNCTION pg_temp."f""n"(a boolean, "text""arg" text) RETURNS TABLE("out" text)
+LANGUAGE sql IMMUTABLE AS $$ SELECT CASE WHEN a THEN 'wrong' ELSE "text""arg" END $$;
+CREATE FUNCTION pg_temp.optional_input(flag bigint DEFAULT 7) RETURNS TABLE("out" bigint)
+LANGUAGE sql IMMUTABLE AS $$ SELECT flag $$;
+{sql};
+{optional_sql};
+ROLLBACK;"#
+    );
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = std::process::Command::new("psql")
+        .args(["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-P", "null=NULL"])
+        .arg(std::env::var("GRAPH_PG_URL").expect("GRAPH_PG_URL is required"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("psql must be installed");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "O'Reilly\nNULL|7"
+    );
+}
