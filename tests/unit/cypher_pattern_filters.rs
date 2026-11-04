@@ -88,3 +88,36 @@ fn recursive_parameter_filter_quantifies_over_edges_without_leaking_its_local() 
     assert!(printed.contains("path"), "{printed}");
     assert_eq!(lowerer.visible_set(), scope);
 }
+
+#[test]
+fn expansion_retains_empty_range_input_and_selects_relationship_reuse_policy() {
+    use crate::language::cypher::{parser::parse_query,ast::Clause};
+    for (range, variable, empty) in [("",false,false),("*0..2",true,false),("*3..1",true,true)] {
+        let query=parse_query(&format!("MATCH (a)-[r:R{range}]->(b:Person) RETURN b")).unwrap();
+        let Clause::Match(clause)=&query.clauses[0] else {panic!()};
+        let chain=&clause.patterns[0].element.chains[0];
+        for target_exists in [false,true] {
+            for repeatable in [false,true] {
+                let result=lower_expand(Node::GraphCorrelate{bindings:vec!["a".into()]},
+                    "a","b",target_exists,&chain.relationship,Some("r"),&chain.node,
+                    Some("p".into()),Some("history".into()),repeatable);
+                if empty {
+                    let filter=if target_exists {result} else {
+                        let Node::GraphJoin{left,right,..}=result else {panic!("new endpoint must retain its schema")};
+                        assert!(matches!(*right,Node::GraphNodeScan{binding,..} if binding=="b"));
+                        *left
+                    };
+                    let Node::GraphFilter{condition,input}=filter else {panic!("empty range must filter input")};
+                    assert_eq!(condition,IrExpr::Lit(Lit::Bool(false)));
+                    assert!(matches!(*input,Node::GraphCorrelate{bindings} if bindings==vec!["a"]));
+                } else {
+                    let Node::GraphExpand{match_mode,target_mode,path,history,..}=result else {panic!()};
+                    assert_eq!(match_mode,if repeatable&&variable {MatchMode::RepeatableElements} else {MatchMode::DifferentRelationships});
+                    assert_eq!(target_mode,if target_exists {TargetMode::Existing} else {TargetMode::BindNew});
+                    assert_eq!(path,Some("p".into()));
+                    assert_eq!(history,Some("history".into()));
+                }
+            }
+        }
+    }
+}

@@ -566,3 +566,56 @@ fn aggregate_pattern_properties_extract_counts_without_leaking_pattern_bindings(
         }
     }
 }
+
+#[test]
+fn malformed_aggregates_preserve_diagnostics_through_nested_expressions() {
+    for text in [
+        "sum().value", "sum():Person", "-sum()", "sum()+1", "1+sum()",
+        "sum() IS NULL", "sum() IS NOT NULL", "sum() STARTS WITH 'a'",
+        "'a' ENDS WITH sum()", "coalesce(sum(),1)", "[sum()]", "{value:sum()}",
+        "CASE sum() WHEN 1 THEN 2 END", "CASE WHEN sum() THEN 2 END",
+        "CASE WHEN true THEN sum() END", "CASE WHEN false THEN 1 ELSE sum() END",
+        "[x IN sum() | x]", "[x IN [1] WHERE sum() | x]", "[x IN [1] | sum()]",
+        "list_transform([1],x -> sum())", "list_filter([1],x -> sum())",
+        "list_reduce([1],(a,x) -> sum())", "all(x IN [1] WHERE sum())",
+        "[(a {v:sum()})-[r:R]->(b) | b]",
+        "[(a)-[r:R {v:sum()}]->(b) | b]",
+        "[(a)-[r:R]->(b {v:sum()}) | b]",
+        "[p=(a)-[r:R]->(b) WHERE sum() | b]",
+        "[p=(a)-[r:R]->(b) | sum()]",
+    ] {
+        let error = rewrite_aggregate_projection_expr(
+            &mut Lowerer::new(), &expr(text), &mut AggregateRewrite::default(),
+            None, &mut BTreeSet::new(),
+        ).unwrap_err();
+        assert_eq!(error.to_string(), "invalid cypher plan: aggregate function `sum` requires exactly one argument", "{text}");
+    }
+}
+
+#[test]
+fn mixed_local_grouping_propagates_invalid_outer_expression_errors() {
+    for text in [
+        "{a:local,b:no_such_function(outside)}.a",
+        "coalesce(local,no_such_function(outside)):Person",
+        "-(local+no_such_function(outside))",
+        "local+no_such_function(outside)", "no_such_function(outside)+local",
+        "(local+no_such_function(outside)) IS NULL",
+        "(local+no_such_function(outside)) IS NOT NULL",
+        "local STARTS WITH no_such_function(outside)",
+        "no_such_function(outside) ENDS WITH local",
+        "coalesce(local,no_such_function(outside))",
+        "[local,no_such_function(outside)]", "{a:local,b:no_such_function(outside)}",
+        "CASE local+no_such_function(outside) WHEN 1 THEN 2 END",
+        "CASE WHEN local=no_such_function(outside) THEN 2 END",
+        "CASE WHEN true THEN local+no_such_function(outside) END",
+        "CASE WHEN false THEN 1 ELSE local+no_such_function(outside) END",
+    ] {
+        let mut lowerer=Lowerer::new();
+        lowerer.lower_query_body(&parse_query("RETURN 7 AS outside").unwrap()).unwrap();
+        let error=rewrite_non_aggregate_projection_expr(
+            &mut lowerer,&expr(text),&mut AggregateRewrite::default(),None,&mut names(&["local"]),
+        ).unwrap_err();
+        assert_eq!(error.classification(),Some(("SyntaxError","UnknownFunction")),"{text}: {error}");
+        assert!(error.to_string().contains("no_such_function"),"{text}: {error}");
+    }
+}

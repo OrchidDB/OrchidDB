@@ -781,3 +781,28 @@ fn pattern_alias_substitution_respects_prebound_nodes_relationships_and_paths() 
         assert_eq!(bound, initial);
     }
 }
+
+#[test]
+fn procedure_default_yields_shadow_candidates_in_query_reference_analysis() {
+    for (procedure, output) in [
+        ("db.labels", "label"), ("db.relationshipTypes", "relationshipType"),
+        ("db.propertyKeys", "propertyKey"), ("example.unknown", "value"),
+    ] {
+        let candidates=names(&[output,"outer"]);
+        for text in [format!("CALL {procedure}()"),
+            format!("CALL {procedure}() YIELD *")] {
+            let query=parse_query(&text).unwrap();
+            let mut refs=BTreeSet::new();
+            scope::add_candidate_bindings_from_query(&query,&candidates,&mut refs);
+            assert!(refs.is_empty(),"{text}: {refs:?}");
+            let mut bound=BTreeSet::new();
+            let mut free=BTreeSet::new();
+            scope::collect_query_body_variable_references(&query,&mut bound,&mut free);
+            assert!(bound.contains(output),"missing default yield: {text}");
+            assert!(!free.contains(output),"default yield escaped scope: {text}");
+        }
+    }
+}
+
+query_refs!(match_edge_properties, "MATCH (fresh)-[edge:R {value:outer}]->(other) RETURN edge", &["outer"]);
+query_refs!(match_target_properties, "MATCH (fresh)-[:R]->(other {value:outer}) RETURN other", &["outer"]);
