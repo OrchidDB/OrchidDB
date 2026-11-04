@@ -155,3 +155,34 @@ fn literal_encoding_rejects_postgres_nul_and_retains_null_collection_types() {
         assert!(encode_expression_literals(lit(value),SqlDialect::Postgres).unwrap_err().to_string().contains("postgres text cannot contain a NUL character"));
     }
 }
+
+#[test]
+fn constant_sort_removal_preserves_top_k_and_nonconstant_key_ordering() {
+    for mixed in [false,true] {
+        for fetch in [None,Some(0),Some(2)] {
+            let input=LogicalPlanBuilder::values(vec![vec![lit(1_i64)],vec![lit(3_i64)],vec![lit(2_i64)]]).unwrap().build().unwrap();
+            let name=input.schema().field(0).name().clone();
+            let mut keys=vec![lit(ScalarValue::Null).sort(true,true)];
+            if mixed {keys.push(col(&name).sort(false,false));}
+            let plan=LogicalPlanBuilder::from(input).sort_with_limit(keys,fetch).unwrap().build().unwrap();
+            let fixed=strip_constant_sorts(plan).unwrap();
+            if let LogicalPlan::Sort(sort)=&fixed {
+                assert!(mixed);
+                assert_eq!(sort.expr.len(),1);
+                assert_eq!(sort.fetch,fetch);
+            } else {assert!(!mixed);}
+            let sql=unparse_plan(fixed,SqlDialect::DuckDb).unwrap();
+            let rows=DuckDbExecutor::new().run(&[],&sql).unwrap();
+            assert_eq!(rows.len(),fetch.unwrap_or(3).min(3),"{sql}");
+            if mixed {assert_eq!(rows,vec![vec![SqlValue::Int(3)],vec![SqlValue::Int(2)],vec![SqlValue::Int(1)]][..rows.len()]);}
+        }
+    }
+}
+
+#[test]
+fn empty_values_emit_zero_rows_with_the_declared_column_type() {
+    let schema=Arc::new(datafusion::common::DFSchema::try_from(arrow::datatypes::Schema::new(vec![Field::new("value",DataType::Int64,true)])).unwrap());
+    let plan=LogicalPlan::Values(datafusion::logical_expr::Values{schema,values:vec![]});
+    let sql=unparse_plan(plan,SqlDialect::DuckDb).unwrap();
+    assert!(DuckDbExecutor::new().run(&[],&sql).unwrap().is_empty(),"{sql}");
+}
