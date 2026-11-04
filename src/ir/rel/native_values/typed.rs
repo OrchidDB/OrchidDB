@@ -298,13 +298,20 @@ fn scalar(value: ScalarValue, context: &mut Context) -> Result<Value, String> {
                 if let Some((domain, payload)) = fields.first_key_value()
                     && domain.starts_with("__orchiddb_domain_cypher_temporal")
                 {
-                    return match payload {
+                    let value = match payload {
                         Value::Null | Value::Temporal(_) => Ok(payload.clone()),
                         Value::String(text) => crate::ir::temporal::TemporalValue::decode(text)
                             .or_else(|_| crate::ir::temporal::parse("date", text))
                             .map(Value::Temporal),
-                        _ => Err("Invalid temporal domain payload".into()),
-                    };
+                        _ => Err("Invalid temporal domain payload".to_string()),
+                    }?;
+                    if let Value::Temporal(temporal) = &value
+                        && let Some(kind) = domain.strip_prefix("__orchiddb_domain_cypher_temporal_")
+                        && temporal.kind() != kind.trim_end_matches("_fixed")
+                    {
+                        return Err("Temporal payload violates its declared kind".into());
+                    }
+                    return Ok(value);
                 }
             }
             Ok(Value::Map(fields))
@@ -783,3 +790,7 @@ pub(super) fn lower(
         "No typed SQL lowering for {expr:?}"
     )))
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/native_typed_scalar_boundaries.rs"]
+mod native_typed_scalar_boundaries;
