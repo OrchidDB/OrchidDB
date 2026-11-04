@@ -925,19 +925,19 @@ mod unrolled_contract_tests {
             graph.insert_edge("R", &nodes[from], &nodes[to], BTreeMap::new()).unwrap();
         }
         for direction in [Direction::Out,Direction::In,Direction::Both] {
-            for existing in [false,true] {
+            for (existing, payload) in [(false,false),(false,true),(true,false),(true,true)] {
                 let mut ctx = context(&graph);
                 let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
                 let target = if existing { "n" } else { "m" };
                 let rel = "path".to_string();
                 let lowered = ctx.lower_expand_varlen_unrolled(input,"n",target,
                     if existing {TargetMode::Existing} else {TargetMode::BindNew},
-                    &LabelExpr::Any,Some(&rel),&LabelExpr::Any,direction,
+                    &LabelExpr::Any,payload.then_some(&rel),&LabelExpr::Any,direction,
                     &crate::ir::plan::Length{min:0,max:Some(3)},None).unwrap();
                 let plan = LogicalPlanBuilder::from(lowered.plan).project(vec![
                     col_exact(id_col("n")).alias("source"),
                     col_exact(id_col(target)).alias("target"),
-                    col_exact(path_len_col(&rel)).alias("length"),
+                    if payload { col_exact(path_len_col(&rel)).alias("length") } else { lit(0_i64).alias("length") },
                 ]).unwrap().build().unwrap();
                 let lowered = LoweredPlan { plan, fields: vec!["source".into(),"target".into(),"length".into()],
                     result_form: ResultForm::RowSet, rule_context: Default::default(), islands: Default::default() };
@@ -952,9 +952,10 @@ mod unrolled_contract_tests {
                     }
                 }
                 let mut expected = (0..3).flat_map(|start|walks(start,direction))
-                    .filter(|(start,end,_)|!existing || start==end).collect::<Vec<_>>();
+                    .filter(|(start,end,_)|!existing || start==end)
+                    .map(|(start,end,length)|(start,end,if payload {length} else {0})).collect::<Vec<_>>();
                 actual.sort(); expected.sort();
-                assert_eq!(actual,expected,"{direction:?}, existing={existing}");
+                assert_eq!(actual,expected,"{direction:?}, existing={existing}, payload={payload}");
             }
         }
     }

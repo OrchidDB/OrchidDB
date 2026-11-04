@@ -1728,10 +1728,22 @@ pub(super) fn values_array<'a>(
         | DataType::Int32
         | DataType::UInt8
         | DataType::UInt16
-        | DataType::UInt32
-        | DataType::UInt64 => {
+        | DataType::UInt32 => {
             let wide = values_array(language, values, &DataType::Int64)?;
             Ok(arrow::compute::cast(&wide, data_type)?)
+        }
+        DataType::UInt64 => {
+            let mut builder = arrow::array::UInt64Builder::new();
+            for value in values {
+                if matches!(value, Value::Null) { builder.append_null(); continue; }
+                let number = match value {
+                    Value::UInt64(number) => Some(*number),
+                    other => value_to_int(other).and_then(|number| u64::try_from(number).ok()),
+                }.ok_or_else(|| RelError::Unsupported(format!(
+                    "cannot put `{}` in UInt64 GraphValues column", value.type_name())))?;
+                builder.append_value(number);
+            }
+            Ok(Arc::new(builder.finish()))
         }
         DataType::Float32 => {
             let wide = values_array(language, values, &DataType::Float64)?;
@@ -1758,7 +1770,7 @@ pub(super) fn values_array<'a>(
             for value in values {
                 match value {
                     Value::Null => builder.append_null(),
-                    _ => match value.as_i64() {
+                    _ => match value_to_int(value) {
                         Some(value) => builder.append_value(value),
                         None => {
                             return Err(RelError::Unsupported(format!(
@@ -1827,4 +1839,115 @@ pub(super) fn values_array<'a>(
 fn identity_array(ids: &[crate::ir::ElementId]) -> RelResult<ArrayRef> {
     if ids.is_empty() { return Ok(Arc::new(Int64Array::from(Vec::<i64>::new()))); }
     Ok(ScalarValue::iter_to_array(ids.iter().map(|id| id.scalar().clone()))?)
+}
+
+#[cfg(test)]
+mod materialization_contract_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_values_keep_width_and_null_validity() {
+        for (value, expected) in [
+            (Value::Byte(-12),ScalarValue::Int8(Some(-12))),
+            (Value::Short(-300),ScalarValue::Int16(Some(-300))),
+            (Value::Int(7),ScalarValue::Int32(Some(7))),
+            (Value::Long(i64::MAX),ScalarValue::Int64(Some(i64::MAX))),
+            (Value::UInt8(255),ScalarValue::UInt8(Some(255))),
+            (Value::UInt16(65535),ScalarValue::UInt16(Some(65535))),
+            (Value::UInt32(u32::MAX),ScalarValue::UInt32(Some(u32::MAX))),
+            (Value::UInt64(u64::MAX),ScalarValue::UInt64(Some(u64::MAX))),
+            (Value::Float32(1.25),ScalarValue::Float32(Some(1.25))),
+            (Value::Float(-0.0),ScalarValue::Float64(Some(-0.0))),
+            (Value::Bool(false),ScalarValue::Boolean(Some(false))),
+            (Value::String("雪\0'".into()),ScalarValue::Utf8(Some("雪\0'".into()))),
+        ] {
+            let values = [Value::Null,value.clone(),Value::Null];
+            let kind = infer_value_type(&values.iter().collect::<Vec<_>>()).unwrap();
+            assert_eq!(kind,expected.data_type());
+            assert_eq!(infer_property_data_type(&values),kind);
+            let array=values_array(Language::Cypher,values.iter(),&kind).unwrap();
+            assert_eq!(array.len(),3); assert_eq!(array.null_count(),2);
+            assert_eq!(ScalarValue::try_from_array(&array,1).unwrap(),expected);
+            assert!(array.is_null(0)); assert!(array.is_null(2));
+        }
+        let values=[Value::Scalar(ScalarValue::Int32(Some(8))),Value::Null];
+        let array=values_array(Language::Cypher,values.iter(),&DataType::Int64).unwrap();
+        assert_eq!(ScalarValue::try_from_array(&array,0).unwrap(),ScalarValue::Int64(Some(8)));
+        assert!(array.is_null(1));
+    }
+
+    #[test]
+    fn list_materialization_distinguishes_null_empty_and_null_elements() {
+        use arrow::array::{Array, ListArray};
+        let values=[Value::List(vec![]),Value::Null,Value::List(vec![Value::Int(1),Value::Null])];
+        let field=Arc::new(Field::new("item",DataType::Int64,true));
+        let array=values_array(Language::Cypher,values.iter(),&DataType::List(field)).unwrap();
+        let list=array.as_any().downcast_ref::<ListArray>().unwrap();
+        assert_eq!(list.value_offsets(),&[0,0,0,2]);
+        assert!(!list.is_null(0)); assert!(list.is_null(1)); assert!(!list.is_null(2));
+        assert_eq!(ScalarValue::try_from_array(list.values(),0).unwrap(),ScalarValue::Int64(Some(1)));
+        assert!(list.values().is_null(1));
+        assert_eq!(infer_value_type(&[]).unwrap(),DataType::Null);
+        assert_eq!(infer_value_type(&[&Value::Null,&Value::Null]).unwrap(),DataType::Null);
+        let nulls=values_array(Language::Cypher,[Value::Null,Value::Null].iter(),&DataType::Null).unwrap();
+        assert_eq!(nulls.len(),2); assert_eq!(nulls.logical_null_count(),2);
+    }
+
+    #[test]
+    fn incompatible_materialization_types_fail_instead_of_coercing_values() {
+        for (value,kind) in [
+            (Value::String("true".into()),DataType::Boolean),
+            (Value::Float(1.5),DataType::Int64),
+            (Value::String("1.5".into()),DataType::Float64),
+            (Value::Int(-1),DataType::UInt64),
+            (Value::Int(1),DataType::List(Arc::new(Field::new("item",DataType::Int64,true)))),
+            (Value::Int(1),DataType::Binary),
+        ] {
+            assert!(values_array(Language::Cypher,[value].iter(),&kind).is_err(),"{kind}");
+        }
+        assert!(promote_type(DataType::Boolean,DataType::Int64).is_err());
+        assert_eq!(promote_type(DataType::Int64,DataType::Float64).unwrap(),DataType::Float64);
+        assert_eq!(promote_type(DataType::Float64,DataType::Int64).unwrap(),DataType::Float64);
+        assert_eq!(promote_type(DataType::Boolean,DataType::Boolean).unwrap(),DataType::Boolean);
+    }
+
+    #[test]
+    fn property_integer_conversion_rejects_overflow_and_float_truncation() {
+        for value in [Value::Byte(7),Value::Short(7),Value::Int(7),Value::Long(7),
+            Value::UInt8(7),Value::UInt16(7),Value::UInt32(7),Value::UInt64(7),
+            Value::BigInt(7.into()),Value::UInt128(7.into())] {
+            assert_eq!(value_to_int(&value),Some(7));
+            assert_eq!(value_to_scalar(&value,&DataType::Int32,Language::Cypher).unwrap(),ScalarValue::Int32(Some(7)));
+            assert_eq!(value_to_scalar(&value,&DataType::Int64,Language::Cypher).unwrap(),ScalarValue::Int64(Some(7)));
+        }
+        for value in [Value::UInt64(u64::MAX),Value::BigInt(num_bigint::BigInt::from(i64::MAX)+1),
+            Value::Float(7.0),Value::String("7".into()),Value::Bool(true)] {
+            assert_eq!(value_to_int(&value),None);
+            assert!(value_to_scalar(&value,&DataType::Int64,Language::Cypher).is_err());
+        }
+        assert!(value_to_scalar(&Value::Long(i64::MAX),&DataType::Int32,Language::Cypher).is_err());
+        for ty in [DataType::Boolean,DataType::Int32,DataType::Int64,DataType::Float64,DataType::Utf8] {
+            assert_eq!(value_to_scalar(&Value::Null,&ty,Language::Cypher).unwrap(),ScalarValue::try_from(&ty).unwrap());
+        }
+    }
+
+    #[test]
+    fn property_projection_preserves_scalar_domains_and_requires_valid_metadata() {
+        let native=ScalarValue::Decimal128(Some(123),10,2);
+        assert_eq!(value_to_scalar(&Value::Scalar(native.clone()),&native.data_type(),Language::Cypher).unwrap(),native);
+        assert!(value_to_scalar(&Value::Bool(true),&DataType::Float64,Language::Cypher).is_err());
+        assert!(value_to_scalar(&Value::Int(1),&DataType::Boolean,Language::Cypher).is_err());
+        assert!(value_to_scalar(&Value::Int(1),&DataType::Binary,Language::Cypher).is_err());
+        for value in [Value::Float32(1.25),Value::Float(1.25),Value::BigDecimal("1.25".parse().unwrap())] {
+            assert_eq!(materialized_value_to_f64(&value),Some(1.25));
+        }
+        let map=Value::Map(BTreeMap::from([("__tag".into(),Value::String("choice".into())),("field".into(),Value::Int(7))]));
+        assert_eq!(union_tag_of(&map).as_deref(),Some("choice"));
+        assert_eq!(struct_field_of(&map,"field"),Some(Value::Int(7)));
+        assert_eq!(struct_field_of(&map,"missing"),None);
+        for value in [Value::Null,Value::Map(BTreeMap::new()),Value::Map(BTreeMap::from([("__tag".into(),Value::Int(1))]))] {
+            assert_eq!(union_tag_of(&value),None);
+            assert_eq!(struct_field_of(&value,"field"),None);
+        }
+    }
 }
