@@ -947,4 +947,115 @@ mod rule_contract_tests {
             }
         }).await;
     }
+    fn integer(value: ScalarValue) -> Option<i64> {
+        match value {
+            ScalarValue::Int32(v) => v.map(i64::from), ScalarValue::Int64(v) => v,
+            other => panic!("expected integer, got {other:?}"),
+        }
+    }
+
+    fn context(graph: &PropertyGraph, native_values: bool) -> LoweringContext<'_> {
+        LoweringContext {
+            island_memo: None, graph,
+            options: RelBackendOptions { native_values, ..Default::default() },
+            policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+            scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+            scan_logical_labels: false, gremlin_label_binds: Default::default(),
+            unordered_collects: Default::default(), unordered_distincts: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_collection_order_preserves_duplicates_and_null_positions() {
+        let graph = PropertyGraph::new();
+        for native in [false, true] {
+            for descending in [false, true] {
+                for nulls_first in [false, true] {
+                    let mut context = context(&graph, native);
+                    let input = Node::GraphValues { bindings: vec!["v".into()],
+                        rows: [Value::Int(3),Value::Null,Value::Int(1),Value::Int(3)].into_iter().map(|v|vec![v]).collect(), bulk: None };
+                    let order = SortKey { expr: IrExpr::binding("v"),
+                        dir: if descending {SortDir::Desc} else {SortDir::Asc},
+                        nulls: if nulls_first {NullsOrder::First} else {NullsOrder::Last} };
+                    let result = context.lower_collect(&IrExpr::binding("v"),false,&[order],"values",&input).unwrap();
+                    let batches = super::super::execute_test_plan(result.plan).await.unwrap();
+                    assert_eq!(batches[0].num_rows(),1);
+                    let value = ScalarValue::try_from_array(batches[0].column(0),0).unwrap();
+                    let ScalarValue::List(values) = value else { panic!("expected list"); };
+                    let actual = values.value(0);
+                    let actual = (0..actual.len()).map(|i|integer(ScalarValue::try_from_array(&actual,i).unwrap())).collect::<Vec<_>>();
+                    let mut expected = if descending {vec![Some(3),Some(3),Some(1)]} else {vec![Some(1),Some(3),Some(3)]};
+                    if nulls_first {expected.insert(0,None);} else {expected.push(None);}
+                    assert_eq!(actual,expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn collection_rejects_distinct_without_order_and_incomplete_correlation() {
+        let graph = PropertyGraph::new();
+        let mut context = context(&graph,false);
+        let error = context.lower_collect(&IrExpr::binding("v"),true,&[],"values",&Node::GraphOneRow).unwrap_err();
+        assert!(error.to_string().contains("stable first-occurrence ordering"));
+        let input = Node::GraphValues { bindings: vec!["__apply_corr_key_0".into(),"v".into()],
+            rows: vec![vec![Value::Int(1),Value::Int(2)]],bulk:None };
+        let error = context.lower_collect(&IrExpr::binding("v"),false,&[],"values",&input).unwrap_err();
+        assert!(error.to_string().contains("no correlated outer input"));
+        context.correlate_plan = Some(LogicalPlanBuilder::empty(true).build().unwrap());
+        let error = context.lower_collect(&IrExpr::binding("v"),false,&[],"values",&input).unwrap_err();
+        assert!(error.to_string().contains("unavailable from the outer input"));
+    }
+
+    #[tokio::test]
+    async fn opaque_quantifier_domains_distinguish_scalars_nulls_and_lists() {
+        let graph = PropertyGraph::new();
+        for kind in [QuantifierKind::All,QuantifierKind::Any,QuantifierKind::None,QuantifierKind::Single] {
+            for predicate in [Lit::Bool(true),Lit::Bool(false),Lit::Null] {
+                let values = [Value::List(vec![Value::Int(1),Value::Int(2)]),Value::Null,Value::List(vec![]),Value::Int(7)];
+                let input = Node::GraphValues { bindings: vec!["id".into(),"xs".into()],
+                    rows: values.into_iter().enumerate().map(|(id,v)|vec![Value::Int(id as i64),v]).collect(),bulk:None };
+                let mut context = context(&graph,true);
+                let result = context.lower_quantifier(kind,"x",&IrExpr::binding("xs"),&IrExpr::Lit(predicate.clone()),"answer",&input).unwrap();
+                let plan = LogicalPlanBuilder::from(result.plan).project(vec![col_exact("id"),col_exact("answer")]).unwrap()
+                    .sort(vec![col_exact("id").sort(true,false)]).unwrap().build().unwrap();
+                let batches = super::super::execute_test_plan(plan).await.unwrap();
+                let actual = batches.iter().flat_map(|b|(0..b.num_rows()).map(|i|ScalarValue::try_from_array(b.column(1),i).unwrap())).collect::<Vec<_>>();
+                let nonempty = match (&predicate,kind) {
+                    (Lit::Null,_)=>None,
+                    (Lit::Bool(value),QuantifierKind::All|QuantifierKind::Any)=>Some(*value),
+                    (Lit::Bool(value),QuantifierKind::None)=>Some(!value),
+                    (Lit::Bool(_),QuantifierKind::Single)=>Some(false),_=>unreachable!(),
+                };
+                let empty = Some(matches!(kind,QuantifierKind::All|QuantifierKind::None));
+                assert_eq!(actual,[nonempty,None,empty,None].into_iter().map(ScalarValue::Boolean).collect::<Vec<_>>(),"{kind:?}, {predicate:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn outer_unwind_preserves_empty_and_null_parent_occurrences() {
+        let graph = PropertyGraph::new();
+        for native in [false,true] {
+            for outer in [false,true] {
+                let values = [Value::List(vec![Value::Int(1),Value::Int(2)]),Value::Null,
+                    Value::List(vec![]),Value::List(vec![Value::Null]),Value::List(vec![Value::Int(3),Value::Null])];
+                let input = Node::GraphValues { bindings: vec!["id".into(),"xs".into()],
+                    rows: values.into_iter().enumerate().map(|(id,v)|vec![Value::Int(id as i64),v]).collect(), bulk:None };
+                let mut context = context(&graph,native);
+                let input = context.lower_node(&input).unwrap();
+                let lowered = context.lower_unwind_dynamic(input,&IrExpr::binding("xs"),"x",outer).unwrap();
+                let plan = LogicalPlanBuilder::from(lowered.plan).project(vec![col_exact("id"),col_exact("x")]).unwrap()
+                    .sort(vec![col_exact("id").sort(true,false),col_exact("x").sort(true,false)]).unwrap().build().unwrap();
+                let batches = super::super::execute_test_plan(plan).await.unwrap();
+                let actual = batches.iter().flat_map(|b|(0..b.num_rows()).map(|i|(
+                    integer(ScalarValue::try_from_array(b.column(0),i).unwrap()),integer(ScalarValue::try_from_array(b.column(1),i).unwrap())))).collect::<Vec<_>>();
+                let mut expected=vec![(0,Some(1)),(0,Some(2))];
+                if outer {expected.extend([(1,None),(2,None)]);}
+                expected.extend([(3,None),(4,Some(3)),(4,None)]);
+                assert_eq!(actual,expected.into_iter().map(|(id,x)|(Some(id),x)).collect::<Vec<_>>(),"native={native}, outer={outer}");
+            }
+        }
+    }
+
 }

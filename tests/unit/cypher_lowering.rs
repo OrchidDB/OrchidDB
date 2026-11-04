@@ -948,3 +948,26 @@ malformed!(
     expressions::lower_property_lookup,
     "missing property key"
 );
+
+lowering!(
+    explicit_list_literal_entrypoint_preserves_nested_values,
+    oC_ListLiteral,
+    collections::lower_list_literal,
+    "[null, 0x10, [true, 'quoted']]",
+    Expr::List(vec![
+        Expr::Literal(Literal::Null), Expr::Literal(Literal::Integer("16".into())),
+        Expr::List(vec![Expr::Literal(Literal::Bool(true)),Expr::Literal(Literal::String("quoted".into()))]),
+    ])
+);
+lowering!(empty_list_literal_entrypoint,oC_ListLiteral,collections::lower_list_literal,"[]",Expr::List(vec![]));
+
+#[test]
+fn radix_integer_overflow_reports_the_original_literal() {
+    for text in ["0x100000000000000000000000000000000", "0o4000000000000000000000000000000000000000000"] {
+        let lexer=CypherLexer::new(InputStream::new(text));
+        let mut parser=CypherParser::new(CommonTokenStream::new(lexer));
+        let tree=parser.oC_IntegerLiteral().unwrap();
+        let error=expressions::lower_integer_literal(tree.as_ref()).unwrap_err().to_string();
+        assert!(error.contains("invalid integer literal") && error.contains(text),"{error}");
+    }
+}
