@@ -298,6 +298,13 @@ fn unparse_one(
     dialect: SqlDialect,
     repair_scopes: bool,
 ) -> SqlResult<String> {
+    // A standalone statement has no consumer for its outer relation alias.
+    // DF53 can discard an aggregate beneath that alias and emit SELECT *
+    // from its input instead, changing both the columns and cardinality.
+    let mut plan = plan;
+    while let LogicalPlan::SubqueryAlias(alias) = plan {
+        plan = &alias.input;
+    }
     // CTE extraction can leave a projection over unused aggregate outputs.
     // The unparser drops those calls, so prune this simple aggregate/scan shape
     // before recording their ordering contracts. Do not rerun general demand

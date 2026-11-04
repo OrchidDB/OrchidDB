@@ -1,5 +1,5 @@
 use arrow::{
-    array::{ArrayRef, Float64Array, Int64Array, ListArray, RecordBatch, StringArray},
+    array::{Array, ArrayRef, Float64Array, Int64Array, ListArray, RecordBatch, StringArray},
     datatypes::Float64Type,
 };
 use datafusion::datasource::MemTable;
@@ -850,4 +850,57 @@ async fn zero_lance_limit_does_not_open_a_dataset() {
         .template;
     assert!(template.sql.contains("WHERE FALSE"));
     assert!(!template.sql.contains("lance_vector_search"));
+}
+
+#[tokio::test]
+async fn ordinary_bm25_queries_keep_the_mapped_corpus_through_filter_alias_group_and_slice() {
+    let corpus = [Some("cat cat dog".into()), Some("cat".into()), Some("dog".into()), Some("cat".into())];
+    let expected = orchiddb::ir::functions::search::bm25("cat", "cat", &corpus);
+    for (query, count) in [
+        ("MATCH (d:Document) WHERE d.id=2 RETURN text.bm25('cat',d.body) AS score", 1),
+        ("MATCH (d:Document) WITH d.body AS body WHERE body='cat' RETURN text.bm25('cat',body) AS score", 2),
+        ("MATCH (d:Document) WITH d.body AS body,count(*) AS n WHERE body='cat' RETURN text.bm25('cat',body) AS score", 1),
+        ("MATCH (d:Document) WITH DISTINCT d.body AS body WHERE body='cat' RETURN text.bm25('cat',body) AS score", 1),
+        ("MATCH (d:Document) WITH d.body AS body,d.id AS id ORDER BY id SKIP 1 LIMIT 1 RETURN text.bm25('cat',body) AS score", 1),
+        ("MATCH (d:Document), (other:Document) WHERE d.id=2 AND other.id=3 RETURN text.bm25('cat',d.body) AS score", 1),
+        ("MATCH (d:Document) WHERE d.id=2 OPTIONAL MATCH (other:Document) WHERE other.id=99 RETURN text.bm25('cat',d.body) AS score", 1),
+        ("MATCH (d:Document) WITH d,count(*) AS n WHERE d.id=2 RETURN text.bm25('cat',d.body) AS score", 1),
+    ] {
+        let lowered = lower(mapping(""), query);
+        let result = execute_lowered(lowered).await.unwrap_or_else(|error| panic!("{query}: {error}"));
+        assert_eq!(result.batch.num_rows(), count, "{query}");
+        let scores = result.batch.column(0).as_any().downcast_ref::<Float64Array>().unwrap();
+        for row in 0..count {
+            assert!((scores.value(row)-expected).abs()<1e-12, "{query}: {} != {expected}", scores.value(row));
+        }
+    }
+}
+
+#[test]
+fn ordinary_bm25_queries_reject_documents_without_mapped_vertex_lineage() {
+    for query in [
+        "RETURN text.bm25('cat','cat') AS score",
+        "UNWIND ['cat','dog'] AS body RETURN text.bm25('cat',body) AS score",
+        "MATCH (d:Document) RETURN text.bm25('cat',toLower(d.body)) AS score",
+        "MATCH (d:Document) WITH min(d.body) AS body RETURN text.bm25('cat',body) AS score",
+    ] {
+        let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+        let error = RelBackend::with_options(RelBackendOptions {
+            mapping: Some(Arc::new(mapping(""))), ..Default::default()
+        }).lower(&plan, &PropertyGraph::new()).unwrap_err().to_string();
+        assert!(error.contains("mapped vertex text property"), "{query}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn ordinary_bm25_queries_preserve_empty_inputs_and_missing_optional_documents() {
+    let empty = execute_lowered(lower(mapping(""),
+        "MATCH (d:Document) WHERE d.id=99 RETURN text.bm25('cat',d.body) AS score"))
+        .await.unwrap();
+    assert_eq!(empty.batch.num_rows(), 0);
+    let missing = execute_lowered(lower(mapping(""),
+        "MATCH (d:Document) WHERE d.id=2 OPTIONAL MATCH (other:Document) WHERE other.id=99 RETURN text.bm25('cat',other.body) AS score"))
+        .await.unwrap();
+    assert_eq!(missing.batch.num_rows(), 1);
+    assert!(missing.batch.column(0).is_null(0));
 }
