@@ -109,9 +109,15 @@ impl<'a> LoweringContext<'a> {
         }
         if self.language == Language::Cypher
             && let Some(value) = self.lower_list_consumer(plan, expr)? { return Ok(value); }
-        if self.options.native_values && self.language == Language::Cypher
+        if self.language == Language::Cypher
             && matches!(expr,IrExpr::ListTransform{..}|IrExpr::ListFilter{..}|IrExpr::Quantifier{..}) {
-            return self.lower_sql_lambda(plan,expr);
+            let mut wide_cast = false;
+            crate::ir::rules::graph::visit_expr(expr, &Default::default(), &mut |part, _| {
+                wide_cast |= expression_has_wide_numeric_cast(part);
+            });
+            if self.options.native_values || wide_cast {
+                return self.lower_sql_lambda(plan,expr);
+            }
         }
         if self.options.native_values && self.language == Language::Cypher
             && matches!(expr,IrExpr::Call{name,..} if name=="map") {
@@ -303,7 +309,7 @@ impl<'a> LoweringContext<'a> {
                 // strings. Unsupported heterogeneous shapes use the runtime.
                 let types = values
                     .iter()
-                    .map(|value| value.get_type(plan.schema()))
+                    .map(|value| null_aware_type(value, plan))
                     .collect::<datafusion::common::Result<Vec<_>>>()?;
                 let common = types.iter().try_fold(DataType::Null, |common, kind| {
                     nullable_collection_type(&common, kind).ok_or_else(|| RelError::Unsupported(
@@ -311,7 +317,8 @@ impl<'a> LoweringContext<'a> {
                     ))
                 })?;
                 let values = values.into_iter().zip(types).map(|(value, kind)| {
-                    if kind == common || kind == DataType::Null { Ok(value) }
+                    if kind == DataType::Null { align_literal_null(value, &common) }
+                    else if kind == common { Ok(value) }
                     else { value.cast_to(&common, plan.schema()) }
                 }).collect::<datafusion::common::Result<Vec<_>>>()?;
                 Ok(datafusion::functions_nested::expr_fn::make_array(values))
@@ -427,7 +434,7 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             IrExpr::Case { arms, otherwise } => {
-                let when_then_expr = arms
+                let mut when_then_expr = arms
                     .iter()
                     .filter(|(when, _)| !matches!(when, IrExpr::IsBound(binding)
                         if !has_exact_col(plan, binding) && has_binding_shape(plan, binding).is_none()))
@@ -438,7 +445,7 @@ impl<'a> LoweringContext<'a> {
                         ))
                     })
                     .collect::<RelResult<Vec<_>>>()?;
-                let else_expr = otherwise
+                let mut else_expr = otherwise
                     .as_ref()
                     .map(|expr| self.lower_expr(plan, expr).map(Box::new))
                     .transpose()?;
@@ -467,6 +474,11 @@ impl<'a> LoweringContext<'a> {
                             ));
                         }
                         branch_type = Some(kind);
+                    }
+                    if let Some(kind) = branch_type {
+                        for branch in when_then_expr.iter_mut().map(|(_, value)| value).chain(else_expr.iter_mut()) {
+                            **branch = align_literal_null((**branch).clone(), &kind)?;
+                        }
                     }
                 }
                 Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
@@ -742,7 +754,37 @@ impl<'a> LoweringContext<'a> {
                     // that text; `casts.rs` proves the rewrite per value.
                     return self.lower_list_cast(plan, name, args, target);
                 }
+                if let Some(target) = cast_target_text(name, args) {
+                    let target = target.trim().trim_matches('"').trim().to_ascii_uppercase();
+                    let operation = match target.as_str() {
+                        "INT128" => Some("to_int128"),
+                        "UINT128" => Some("to_uint128"),
+                        _ => None,
+                    };
+                    if let Some(operation) = operation {
+                        // Decimal128 has only 38 digits; both 128-bit integer
+                        // domains require 39. Keep the exact runtime type.
+                        if args.len() != if name.eq_ignore_ascii_case("cast") { 2 } else { 1 } {
+                            return Err(RelError::Unsupported(format!("{name} arity")));
+                        }
+                        return Ok(native_values::typed::call(operation,
+                            vec![self.lower_expr(plan, &args[0])?]));
+                    }
+                }
                 let (mut value, data_type, lenient) = self.cast_parts(plan, name, args)?;
+                if native_values::is_value(&value.get_type(plan.schema())?) {
+                    // Validate the conversion against the language's actual
+                    // value first, then unbox its canonical scalar text. SQL
+                    // must never cast the carrier struct itself.
+                    let converted = if lenient {
+                        native_values::typed::call(&format!("cypher_convert.{}", name.to_ascii_lowercase()), vec![value])
+                    } else {
+                        native_values::typed::call("cast", vec![value,
+                            lit(cast_target_text(name, args).expect("validated cast target"))])
+                    };
+                    value = native_values::typed::call("scalar_text", vec![converted]);
+                    if data_type == DataType::Utf8 { return Ok(value); }
+                }
                 if value.get_type(plan.schema())? == DataType::Boolean && data_type.is_integer() {
                     // PostgreSQL cannot cast BOOLEAN directly to BIGINT.
                     // CASE gives every adapter the same 1/0/NULL semantics;
@@ -1105,7 +1147,7 @@ impl<'a> LoweringContext<'a> {
                     .collect::<RelResult<Vec<_>>>()?;
                 let types = lowered
                     .iter()
-                    .map(|e| e.get_type(plan.schema()))
+                    .map(|e| null_aware_type(e, plan))
                     .collect::<datafusion::common::Result<Vec<_>>>()?;
                 let concrete = types
                     .iter()
@@ -1116,6 +1158,10 @@ impl<'a> LoweringContext<'a> {
                         "Heterogeneous Cypher coalesce requires native runtime types".into(),
                     ));
                 }
+                let target = concrete.first().map(|ty| (**ty).clone());
+                let lowered = lowered.into_iter().map(|value| {
+                    if let Some(kind) = &target { align_literal_null(value, kind) } else { Ok(value) }
+                }).collect::<datafusion::common::Result<Vec<_>>>()?;
                 Ok(df_core::coalesce(lowered))
             }
             IrExpr::Call { name, args } if matches!(name.as_str(), "cypher_convert.tointeger" | "cypher_convert.toboolean") && args.len() == 1 => {
@@ -1420,6 +1466,18 @@ impl<'a> LoweringContext<'a> {
         let data_type = data_type_for_cast_target(target_name)?;
         Ok((value, data_type, lenient))
     }
+}
+
+// A typed SQL NULL contributes no Cypher value type. Align just the null
+// literal, never an actual string or scalar value, to the selected branch type.
+fn null_aware_type(value: &Expr, plan: &LogicalPlan) -> datafusion::common::Result<DataType> {
+    if matches!(value, Expr::Literal(value, _) if value.is_null()) { Ok(DataType::Null) }
+    else { value.get_type(plan.schema()) }
+}
+fn align_literal_null(value: Expr, kind: &DataType) -> datafusion::common::Result<Expr> {
+    if matches!(&value, Expr::Literal(value, _) if value.is_null()) {
+        Ok(lit(ScalarValue::try_from(kind)?))
+    } else { Ok(value) }
 }
 
 // SQL may promote an integer constant to the floating column's type when the

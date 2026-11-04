@@ -30,6 +30,9 @@ impl Output {
 // operation. Callers never supply a program or an operation name as an argument.
 pub const CALLS: &[&str] = &[
     "abs",
+    "cast",
+    "to_int128",
+    "to_uint128",
     "cypher_coalesce",
     "cypher_convert.tointeger",
     "cypher_convert.tostring",
@@ -119,6 +122,7 @@ pub fn operations() -> impl Iterator<Item = &'static str> {
         .chain(AGGREGATES.iter().map(|(name, _)| *name))
 }
 pub const INTERNAL: &[&str] = &[
+    "scalar_text",
     "source_id",
     "json_document",
     "node_path",
@@ -153,7 +157,7 @@ pub fn sql_name(operation: &str) -> String {
 }
 pub fn output(operation: &str) -> Output {
     match operation {
-        "json_document" => Output::Text,
+        "json_document" | "scalar_text" => Output::Text,
         "order_indices" => Output::Indices,
         "key" => Output::Text,
         "argument_valid" | "string_starts_with" | "string_ends_with" | "string_contains"
@@ -474,6 +478,9 @@ pub fn evaluate(operation: &str, arguments: &[ArrayRef], rows: usize) -> Result<
             ("node_path", [Value::Path(items)]) => Value::Path(items.iter()
                 .filter(|item| matches!(item, Value::Node { .. })).cloned().collect()),
             ("pack", [value]) => value.clone(),
+            ("scalar_text", [Value::Null]) => Value::Null,
+            ("scalar_text", [_]) => crate::ir::runtime::scalar::eval_call("to_string", args, &context.graph)
+                .map_err(|e| crate::ir::diagnostics::QueryExecutionError::from_error(e).sql_error())?,
             ("json_document", [Value::Null]) => Value::Null,
             ("json_document", [Value::Scalar(scalar)]) if crate::ir::functions::domain::is_json(&scalar.data_type()) =>
                 crate::ir::functions::domain::json_text(scalar).map_err(|e| e.to_string())?.map(Value::String).unwrap_or(Value::Null),
