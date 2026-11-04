@@ -414,3 +414,34 @@ fn pattern_matrix_compiles_for_mapped_duckdb_and_trino() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+#[test]
+fn recursive_filter_string_operands_and_shadowed_lambdas_keep_their_bindings() {
+    let graph = fixture();
+    for (predicate, expected) in [
+        ("n.name STARTS WITH 'b'", vec!["c"]),
+        ("n.name ENDS WITH 'b'", vec!["c"]),
+        ("n.name CONTAINS 'b'", vec!["c"]),
+        ("toString(r.w) STARTS WITH toString(n.k - 1)", vec!["c"]),
+        ("any(n IN ['b'] WHERE n STARTS WITH 'b') AND n.name STARTS WITH 'b'", vec!["c"]),
+        ("all(r IN ['x'] WHERE r CONTAINS 'x') AND n.name ENDS WITH 'b'", vec!["c"]),
+        ("n.name IS NOT NULL", vec!["c", "d"]),
+        ("n.missing IS NULL AND r.w IS NOT NULL", vec!["c", "d"]),
+    ] {
+        let query = format!("MATCH (a:P {{name:'a'}})-[e:R*2..2 (r,n | WHERE {predicate})]->(target:P) RETURN target.name ORDER BY target.name");
+        assert_eq!(rows(&graph, &query).unwrap_or_else(|error| panic!("{query}: {error}")), expected, "{query}");
+    }
+}
+
+#[test]
+fn projected_aliases_are_available_to_deferred_scoped_sort_keys() {
+    let graph = fixture();
+    for (query, expected) in [
+        ("MATCH (n:P) WITH n AS x ORDER BY EXISTS { MATCH (x)-[:R]->() }, x.name LIMIT 1 RETURN x.name", vec!["e"]),
+        ("MATCH (n:P) WITH n AS x ORDER BY EXISTS { MATCH (x)-[:R]->() } DESC, x.name LIMIT 1 RETURN x.name", vec!["a"]),
+        ("MATCH (n:P) WITH n AS x ORDER BY size([(x)-[:R]->(z) | z]) DESC, x.name LIMIT 1 RETURN x.name", vec!["a"]),
+        ("MATCH (n:P) WITH n.name AS name ORDER BY EXISTS { MATCH (m:P) WHERE m.name=name AND (m)-[:R]->() }, name LIMIT 1 RETURN name", vec!["e"]),
+    ] {
+        assert_eq!(rows(&graph, query).unwrap_or_else(|error| panic!("{query}: {error}")), expected, "{query}");
+    }
+}
