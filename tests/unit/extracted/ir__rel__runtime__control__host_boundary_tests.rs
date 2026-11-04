@@ -119,3 +119,58 @@
         }
     }
 
+
+#[derive(Debug)]
+struct BindingRunner { shared: Value }
+impl SubplanRunner for BindingRunner {
+    fn run(&self, _plan: &LogicalPlan, state: &mut KernelState) -> IrResult<Vec<Row>> {
+        Ok(state.frontier.iter().map(|row| {
+            let mut row = row.clone().with("shared", self.shared.clone())
+                .with("__scratch", Value::Int(99)).with("value", Value::Int(7));
+            for name in ["__cypher_match_history_a", "__cypher_exists_history_a", "__cypher_pattern_history_a"] {
+                row.bindings.insert(name.into(), Value::List(vec![Value::Int(2)]));
+            }
+            row
+        }).collect())
+    }
+}
+
+#[test]
+fn cypher_apply_reconciles_shared_values_without_conflating_internal_histories() {
+    let graph = PropertyGraph::new();
+    for batched in [false, true] {
+        for (outer_value, inner_value, matches) in [
+            (Value::Int(1),Value::Long(1),true),
+            (Value::Int(1),Value::Int(2),false),
+            // Shared imported nulls agree; this is binding compatibility, not a WHERE predicate.
+            (Value::Null,Value::Null,true),
+            (Value::Null,Value::Int(1),false),
+            (Value::String("same".into()),Value::String("same".into()),true),
+        ] {
+            let mut outer = Row::new().with("shared",outer_value).with("__scratch",Value::Int(1));
+            for name in ["__cypher_match_history_a", "__cypher_exists_history_a", "__cypher_pattern_history_a"] {
+                outer.bindings.insert(name.into(),Value::List(vec![Value::Int(1)]));
+            }
+            let mut state = KernelState::for_host(graph.clone(),Arc::new(BindingRunner {shared:inner_value}),&Default::default());
+            let mut right = body();right.batchable = batched;
+            let rows = apply_op(ApplyKind::Inner,&["shared".into()],&["value".into()],OptionalMissing::Null,
+                vec![outer.clone(),outer],&right,&graph,&mut state.context).unwrap();
+            assert_eq!(rows.len(),if matches {2} else {0});
+            for row in rows {
+                assert_eq!(row.bindings["__scratch"],Value::Int(1));
+                assert_eq!(row.bindings["value"],Value::Int(7));
+                for name in ["__cypher_match_history_a", "__cypher_exists_history_a", "__cypher_pattern_history_a"] {
+                    assert_eq!(row.bindings[name],Value::List(vec![Value::Int(2)]));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn empty_scalar_apply_without_output_bindings_reports_its_contract_error() {
+    let graph = PropertyGraph::new();
+    let mut state = KernelState::for_host(graph.clone(),Arc::new(ApplyRunner {copies:0,corrupt_identity:0}),&Default::default());
+    let error = apply_op(ApplyKind::Scalar,&[],&[],OptionalMissing::Null,vec![Row::new()],&body(),&graph,&mut state.context).unwrap_err();
+    assert!(error.to_string().contains("scalar apply produced no output bindings"));
+}
