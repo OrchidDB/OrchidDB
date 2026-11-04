@@ -255,6 +255,30 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
             .project(sort.input.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>())?.build()?);
         Ok(Transformed::yes(LogicalPlan::Sort(sort)))
     })?.data;
+    // FROM-less singleton projections must become real join operands. The
+    // generic unparser otherwise drops an outer join with a zero-column seed.
+    fn has_empty_seed(plan: &LogicalPlan) -> bool {
+        match plan {
+            LogicalPlan::EmptyRelation(_) => true,
+            LogicalPlan::Projection(project) => has_empty_seed(&project.input),
+            LogicalPlan::SubqueryAlias(alias) => has_empty_seed(&alias.input),
+            _ => false,
+        }
+    }
+    let mut seed_scope = 0;
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Join(mut join) = node else { return Ok(Transformed::no(node)); };
+        let mut changed = false;
+        for input in [&mut join.left, &mut join.right] {
+            if has_empty_seed(input) {
+                *input = Arc::new(sort_scope(input.as_ref().clone(),
+                    format!("__w_sql_cte_join_seed_{seed_scope}"))?);
+                seed_scope += 1;
+                changed = true;
+            }
+        }
+        Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
+    })?.data;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
     Ok(apply_identifier_repairs(sql, &repairs))

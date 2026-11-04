@@ -109,7 +109,7 @@ impl<'a> LoweringContext<'a> {
         }
         if self.language == Language::Cypher
             && let Some(value) = self.lower_list_consumer(plan, expr)? { return Ok(value); }
-        if self.language == Language::Cypher
+        if self.options.native_values && self.language == Language::Cypher
             && matches!(expr,IrExpr::ListTransform{..}|IrExpr::ListFilter{..}|IrExpr::Quantifier{..}) {
             return self.lower_sql_lambda(plan,expr);
         }
@@ -1557,6 +1557,8 @@ impl<'a> LoweringContext<'a> {
         }
         let target_expr = if matches!(target, IrExpr::List(_)) {
             self.lower_native_list(plan, target)?
+        } else if matches!(target, IrExpr::ListTransform { .. } | IrExpr::ListFilter { .. }) {
+            self.lower_typed_list_input(plan, target)?
         } else {
             self.lower_list_operand(plan, target)?
         };

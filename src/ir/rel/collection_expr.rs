@@ -106,7 +106,21 @@ impl<'a> LoweringContext<'a> {
                 };
                 Ok(Some(self.lower_list_insert(plan, items, item, true)?))
             }
-            "list_element" | "list_extract" | "element_at" => {
+            "list_extract" => {
+                let [target, index] = args else { return Ok(None); };
+                if let IrExpr::List(items) = target
+                    && let Some(index) = literal_i64(index)
+                    && let Some(item) = list_element_1_based_expr(items, index) {
+                    return Ok(Some(self.lower_expr(plan, item)?));
+                }
+                // Unlike list_element, list_extract diagnoses invalid bounds.
+                // Keep that check in the scalar operation so empty inputs need
+                // not evaluate it, rather than rejecting the whole plan here.
+                Ok(Some(native_values::typed::call("list_extract", vec![
+                    self.lower_expr(plan, target)?, self.lower_expr(plan, index)?,
+                ])))
+            }
+            "list_element" | "element_at" => {
                 let [IrExpr::List(items), index] = args else {
                     return Ok(None);
                 };
@@ -498,7 +512,8 @@ pub(super) fn constant_collection_function_value(name: &str, args: &[IrExpr]) ->
         "array_contains" | "array_has" | "list_contains" | "list_has" => {
             constant_list_contains(args)
         }
-        "element_at" | "list_element" | "list_extract" => constant_list_extract(args),
+        "element_at" | "list_element" => constant_list_extract(args),
+        "list_extract" => constant_strict_list_extract(args),
         "list_any_value" => constant_list_any_value(args),
         "list_distinct" => constant_list_distinct(args),
         "list_has_all" => constant_list_has_all(args),
@@ -538,6 +553,22 @@ pub(super) fn constant_array_slice(args: &[IrExpr]) -> RelResult<Option<Value>> 
         Value::Null => Value::Null,
         _ => return Ok(None),
     }))
+}
+
+fn constant_strict_list_extract(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [target, index] = args else { return Ok(None); };
+    let (Some(target_value), Some(index_value)) =
+        (constant_value_expr(target)?, constant_value_expr(index)?) else { return Ok(None); };
+    if target_value == Value::Null || index_value == Value::Null { return Ok(Some(Value::Null)); }
+    let Some(index) = index_value.as_i64() else { return Ok(None); };
+    let length = match &target_value {
+        Value::List(items) | Value::Path(items) => items.len(),
+        Value::String(value) => value.chars().count(),
+        _ => return Ok(None),
+    } as i128;
+    let offset = if index > 0 { i128::from(index) - 1 } else { length + i128::from(index) };
+    if index == 0 || offset < 0 || offset >= length { return Ok(None); }
+    constant_list_extract(args)
 }
 
 pub(super) fn constant_list_extract(args: &[IrExpr]) -> RelResult<Option<Value>> {

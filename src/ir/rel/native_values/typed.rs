@@ -72,6 +72,7 @@ pub const CALLS: &[&str] = &[
     "keys",
     "last",
     "length",
+    "list_extract",
     "list_sort",
     "map",
     "mod",

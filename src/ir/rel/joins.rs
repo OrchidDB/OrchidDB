@@ -321,9 +321,9 @@ impl<'a> LoweringContext<'a> {
         // can project fewer columns than their input, triggering DataFusion's
         // positional alias rewrite on an unrelated inner projection.
         let right_plan = if self.language == Language::Cypher {
-            LogicalPlanBuilder::from(right_plan)
-                .alias("__w_apply_join_right")?
-                .build()?
+            let name = format!("__w_sql_cte_apply_join_right_{}", self.scan_counter);
+            self.scan_counter += 1;
+            collections::unnest_scope(right_plan, name)?
         } else {
             right_plan
         };

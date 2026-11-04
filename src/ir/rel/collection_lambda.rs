@@ -51,6 +51,16 @@ pub(super) fn definition(function: &ScalarUDF) -> Option<&Lambda> {
 }
 
 impl LoweringContext<'_> {
+    // Scalar list consumers can retain a native list without invoking the
+    // legacy display/reconstruction alternative for a returned collection.
+    pub(super) fn lower_typed_list_input(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        self.lower_expr(plan, expr).or_else(|error| {
+            if !matches!(error, RelError::Semantic(_))
+                && matches!(expr, IrExpr::ListTransform { .. } | IrExpr::ListFilter { .. }) {
+                self.lower_sql_lambda(plan, expr)
+            } else { Err(error) }
+        })
+    }
     /// Consumers of total, row-local mappings need not construct mapped lists.
     /// Keep potentially throwing/volatile bodies on the ordinary evaluation path.
     pub(super) fn lower_list_consumer(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Option<Expr>> {
@@ -61,7 +71,7 @@ impl LoweringContext<'_> {
                 if matches!(map.as_ref(), IrExpr::Binding(binding) if binding == item)
                     || matches!(map.as_ref(), IrExpr::Lit(Lit::Null | Lit::Bool(_) | Lit::Int(_) | Lit::Float(_) | Lit::String(_))));
         if matches!(name.as_str(), "head" | "last") && !simplified_head {
-            let source = self.lower_expr(plan, input)?;
+            let source = self.lower_typed_list_input(plan, input)?;
             if matches!(source.get_type(plan.schema())?, DataType::List(_)) {
                 return Ok(Some(datafusion::functions_nested::expr_fn::array_element(
                     source, lit(if name == "head" { 1_i64 } else { -1_i64 }),
@@ -199,7 +209,9 @@ impl LoweringContext<'_> {
             }
         });
         let source_body = body;
-        let body = if matches!(kind, "transform" | "reduce" | "sum") {
+        let body = if kind == "reduce" && native_values::is_value(element.data_type()) {
+            self.native_expr(&scope, &source_body)?
+        } else if matches!(kind, "transform" | "reduce" | "sum") {
             self.lower_expr(&scope, &source_body)?
         } else {
             self.lower_case_condition(&scope, &source_body)?
@@ -220,6 +232,34 @@ impl LoweringContext<'_> {
         } else {
             body
         };
+        if kind == "reduce" && !native_values::is_value(element.data_type())
+            && body.get_type(scope.schema())? != *element.data_type()
+        {
+            // SQL folds use the first element as their accumulator type. A
+            // Cypher body may change that type; carry both items and accumulator
+            // losslessly instead of letting SQL cast the result back to the seed.
+            let source = native_values::typed::call("items", vec![
+                native_values::typed::call("pack", vec![source]),
+            ]);
+            let binding = unique_internal_alias(plan, &BTreeSet::new(), "__reduce_typed_input");
+            let mut columns = existing_columns(plan, &BTreeSet::new());
+            columns.push(source.clone().alias(&binding));
+            let typed_scope = LogicalPlanBuilder::from(plan.clone()).project(columns)?.build()?;
+            let IrExpr::ListReduce { accumulator, item, map, .. } = expr else { unreachable!() };
+            let rewritten = IrExpr::ListReduce {
+                collection: Box::new(IrExpr::Binding(binding.clone())),
+                accumulator: accumulator.clone(), item: item.clone(), map: map.clone(),
+            };
+            return Ok(self.lower_sql_lambda(&typed_scope, &rewritten)?.transform_up(|expr| {
+                if matches!(&expr, Expr::Column(column) if column.name == binding) {
+                    Ok(Transformed::yes(source.clone()))
+                } else { Ok(Transformed::no(expr)) }
+            })?.data);
+        }
+        let body = if kind == "reduce" && native_values::is_value(element.data_type())
+            && !native_values::is_value(&body.get_type(scope.schema())?) {
+            native_values::typed::call("pack", vec![body])
+        } else { body };
         let result = match kind {
             "sum" => match element.data_type() {
                 DataType::Null | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => DataType::Int64,
