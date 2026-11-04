@@ -217,3 +217,7 @@ pub(super) fn fold(lowerer: &mut Lowerer, input: &Node, kind: QuantifierKind, va
     let value = Evaluator { lowerer, graph, remaining }.expression(&expression,&scope)?;
     Some(Expr::Literal(match value { Value::Bool(value) => Literal::Bool(value), Value::Null => Literal::Null, _ => return None }))
 }
+
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/cypher_constant_quantifier.rs"]
+mod folding_boundary_tests;

@@ -865,6 +865,8 @@ async fn ordinary_bm25_queries_keep_the_mapped_corpus_through_filter_alias_group
         ("MATCH (d:Document), (other:Document) WHERE d.id=2 AND other.id=3 RETURN text.bm25('cat',d.body) AS score", 1),
         ("MATCH (d:Document) WHERE d.id=2 OPTIONAL MATCH (other:Document) WHERE other.id=99 RETURN text.bm25('cat',d.body) AS score", 1),
         ("MATCH (d:Document) WITH d,count(*) AS n WHERE d.id=2 RETURN text.bm25('cat',d.body) AS score", 1),
+        ("CALL { MATCH (d:Document) WHERE d.id=2 RETURN d.body AS body } RETURN text.bm25('cat',body) AS score", 1),
+        ("CALL { MATCH (d:Document) WHERE d.id=2 RETURN d.body AS body UNION ALL MATCH (d:Document) WHERE d.id=4 RETURN d.body AS body } RETURN text.bm25('cat',body) AS score", 2),
     ] {
         let lowered = lower(mapping(""), query);
         let result = execute_lowered(lowered).await.unwrap_or_else(|error| panic!("{query}: {error}"));
