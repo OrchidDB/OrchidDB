@@ -1067,3 +1067,92 @@ lowering!(
         ]
     }
 );
+
+// Recovery can preserve an initial operand while losing a later required child.
+// Keep that prefix intact to check the diagnostic at the actual missing field.
+macro_rules! truncated {
+    ($name:ident, $rule:ident, $input:expr, $child:ident, $lower:path, $message:expr) => {
+        #[test]
+        fn $name() {
+            use crate::grammar::generated::cypher::cypherparser::*;
+            use antlr4rust::{parser_rule_context::ParserRuleContext, tree::Tree};
+            let errors = super::super::SyntaxErrors::default();
+            let mut lexer = CypherLexer::new(InputStream::new($input));
+            lexer.remove_error_listeners();
+            lexer.add_error_listener(Box::new(errors.listener()));
+            let mut parser = CypherParser::new(CommonTokenStream::new(lexer));
+            parser.remove_error_listeners();
+            parser.add_error_listener(Box::new(errors.listener()));
+            let context = parser.$rule().unwrap();
+            errors.into_result().expect("valid grammar fragment");
+            assert!(context.$child().is_some());
+            while context.$child().is_some() {
+                context.remove_last_child();
+            }
+            assert!(
+                context.get_child_count() > 0,
+                "prefix should survive recovery"
+            );
+            let error = $lower(context.as_ref())
+                .err()
+                .expect("missing child requires a diagnostic");
+            assert!(error.to_string().contains($message), "{error}");
+        }
+    };
+}
+truncated!(
+    unwind_recovery_missing_alias,
+    oC_Unwind,
+    "UNWIND [1] AS x",
+    oC_Variable,
+    clauses::lower_unwind,
+    "UNWIND missing alias"
+);
+truncated!(
+    pattern_comprehension_recovery_missing_map,
+    oC_PatternComprehension,
+    "[(a)-->(b) | b]",
+    oC_Expression,
+    collections::lower_pattern_comprehension,
+    "missing projection expression"
+);
+truncated!(
+    iterator_recovery_missing_collection,
+    oC_IdInColl,
+    "x IN [1]",
+    oC_Expression,
+    collections::lower_id_in_coll,
+    "missing collection expression"
+);
+truncated!(
+    property_assignment_recovery_missing_value,
+    oC_SetItem,
+    "n.x = 1",
+    oC_Expression,
+    updating::lower_set_item,
+    "SET property item missing value expression"
+);
+truncated!(
+    variable_assignment_recovery_missing_value,
+    oC_SetItem,
+    "n = {x:1}",
+    oC_Expression,
+    updating::lower_set_item,
+    "SET variable item missing value expression"
+);
+truncated!(
+    remove_recovery_missing_labels,
+    oC_RemoveItem,
+    "n:Person",
+    oC_NodeLabels,
+    updating::lower_remove_item,
+    "REMOVE missing labels"
+);
+truncated!(
+    merge_action_recovery_missing_set,
+    oC_MergeAction,
+    "ON CREATE SET n.x = 1",
+    oC_Set,
+    updating::lower_merge_action,
+    "MERGE action missing SET"
+);
