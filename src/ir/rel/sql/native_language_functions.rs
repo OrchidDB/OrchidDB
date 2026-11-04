@@ -13,6 +13,10 @@ use duckdb::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/native_helper_wire.rs"]
+mod wire_contracts;
+
 fn wire(value: ScalarValue) -> Result<Value, Box<dyn std::error::Error>> {
     if value.is_null() {
         return Ok(Value::Null);

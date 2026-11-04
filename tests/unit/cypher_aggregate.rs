@@ -593,6 +593,33 @@ fn malformed_aggregates_preserve_diagnostics_through_nested_expressions() {
 }
 
 #[test]
+fn direct_aggregate_ir_rewrite_retains_nested_call_errors() {
+    for text in [
+        "sum().value", "sum():Person", "-sum()", "sum()+1", "1+sum()",
+        "sum() IS NULL", "sum() IS NOT NULL", "sum() STARTS WITH 'a'",
+        "'a' ENDS WITH sum()", "coalesce(sum(),1)", "[sum()]", "{value:sum()}",
+        "CASE sum() WHEN 1 THEN 2 END", "CASE WHEN sum() THEN 2 END",
+        "CASE WHEN true THEN sum() END", "CASE WHEN false THEN 1 ELSE sum() END",
+    ] {
+        let error=rewrite_aggregate_projection(&mut Lowerer::new(),&expr(text),
+            &mut AggregateRewrite::default(),None).unwrap_err();
+        assert!(error.to_string().contains("aggregate function `sum` requires exactly one argument"),"{text}: {error}");
+    }
+    for text in ["sum(no_such_function(1))", "percentileCont(no_such_function(1),0.5)",
+        "percentileCont(1,no_such_function(0.5))"] {
+        for ast in [false,true] {
+            let mut lowerer=Lowerer::new();let mut rewrite=AggregateRewrite::default();
+            let error=if ast {
+                rewrite_aggregate_projection_expr(&mut lowerer,&expr(text),&mut rewrite,None,&mut BTreeSet::new()).unwrap_err()
+            } else {
+                rewrite_aggregate_projection(&mut lowerer,&expr(text),&mut rewrite,None).unwrap_err()
+            };
+            assert_eq!(error.classification(),Some(("SyntaxError","UnknownFunction")),"{text}: {error}");
+        }
+    }
+}
+
+#[test]
 fn mixed_local_grouping_propagates_invalid_outer_expression_errors() {
     for text in [
         "{a:local,b:no_such_function(outside)}.a",

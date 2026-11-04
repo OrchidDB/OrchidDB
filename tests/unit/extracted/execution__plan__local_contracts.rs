@@ -1,5 +1,48 @@
 
     use super::*;
+
+#[test]
+fn local_expression_serialization_preserves_aliases_and_nested_declared_casts() {
+    use datafusion::logical_expr::{create_udf, lit, col, Volatility};
+    let schema=DFSchema::try_from(batch(vec![Some(4)]).schema().as_ref().clone()).unwrap();
+    let cast=create_udf("__engine_declared_argument_cast",vec![DataType::Int64],DataType::Float64,
+        Volatility::Immutable,Arc::new(|args|Ok(args[0].clone())));
+    let function=create_udf(&format!("{LOCAL}identity"),vec![DataType::Float64],DataType::Float64,
+        Volatility::Immutable,Arc::new(|args|Ok(args[0].clone())));
+    let expression=function.call(vec![cast.call(vec![col("v")])]).alias("result");
+    let serialized=local_expr(&expression,&schema).unwrap();
+    let LocalExpr::Call{function,arguments,returns}=&serialized else {panic!("missing local call")};
+    assert_eq!(function,"identity");assert_eq!(returns,"float64");
+    assert!(matches!(&arguments[..],[LocalExpr::Cast{input,data_type}]
+        if matches!(input.as_ref(),LocalExpr::Column{index:0}) && data_type=="float64"));
+    for value in [ScalarValue::Utf8(Some("nul\0and雪".into())),ScalarValue::Boolean(None),ScalarValue::Float64(Some(-1.25))] {
+        let serialized=local_expr(&lit(value.clone()).alias("literal"),&schema).unwrap();
+        let LocalExpr::Literal{ipc,..}=serialized else {panic!("missing literal")};
+        assert_eq!(literal(&ipc).unwrap(),value);
+    }
+    assert!(local_expr(&col("missing"),&schema).is_err());
+    assert!(local_expr(&col("v").eq(lit(4_i64)),&schema).unwrap_err().contains("requires source or DuckDB"));
+}
+
+#[test]
+fn nested_local_evaluation_propagates_function_and_payload_errors() {
+    struct Failure;
+    impl LocalFunction for Failure {
+        fn call(&self,_:&[ArrayRef],_:usize)->Result<ArrayRef,String>{Err("deliberate function failure".into())}
+    }
+    let functions=Functions::from([("fail".into(),Arc::new(Failure) as Arc<dyn LocalFunction>)]);
+    let failing=||LocalExpr::Call{function:"fail".into(),arguments:vec![],returns:"int64".into()};
+    for expression in [failing(),
+        LocalExpr::Cast{input:Box::new(failing()),data_type:"float64".into()},
+        LocalExpr::GraphElement{input:Box::new(failing()),data_type:"int64".into()},
+        LocalExpr::Call{function:"fail".into(),arguments:vec![failing()],returns:"int64".into()}] {
+        validate_expr(&expression,&functions,1).unwrap();
+        assert_eq!(evaluate(&expression,&batch(vec![Some(1)]),&functions).unwrap_err(),"deliberate function failure");
+    }
+    let corrupt=LocalExpr::Literal{ipc:b"broken IPC".to_vec(),json:None,data_type:"int64".into()};
+    assert!(validate_expr(&corrupt,&functions,1).is_err());
+    assert!(evaluate(&corrupt,&batch(vec![None]),&functions).is_err());
+}
     use arrow::{array::Int64Array, datatypes::DataType};
 
     fn encoded(batch: &RecordBatch) -> Vec<u8> {

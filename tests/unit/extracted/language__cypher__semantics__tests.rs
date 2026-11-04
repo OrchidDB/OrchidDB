@@ -3,6 +3,30 @@
     use crate::language::cypher::parser::parse_query;
 
 #[test]
+fn update_and_pagination_scope_errors_are_reported_before_execution() {
+    for source in [
+        "MATCH (n) SET missing.value = 1 RETURN n",
+        "MATCH (n) SET missing = {value:1} RETURN n",
+        "MATCH (n) SET missing += {value:1} RETURN n",
+        "MATCH (n) SET missing:Label RETURN n",
+        "MATCH (n) RETURN n SKIP missing",
+        "MATCH (n) RETURN n LIMIT missing",
+        "UNWIND [missing] AS value RETURN value",
+        "MATCH (n) RETURN EXISTS { MATCH (x) WHERE missing.value = 1 } AS result",
+    ] {
+        let error=analyze_error(source);
+        assert!(error.contains("missing"),"{source}: {error}");
+    }
+    for source in [
+        "WITH 1 AS p CREATE p=(a)-[:R]->(b) RETURN p",
+        "CREATE p=(a)-[:R]->(b), p=(c)-[:R]->(d) RETURN p",
+    ] {
+        let error=analyze_error(source);
+        assert!(error.contains("already exists"),"{source}: {error}");
+    }
+}
+
+#[test]
 fn implicit_procedure_outputs_match_standalone_and_yield_star_contracts() {
     for (name,field) in [("db.labels","label"),("DB.RELATIONSHIPTYPES","relationshipType"),
         ("db.propertyKeys","propertyKey"),("custom.write","value")] {

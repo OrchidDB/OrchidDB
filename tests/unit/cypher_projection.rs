@@ -1,6 +1,35 @@
 //! Scope contracts use independent expected free-variable sets, including shadowing.
 use super::*;
 use crate::language::cypher::parser::parse_query;
+
+#[test]
+fn with_filters_choose_scope_safe_placement_and_reject_hidden_aggregate_inputs() {
+    let mut lowerer=Lowerer::new();lowerer.add_visible("source");lowerer.add_visible("other");
+    for (query,expected) in [
+        ("WITH source AS renamed WHERE renamed > 1 RETURN renamed",0),
+        ("WITH source AS renamed WHERE source > 1 RETURN renamed",1),
+        ("WITH source AS renamed WHERE EXISTS { RETURN source + renamed AS x } RETURN renamed",2),
+    ] {
+        let query=parse_query(query).unwrap();
+        let Clause::With(clause)=&query.clauses[0] else {panic!()};
+        let placement=lower_with_predicate_placement(&lowerer,&clause.projection,clause.predicate.as_ref().unwrap()).unwrap();
+        match (expected,placement) {
+            (0,WithPredicatePlacement::AfterProjection)|(2,WithPredicatePlacement::MaterializeAliases)=>{},
+            (1,WithPredicatePlacement::BeforeProjection(value))=>assert_eq!(value,expr("source > 1")),
+            _=>panic!("incorrect predicate placement"),
+        }
+    }
+    for query in [
+        "WITH count(source) AS total WHERE source > 1 RETURN total",
+        "WITH source AS renamed WHERE missing > 1 RETURN renamed",
+        "WITH source AS renamed WHERE EXISTS { RETURN missing AS x } RETURN renamed",
+    ] {
+        let query=parse_query(query).unwrap();
+        let Clause::With(clause)=&query.clauses[0] else {panic!()};
+        assert!(lower_with_predicate_placement(&lowerer,&clause.projection,clause.predicate.as_ref().unwrap()).is_err());
+    }
+    assert_eq!(lowerer.visible_set(),names(&["source","other"]));
+}
 fn expr(text: &str) -> Expr {
     let query = parse_query(&format!("RETURN {text} AS result")).unwrap();
     let Clause::Return(clause) = &query.clauses[0] else {
