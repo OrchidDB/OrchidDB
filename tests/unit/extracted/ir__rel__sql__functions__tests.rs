@@ -268,3 +268,64 @@
             }
         }
     }
+
+#[test]
+fn declared_function_casts_validate_shape_and_keep_one_cast() {
+    let parse=|source: &str| Parser::new(&DuckDbDialect {}).try_with_sql(source).unwrap().parse_expr().unwrap();
+    let name=crate::ir::functions::ENGINE_CAST_FUNCTION;
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&crate::ir::rel::sql::trino::TRINO)] {
+        for (arguments,message) in [("()","invalid declared UDF argument cast"),("(x)","invalid declared UDF argument cast"),("(x,y)","invalid declared UDF argument cast"),("(x,42)","invalid declared UDF argument type")] {
+            let mut expression=parse(&format!("{name}{arguments}"));
+            let error=adapt_expression(&mut expression,dialect).unwrap_err().to_string();
+            assert!(error.contains(message),"{error}");
+        }
+        let mut expression=parse(&format!("{name}(payload,'BIGINT')"));
+        adapt_expression(&mut expression,dialect).unwrap();
+        let sql=expression.to_string();
+        assert_eq!(sql.matches("CAST(").count(),1,"{sql}");
+        assert!(sql.contains("payload") && sql.contains("AS BIGINT"),"{sql}");
+        let mut expression=parse(&format!("{name}(payload,'BIGINT')"));
+        let ast::Expr::Function(function)=&mut expression else {panic!()};
+        function.args=ast::FunctionArguments::None;
+        assert!(adapt_expression(&mut expression,dialect).unwrap_err().to_string().contains("invalid declared UDF argument cast"));
+    }
+}
+
+#[test]
+fn native_function_paths_reject_empty_components_and_quote_names() {
+    let parse=|source: &str| Parser::new(&DuckDbDialect {}).try_with_sql(source).unwrap().parse_expr().unwrap();
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&crate::ir::rel::sql::trino::TRINO)] {
+        for path in ["", ".f", "catalog.", "catalog..f", "catalog.schema.f"] {
+            let mut expression=parse("placeholder(payload)");
+            let ast::Expr::Function(function)=&mut expression else {panic!()};
+            function.name=ast::ObjectName::from(vec![ast::Ident::new(format!("{}{path}",crate::ir::functions::ENGINE_FUNCTION_PREFIX))]);
+            let result=adapt_expression(&mut expression,dialect);
+            if path=="catalog.schema.f" {
+                result.unwrap();
+                let ast::Expr::Function(function)=expression else {panic!()};
+                assert_eq!(function.name.0.len(),3);
+                assert!(function.to_string().contains("payload"));
+            } else {
+                assert!(result.unwrap_err().to_string().contains("invalid engine function path"));
+            }
+        }
+    }
+}
+
+#[test]
+fn native_float_kernel_requires_duckdb_and_one_positional_argument() {
+    let parse=|source: &str| Parser::new(&DuckDbDialect {}).try_with_sql(source).unwrap().parse_expr().unwrap();
+    let name=super::super::super::conversion_rules::NATIVE_FLOAT;
+    for dialect in [SqlDialect::Postgres,SqlDialect::Custom(&crate::ir::rel::sql::trino::TRINO)] {
+        let mut expression=parse(&format!("{name}(payload)"));
+        assert!(adapt_expression(&mut expression,dialect).unwrap_err().to_string().contains("owning DuckDB adapter"));
+    }
+    for arguments in ["()","(x,y)","(*)"] {
+        let mut expression=parse(&format!("{name}{arguments}"));
+        assert!(adapt_expression(&mut expression,SqlDialect::DuckDb).unwrap_err().to_string().contains("native string-to-float signature"));
+    }
+    let mut expression=parse(&format!("{name}(payload)"));
+    let ast::Expr::Function(function)=&mut expression else {panic!()};
+    function.args=ast::FunctionArguments::None;
+    assert!(adapt_expression(&mut expression,SqlDialect::DuckDb).unwrap_err().to_string().contains("native string-to-float signature"));
+}
