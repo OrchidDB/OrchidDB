@@ -210,11 +210,19 @@ pub(super) fn lower(plan: &LogicalPlan, dialect: SqlDialect) -> SqlResult<Option
                 arg.column
             )));
         }
-        let typed = format!(
-            "CAST({} AS {})",
-            value.as_deref().unwrap_or("NULL"),
-            dialect.sql_type(field.data_type())?
-        );
+        // Boolean SQL literals already have the declared type in both engines.
+        // Other defaults still need typing for overload resolution and virtual
+        // input columns, including an omitted optional argument's NULL.
+        let typed = match (&arg.value, field.data_type()) {
+            (Some(serde_json::Value::Bool(value)), arrow::datatypes::DataType::Boolean) => {
+                value.to_string()
+            }
+            _ => format!(
+                "CAST({} AS {})",
+                value.as_deref().unwrap_or("NULL"),
+                dialect.sql_type(field.data_type())?
+            ),
+        };
         if value.is_some() {
             arguments.push(match &arg.name {
                 Some(name) => format!("{} := {typed}", ident(name)),

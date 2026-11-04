@@ -83,6 +83,7 @@ fn table_function_quoted_names_defaults_and_hidden_filters_execute() {
         );
         for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
             let sql = lower(&plan, dialect).unwrap().unwrap().to_string();
+            assert!(!sql.contains("CAST(false AS BOOLEAN)"), "{sql}");
             assert!(
                 sql.contains("\"f\"\"n\"")
                     && sql.contains("\"text\"\"arg\"")
@@ -304,6 +305,7 @@ fn postgres_executes_quoted_table_functions_and_optional_named_defaults() {
         .unwrap()
         .unwrap()
         .to_string();
+    assert!(!sql.contains("CAST(false AS BOOLEAN)"), "{sql}");
     let optional = provider(
         &metadata(json!({"function":["pg_temp","optional_input"],"arguments":[
             {"column":"flag","name":"flag","optional":true}
@@ -355,4 +357,47 @@ ROLLBACK;"#
         String::from_utf8(output.stdout).unwrap().trim(),
         "O'Reilly\nNULL|7"
     );
+}
+
+#[test]
+fn boolean_defaults_keep_exact_types_without_redundant_literal_casts() {
+    let connection = duckdb::Connection::open_in_memory().unwrap();
+    connection.execute_batch("CREATE MACRO typed_flag(flag := true) AS TABLE SELECT typeof(flag) AS kind, flag AS out").unwrap();
+    for (value, expected, required_cast) in [
+        (json!(false), false, None),
+        (json!(true), true, None),
+        (json!("false"), false, Some("CAST('false' AS BOOLEAN)")),
+        (json!("true"), true, Some("CAST('true' AS BOOLEAN)")),
+        (json!(null), true, Some("CAST(NULL AS BOOLEAN)")),
+    ] {
+        let source = provider(
+            &metadata(json!({"function":["typed_flag"],"arguments":[
+                {"column":"flag","name":"flag","optional":true,"value":value}
+            ]})),
+            Arc::new(Schema::new(vec![
+                Field::new("flag", DataType::Boolean, true),
+                Field::new("kind", DataType::Utf8, false),
+                Field::new("out", DataType::Boolean, false),
+            ])),
+        )
+        .unwrap()
+        .unwrap();
+        let plan = scan(source, Some(vec![1, 2]), vec![], None);
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            let sql = lower(&plan, dialect).unwrap().unwrap().to_string();
+            if let Some(required) = required_cast {
+                assert!(sql.contains(required), "{sql}");
+            } else {
+                assert!(!sql.contains("CAST("), "{sql}");
+            }
+            if dialect == SqlDialect::DuckDb {
+                let actual = connection
+                    .query_row(&sql, [], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+                    })
+                    .unwrap();
+                assert_eq!(actual, ("BOOLEAN".into(), expected));
+            }
+        }
+    }
 }
