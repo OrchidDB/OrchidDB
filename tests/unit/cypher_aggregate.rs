@@ -536,3 +536,33 @@ fn ast_aggregate_rewrite_rejects_volatile_and_invalid_calls() {
         assert!(error.to_string().contains("requires exactly"), "{text}: {error}");
     }
 }
+
+mixed!(group_pattern_projection, "[(a)-[r:R]->(b) | local+outside]");
+mixed!(group_pattern_predicate, "[p=(a)-[r:R]->(b) WHERE local=outside | length(p)]");
+mixed!(group_pattern_start_properties, "[(a {v:local+outside})-[r:R]->(b) | b]");
+mixed!(group_pattern_edge_properties, "[(a)-[r:R {v:local+outside}]->(b) | b]");
+mixed!(group_pattern_end_properties, "[(a)-[r:R]->(b {v:local+outside}) | b]");
+
+#[test]
+fn aggregate_pattern_properties_extract_counts_without_leaking_pattern_bindings() {
+    for text in [
+        "[(a {v:count(*)})-[r:R]->(b) | b]",
+        "[(a)-[r:R {v:count(*)}]->(b) | b]",
+        "[(a)-[r:R]->(b {v:count(*)}) | b]",
+    ] {
+        for already_bound in [vec![], vec!["a", "b", "r"]] {
+            let mut lowerer = Lowerer::new();
+            let mut rewrite = AggregateRewrite::default();
+            let original = names(&already_bound);
+            let mut bound = original.clone();
+            let rewritten = rewrite_aggregate_projection_expr(
+                &mut lowerer, &expr(text), &mut rewrite, None, &mut bound,
+            ).unwrap_or_else(|error| panic!("{text}: {error}"));
+            assert_eq!(bound, original);
+            assert!(rewrite.group.is_empty());
+            assert_eq!(rewrite.aggs.len(), 1);
+            assert_eq!(rewrite.aggs[0].kind, AggKind::CountRows);
+            assert_eq!(rewritten, expr(&text.replace("count(*)", &rewrite.aggs[0].alias)));
+        }
+    }
+}

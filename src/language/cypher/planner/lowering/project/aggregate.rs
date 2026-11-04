@@ -539,7 +539,7 @@ pub(super) fn rewrite_non_aggregate_projection_expr(
         ensure_scoped_outer_refs_grouped(lowerer, rewrite, &refs, bound)?;
         return Ok(expr.clone());
     }
-    if refs.iter().all(|name| !bound.contains(name)) && !requires_scoped_materialization(expr) {
+    if refs.iter().all(|name| !bound.contains(name)) {
         return ensure_group_key(lowerer, rewrite, expr, preferred_alias).map(Expr::Variable);
     }
     match expr {
@@ -771,52 +771,9 @@ pub(super) fn rewrite_non_aggregate_projection_expr(
                 predicate: Box::new(predicate),
             })
         }
-        Expr::PatternComprehension {
-            variable,
-            pattern,
-            predicate,
-            map,
-        } => {
-            let pattern = rewrite_aggregate_pattern(lowerer, pattern, rewrite, bound)?;
-            let local_names = pattern_binding_names(&pattern);
-            let previously_bound = local_names
-                .iter()
-                .filter(|name| bound.contains(*name))
-                .cloned()
-                .collect::<BTreeSet<_>>();
-            for name in &local_names {
-                bound.insert(name.clone());
-            }
-            let variable_was_bound = variable.as_ref().is_some_and(|name| bound.contains(name));
-            if let Some(variable) = variable {
-                bound.insert(variable.clone());
-            }
-            let predicate = predicate
-                .as_ref()
-                .map(|expr| {
-                    rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, None, bound)
-                })
-                .transpose()?
-                .map(Box::new);
-            let map = rewrite_non_aggregate_projection_expr(lowerer, map, rewrite, None, bound)?;
-            for name in &local_names {
-                if !previously_bound.contains(name) {
-                    bound.remove(name);
-                }
-            }
-            if let Some(variable) = variable {
-                if !variable_was_bound {
-                    bound.remove(variable);
-                }
-            }
-            Ok(Expr::PatternComprehension {
-                variable: variable.clone(),
-                pattern: Box::new(pattern),
-                predicate,
-                map: Box::new(map),
-            })
-        }
-        Expr::Exists(_)
+        // Scoped patterns returned above after grouping their outer references.
+        Expr::PatternComprehension { .. }
+        | Expr::Exists(_)
         | Expr::PatternPredicate(_)
         | Expr::Star
         | Expr::Variable(_)
