@@ -1004,3 +1004,7 @@ pub(super) fn static_non_list_type_name(expr: &Expr) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/cypher_semantic_type_boundaries.rs"]
+mod semantic_type_boundaries;
