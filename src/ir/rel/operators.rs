@@ -692,6 +692,15 @@ impl LoweringContext<'_> {
                         order_session.changed(order_rule, || "query-root order demand retained across SQL island placement".into());
                         unordered_distinct_partition(input.plan.clone(), partition, barrier_id)?
                     } else { keyed_distinct_partition(input.plan.clone(), partition, barrier_id)? }
+                } else if self.language == Language::Cypher
+                    && self.unordered_distincts.contains(&(node as *const Node as usize)) {
+                    let rule = pipeline::descriptor("rel.distinct.order_demand", crate::ir::rules::Stage::RelationalOptimize,
+                        crate::ir::rules::RuleKind::EquivalentRewrite, false);
+                    let mut session = crate::ir::rules::RuleSession::new(self.options.rule_context.clone());
+                    if session.visit(rule).map_err(RelError::RulePipeline)? {
+                        session.changed(rule, || "primitive terminal distinct needs no occurrence ordering".into());
+                        unordered_distinct_partition(input.plan.clone(), distinct_partition(&input.plan, &distinct_keys), barrier_id)?
+                    } else { keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)? }
                 } else { keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)? };
                 input.with_plan(plan)
             }

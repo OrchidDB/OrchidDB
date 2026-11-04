@@ -80,3 +80,28 @@ async fn terminal_distinct_and_duplicate_quantifier_rows() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn primitive_distinct_obeys_order_demand_without_language_helpers() {
+    without_constant_folding(async {
+        for (query, expected, ordered) in [
+            ("UNWIND [2,1,2,null,null] AS x RETURN DISTINCT x ORDER BY x",vec!["1","2",""],false),
+            ("UNWIND [2,1,2] AS x WITH DISTINCT x RETURN collect(x)",vec!["[2, 1]"],true),
+        ] {
+            let plan=orchiddb::language::cypher::preparation::prepare(query,&Default::default(),None).unwrap();
+            let lowered=RelBackend::new().lower(&plan,&PropertyGraph::new()).unwrap();
+            let sql=unparse(&lowered,SqlDialect::DuckDb).unwrap();
+            assert_eq!(sql.to_lowercase().contains("row_number"),ordered,"{query}\n{sql}");
+            if !ordered {
+                for dialect in [SqlDialect::Postgres,SqlDialect::resolve("trino").unwrap()] {
+                    let sql=unparse(&lowered,dialect).unwrap();
+                    assert!(!sql.to_lowercase().contains("row_number"),"{sql}");
+                }
+            }
+            let result=execute_lowered_sql(&mut DuckDbExecutor::default(),&lowered).await.unwrap();
+            let actual=(0..result.batch.num_rows()).map(|row|
+                arrow::util::display::array_value_to_string(result.batch.column(0),row).unwrap()).collect::<Vec<_>>();
+            assert_eq!(actual,expected,"{query}");
+        }
+    }).await;
+}

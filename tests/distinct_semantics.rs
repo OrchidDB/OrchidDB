@@ -112,7 +112,10 @@ async fn cypher_return_distinct_by_property_ignores_hidden_columns() {
     };
     let plan = CypherPlanner::new().plan(&query);
     let actual = sql_rows(&plan, &group_graph()).await;
-    assert_eq!(actual, vec![vec![text("a")], vec![text("b")]]);
+    // Terminal DISTINCT has no ordering contract without ORDER BY.
+    assert_eq!(actual.len(), 2);
+    assert!(actual.contains(&vec![text("a")]));
+    assert!(actual.contains(&vec![text("b")]));
 }
 
 #[tokio::test]

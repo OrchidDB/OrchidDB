@@ -6,7 +6,16 @@ use std::process::{Command, Stdio};
 
 fn request(dialect: &str, query: &str) -> Value {
     let columns = json!([{"name":"id","data_type":"int64"},{"name":"symbol","data_type":"string"},{"name":"ts","data_type":"timestamp"}]);
-    json!({"version":1,"dialect":dialect,"language":"cypher","query":query,
+    // The VALUES fixtures below guarantee unique, non-null endpoint IDs.
+    // Supply that proof so OPTIONAL MATCH can correlate on IDs directly;
+    // unproved duplicate occurrences require materialized completion on Trino.
+    use orchiddb::ir::rel::constraints::{Constraint,ConstraintCatalog,Fact};
+    let mut constraints=ConstraintCatalog::default();
+    for table in ["events","quotes"] {
+        constraints.insert(table,Constraint::enforced("id_unique",Fact::Unique{columns:vec!["id".into()],nulls_equal:false}));
+        constraints.insert(table,Constraint::enforced("id_not_null",Fact::NonNull{columns:vec!["id".into()]}));
+    }
+    json!({"version":1,"dialect":dialect,"language":"cypher","query":query,"constraints":constraints,
         "tables":[{"name":"events","columns":columns},{"name":"quotes","columns":columns}],
         "nodes":[{"label":"Event","table":"events","id":"id","properties":{"id":"id","symbol":"symbol","ts":"ts"}},
                  {"label":"Quote","table":"quotes","id":"id","properties":{"id":"id","symbol":"symbol","ts":"ts"}}],
@@ -15,7 +24,7 @@ fn request(dialect: &str, query: &str) -> Value {
 }
 async fn sql(request: &Value) -> String {
     let result: Value =
-        serde_json::from_str(&compile_json(&request.to_string()).await.unwrap()).unwrap();
+        serde_json::from_str(&compile_json(&request.to_string()).await.unwrap_or_else(|error| panic!("{}: {error}", request["query"]))).unwrap();
     result["sql"].as_str().unwrap().to_owned()
 }
 fn python(script: &str, input: &Value) -> Value {
