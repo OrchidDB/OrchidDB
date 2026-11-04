@@ -13,6 +13,43 @@
     }
 
     #[test]
+    fn source_requests_reject_legacy_completion_engine_selection() {
+        let base=serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb",
+            "query":"RETURN 1","tables":[],"sources":{"db":{"adapter":"trino"}}});
+        let request:CompileRequest=serde_json::from_value(base.clone()).unwrap();
+        validate_request(&request).unwrap();
+        for (field,value) in [("execution_engine",serde_json::json!("db")),
+            ("engines",serde_json::json!({"db":{"dialect":"duckdb"}}))] {
+            let mut invalid=base.clone();invalid[field]=value;
+            let request:CompileRequest=serde_json::from_value(invalid).unwrap();
+            assert!(validate_request(&request).unwrap_err().contains("source execution uses sources"));
+        }
+    }
+
+    #[test]
+    fn local_graph_element_decoder_retains_nulls_duplicates_and_identity() {
+        use crate::ir::{PropertyGraph, Row, value::Value, policy::{GraphPlanPolicy,ResultForm}};
+        use crate::ir::rel::native_values;
+        let graph=PropertyGraph::new();
+        let node=graph.insert_node("Person",BTreeMap::from([("name".into(),Value::String("Ada".into()))]));
+        let fields=vec!["entity".to_string()];
+        for empty in [false,true] {
+            let rows=if empty {vec![]} else {vec![node.clone(),Value::Null,node.clone()].into_iter()
+                .map(|value|Row::new().with("entity",value)).collect::<Vec<_>>()};
+            let input=native_values::result_batch(&fields,ResultForm::RowSet,&rows,&graph,&GraphPlanPolicy::cypher()).unwrap();
+            let expression=LocalExpr::GraphElement {input:Box::new(LocalExpr::Column{index:0}),
+                data_type:crate::federation::type_name(input.column(0).data_type()).unwrap()};
+            validate_expr(&expression,&Functions::new(),1).unwrap();
+            let result=evaluate(&expression,&input,&Functions::new()).unwrap();
+            assert_eq!(result.len(),rows.len());
+            let output=RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("entity",result.data_type().clone(),true)])),vec![result]).unwrap();
+            let decoded=native_values::decode_rows(&output,&fields,&graph).unwrap();
+            assert_eq!(decoded.iter().map(|r|r.bindings.get("entity")).collect::<Vec<_>>(),
+                rows.iter().map(|r|r.bindings.get("entity")).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
     fn scalar_ipc_requires_exactly_one_cell_and_preserves_nulls_and_integers() {
         for value in [None,Some(i64::MIN),Some(i64::MAX)] {
             let bytes=encoded(&batch(vec![value]));

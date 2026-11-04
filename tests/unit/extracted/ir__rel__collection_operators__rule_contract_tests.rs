@@ -62,6 +62,25 @@
         }
     }
 
+    #[test]
+    fn relational_list_operators_reject_scalar_domains_with_specific_errors() {
+        let graph=PropertyGraph::new();
+        for value in [Value::Int(7),Value::Bool(true),Value::String("scalar".into())] {
+            let input=Node::GraphValues {bindings:vec!["value".into()],rows:vec![vec![value]],bulk:None};
+            let mut context=context(&graph,false);
+            let lowered=context.lower_node(&input).unwrap();
+            let error=context.lower_native_list(&lowered.plan,&IrExpr::binding("value")).unwrap_err();
+            assert!(error.to_string().contains("list operation over non-list type"),"{error}");
+            let error=context.lower_unwind_dynamic(lowered,&IrExpr::binding("value"),"item",false).unwrap_err();
+            assert!(error.to_string().contains("GraphUnwind over non-constant list expression"),"{error}");
+            for kind in [QuantifierKind::All,QuantifierKind::Any,QuantifierKind::None,QuantifierKind::Single] {
+                let error=context.lower_quantifier(kind,"item",&IrExpr::binding("value"),
+                    &IrExpr::Lit(Lit::Bool(true)),"answer",&input).unwrap_err();
+                assert!(error.to_string().contains("GraphQuantifier over non-list expression"),"{error}");
+            }
+        }
+    }
+
     #[tokio::test]
     async fn explicit_collection_order_preserves_duplicates_and_null_positions() {
         let graph = PropertyGraph::new();
