@@ -253,3 +253,51 @@ async fn session_aliases_spool_only_when_the_connection_cannot_overlap_statement
         assert_eq!(*events.lock().unwrap(), expected, "{left_key:?} {right_key:?} concurrent={concurrent}");
     }
 }
+
+struct RetryCompletion {
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+#[async_trait::async_trait(?Send)]
+impl crate::federation::Session for RetryCompletion {
+    fn dialect(&self) -> &str { "duckdb" }
+    async fn query_stream(&mut self, sql: &str, inputs: Vec<crate::execution::stream::InputRelation>) -> Result<BatchStream,String> {
+        assert_eq!(sql,"SELECT payload");
+        assert!(inputs.is_empty());
+        if self.calls.fetch_add(1,std::sync::atomic::Ordering::SeqCst)==0 {
+            return Err("transient completion query failure".into());
+        }
+        let values=batch(vec![Some(42),None]);
+        Ok(BatchStream::new(values.schema(),futures::stream::iter([Ok(values)])))
+    }
+}
+
+#[tokio::test]
+async fn lazy_completion_retries_factory_errors_but_reuses_an_initialized_session() {
+    use crate::federation::Session;
+    use std::sync::atomic::{AtomicUsize,Ordering};
+    let attempts=Arc::new(AtomicUsize::new(0));
+    let queries=Arc::new(AtomicUsize::new(0));
+    let factory_attempts=attempts.clone();let session_queries=queries.clone();
+    let mut completion=LazyDuckdb::new(move || {
+        match factory_attempts.fetch_add(1,Ordering::SeqCst) {
+            0=>Err("factory unavailable".into()),
+            1=>Ok(Box::new(FixedSource(batch(vec![]))) as Box<dyn Session>),
+            _=>Ok(Box::new(RetryCompletion{calls:session_queries.clone()}) as Box<dyn Session>),
+        }
+    });
+    assert_eq!(completion.dialect(),"duckdb");
+    assert_eq!(attempts.load(Ordering::SeqCst),0);
+    for expected in ["factory unavailable","completion factory must return a DuckDB adapter","transient completion query failure"] {
+        let error=completion.query_stream("SELECT payload",vec![]).await.err().expect("attempt must fail");
+        assert_eq!(error,expected);
+    }
+    assert_eq!(attempts.load(Ordering::SeqCst),3);
+    assert_eq!(queries.load(Ordering::SeqCst),1);
+    for _ in 0..2 {
+        let output=completion.query_stream("SELECT payload",vec![]).await.unwrap().collect_batches().await.unwrap();
+        assert_eq!(output.len(),1);
+        assert_eq!(output[0].column(0).to_data(),batch(vec![Some(42),None]).column(0).to_data());
+    }
+    assert_eq!(attempts.load(Ordering::SeqCst),3);
+    assert_eq!(queries.load(Ordering::SeqCst),3);
+}
