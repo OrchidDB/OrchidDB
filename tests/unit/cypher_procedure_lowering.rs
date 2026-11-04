@@ -141,3 +141,17 @@ fn failed_clause_lowering_restores_scope_for_the_next_query() {
         assert_eq!(lowerer.visible_fields(), vec!["result".to_string()]);
     }
 }
+
+#[test]
+fn create_relationship_rebinding_is_rejected_before_constructing_an_edge() {
+    use crate::language::cypher::parser::parse_query;
+    for query in ["CREATE (a)-[a:R]->(b) RETURN a",
+        "CREATE (a)-[r:R]->(b)-[r:R]->(c) RETURN r",
+        "MATCH (a)-[r:R]->(b) CREATE (a)-[r:R]->(b) RETURN r"] {
+        let mut lowerer=Lowerer::new();lowerer.replace_scope(vec!["outside".into()]);
+        let error=lowerer.lower_query_body(&parse_query(query).unwrap()).unwrap_err();
+        assert_eq!(error.classification(),Some(("SyntaxError","VariableAlreadyBound")),"{query}: {error}");
+        assert!(error.to_string().contains("CREATE cannot reuse a bound relationship"),"{query}: {error}");
+        assert_eq!(lowerer.visible_fields(),vec!["outside".to_string()]);
+    }
+}

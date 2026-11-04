@@ -183,3 +183,31 @@ fn direct_ast_anonymous_outputs_get_distinct_stable_semantic_names() {
         assert_eq!(query,original,"analysis must leave the caller's AST intact");
     }
 }
+
+#[test]
+fn relationship_targets_require_an_exported_node_binding() {
+    use crate::language::cypher::parser::parse_query;
+    let query=parse_query("MATCH (n:Person) RETURN n AS target").unwrap();
+    validate_relationship_target(&query,"target").unwrap();
+    assert!(validate_relationship_target(&query,"n").unwrap_err().to_string().contains("relationship target must be a node"));
+    for text in ["RETURN 1 AS target","RETURN null AS target","MATCH (n:Person) RETURN [n] AS target"] {
+        assert!(validate_relationship_target(&parse_query(text).unwrap(),"target").unwrap_err().to_string().contains("relationship target must be a node"));
+    }
+}
+
+#[test]
+fn unaliased_ast_projection_retains_known_and_unknown_binding_types() {
+    use crate::language::cypher::parser::parse_query;
+    let mut query=parse_query("RETURN value").unwrap();
+    let Clause::Return(clause)=&mut query.clauses[0] else {panic!()};
+    clause.projection.items[0].alias=None;
+    for kind in [None,Some(BindingKind::Node),Some(BindingKind::Date),Some(BindingKind::Unknown)] {
+        let mut scope=SemanticScope::default();
+        if let Some(kind)=kind {scope.insert("value",kind);}
+        let outputs=SemanticAnalyzer::default().projection_outputs(&clause.projection,&scope);
+        assert_eq!(outputs.len(),1);
+        assert_eq!(outputs[0].name,"value");
+        assert_eq!(outputs[0].kind,kind.unwrap_or(BindingKind::Unknown));
+    }
+    assert_eq!(BindingKind::Unknown.cypher_type_name(),"ANY");
+}

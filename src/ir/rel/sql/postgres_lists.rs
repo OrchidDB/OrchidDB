@@ -317,3 +317,7 @@ pub(super) fn adapt(
     }
     Ok(false)
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/postgres_list_boundaries.rs"]
+mod boundary_tests;

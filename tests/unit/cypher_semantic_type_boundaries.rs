@@ -119,3 +119,14 @@ fn clause_validation_propagates_nested_errors_before_execution() {
         assert!(error.contains("INT64") && error.contains("BOOL"), "{text}: {error}");
     }
 }
+
+#[test]
+fn temporal_arithmetic_errors_name_the_actual_operand_types() {
+    for (kind,name) in [(BindingKind::Date,"DATE"),(BindingKind::Timestamp,"TIMESTAMP"),
+        (BindingKind::TimestampMs,"TIMESTAMP_MS"),(BindingKind::Interval,"INTERVAL")] {
+        let mut scope=SemanticScope::default();scope.insert("value",kind);
+        let error=validate_binary_expr_kind(BinaryOp::Mul,&expression("value"),&expression("true"),&scope).unwrap_err();
+        assert_eq!(error.classification(),Some(("SyntaxError","InvalidArgumentType")));
+        assert!(error.to_string().contains(&format!("{name},BOOL")),"{error}");
+    }
+}

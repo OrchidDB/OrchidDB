@@ -244,11 +244,6 @@ fn lower_create(
                         }
                     };
                     if let Some(bind) = &rel.variable {
-                        if lowerer.is_visible(bind) || state.bound.contains(bind) {
-                            return Err(CypherPlanError::Invalid(format!(
-                                "Binder exception: Variable {bind} already exists."
-                            )).classified(CypherSemanticError::VariableAlreadyBound));
-                        }
                         state.bound.insert(bind.clone());
                         state.edge_outputs.push(bind.clone());
                     }
