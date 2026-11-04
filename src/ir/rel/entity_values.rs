@@ -2,6 +2,10 @@
 use super::*;
 use arrow::array::{Array, StructArray};
 
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_entity_values.rs"]
+mod transport_contracts;
+
 pub(crate) fn is_type(ty: &DataType) -> bool {
     crate::ir::functions::domain::descriptor(ty).is_some_and(|(name,_)|
         matches!(name,"graph_node" | "graph_edge"))
