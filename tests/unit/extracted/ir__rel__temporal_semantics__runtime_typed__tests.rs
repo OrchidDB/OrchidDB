@@ -168,3 +168,74 @@
             }
         }
     }
+
+#[tokio::test]
+async fn native_timestamp_bounds_preserve_precision_negative_epoch_and_nulls() {
+    use arrow::{array::BooleanArray,datatypes::{Field,Schema,TimeUnit}};
+    use datafusion::prelude::col;
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let operators=[BinaryOp::Eq,BinaryOp::Neq,BinaryOp::Lt,BinaryOp::Lte,BinaryOp::Gt,BinaryOp::Gte];
+    for (unit,tick) in [(TimeUnit::Second,1_000_000_000_i128),(TimeUnit::Millisecond,1_000_000),(TimeUnit::Microsecond,1_000),(TimeUnit::Nanosecond,1)] {
+        for zoned in [false,true] {
+            let zone=if zoned {Some(Arc::<str>::from("UTC"))} else {None};
+            let ty=DataType::Timestamp(unit.clone(),zone.clone());
+            let times=[Some(-2_i64),Some(-1),Some(0),Some(1),Some(2),None];
+            let scalars=times.iter().map(|v|match unit {
+                TimeUnit::Second=>ScalarValue::TimestampSecond(*v,zone.clone()),
+                TimeUnit::Millisecond=>ScalarValue::TimestampMillisecond(*v,zone.clone()),
+                TimeUnit::Microsecond=>ScalarValue::TimestampMicrosecond(*v,zone.clone()),
+                TimeUnit::Nanosecond=>ScalarValue::TimestampNanosecond(*v,zone.clone()),
+            }).collect::<Vec<_>>();
+            let batch=RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("ts",ty,true)])),vec![ScalarValue::iter_to_array(scalars).unwrap()]).unwrap();
+            let schema=Arc::new(datafusion::common::DFSchema::try_from(batch.schema().as_ref().clone()).unwrap());
+            let plan=LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {produce_one_row:false,schema});
+            for (text,ns) in [("1969-12-31T23:59:59.999999999",-1_i128),("1970-01-01T00:00:00",0),("1970-01-01T00:00:00.000000001",1),("1970-01-01T00:00:01.000000001",1_000_000_001)] {
+                let text=if zoned {format!("{text}Z")} else {text.to_string()};
+                let value=crate::ir::temporal::parse(if zoned {"datetime"}else{"localdatetime"},&text).unwrap();
+                let constant=lit(transport::scalar(&value).unwrap());
+                for op in operators {
+                    for swapped in [false,true] {
+                        let (left,right)=if swapped {(constant.clone(),col("ts"))}else{(col("ts"),constant.clone())};
+                        let comparison=native_timestamp_comparison_bound(&plan,op,left,right).expect("timestamp comparison must lower");
+                        let output=datafusion_physical_expr::create_physical_expr(&comparison,plan.schema(),&ExecutionProps::new()).unwrap()
+                            .evaluate(&batch).unwrap().into_array(batch.num_rows()).unwrap();
+                        let actual=output.as_any().downcast_ref::<BooleanArray>().unwrap();
+                        let expected=times.iter().map(|value|value.map(|n| {
+                            let (a,b)=if swapped {(ns,i128::from(n)*tick)}else{(i128::from(n)*tick,ns)};
+                            match op {BinaryOp::Eq=>a==b,BinaryOp::Neq=>a!=b,BinaryOp::Lt=>a<b,BinaryOp::Lte=>a<=b,BinaryOp::Gt=>a>b,BinaryOp::Gte=>a>=b,_=>unreachable!()}
+                        })).collect::<Vec<_>>();
+                        assert_eq!(actual.iter().collect::<Vec<_>>(),expected,"{unit:?} zoned={zoned} {text} {op:?} swapped={swapped}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn timestamp_bound_rewrite_preserves_domain_and_range_guards() {
+    use arrow::datatypes::{Field,Schema,TimeUnit};
+    use datafusion::prelude::col;
+    let schema=Arc::new(datafusion::common::DFSchema::try_from(Schema::new(vec![
+        Field::new("ts",DataType::Timestamp(TimeUnit::Nanosecond,None),true),
+        Field::new("zoned",DataType::Timestamp(TimeUnit::Nanosecond,Some("UTC".into())),true),
+        Field::new("number",DataType::Int64,true),
+    ])).unwrap());
+    let plan=LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {produce_one_row:false,schema});
+    let temporal=|kind,text|transport::scalar(&crate::ir::temporal::parse(kind,text).unwrap()).unwrap();
+    let local=temporal("localdatetime","1970-01-01T00:00:00");
+    let date=temporal("date","1970-01-01");
+    let zoned=temporal("datetime","1970-01-01T00:00:00Z");
+    for (column,value) in [("ts",date),("ts",zoned),("zoned",local.clone()),("ts",ScalarValue::Int64(Some(0))),
+        ("ts",temporal("localdatetime","+1000000-01-01T00:00:00"))] {
+        assert!(native_timestamp_comparison_bound(&plan,BinaryOp::Eq,col(column),lit(value)).is_none());
+    }
+    assert!(native_timestamp_comparison_bound(&plan,BinaryOp::Eq,col("number"),lit(local.clone())).is_none());
+    assert!(native_timestamp_comparison_bound(&plan,BinaryOp::Eq,col("ts"),col("number")).is_none());
+    assert!(native_timestamp_comparison_bound(&plan,BinaryOp::Eq,col("ts"),lit(local.clone()).alias("value")).is_none());
+    let null=ScalarValue::try_from(&local.data_type()).unwrap();
+    assert_eq!(native_timestamp_comparison_bound(&plan,BinaryOp::Eq,col("ts"),lit(null)),Some(lit(ScalarValue::Boolean(None))));
+    let projected=LogicalPlanBuilder::from(plan).project(vec![col("ts"),lit(local).alias("constant")]).unwrap().build().unwrap();
+    let comparison=native_timestamp_comparison_bound(&projected,BinaryOp::Eq,col("ts"),col("constant")).unwrap();
+    assert_eq!(comparison,col("ts").eq(lit(ScalarValue::TimestampNanosecond(Some(0),None))));
+}
