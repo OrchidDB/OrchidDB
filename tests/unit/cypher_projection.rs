@@ -520,6 +520,57 @@ fn typed_negation_distinguishes_explicit_integer_casts_from_plain_arithmetic() {
         assert!(!expression::is_typed_negate_operand(&expr(text)), "{text}");
     }
 }
+
+#[test]
+fn typed_negation_keeps_the_explicit_conversion_and_negates_its_value() {
+    use crate::ir::{PropertyGraph, value::Value, runtime::{Row,eval}};
+    // Explicit unsigned casts use the typed extension's modular negation.
+    for (kind,expected) in [("INT8",Value::Byte(-1)),("INT16",Value::Short(-1)),
+        ("INT32",Value::Int(-1)),("INT64",Value::Long(-1)),
+        ("UINT8",Value::UInt8(255)),("UINT16",Value::UInt16(65535)),
+        ("UINT32",Value::UInt32(u32::MAX)),("UINT64",Value::UInt64(u64::MAX))] {
+        let input=expr(&format!("-CAST(1,'{kind}')"));
+        let result=lower_expr(&mut Lowerer::new(),&input).unwrap();
+        let IrExpr::Call{name,args}=&result else {panic!("typed negation missing")};
+        assert_eq!(name,"negate");
+        assert!(matches!(args.as_slice(),[IrExpr::Call{name,..}] if name.eq_ignore_ascii_case("cast")));
+        assert_eq!(eval(&result,&Row::new(),&PropertyGraph::new()).unwrap(),expected,"{kind}");
+    }
+}
+
+#[test]
+fn static_integer_types_change_at_signed_64_and_128_bit_boundaries() {
+    for (value,expected) in [
+        (i64::MIN.to_string(),"INT64"),(i64::MAX.to_string(),"INT64"),
+        ((i128::from(i64::MIN)-1).to_string(),"INT128"),
+        ((i128::from(i64::MAX)+1).to_string(),"INT128"),
+        (i128::MIN.to_string(),"INT128"),(i128::MAX.to_string(),"INT128"),
+        ((i128::MAX as u128+1).to_string(),"UINT128"),(u128::MAX.to_string(),"UINT128"),
+    ] {
+        assert_eq!(expression::integer_literal_type(&value),expected);
+        assert_eq!(expression::static_typeof_expr(&Expr::Literal(Literal::Integer(value))),Some(expected.into()));
+    }
+}
+
+#[test]
+fn nested_unknown_functions_keep_their_diagnostic_through_scalar_containers() {
+    for text in [
+        "absent_fn().value", "absent_fn():Person", "keys(absent_fn())",
+        "properties(absent_fn())", "labels(absent_fn())", "type(absent_fn())",
+        "-CAST(absent_fn(),'INT8')", "NOT absent_fn()", "1+absent_fn()",
+        "absent_fn() IS NULL", "absent_fn() IS NOT NULL",
+        "CASE WHEN absent_fn() THEN 1 ELSE 2 END",
+        "CASE 1 WHEN absent_fn() THEN 1 ELSE 2 END",
+        "CASE WHEN true THEN absent_fn() ELSE 2 END",
+        "CASE WHEN true THEN 1 ELSE absent_fn() END",
+        "[x IN absent_fn() | x]", "[x IN [1] WHERE absent_fn() | x]",
+        "[x IN [1] | absent_fn()]", "[1,absent_fn()]", "{x:absent_fn()}",
+    ] {
+        let error=lower_expr(&Lowerer::new(),&expr(text)).unwrap_err();
+        assert_eq!(error.classification(),Some(("SyntaxError","UnknownFunction")),"{text}: {error}");
+        assert!(error.to_string().contains("absent_fn"),"{text}: {error}");
+    }
+}
 #[test]
 fn static_type_inference_covers_cast_map_union_and_domain_constructors() {
     for (text, expected) in [
