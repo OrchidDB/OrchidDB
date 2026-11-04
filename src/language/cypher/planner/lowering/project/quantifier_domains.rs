@@ -352,4 +352,56 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn null_and_nested_collection_domains_do_not_invent_numeric_bounds() {
+        let size = |expr| Expr::Function {name: "size".into(), distinct: false,args:vec![expr]};
+        let item=Expr::Variable("x".into());
+        for source in [
+            Expr::List(vec![Expr::Literal(Literal::String("abc".into())),Expr::Literal(Literal::Null)]),
+            Expr::List(vec![Expr::List(vec![value(1)]),Expr::List(vec![value(2),value(3)])]),
+            Expr::List(vec![Expr::Literal(Literal::Null)]),
+        ] {
+            assert!(direct(&Node::GraphOneRow,"x",&source,&size(item.clone())));
+            assert!(!direct(&Node::GraphOneRow,"x",&source,&op(BinaryOp::Add,item.clone(),value(1))));
+        }
+        for source in [Expr::List(vec![]),Expr::List(vec![value(1),Expr::Literal(Literal::String("s".into()))])] {
+            assert!(!direct(&Node::GraphOneRow,"x",&source,&size(item.clone())));
+        }
+        let scope=Scope::new();
+        for expression in [Expr::Literal(Literal::Integer("999999999999999999999999".into())),
+            Expr::Literal(Literal::Bool(true)),op(BinaryOp::Div,value(1),value(2))] {
+            assert!(bounds(&expression,&scope).is_none());
+        }
+        assert_eq!(bounds(&Expr::Literal(Literal::Integer("1_024".into())),&scope),Some((1024,1024)));
+        let nested=Expr::Quantifier {
+            kind:super::super::QuantifierKind::Any, variable:"x".into(),
+            collection:Box::new(Expr::Function {name:"range".into(),distinct:false,args:vec![value(1),value(3)]}),
+            predicate:Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        assert!(!predicate(&nested,&scope));
+        for expression in [Expr::Unary {op:UnaryOp::Not,expr:Box::new(Expr::Literal(Literal::Bool(false)))},
+            Expr::IsNull(Box::new(item.clone())),Expr::IsNotNull(Box::new(item))] {
+            assert!(predicate(&expression,&scope));
+        }
+    }
+
+    #[test]
+    fn unary_absolute_and_modulo_bounds_enclose_signed_inputs() {
+        let x=Expr::Variable("x".into());
+        for (a,b) in [(-8,-2),(-3,7),(0,0),(2,9)] {
+            let scope=Scope::from([("x".into(),Domain::Integer(a,b))]);
+            let neg=Expr::Unary {op:UnaryOp::Neg,expr:Box::new(x.clone())};
+            let abs=Expr::Function {name:"ABS".into(),distinct:false,args:vec![x.clone()]};
+            assert_eq!(bounds(&neg,&scope),Some((-b,-a)));
+            let (lo,hi)=bounds(&abs,&scope).unwrap();
+            for n in a..=b { assert!((lo..=hi).contains(&n.abs())); }
+            for divisor in 1..=5 {
+                let modulo=Expr::Function {name:"mod".into(),distinct:false,args:vec![x.clone(),value(divisor)]};
+                let (lo,hi)=bounds(&modulo,&scope).unwrap();
+                for n in a..=b { assert!((lo..=hi).contains(&(n % divisor as i128))); }
+            }
+        }
+        assert!(bounds(&Expr::Unary {op:UnaryOp::Neg,expr:Box::new(value(i64::MIN))},&Scope::new()).is_none());
+    }
+
 }
