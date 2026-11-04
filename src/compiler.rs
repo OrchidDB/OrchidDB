@@ -1309,3 +1309,7 @@ mod permission_boundary_tests;
 #[cfg(test)]
 #[path = "../tests/unit/extracted/compiler__wire_dispatch_tests.rs"]
 mod wire_dispatch_tests;
+
+#[cfg(all(test, feature = "duckdb"))]
+#[path = "../tests/unit/compiler_execution_bindings.rs"]
+mod compiler_execution_boundaries;
