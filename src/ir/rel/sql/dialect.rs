@@ -280,3 +280,7 @@ impl SqlDialect {
         super::exchange_literal(value, data_type, self)
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/sql_adapter_defaults.rs"]
+mod default_contracts;
