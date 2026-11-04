@@ -852,13 +852,9 @@ fn unquote_string(text: &str) -> Result<String> {
                                 hex.push(digit);
                             }
                         }
-                        if hex.len() == 2 {
-                            if let Ok(value) = u32::from_str_radix(&hex, 16) {
-                                if let Some(ch) = char::from_u32(value) {
-                                    result.push(ch);
-                                    continue;
-                                }
-                            }
+                        if hex.len() == 2 && let Ok(value) = u8::from_str_radix(&hex, 16) {
+                            result.push(char::from(value));
+                            continue;
                         }
                         result.push(next);
                         result.push_str(&hex);

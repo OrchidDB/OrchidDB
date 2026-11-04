@@ -2,6 +2,18 @@
     use super::*;
 
     #[test]
+    fn byte_escapes_match_unicode_scalars_and_consume_exactly_two_digits() {
+        for value in 0_u16..=255 {
+            let expected=unquote_string(&format!("'\\u{value:04x}9'")).unwrap();
+            for prefix in ["x","X"] {
+                assert_eq!(unquote_string(&format!("'\\{prefix}{value:02x}9'")).unwrap(),expected);
+                assert_eq!(unquote_string(&format!("'\\{prefix}{value:02X}9'")).unwrap(),expected);
+            }
+        }
+        assert_eq!(unquote_string("'\\x7f\\x80\\xff'").unwrap(),"\u{7f}\u{80}ÿ");
+    }
+
+    #[test]
     fn string_escapes_preserve_controls_unicode_and_unknown_escape_payloads() {
         for (input, expected) in [
             (r#"'\b\B\f\F\n\N\r\R\t\T'"#, "\u{8}\u{8}\u{c}\u{c}\n\n\r\r\t\t"),
