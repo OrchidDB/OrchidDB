@@ -658,3 +658,56 @@ fn preaggregate_patterns_use_the_existing_scoped_materialization_boundary() {
     assert_eq!(input, Node::GraphOneRow);
     assert_eq!(output, expression);
 }
+
+#[test]
+fn projection_alias_substitution_preserves_nested_bindings_and_restores_scope() {
+    let replacements = BTreeMap::from([
+        ("x".to_string(), expr("99")),
+        ("acc".to_string(), expr("88")),
+        ("source".to_string(), expr("[1,2]")),
+        ("outside".to_string(), expr("7")),
+    ]);
+    for (input, expected) in [
+        ("[x IN source WHERE x > outside | x + outside]", "[x IN [1,2] WHERE x > 7 | x + 7]"),
+        ("[x IN source | [x IN x | x + outside]]", "[x IN [1,2] | [x IN x | x + 7]]"),
+        ("list_transform(source,x -> x + outside)", "list_transform([1,2],x -> x + 7)"),
+        ("list_filter(source,x -> x > outside)", "list_filter([1,2],x -> x > 7)"),
+        ("list_reduce(source,(acc,x) -> acc + x + outside)", "list_reduce([1,2],(acc,x) -> acc + x + 7)"),
+        ("all(x IN source WHERE x > outside)", "all(x IN [1,2] WHERE x > 7)"),
+        ("CASE x WHEN outside THEN acc ELSE source END", "CASE 99 WHEN 7 THEN 88 ELSE [1,2] END"),
+        ("{a:x,b:outside}", "{a:99,b:7}"),
+        ("x STARTS WITH outside", "99 STARTS WITH 7"),
+        ("x:Person", "99:Person"),
+    ] {
+        assert_eq!(aliases::substitute_projection_aliases(&expr(input), &replacements), expr(expected), "{input}");
+    }
+    for input in [
+        "[x IN source WHERE x > outside | x + outside]",
+        "list_transform(source,x -> x + outside)",
+        "list_filter(source,x -> x > outside)",
+        "list_reduce(source,(acc,x) -> acc + x + outside)",
+        "all(x IN source WHERE x > outside)",
+    ] {
+        let mut bound = names(&["x", "acc", "outside"]);
+        let before = bound.clone();
+        let actual = aliases::substitute_projection_aliases_with_bound(&expr(input), &replacements, &mut bound);
+        assert_eq!(bound, before, "scope leaked from {input}");
+        assert_eq!(actual, expr(&input.replace("source", "[1,2]")), "{input}");
+    }
+}
+
+#[test]
+fn pattern_alias_substitution_respects_prebound_nodes_relationships_and_paths() {
+    let input = expr("[p = (a {k:outside})-[r:R {k:outside}]->(b {k:outside}) WHERE a.k > outside | [a,b,r,p,outside]]");
+    let expected = expr("[p = (a {k:7})-[r:R {k:7}]->(b {k:7}) WHERE a.k > 7 | [a,b,r,p,7]]");
+    let replacements = BTreeMap::from([
+        ("a".to_string(), expr("1")), ("b".to_string(), expr("2")),
+        ("r".to_string(), expr("3")), ("p".to_string(), expr("4")),
+        ("outside".to_string(), expr("7")),
+    ]);
+    for initial in [names(&[]), names(&["a", "r", "p"]), names(&["a", "b", "r", "p"])] {
+        let mut bound = initial.clone();
+        assert_eq!(aliases::substitute_projection_aliases_with_bound(&input, &replacements, &mut bound), expected);
+        assert_eq!(bound, initial);
+    }
+}
