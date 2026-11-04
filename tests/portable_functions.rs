@@ -368,7 +368,7 @@ async fn native_duckdb_and_postgres_agree_on_scalar_edge_cases() {
                 statements.join(";\n")
             };
             let output = if dialect == SqlDialect::DuckDb {
-                Command::new("duckdb")
+                Command::new(std::env::var_os("ORCHIDDB_DUCKDB_BIN").unwrap_or_else(|| "duckdb".into()))
                     .args(["-json", "-c", &sql])
                     .output()
                     .unwrap()
@@ -522,7 +522,7 @@ async fn sql_templates_evaluate_volatile_arguments_once() {
                 "CREATE TEMPORARY SEQUENCE portable_function_calls; {query}; SELECT currval('portable_function_calls');"
             );
             let output = if dialect == SqlDialect::DuckDb {
-                Command::new("duckdb")
+                Command::new(std::env::var_os("ORCHIDDB_DUCKDB_BIN").unwrap_or_else(|| "duckdb".into()))
                     .args(["-csv", "-noheader", "-c", &script])
                     .output()
                     .unwrap()
@@ -963,7 +963,7 @@ async fn expanded_catalog_matches_native_columns() {
             });
             let script = statements.join(";\n");
             let output = if dialect == SqlDialect::DuckDb {
-                Command::new("duckdb")
+                Command::new(std::env::var_os("ORCHIDDB_DUCKDB_BIN").unwrap_or_else(|| "duckdb".into()))
                     .args(["-json", "-c", &script])
                     .output()
                     .unwrap()

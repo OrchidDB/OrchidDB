@@ -208,15 +208,9 @@ async fn duckdb_and_datafusion(
     duckdb_lines
 }
 
-/// Strict SQL reports its boundary explicitly; the normal DAG executes the
-/// residual operators and must still return the complete, typed answer.
-async fn residual_rows(plan: &GraphPlan, graph: &PropertyGraph, reason: &str) -> Vec<String> {
-    let error = RelBackend::new().lower(plan, graph).unwrap_err();
-    assert!(
-        matches!(error, orchiddb::ir::rel::RelError::Unsupported(_)),
-        "{error}"
-    );
-    assert!(error.to_string().contains(reason), "{error}");
+/// Execute typed path outputs through the normal engine, including any SQL
+/// regions and the final public-value decoding boundary.
+async fn typed_path_rows(plan: &GraphPlan, graph: &PropertyGraph) -> Vec<String> {
     let (returned, _) = orchiddb::ir::rel::runtime::execute(plan, graph, None)
         .await
         .unwrap();
@@ -349,10 +343,9 @@ async fn cypher_varlen_relationship_list_and_undirected_size_with_residuals() {
          WHERE p.name = 'alice' \
          RETURN f.name, size(e), e ORDER BY f.name",
     );
-    let rows = residual_rows(
+    let rows = typed_path_rows(
         &plan,
         &fixture_graph(),
-        "Cypher paths require typed SQL IR residual values",
     )
     .await;
     assert_eq!(rows.len(), 2);
@@ -372,10 +365,9 @@ async fn cypher_count_distinct_varlen_paths_with_residuals() {
         "MATCH (p:Person)-[e:KNOWS*1..]->(f) \
          WHERE p.name = 'alice' RETURN count(DISTINCT e)",
     );
-    let rows = residual_rows(
+    let rows = typed_path_rows(
         &plan,
         &fixture_graph(),
-        "Cypher paths require typed SQL IR residual values",
     )
     .await;
     assert_eq!(rows, vec!["3"]);
@@ -387,10 +379,9 @@ async fn cypher_named_path_spans_varlen_and_fixed_segments_with_residuals() {
         "MATCH p = (a:Person)-[:KNOWS*1..1]->(:Person)-[:LIVES_IN]->(:City) \
          WHERE a.name = 'alice' RETURN p",
     );
-    let rows = residual_rows(
+    let rows = typed_path_rows(
         &plan,
         &mixed_path_graph(),
-        "Cypher paths require typed SQL IR residual values",
     )
     .await;
     assert_eq!(rows.len(), 1);

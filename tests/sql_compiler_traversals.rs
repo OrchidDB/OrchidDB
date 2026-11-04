@@ -26,10 +26,7 @@ fn request(query: &str) -> Value {
         {"label":"B","table":"eb","id":"id","source":"src","target":"dst","source_label":"N","target_label":"N"}
     ]})
 }
-async fn run(query: &str) -> Vec<Vec<i64>> {
-    let compiled: Value =
-        serde_json::from_str(&compile_json(&request(query).to_string()).await.unwrap()).unwrap();
-    let sql = compiled["sql"].as_str().unwrap();
+fn test_connection() -> duckdb::Connection {
     let con = duckdb::Connection::open_in_memory().unwrap();
     con.execute_batch("CREATE TABLE nodes(id BIGINT); INSERT INTO nodes VALUES (1),(2),(3),(4); CREATE TABLE ea(id BIGINT,src BIGINT,dst BIGINT); CREATE TABLE eb(id BIGINT,src BIGINT,dst BIGINT);").unwrap();
     for &(kind, id, src, dst) in EDGES {
@@ -42,6 +39,14 @@ async fn run(query: &str) -> Vec<Vec<i64>> {
         )
         .unwrap();
     }
+    orchiddb::ir::rel::sql::language_functions::register(&con).unwrap();
+    con
+}
+async fn run(query: &str) -> Vec<Vec<i64>> {
+    let compiled: Value =
+        serde_json::from_str(&compile_json(&request(query).to_string()).await.unwrap()).unwrap();
+    let sql = compiled["sql"].as_str().unwrap();
+    let con = test_connection();
     let mut stmt = con
         .prepare(sql)
         .unwrap_or_else(|e| panic!("{query}\n{e}\n{sql}"));
@@ -160,17 +165,48 @@ async fn comma_patterns_share_history_but_separate_match_clauses_do_not() {
     assert_eq!(repeatable, vec![vec![(EDGES.len() * EDGES.len()) as i64]]);
 }
 #[tokio::test]
-async fn observed_paths_and_relationship_properties_are_not_silently_dropped() {
-    for query in [
-        "MATCH p=(a:N)-[*1..3]->(b:N) RETURN p",
-        "MATCH (a:N)-[r*1..3]->(b:N) RETURN r",
-        "MATCH (a:N)-[*1..3 {missing:1}]->(b:N) RETURN b.id",
-    ] {
-        assert!(
-            compile_json(&request(query).to_string()).await.is_err(),
-            "{query}"
-        );
+async fn observed_paths_and_relationship_lists_retain_trail_identity() {
+    use orchiddb::ir::value::Value as GraphValue;
+    let mut expected=vec![];
+    for start in 1..=4 {
+        for depth in 1..=3 {
+            let mut paths=vec![];
+            trails(start,depth,false,&mut vec![],&mut paths);
+            expected.extend(paths.into_iter().map(|(_,edges)| edges.len()));
+        }
     }
+    expected.sort();
+    for (query,is_path) in [
+        ("MATCH p=(a:N)-[*1..3]->(b:N) RETURN p AS value",true),
+        ("MATCH (a:N)-[r*1..3]->(b:N) RETURN r AS value",false),
+    ] {
+        let compiled:Value=serde_json::from_str(&compile_json(&request(query).to_string()).await.unwrap()).unwrap();
+        let con=test_connection();
+        let mut statement=con.prepare(compiled["sql"].as_str().unwrap()).unwrap();
+        let batches=statement.query_arrow([]).unwrap().collect::<Vec<_>>();
+        let mut lengths=vec![];
+        for batch in batches {
+            let rows=orchiddb::ir::rel::native_values::decode_rows(&batch,&["value".into()],&orchiddb::ir::catalog::PropertyGraph::new()).unwrap();
+            for row in rows {
+                let values=match row.get("value") {
+                    GraphValue::Path(values) if is_path => {
+                        assert_eq!(values.len()%2,1);
+                        assert!(values.iter().step_by(2).all(|value|matches!(value,GraphValue::Node{..})));
+                        values.into_iter().skip(1).step_by(2).collect::<Vec<_>>()
+                    },
+                    GraphValue::List(values) if !is_path => values,
+                    value=>panic!("{query}: {value:?}"),
+                };
+                assert!(values.iter().all(|value|matches!(value,GraphValue::Edge{..})));
+                let unique=values.iter().map(|value|format!("{value:?}")).collect::<std::collections::BTreeSet<_>>();
+                assert_eq!(unique.len(),values.len(),"a trail cannot repeat a physical relationship");
+                lengths.push(values.len());
+            }
+        }
+        lengths.sort();assert_eq!(lengths,expected,"{query}");
+    }
+    let query="MATCH (a:N)-[*1..3 {missing:1}]->(b:N) RETURN b.id";
+    assert!(run(query).await.is_empty(),"missing relationship properties must filter every trail");
 }
 
 #[tokio::test]
