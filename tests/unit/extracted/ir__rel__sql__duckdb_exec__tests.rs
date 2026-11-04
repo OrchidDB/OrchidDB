@@ -73,3 +73,34 @@
             ]]
         );
     }
+
+#[test]
+fn driver_temporal_units_preserve_fractional_precision_before_and_after_epoch() {
+    use duckdb::types::TimeUnit;
+    for (unit,value,expected) in [
+        (TimeUnit::Second,-1,"1969-12-31 23:59:59"),
+        (TimeUnit::Millisecond,-1,"1969-12-31 23:59:59.999"),
+        (TimeUnit::Microsecond,-1,"1969-12-31 23:59:59.999999"),
+        (TimeUnit::Nanosecond,-1,"1969-12-31 23:59:59.999999999"),
+        (TimeUnit::Nanosecond,1,"1970-01-01 00:00:00.000000001"),
+    ] {assert_eq!(convert_value(ValueRef::Timestamp(unit,value)).unwrap(),SqlValue::Text(expected.into()));}
+    assert_eq!(convert_value(ValueRef::Time64(TimeUnit::Nanosecond,1)).unwrap(),SqlValue::Text("00:00:00.000000001".into()));
+    for unit in [TimeUnit::Second,TimeUnit::Millisecond] {
+        assert!(convert_value(ValueRef::Time64(unit,1)).unwrap_err().to_string().contains("duckdb temporal value"));
+    }
+    assert!(convert_value(ValueRef::Interval{months:1,days:2,nanos:3}).unwrap_err().to_string().contains("duckdb value type"));
+}
+
+#[test]
+fn driver_list_offsets_preserve_null_empty_and_sliced_large_lists() {
+    use arrow::array::{LargeListArray,ListArray};
+    use arrow::datatypes::Int64Type;
+    let values=vec![Some(vec![Some(99)]),None,Some(vec![]),Some(vec![None,Some(7)])];
+    let regular=ListArray::from_iter_primitive::<Int64Type,_,_>(values.clone()).slice(1,3);
+    let large=LargeListArray::from_iter_primitive::<Int64Type,_,_>(values).slice(1,3);
+    for list in [ListType::Regular(&regular),ListType::Large(&large)] {
+        for (row,expected) in [SqlValue::Null,SqlValue::List(vec![]),SqlValue::List(vec![SqlValue::Null,SqlValue::Int(7)])].into_iter().enumerate() {
+            assert_eq!(convert_value(ValueRef::List(list,row)).unwrap(),expected);
+        }
+    }
+}
