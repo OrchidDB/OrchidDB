@@ -1985,3 +1985,7 @@ pub(super) fn concat_exprs(mut exprs: Vec<Expr>) -> Expr {
 pub(super) fn cast_utf8(expr: Expr) -> Expr {
     Expr::Cast(Cast::new(Box::new(expr), DataType::Utf8))
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_expression_boundaries.rs"]
+mod expression_boundary_tests;
