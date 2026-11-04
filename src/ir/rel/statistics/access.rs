@@ -401,3 +401,7 @@ pub fn restrict_collections(plan: LogicalPlan) -> Result<(LogicalPlan, Vec<Optim
     })?.data;
     Ok((plan, decisions))
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/statistics_access_boundaries.rs"]
+mod statistics_access_boundaries;
