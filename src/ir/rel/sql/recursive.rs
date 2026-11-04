@@ -298,6 +298,23 @@ fn unparse_one(
     dialect: SqlDialect,
     repair_scopes: bool,
 ) -> SqlResult<String> {
+    // CTE extraction can leave a projection over unused aggregate outputs.
+    // The unparser drops those calls, so prune this simple aggregate/scan shape
+    // before recording their ordering contracts. Do not rerun general demand
+    // analysis across already-emitted UNNEST, join, or occurrence scopes.
+    let mut simple_aggregate = true;
+    let mut has_aggregate = false;
+    plan.apply_with_subqueries(|node| {
+        has_aggregate |= matches!(node, LogicalPlan::Aggregate(_));
+        simple_aggregate &= matches!(node, LogicalPlan::Aggregate(_) | LogicalPlan::Projection(_)
+            | LogicalPlan::TableScan(_) | LogicalPlan::EmptyRelation(_));
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    let demanded;
+    let plan = if simple_aggregate && has_aggregate {
+        demanded = super::super::optimizer::prune_sql_outputs(plan.clone())?;
+        &demanded
+    } else { plan };
     let ordered;
     let plan = if needs_aggregate_output_projection(plan) {
         ordered = datafusion::logical_expr::LogicalPlanBuilder::from(plan.clone())
