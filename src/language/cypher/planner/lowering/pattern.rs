@@ -1321,3 +1321,7 @@ fn reverse_direction(direction: Direction) -> Direction {
         Direction::Both => Direction::Both,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/cypher_pattern_filters.rs"]
+mod filter_contracts;

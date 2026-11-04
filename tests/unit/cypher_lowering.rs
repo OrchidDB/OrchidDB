@@ -34,6 +34,10 @@ fn binary(op: BinaryOp, left: Expr, right: Expr) -> Expr {
         rhs: Box::new(right),
     }
 }
+lowering!(raw_integer_literal, oC_Literal, expressions::lower_literal_expr,
+    "0x2a", integer("42"));
+lowering!(raw_float_literal, oC_Literal, expressions::lower_literal_expr,
+    "1.25e2", Expr::Literal(Literal::Float(125.0)));
 lowering!(
     addition,
     oC_AddOrSubtractExpression,
@@ -1156,3 +1160,35 @@ truncated!(
     updating::lower_merge_action,
     "MERGE action missing SET"
 );
+
+truncated!(cast_recovery_missing_target, oC_CastExpression, "CAST(1 AS INT64)",
+    oC_CastType, expressions::lower_cast_expression, "CAST expression missing target type");
+
+macro_rules! truncated_expression_list {
+    ($name:ident, $rule:ident, $input:expr, $lower:path, $message:expr) => {
+        #[test]
+        fn $name() {
+            use crate::grammar::generated::cypher::cypherparser::*;
+            use antlr4rust::parser_rule_context::ParserRuleContext;
+            let errors = super::super::SyntaxErrors::default();
+            let mut lexer = CypherLexer::new(InputStream::new($input));
+            lexer.remove_error_listeners();
+            lexer.add_error_listener(Box::new(errors.listener()));
+            let mut parser = CypherParser::new(CommonTokenStream::new(lexer));
+            parser.remove_error_listeners();
+            parser.add_error_listener(Box::new(errors.listener()));
+            let context = parser.$rule().unwrap();
+            errors.into_result().expect("valid grammar fragment");
+            assert_eq!(context.oC_Expression_all().len(), 2);
+            while context.oC_Expression_all().len() > 1 {
+                context.remove_last_child();
+            }
+            let error = $lower(context.as_ref()).unwrap_err();
+            assert!(error.to_string().contains($message), "{error}");
+        }
+    };
+}
+truncated_expression_list!(case_recovery_missing_then, oC_CaseAlternative,
+    "WHEN true THEN 1", expressions::lower_case_alternative, "missing THEN expression");
+truncated_expression_list!(map_recovery_missing_last_value, oC_MapLiteral,
+    "{first:1,last:2}", expressions::lower_map_literal, "key/value count mismatch");

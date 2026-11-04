@@ -2,6 +2,27 @@ use orchiddb::language::cypher::ast::{Clause, Expr, Literal, SetItem, UnaryOp};
 use orchiddb::language::cypher::parser::parse_query;
 
 #[test]
+fn malformed_normalized_lambda_calls_fail_with_specific_lowering_errors() {
+    for (function, valid_arity, message) in [
+        ("__list_reduce", 4, "LIST_REDUCE lambda lowering"),
+        ("__list_transform", 3, "LIST_TRANSFORM lambda lowering"),
+        ("__list_filter", 3, "LIST_FILTER lambda lowering"),
+    ] {
+        for name in [function.to_string(), function.to_uppercase()] {
+            for arity in 0..=5 {
+                // Even the correct arity is invalid with numeric variable names.
+                let arguments = vec!["1"; arity].join(",");
+                let error = parse_query(&format!("RETURN {name}({arguments})")).unwrap_err();
+                assert!(error.to_string().contains(message), "{name}/{arity}: {error}");
+            }
+            let invalid_name = if valid_arity == 4 { "[], 'acc', 2, 1" } else { "[], null, 1" };
+            let error = parse_query(&format!("RETURN {name}({invalid_name})")).unwrap_err();
+            assert!(error.to_string().contains(message), "{error}");
+        }
+    }
+}
+
+#[test]
 fn parses_node_label_disjunction() {
     let query = parse_query("MATCH (a:organisation|:person) RETURN count(*)").unwrap();
     let Clause::Match(m) = &query.clauses[0] else {

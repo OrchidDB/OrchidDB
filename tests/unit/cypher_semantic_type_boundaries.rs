@@ -1,6 +1,34 @@
 use super::*;
 use crate::language::cypher::parser::parse_query;
 
+#[test]
+fn arithmetic_type_errors_identify_each_operator_and_operand_domain() {
+    for (op, symbol) in [(BinaryOp::Add,"+"), (BinaryOp::Sub,"-"),
+        (BinaryOp::Mul,"*"), (BinaryOp::Div,"/")] {
+        for (left, right) in [("true", "1"), ("1", "true")] {
+            let error = validate_binary_expr_kind(op, &expression(left), &expression(right),
+                &SemanticScope::default()).unwrap_err();
+            assert_eq!(error.classification(), Some(("SyntaxError", "InvalidArgumentType")));
+            assert!(error.to_string().contains(&format!("function {symbol}(")), "{error}");
+            assert!(error.to_string().contains("BOOL") && error.to_string().contains("INT64"));
+        }
+    }
+}
+
+#[test]
+fn ordered_aggregates_reject_graph_elements_but_accept_scalar_properties() {
+    for kind in [BindingKind::Node, BindingKind::Relationship,
+        BindingKind::RecursiveRelationship, BindingKind::Path] {
+        let mut scope = SemanticScope::default();
+        scope.insert("entity", kind);
+        for name in ["min", "MAX"] {
+            let error = validate_function_expr_kind(name, &[expression("entity")], &scope).unwrap_err();
+            assert!(error.to_string().contains(&format!("Function {}", name.to_uppercase())), "{error}");
+            validate_function_expr_kind(name, &[expression("entity.weight")], &scope).unwrap();
+        }
+    }
+}
+
 fn expression(text: &str) -> Expr {
     let q = parse_query(&format!("RETURN {text} AS result")).unwrap();
     let Clause::Return(c) = &q.clauses[0] else { panic!() };

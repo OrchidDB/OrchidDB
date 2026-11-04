@@ -15,6 +15,35 @@ fn list(xs: &[i64]) -> IrExpr {
 fn values(xs: &[i64]) -> Value {
     Value::List(xs.iter().copied().map(Value::Int).collect())
 }
+
+#[test]
+fn temporal_constant_fallback_preserves_nulls_and_defers_dynamic_values() {
+    for name in ["date", "TO_DATE", "timestamp", "interval", "duration"] {
+        assert_eq!(constant_temporal_value(name, &[]).unwrap(), None);
+        assert_eq!(constant_temporal_value(name, &[text("x"), text("y")]).unwrap(), None);
+        assert_eq!(constant_temporal_value(name, &[IrExpr::binding("value")]).unwrap(), None);
+        assert_eq!(constant_temporal_value(name, &[int(42)]).unwrap(), None);
+        assert_eq!(constant_temporal_value(name, &[null()]).unwrap(), Some(Value::Null));
+        let temporal=matches!(name,"date"|"TO_DATE"|"timestamp");
+        assert_eq!(constant_temporal_value(name, &[text("2024-01-02")]).unwrap(),
+            Some(if temporal {Value::DateTime("2024-01-02".into())} else {Value::String("2024-01-02".into())}));
+    }
+    assert_eq!(constant_temporal_value("unrelated", &[text("2024-01-02")]).unwrap(), None);
+}
+
+#[test]
+fn direct_list_extract_distinguishes_dynamic_from_null_and_unsupported_inputs() {
+    for args in [vec![], vec![list(&[1])], vec![list(&[1]),int(1),int(2)],
+        vec![IrExpr::binding("items"), int(1)], vec![list(&[1]),IrExpr::binding("index")],
+        vec![int(1),int(1)]] {
+        assert_eq!(constant_list_extract(&args).unwrap(), None,"{args:?}");
+    }
+    for args in [vec![null(), int(1)], vec![list(&[1]),text("wrong")],
+        vec![list(&[1]),int(0)], vec![list(&[1]),int(i64::MIN)]] {
+        assert_eq!(constant_list_extract(&args).unwrap(), Some(Value::Null),"{args:?}");
+    }
+    assert_eq!(constant_list_extract(&[text("雪😀"),int(-1)]).unwrap(), Some(Value::String("😀".into())));
+}
 fn check(name: &str, args: Vec<IrExpr>, expected: Value) {
     assert_eq!(
         constant_collection_function_value(name, &args).unwrap(),

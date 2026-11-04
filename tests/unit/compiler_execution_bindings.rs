@@ -9,6 +9,39 @@ fn host(sql: &str) -> SharedHost {
 }
 
 #[test]
+fn graph_preparation_rejects_derived_source_name_collisions() {
+    for name in ["people", "tags"] {
+        let source=serde_json::json!({"name":name,"table":"people","column":"tags","element":"value"});
+        let collections=if name=="tags" {vec![source.clone(),source]} else {vec![source]};
+        let request:CompileRequest=serde_json::from_value(serde_json::json!({
+            "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1",
+            "tables":[{"name":"people","columns":[{"name":"tags","data_type":"list:string"}]}],
+            "collection_sources":collections
+        })).unwrap();
+        assert_eq!(prepare_graph(&request).err().unwrap(),format!("duplicate source `{name}`"));
+    }
+}
+
+#[test]
+fn statistics_mapping_fingerprint_is_checked_before_attaching_cost_estimates() {
+    use crate::ir::rel::statistics::{StatisticsSnapshot, CollectionReport, mapping_fingerprint};
+    let mut request:CompileRequest=serde_json::from_value(serde_json::json!({
+        "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]
+    })).unwrap();
+    request.statistics=Some(Arc::new(StatisticsSnapshot {
+        version:1,revision:"test".into(),mapping:"stale".into(),collected_at:"2026-11-04".into(),
+        sources:BTreeMap::new(),relationships:vec![],rdf:vec![],report:CollectionReport::default(),
+    }));
+    assert_eq!(prepare_graph(&request).err().unwrap(),
+        "statistics snapshot mapping mismatch; regenerate or clear statistics");
+    Arc::make_mut(request.statistics.as_mut().unwrap()).mapping=mapping_fingerprint(&serde_json::json!({
+        "tables":request.tables,"logical_sources":request.logical_sources,
+        "collection_sources":request.collection_sources,"representation_sources":request.representation_sources
+    }));
+    assert!(prepare_graph(&request).is_ok());
+}
+
+#[test]
 fn prepared_mapped_bindings_attach_to_independent_hosts_without_capturing_rows() {
     let request: CompileRequest = serde_json::from_value(serde_json::json!({
         "version":1, "language":"cypher", "dialect":"duckdb", "query":"MATCH (p:Person) RETURN p.name",

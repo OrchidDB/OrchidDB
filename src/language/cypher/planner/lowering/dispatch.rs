@@ -742,6 +742,10 @@ fn procedure_mode(name: &str) -> ProcedureMode {
     }
 }
 
+#[cfg(test)]
+#[path = "../../../../../tests/unit/cypher_procedure_lowering.rs"]
+mod procedure_contracts;
+
 fn pattern_history_binding(
     lowerer: &mut Lowerer,
     patterns: &[crate::language::cypher::ast::PatternPart],
