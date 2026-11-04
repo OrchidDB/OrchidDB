@@ -955,19 +955,115 @@ lowering!(
     collections::lower_list_literal,
     "[null, 0x10, [true, 'quoted']]",
     Expr::List(vec![
-        Expr::Literal(Literal::Null), Expr::Literal(Literal::Integer("16".into())),
-        Expr::List(vec![Expr::Literal(Literal::Bool(true)),Expr::Literal(Literal::String("quoted".into()))]),
+        Expr::Literal(Literal::Null),
+        Expr::Literal(Literal::Integer("16".into())),
+        Expr::List(vec![
+            Expr::Literal(Literal::Bool(true)),
+            Expr::Literal(Literal::String("quoted".into()))
+        ]),
     ])
 );
-lowering!(empty_list_literal_entrypoint,oC_ListLiteral,collections::lower_list_literal,"[]",Expr::List(vec![]));
+lowering!(
+    empty_list_literal_entrypoint,
+    oC_ListLiteral,
+    collections::lower_list_literal,
+    "[]",
+    Expr::List(vec![])
+);
 
 #[test]
 fn radix_integer_overflow_reports_the_original_literal() {
-    for text in ["0x100000000000000000000000000000000", "0o4000000000000000000000000000000000000000000"] {
-        let lexer=CypherLexer::new(InputStream::new(text));
-        let mut parser=CypherParser::new(CommonTokenStream::new(lexer));
-        let tree=parser.oC_IntegerLiteral().unwrap();
-        let error=expressions::lower_integer_literal(tree.as_ref()).unwrap_err().to_string();
-        assert!(error.contains("invalid integer literal") && error.contains(text),"{error}");
+    for text in [
+        "0x100000000000000000000000000000000",
+        "0o4000000000000000000000000000000000000000000",
+    ] {
+        let lexer = CypherLexer::new(InputStream::new(text));
+        let mut parser = CypherParser::new(CommonTokenStream::new(lexer));
+        let tree = parser.oC_IntegerLiteral().unwrap();
+        let error = expressions::lower_integer_literal(tree.as_ref())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("invalid integer literal") && error.contains(text),
+            "{error}"
+        );
     }
 }
+
+#[test]
+fn relationship_range_bounds_preserve_u32_limits_and_reject_overflow() {
+    for (text, min, max) in [
+        ("*", 1, None),
+        ("*..", 1, None),
+        ("*0", 0, Some(0)),
+        ("*4294967295", u32::MAX, Some(u32::MAX)),
+        ("*0..4294967295", 0, Some(u32::MAX)),
+        ("*4294967295..", u32::MAX, None),
+        ("*..4294967295", 1, Some(u32::MAX)),
+        ("*4..2", 4, Some(2)),
+    ] {
+        let errors = super::super::SyntaxErrors::default();
+        let mut lexer = CypherLexer::new(InputStream::new(text));
+        lexer.remove_error_listeners();
+        lexer.add_error_listener(Box::new(errors.listener()));
+        let mut parser = CypherParser::new(CommonTokenStream::new(lexer));
+        parser.remove_error_listeners();
+        parser.add_error_listener(Box::new(errors.listener()));
+        let tree = parser.oC_RangeLiteral().unwrap();
+        errors.into_result().unwrap();
+        let range = ranges::lower_range_literal(tree.as_ref()).unwrap();
+        assert_eq!(
+            (range.min, range.max, range.explicit),
+            (min, max, true),
+            "{text}"
+        );
+    }
+    for text in [
+        "*4294967296",
+        "*4294967296..",
+        "*..4294967296",
+        "*1..4294967296",
+    ] {
+        let lexer = CypherLexer::new(InputStream::new(text));
+        let mut parser = CypherParser::new(CommonTokenStream::new(lexer));
+        let tree = parser.oC_RangeLiteral().unwrap();
+        let error = ranges::lower_range_literal(tree.as_ref())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("invalid relationship range bound `4294967296`"),
+            "{text}: {error}"
+        );
+    }
+}
+
+lowering!(
+    filter_without_predicate_defaults_true,
+    oC_FilterExpression,
+    collections::lower_filter_expression,
+    "x IN [1]",
+    Expr::Function {
+        name: "filter".into(),
+        distinct: false,
+        args: vec![
+            Expr::Literal(Literal::String("x".into())),
+            Expr::List(vec![integer("1")]),
+            Expr::Literal(Literal::Bool(true))
+        ]
+    }
+);
+lowering!(
+    filter_with_predicate_preserves_expression,
+    oC_FilterExpression,
+    collections::lower_filter_expression,
+    "x IN [1] WHERE x > 0",
+    Expr::Function {
+        name: "filter".into(),
+        distinct: false,
+        args: vec![
+            Expr::Literal(Literal::String("x".into())),
+            Expr::List(vec![integer("1")]),
+            binary(BinaryOp::Gt, Expr::Variable("x".into()), integer("0"))
+        ]
+    }
+);

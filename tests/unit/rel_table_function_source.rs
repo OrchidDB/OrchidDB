@@ -186,11 +186,93 @@ fn table_function_rejects_invalid_default_shapes_and_argument_names() {
         json!({"function":["f"],"arguments":[{"column":"arg"},{"column":"other"},{"column":"out"}]}),
     ] {
         let error = provider(&metadata(options), schema.clone())
-            .err().expect("invalid metadata must fail")
+            .err()
+            .expect("invalid metadata must fail")
             .to_string();
         assert!(error.contains("table function source"), "{error}");
     }
     let mut ignored = metadata(json!({"unrecognized":true}));
     ignored.format = None;
     assert!(provider(&ignored, schema).unwrap().is_none());
+}
+
+#[test]
+fn logical_only_sources_are_left_to_their_own_adapter() {
+    struct LogicalOnly(SchemaRef);
+    impl datafusion::logical_expr::TableSource for LogicalOnly {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn schema(&self) -> SchemaRef {
+            self.0.clone()
+        }
+    }
+    let schema = Arc::new(Schema::new(vec![Field::new("out", DataType::Int64, true)]));
+    let plan = LogicalPlanBuilder::scan("logical", Arc::new(LogicalOnly(schema)), None)
+        .unwrap()
+        .build()
+        .unwrap();
+    let (pushed, found) = push_filters(plan.clone()).unwrap();
+    assert!(!found);
+    assert_eq!(pushed, plan);
+    assert!(lower(&plan, SqlDialect::DuckDb).unwrap().is_none());
+}
+
+#[test]
+fn input_equalities_push_through_filters_without_absorbing_output_predicates() {
+    use datafusion::common::tree_node::TreeNodeRecursion;
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("arg", DataType::Int64, false),
+        Field::new("out", DataType::Int64, false),
+    ]));
+    let p = provider(
+        &metadata(json!({"function":["range"],"arguments":[{"column":"arg"}]})),
+        schema,
+    )
+    .unwrap()
+    .unwrap();
+    let input = scan(p, None, vec![], None);
+    assert!(
+        lower(&input, SqlDialect::DuckDb)
+            .unwrap_err()
+            .to_string()
+            .contains("required argument arg")
+    );
+    let condition = lit(7_i64)
+        .eq(col("source.arg"))
+        .and(col("source.out").gt(lit(1_i64)));
+    let plan = LogicalPlanBuilder::from(input)
+        .filter(condition)
+        .unwrap()
+        .project(vec![col("source.out")])
+        .unwrap()
+        .build()
+        .unwrap();
+    let (pushed, found) = push_filters(plan).unwrap();
+    assert!(found);
+    let mut scans = 0;
+    pushed
+        .apply(|node| {
+            if let LogicalPlan::TableScan(scan) = node {
+                scans += 1;
+                assert!(
+                    scan.filters
+                        .iter()
+                        .any(|filter| binding(filter, "arg").is_some())
+                );
+                assert!(scan.filters.iter().any(|filter| matches!(filter,Expr::BinaryExpr(binary)
+                if binary.op==Operator::Gt && matches!(binary.left.as_ref(),Expr::Column(c) if c.name=="out"))));
+            let sql = lower(node, SqlDialect::DuckDb)
+                    .unwrap()
+                    .unwrap()
+                    .to_string();
+                assert!(
+                    sql.contains("CAST(7 AS BIGINT)") && sql.contains(" WHERE "),
+                    "{sql}"
+                );
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })
+        .unwrap();
+    assert_eq!(scans, 1);
 }

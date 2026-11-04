@@ -7,6 +7,10 @@
 use super::*;
 use crate::ir::plan::ProcedureMode;
 
+#[cfg(test)]
+#[path = "../../../tests/unit/rel_table_procedure_proofs.rs"]
+mod proof_tests;
+
 /// Specialize eligible calls before capability validation. Calls left intact
 /// must still pass the normal capability check (or execute as native kernels).
 pub(super) fn specialize_plan(plan: &GraphPlan, graph: &PropertyGraph) -> GraphPlan {
