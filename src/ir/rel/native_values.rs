@@ -945,3 +945,7 @@ mod wire_contracts;
 #[cfg(test)]
 #[path = "../../../tests/unit/rel_native_procedure.rs"]
 mod procedure_contracts;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/native_cypher_sort.rs"]
+mod native_cypher_sort;
