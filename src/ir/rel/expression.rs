@@ -469,6 +469,17 @@ impl<'a> LoweringContext<'a> {
                     // type. SQL CASE instead coerces every branch to a common
                     // type, which can stringify integers, round them to floats,
                     // or reject otherwise valid heterogeneous collections.
+                    let typed_branch = when_then_expr.iter().map(|(_, value)| value)
+                        .chain(else_expr.iter()).any(|value|
+                            value.get_type(plan.schema()).is_ok_and(|kind| native_values::is_value(&kind)));
+                    if typed_branch {
+                        for branch in when_then_expr.iter_mut().map(|(_, value)| value).chain(else_expr.iter_mut()) {
+                            if !native_values::is_value(&branch.get_type(plan.schema())?) {
+                                **branch = native_values::typed::call("pack", vec![(**branch).clone()]);
+                            }
+                        }
+                        return Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)));
+                    }
                     let mut branch_type = None;
                     for branch in when_then_expr.iter().map(|(_, value)| value)
                         .chain(else_expr.iter())
@@ -1822,6 +1833,21 @@ impl LoweringContext<'_> {
         if crate::ir::functions::scalar_union::is_type(&lhs.get_type(plan.schema())?)
             || crate::ir::functions::scalar_union::is_type(&rhs.get_type(plan.schema())?) {
             return Err(RelError::Unsupported("Heterogeneous primitive arithmetic and boolean operators require typed runtime evaluation".into()));
+        }
+        if self.language == Language::Cypher
+            && (native_values::is_value(&lhs.get_type(plan.schema())?)
+                || native_values::is_value(&rhs.get_type(plan.schema())?)) {
+            let operation = match op {
+                BinaryOp::Add => Some("add"), BinaryOp::Sub => Some("subtract"),
+                BinaryOp::Mul => Some("multiply"), BinaryOp::Div => Some("divide"),
+                BinaryOp::Eq => Some("cypher_eq"), BinaryOp::Neq => Some("cypher_neq"),
+                BinaryOp::Lt => Some("cypher_lt"), BinaryOp::Lte => Some("cypher_lte"),
+                BinaryOp::Gt => Some("cypher_gt"), BinaryOp::Gte => Some("cypher_gte"),
+                BinaryOp::And | BinaryOp::Or => None,
+            };
+            if let Some(operation) = operation {
+                return Ok(native_values::typed::call(operation, vec![lhs, rhs]));
+            }
         }
         if self.options.native_values && matches!(op, BinaryOp::And | BinaryOp::Or) {
             if native_values::is_value(&lhs.get_type(plan.schema())?) { lhs = native_values::predicate(lhs); }
