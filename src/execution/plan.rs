@@ -654,6 +654,27 @@ impl Builder<'_> {
             let expressions = if matches!(plan, LogicalPlan::Unnest(_)) { vec![] } else { plan.expressions() };
             plan.with_new_exprs(expressions, replaced).map_err(|e| e.to_string())?
         };
+        // Expression subqueries are not in LogicalPlan::inputs(). Their
+        // source scans must cross the same Arrow boundary as relational
+        // children; otherwise completion SQL names tables it does not own.
+        let residual = if recursive { residual } else {
+            use datafusion::common::tree_node::Transformed;
+            residual.transform_down_with_subqueries(|node| {
+                if let LogicalPlan::TableScan(scan) = &node {
+                    let source_owned = self.request.tables.iter().any(|table|
+                        table.name == scan.table_name.to_string() && table.engine.is_some());
+                    if source_owned || self.bound.contains_key(&scan.table_name.to_string()) {
+                        let replacement = self.completion_input(&node,&mut relations)
+                            .map_err(datafusion::common::DataFusionError::Plan)?;
+                        // A correlated subquery may read its source once for
+                        // every outer row. The transferred relation is shared.
+                        if let Some(relation) = relations.last_mut() { relation.replay = true; }
+                        return Ok(Transformed::new(replacement,true,TreeNodeRecursion::Jump));
+                    }
+                }
+                Ok(Transformed::no(node))
+            }).map_err(|error| error.to_string())?.data
+        };
         if recursive { for relation in &mut relations { relation.replay = true; } }
         let sql = crate::ir::rel::sql::unparse_plan_with_context(residual, super::SqlDialect::DuckDb, &self.request.rule_context)
             .map_err(|e| e.to_string())?;

@@ -231,6 +231,35 @@ impl DialectAdapter for TrinoAdapter {
         plan: &datafusion::logical_expr::LogicalPlan,
         ctx: &super::lowering::LoweringContext,
     ) -> SqlResult<Option<super::lowering::RelationLowering>> {
+        // A relation constructed entirely from an outer row is not a Trino
+        // decorrelation input. Keep that correlated seed in completion.
+        if let datafusion::logical_expr::LogicalPlan::Projection(projection) = plan
+            && matches!(projection.input.as_ref(), datafusion::logical_expr::LogicalPlan::EmptyRelation(_)) {
+            use datafusion::common::tree_node::TreeNode;
+            for expression in &projection.expr {
+                if expression.exists(|part| Ok(matches!(part, datafusion::logical_expr::Expr::OuterReferenceColumn(..))))? {
+                    return Err(SqlError::Unsupported("Trino outer-row relation requires decorrelation or completion".into()));
+                }
+            }
+        }
+        // Trino inlines CTEs. An unordered occurrence ordinal can therefore
+        // be reassigned independently at each reference, corrupting correlated
+        // joins. Materialize this operator in completion before sharing it.
+        if let datafusion::logical_expr::LogicalPlan::Window(window) = plan {
+            for expression in &window.window_expr {
+                let expression = match expression {
+                    datafusion::logical_expr::Expr::Alias(alias) => alias.expr.as_ref(),
+                    expression => expression,
+                };
+                if let datafusion::logical_expr::Expr::WindowFunction(function) = expression
+                    && function.params.partition_by.is_empty()
+                    && function.params.order_by.is_empty()
+                    && matches!(&function.fun, datafusion::logical_expr::WindowFunctionDefinition::WindowUDF(f)
+                        if f.inner().as_any().is::<datafusion::functions_window::row_number::RowNumber>()) {
+                    return Err(SqlError::Unsupported("Trino occurrence row numbers require materialized completion".into()));
+                }
+            }
+        }
         if let Some(sql) = connectors::lower(plan)? {
             return Ok(Some(super::lowering::RelationLowering::Sql(sql)));
         }
@@ -342,6 +371,19 @@ impl DialectAdapter for TrinoAdapter {
     }
     fn rewrite_query(&self, query: &mut ast::Query) -> SqlResult<()> {
         unnest::rewrite(query)?;
+        if let ast::SetExpr::Select(select) = query.body.as_ref() {
+            for factor in select.from.iter().flat_map(|from|
+                std::iter::once(&from.relation).chain(from.joins.iter().map(|join| &join.relation))) {
+                if let ast::TableFactor::Derived {subquery, ..} = factor
+                    && let ast::SetExpr::Select(seed) = subquery.body.as_ref()
+                    && seed.from.is_empty()
+                    && seed.projection.iter().any(|item| matches!(item,
+                        ast::SelectItem::UnnamedExpr(ast::Expr::Identifier(_) | ast::Expr::CompoundIdentifier(_))
+                        | ast::SelectItem::ExprWithAlias {expr:ast::Expr::Identifier(_) | ast::Expr::CompoundIdentifier(_), ..})) {
+                    return Err(SqlError::Unsupported("Trino outer-row relation requires decorrelation or completion".into()));
+                }
+            }
+        }
         if let Some(ast::LimitClause::LimitOffset {
             limit,
             offset: Some(_),
@@ -748,4 +790,44 @@ mod parser_tests {
             if ty.contains("\"value\"") { assert!(sql.contains("\"value\" DECIMAL("), "{sql}"); }
         }
     }
+    #[test]
+    fn occurrence_ordinals_and_outer_row_relations_require_materialization() {
+        use datafusion::logical_expr::{Expr, ExprFunctionExt, LogicalPlanBuilder, col, lit};
+        use super::super::lowering::{LoweringContext,LoweringMode};
+        let context=LoweringContext {dialect:SqlDialect::Custom(&TRINO),mode:LoweringMode::InIsland};
+        let input=LogicalPlanBuilder::empty(true).project(vec![lit(1_i64).alias("x")]).unwrap().build().unwrap();
+        let unordered=datafusion::functions_window::expr_fn::row_number().alias("ordinal");
+        let plan=LogicalPlanBuilder::from(input.clone()).window(vec![unordered]).unwrap().build().unwrap();
+        assert!(TRINO.lower_relation(&plan,&context).unwrap_err().to_string().contains("materialized completion"));
+        for function in [
+            datafusion::functions_window::expr_fn::row_number().order_by(vec![col("x").sort(true,false)]).build().unwrap(),
+            datafusion::functions_window::expr_fn::row_number().partition_by(vec![col("x")]).build().unwrap(),
+        ] {
+            let plan=LogicalPlanBuilder::from(input.clone()).window(vec![function.alias("rank")]).unwrap().build().unwrap();
+            assert!(TRINO.lower_relation(&plan,&context).is_ok());
+        }
+        let reference=Expr::OuterReferenceColumn(std::sync::Arc::new(arrow::datatypes::Field::new("x",DataType::Int64,true)),datafusion::common::Column::from_name("x"));
+        let correlated=LogicalPlanBuilder::empty(true).project(vec![reference.alias("seed")]).unwrap().build().unwrap();
+        assert!(TRINO.lower_relation(&correlated,&context).unwrap_err().to_string().contains("outer-row relation"));
+        assert!(TRINO.lower_relation(&input,&context).is_ok());
+    }
+
+    #[test]
+    fn correlated_seed_after_scope_repair_is_not_pushed_to_trino() {
+        use datafusion::sql::sqlparser::parser::Parser;
+        for sql in [
+            "SELECT count(*) FROM (SELECT outer_id AS id) seed JOIN edges ON seed.id=edges.src",
+            "SELECT count(*) FROM (SELECT outer_row.id AS id) seed JOIN edges ON seed.id=edges.src",
+        ] {
+            let mut statements=Parser::parse_sql(&TrinoParser,sql).unwrap();
+            let ast::Statement::Query(query)=&mut statements[0] else {panic!()};
+            assert!(TRINO.rewrite_query(query).unwrap_err().to_string().contains("outer-row relation"));
+        }
+        for sql in ["SELECT count(*) FROM (SELECT 1 AS id) seed", "SELECT count(*) FROM (SELECT id FROM nodes) seed"] {
+            let mut statements=Parser::parse_sql(&TrinoParser,sql).unwrap();
+            let ast::Statement::Query(query)=&mut statements[0] else {panic!()};
+            TRINO.rewrite_query(query).unwrap();
+        }
+    }
+
 }

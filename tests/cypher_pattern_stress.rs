@@ -370,7 +370,7 @@ fn pattern_matrix_compiles_for_mapped_duckdb_and_trino() {
     let mut exports = Vec::new();
     for dialect in ["duckdb", "trino"] {
         for &(query, expected) in queries {
-            let request = json!({"version":1,"dialect":dialect,"language":"cypher","query":query,
+            let mut request = json!({"version":1,"dialect":dialect,"language":"cypher","query":query,
             "tables":[
                 {"name":"nodes","columns":[{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"},{"name":"k","data_type":"int64"}]},
                 {"name":"edges_r","columns":[{"name":"id","data_type":"int64"},{"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"},{"name":"w","data_type":"int64"}]},
@@ -381,10 +381,14 @@ fn pattern_matrix_compiles_for_mapped_duckdb_and_trino() {
                 {"label":"R","table":"edges_r","id":"id","source":"src","target":"dst","source_label":"P","target_label":"P","properties":{"w":"w"}},
                 {"label":"S","table":"edges_s","id":"id","source":"src","target":"dst","source_label":"P","target_label":"P"}
             ]});
+            request["sources"] = json!({"db":{"adapter":dialect}});
+            for table in request["tables"].as_array_mut().unwrap() { table["source"] = json!("db"); }
             match runtime.block_on(compile_json(&request.to_string())) {
                 Ok(compiled) => {
                     let compiled: Value = serde_json::from_str(&compiled).unwrap();
-                    assert!(!compiled["sql"].as_str().unwrap().is_empty(), "{query}");
+                    let nodes=compiled["execution_plan"]["nodes"].as_array().unwrap();
+                    assert!(!nodes.is_empty(),"{query}");
+                    assert!(nodes.iter().any(|node| node["kind"]=="source_sql"),"{query}");
                     assert!(
                         !compiled["fields"].as_array().unwrap().is_empty(),
                         "{query}"
@@ -399,7 +403,7 @@ fn pattern_matrix_compiles_for_mapped_duckdb_and_trino() {
                         expected_rows.sort();
                     }
                     assert_eq!(actual, expected_rows, "{query}");
-                    exports.push(json!({"query":query,"dialect":dialect,"sql":compiled["sql"],"expected":expected}));
+                    exports.push(json!({"query":query,"dialect":dialect,"sql":compiled["sql"],"execution_plan":compiled["execution_plan"],"expected":expected}));
                 }
                 Err(error) => failures.push(format!("{dialect}: {query}\n{error}")),
             }
