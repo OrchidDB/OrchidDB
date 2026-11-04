@@ -403,6 +403,29 @@ fn preserve_portable_numeric_types(
                     {
                         return Ok(Transformed::no(expr));
                     }
+                    let mut expr = expr;
+                    let mut changed = false;
+                    if dialect == SqlDialect::Postgres
+                        && let Expr::ScalarFunction(call) = &mut expr
+                        && crate::ir::functions::logical::definition(&call.func).is_some_and(|f|
+                            matches!(f.logical_name(), "fn.array_has" | "fn.array_positions" | "fn.array_position"
+                                | "fn.array_remove" | "fn.array_remove_all" | "fn.array_remove_n"
+                                | "fn.array_replace" | "fn.array_replace_all" | "fn.array_replace_n"))
+                        && let Some(array) = call.args.first()
+                        && let DataType::List(field) = array.get_type(&schema)? {
+                        // A NULL projected into a PostgreSQL template's binding
+                        // subquery defaults to TEXT. Give search/replacement
+                        // operands the element type before that scope boundary.
+                        let replace = crate::ir::functions::logical::definition(&call.func)
+                            .is_some_and(|f| f.logical_name().starts_with("fn.array_replace"));
+                        for argument in call.args.iter_mut().skip(1).take(if replace { 2 } else { 1 }) {
+                            if argument.get_type(&schema)? == DataType::Null {
+                                *argument = crate::ir::functions::typed_argument_cast_for_engine(
+                                    argument.clone(), field.data_type().clone(), dialect.name())?;
+                                changed = true;
+                            }
+                        }
+                    }
                     let ty = expr.get_type(&schema)?;
                     if ty.is_numeric() {
                         Ok(Transformed::yes(
@@ -412,6 +435,8 @@ fn preserve_portable_numeric_types(
                                 dialect.name(),
                             )?,
                         ))
+                    } else if changed {
+                        Ok(Transformed::yes(expr))
                     } else {
                         Ok(Transformed::no(expr))
                     }
