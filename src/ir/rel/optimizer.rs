@@ -117,6 +117,10 @@ impl CompilerQuery<'_> {
     pub(super) fn config_options(&self) -> &datafusion::common::config::ConfigOptions { &self.session.options }
     pub(super) fn optimize(&self, plan: &LogicalPlan) -> Result<LogicalPlan> {
         let analyzed = self.analyzer().execute_and_check(plan.clone(), self.config_options(), |_, _| {})?;
+        // Projection merging substitutes ordinary columns but cannot rebind
+        // correlated subquery bodies. Preserve their input namespace first.
+        let analyzed = super::sql::correlation::preserve_scopes(analyzed)
+            .map_err(|error| datafusion::common::DataFusionError::Plan(error.to_string()))?;
         self.session.optimizer.optimize(analyzed, self, |_, _| {})
     }
 }

@@ -129,7 +129,12 @@ pub(crate) fn find_window_nodes_within_select<'a>(
     let input = if input.len() > 1 {
         return prev_windows;
     } else {
-        input.first()?
+        match input.first() {
+            Some(input) => input,
+            // A window over the one-row seed still belongs to this SELECT.
+            // Reaching a leaf must not discard windows already found.
+            None => return prev_windows,
+        }
     };
 
     // Window nodes accumulate in a vec until encountering a TableScan or 2nd projection

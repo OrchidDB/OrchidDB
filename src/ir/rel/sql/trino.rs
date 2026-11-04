@@ -55,6 +55,20 @@ impl DialectAdapter for TrinoAdapter {
             if let ast::Expr::Cast { data_type, .. } = expr {
                 normalize_type(data_type);
             }
+            // Trino supports null-safe Boolean comparisons, but not IS TRUE
+            // or IS FALSE. Preserve the non-null result of each truth test.
+            let truth = match expr {
+                ast::Expr::IsTrue(value) => Some((value.clone(), true, false)),
+                ast::Expr::IsFalse(value) => Some((value.clone(), false, false)),
+                ast::Expr::IsNotTrue(value) => Some((value.clone(), true, true)),
+                ast::Expr::IsNotFalse(value) => Some((value.clone(), false, true)),
+                _ => None,
+            };
+            if let Some((value, truth, negated)) = truth {
+                let boolean = Box::new(ast::Expr::Value(ast::Value::Boolean(truth).into()));
+                *expr = if negated { ast::Expr::IsDistinctFrom(value, boolean) }
+                    else { ast::Expr::IsNotDistinctFrom(value, boolean) };
+            }
             std::ops::ControlFlow::<()>::Continue(())
         });
         let sql = statements

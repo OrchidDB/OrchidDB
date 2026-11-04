@@ -215,11 +215,10 @@ impl LoweringContext<'_> {
                 predicate,
             } => {
                 let list = self.lower_expr(plan, list)?;
-                self.run_quantifier_rule(plan, *kind, item, list, predicate)?
-                    .map(Some)
-                    .ok_or_else(|| {
-                        RelError::Unsupported("Quantifier requires typed runtime evaluation".into())
-                    })
+                match self.run_quantifier_rule(plan, *kind, item, list, predicate)? {
+                    Some(value) => Ok(Some(value)),
+                    None => self.lower_sql_lambda(plan, expr).map(Some),
+                }
             }
             IrExpr::Call { name, args } if name == "cypher_in" && args.len() == 2 =>
                 self.scalar_rule(MEMBERSHIP, || self.lower_membership_rule(plan, args).map(Some)),

@@ -34,7 +34,7 @@ mod json_transform;
 mod json_rows;
 mod dialect;
 pub(crate) mod eligibility;
-mod correlation;
+pub(super) mod correlation;
 mod capabilities;
 pub use capabilities::{SubqueryKind, SubqueryRequirements};
 pub mod trino;

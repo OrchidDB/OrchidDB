@@ -21,7 +21,7 @@ fn correlated(exprs: &[Expr]) -> datafusion::common::Result<bool> {
     }
     Ok(found)
 }
-pub(super) fn preserve_scopes(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
+pub(crate) fn preserve_scopes(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     let mut next = 0;
     let mut names = std::collections::BTreeSet::new();
     plan.apply_with_subqueries(|node| {

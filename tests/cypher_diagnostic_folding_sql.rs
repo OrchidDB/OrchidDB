@@ -27,7 +27,8 @@ async fn diagnostic_mode_preserves_scalar_and_quantifier_computation() {
         let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
         let lowered = RelBackend::new().lower(&plan, &PropertyGraph::new()).unwrap();
         let sql = unparse(&lowered, SqlDialect::DuckDb).unwrap();
-        assert!(sql.to_lowercase().contains("unnest"), "{sql}");
+        // Nested lists retain their rank through typed lambda iteration.
+        assert!(sql.to_lowercase().contains("list_transform"), "{sql}");
         assert_ne!(sql, "SELECT true AS \"result\"");
         let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered).await.unwrap();
         assert_eq!(result.batch.num_rows(), 1);

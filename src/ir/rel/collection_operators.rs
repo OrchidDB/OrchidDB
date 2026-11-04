@@ -597,6 +597,21 @@ impl<'a> LoweringContext<'a> {
             return Ok(input.with_plan(LogicalPlanBuilder::from(listed).project(columns)?.build()?));
         }
 
+        // Nested list elements need a typed iteration boundary. PostgreSQL's
+        // nested-list decoder is scalar and cannot enclose a set-returning
+        // UNNEST; the lambda adapter decodes each emitted element separately.
+        if matches!(&list_type, DataType::List(field) if matches!(field.data_type(), DataType::List(_))) {
+            let expression = IrExpr::Quantifier {
+                kind, list: Box::new(input_expr.clone()), item: item_binding.to_owned(),
+                predicate: Box::new(predicate.clone()),
+            };
+            let value = self.lower_sql_lambda(&input.plan, &expression)?;
+            let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
+            columns.push(value.alias(output));
+            let plan = LogicalPlanBuilder::from(input.plan.clone()).project(columns)?.build()?;
+            return Ok(input.with_plan(plan));
+        }
+
         if let Some(value) = self.run_quantifier_rule(&input.plan, kind, item_binding, list.clone(), predicate)? {
             let mut columns = original_columns.iter().map(col_exact).collect::<Vec<_>>();
             columns.push(value.alias(output));

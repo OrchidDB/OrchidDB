@@ -5,6 +5,21 @@
 
 use super::*;
 
+// NULL supplies no conflicting element type, including inside a nested list.
+// Keep actual heterogeneous values distinct; do not adopt SQL string coercion.
+fn nullable_collection_type(left: &DataType, right: &DataType) -> Option<DataType> {
+    if left == right { return Some(left.clone()); }
+    match (left, right) {
+        (DataType::Null, kind) | (kind, DataType::Null) => Some(kind.clone()),
+        (DataType::List(left), DataType::List(right)) => Some(DataType::List(Arc::new(
+            left.as_ref().clone()
+                .with_data_type(nullable_collection_type(left.data_type(), right.data_type())?)
+                .with_nullable(left.is_nullable() || right.is_nullable()),
+        ))),
+        _ => None,
+    }
+}
+
 fn prune_literal_conditional_branches(expr: &IrExpr) -> Option<IrExpr> {
     let IrExpr::Call { name, args } = expr else { return None; };
     let is_null = |expr: &IrExpr| match expr {
@@ -284,14 +299,15 @@ impl<'a> LoweringContext<'a> {
                     .iter()
                     .map(|value| value.get_type(plan.schema()))
                     .collect::<datafusion::common::Result<Vec<_>>>()?;
-                let mut concrete = types.iter().filter(|kind| **kind != DataType::Null);
-                if let Some(first) = concrete.next() {
-                    if concrete.any(|kind| kind != first) {
-                        return Err(RelError::Unsupported(
-                            "heterogeneous Cypher collection requires runtime values".into(),
-                        ));
-                    }
-                }
+                let common = types.iter().try_fold(DataType::Null, |common, kind| {
+                    nullable_collection_type(&common, kind).ok_or_else(|| RelError::Unsupported(
+                        "heterogeneous Cypher collection requires runtime values".into(),
+                    ))
+                })?;
+                let values = values.into_iter().zip(types).map(|(value, kind)| {
+                    if kind == common || kind == DataType::Null { Ok(value) }
+                    else { value.cast_to(&common, plan.schema()) }
+                }).collect::<datafusion::common::Result<Vec<_>>>()?;
                 Ok(datafusion::functions_nested::expr_fn::make_array(values))
             }
             IrExpr::List(items) => self.lower_collection_expr(plan, items),
