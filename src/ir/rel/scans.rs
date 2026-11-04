@@ -208,6 +208,7 @@ impl<'a> LoweringContext<'a> {
         bindings: &[String],
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
+        validate_values_rows(bindings, rows)?;
         // Cypher lists may use homogeneous Arrow arrays. Gremlin collections
         // retain their native carrier: integer widths are observable, and inject
         // can union a collection traverser with a scalar traverser.
@@ -268,7 +269,15 @@ impl<'a> LoweringContext<'a> {
                 "Typed map keys require native runtime values".into(),
             ));
         }
-        let batch = values_batch(self.language, bindings, rows)?;
+        let mut batch = values_batch(self.language, bindings, rows)?;
+        if bindings.is_empty() {
+            // SQL relations need a concrete column even when only their row
+            // multiplicity is observed. Keep one private unit per input row.
+            batch = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![Field::new("__w_values_unit", DataType::Int64, false)])),
+                vec![Arc::new(Int64Array::from(vec![0_i64; rows.len()]))],
+            )?;
+        }
         self.scan_batches("values", vec![batch])
     }
 
@@ -1559,16 +1568,24 @@ pub(super) fn schema_index(schema: &Schema, name: &str) -> Option<usize> {
     })
 }
 
-pub(super) fn values_batch(
-    language: Language,
+fn validate_values_rows(
     bindings: &[String],
     rows: &[Vec<Value>],
-) -> RelResult<RecordBatch> {
+) -> RelResult<()> {
     if rows.iter().any(|row| row.len() != bindings.len()) {
         return Err(RelError::Unsupported(
             "GraphValues row width does not match bindings".into(),
         ));
     }
+    Ok(())
+}
+
+pub(super) fn values_batch(
+    language: Language,
+    bindings: &[String],
+    rows: &[Vec<Value>],
+) -> RelResult<RecordBatch> {
+    validate_values_rows(bindings, rows)?;
     let types = (0..bindings.len())
         .map(|idx| {
             let values = rows.iter().map(|row| &row[idx]).collect::<Vec<_>>();
@@ -1586,7 +1603,11 @@ pub(super) fn values_batch(
         .enumerate()
         .map(|(idx, data_type)| values_array(language, rows.iter().map(|row| &row[idx]), data_type))
         .collect::<RelResult<Vec<_>>>()?;
-    Ok(RecordBatch::try_new(schema, arrays)?)
+    Ok(RecordBatch::try_new_with_options(
+        schema,
+        arrays,
+        &arrow::array::RecordBatchOptions::new().with_row_count(Some(rows.len())),
+    )?)
 }
 
 pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {

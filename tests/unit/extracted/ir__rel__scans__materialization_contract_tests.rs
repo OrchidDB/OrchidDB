@@ -245,3 +245,107 @@ fn base_edge_normalization_reports_missing_endpoint_columns() {
         assert!(error.contains(&format!("missing {missing}")), "{error}");
     }
 }
+
+#[test]
+fn zero_column_values_preserve_bag_cardinality_and_validate_argument_widths() {
+    for count in [0,1,3] {
+        let rows=vec![vec![];count];
+        let values=values_batch(Language::Cypher,&[],&rows).expect("zero-column VALUES is a bag of unit rows");
+        assert_eq!(values.num_columns(),0);
+        assert_eq!(values.num_rows(),count);
+        let arguments=crate::ir::rel::host::function_arguments(0,&rows).unwrap();
+        assert_eq!(arguments.num_columns(),0);
+        assert_eq!(arguments.num_rows(),count);
+    }
+    for rows in [vec![vec![Value::Int(1)]],vec![vec![],vec![Value::Null]]] {
+        assert!(values_batch(Language::Cypher,&[],&rows).is_err());
+        assert!(crate::ir::rel::host::function_arguments(0,&rows).is_err());
+    }
+}
+
+#[test]
+fn source_column_lookup_requires_an_unambiguous_case_insensitive_match() {
+    let schema=Schema::new(vec![Field::new("Id",DataType::Int64,true),Field::new("ID",DataType::Int64,true),Field::new("Name",DataType::Utf8,true)]);
+    assert_eq!(schema_index(&schema,"Id"),Some(0));
+    assert_eq!(schema_index(&schema,"ID"),Some(1));
+    assert_eq!(schema_index(&schema,"id"),None);
+    assert_eq!(schema_index(&schema,"name"),Some(2));
+    assert_eq!(schema_index(&schema,"NAME"),Some(2));
+    assert_eq!(schema_index(&schema,"missing"),None);
+    assert_eq!(schema_index(&Schema::empty(),"id"),None);
+}
+
+fn zero_column_count_plan(count:usize,native_values:bool,mapped:bool) -> LoweredPlan {
+    let root=Node::GraphReturn {fields:vec!["n".into()],result_form:ResultForm::RowSet,
+        input:Node::GraphAggregate {group:vec![],aggs:vec![AggCall {kind:AggKind::CountRows,alias:"n".into(),arg:None,distinct:false}],fields:vec!["n".into()],
+            input:Node::GraphValues {bindings:vec![],rows:vec![vec![];count],bulk:None}.boxed(),
+        }.boxed(),
+    };
+    let plan=GraphPlan::new(GraphPlanPolicy::cypher(),root);
+    let graph=PropertyGraph::new();
+    RelBackend::with_options(RelBackendOptions {native_values,mapping:mapped.then(||Arc::new(Default::default())),..Default::default()}).lower(&plan,&graph).unwrap()
+}
+
+#[tokio::test]
+async fn zero_column_values_lowering_preserves_count_in_sql() {
+    for count in [0,1,3] {
+        for native_values in [false,true] {
+            for mapped in [false,true] {
+                let lowered=zero_column_count_plan(count,native_values,mapped);
+                let result=crate::ir::rel::sql::execute_lowered_sql(&mut crate::ir::rel::sql::DuckDbExecutor::default(),&lowered).await.unwrap();
+                assert_eq!(result.batch.num_rows(),1);
+                assert_eq!(arrow::util::display::array_value_to_string(result.batch.column(0),0).unwrap(),count.to_string(),"native={native_values} mapped={mapped}");
+            }
+        }
+    }
+}
+
+#[cfg(feature="trino")]
+#[tokio::test]
+#[ignore="requires PostgreSQL and Trino"]
+async fn zero_column_values_execute_on_postgres_and_trino() {
+    use crate::ir::rel::sql::{SqlDialect,unparse_plan};
+    use crate::execution::trino::{TrinoOptions,TrinoSession};
+    use futures::StreamExt;
+    let pg=std::env::var("GRAPH_PG_URL").expect("GRAPH_PG_URL");
+    let endpoint=std::env::var("ORCHIDDB_TEST_TRINO_URL").or_else(|_|std::env::var("ORCHIDDB_TEST_OPA_URL")).expect("Trino URL");
+    let trino=TrinoSession::source(TrinoOptions::new(endpoint,"orchid_test")).unwrap();
+    for count in [0,1,3] {
+        for native in [false,true] {
+            let plan=zero_column_count_plan(count,native,true).plan;
+            let sql=unparse_plan(plan.clone(),SqlDialect::Postgres).unwrap();
+            let result=std::process::Command::new("psql").args([&pg,"-X","-A","-t","-v","ON_ERROR_STOP=1","-c",&sql]).output().unwrap();
+            assert!(result.status.success(),"{sql}: {}",String::from_utf8_lossy(&result.stderr));
+            assert_eq!(String::from_utf8(result.stdout).unwrap().trim(),count.to_string());
+            let sql=unparse_plan(plan,SqlDialect::resolve("trino").unwrap()).unwrap();
+            let mut stream=trino.execute(&sql,vec![]).await.unwrap();
+            let mut rows=vec![];
+            while let Some(batch)=stream.next().await {
+                let batch=batch.unwrap();
+                for index in 0..batch.num_rows() {rows.push(arrow::util::display::array_value_to_string(batch.column(0).as_ref(),index).unwrap());}
+            }
+            assert_eq!(rows,vec![count.to_string()],"{sql}");
+        }
+    }
+}
+
+#[test]
+fn graph_values_lowering_rejects_width_mismatches_before_native_literals() {
+    let map=Value::Map(BTreeMap::from([("a".into(),Value::Int(1))]));
+    for native_values in [false,true] {
+        for (bindings,rows) in [
+            (vec!["x".into()],vec![vec![map.clone(),Value::Int(2)]]),
+            (vec!["x".into(),"y".into()],vec![vec![map.clone()]]),
+            (vec!["x".into()],vec![vec![map.clone()],vec![]]),
+            (vec!["x".into()],vec![vec![Value::Int(1),Value::Int(2)]]),
+        ] {
+            let plan=GraphPlan::new(GraphPlanPolicy::cypher(),Node::GraphReturn {
+                fields:vec!["x".into()],result_form:ResultForm::RowSet,
+                input:Node::GraphValues{bindings,rows,bulk:None}.boxed(),
+            });
+            let result=RelBackend::with_options(RelBackendOptions{native_values,..Default::default()}).lower(&plan,&PropertyGraph::new());
+            let error=result.err().expect("malformed VALUES rows must not be silently zipped to their bindings").to_string();
+            assert!(error.contains("GraphValues row width does not match bindings"),"{error}");
+        }
+    }
+}
