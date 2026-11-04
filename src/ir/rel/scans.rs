@@ -1950,4 +1950,64 @@ mod materialization_contract_tests {
             assert_eq!(struct_field_of(&value,"field"),None);
         }
     }
+
+    #[test]
+    fn structured_property_discovery_uses_declared_order_and_skips_private_values() {
+        let map = |entries: Vec<(&str,Value)>| Value::Map(entries.into_iter().map(|(k,v)|(k.into(),v)).collect());
+        let rows = vec![None,Some("invalid".into()),
+            Some(format!("{:?}",map(vec![("__tag",Value::String("union".into()))]))),
+            Some(format!("{:?}",map(vec![("\0private",Value::Int(1))]))),
+            Some(format!("{:?}",map(vec![("a",Value::Int(1)),("z",Value::Int(2)),
+                (STRUCT_ORDER_KEY,Value::List(vec![Value::String("z".into()),Value::String("missing".into()),Value::Int(1),Value::String("a".into())]))]))),
+        ];
+        let field=Field::new("payload",DataType::Utf8,true).with_metadata(
+            std::collections::HashMap::from([("orchiddb.value_type".into(),"value".into())]));
+        let schema=Arc::new(Schema::new(vec![field]));
+        let batch=RecordBatch::try_new(schema.clone(),vec![Arc::new(StringArray::from(rows))]).unwrap();
+        let mut defs=BTreeMap::new();
+        merge_property_defs(&mut defs,&schema,&[]).unwrap();
+        merge_struct_field_defs(&mut defs,&batch).unwrap();
+        assert!(defs["payload"].carries_union_tag);
+        assert_eq!(defs["payload"].struct_fields,vec!["z","a"]);
+        merge_struct_field_defs(&mut defs,&batch).unwrap();
+        assert_eq!(defs["payload"].struct_fields,vec!["z","a"]);
+        let incompatible=Schema::new(vec![Field::new("payload",DataType::Int64,true)]);
+        assert!(merge_property_defs(&mut defs,&incompatible,&[]).unwrap_err().to_string().contains("mixed types"));
+        merge_property_defs(&mut defs,&incompatible,&["payload"]).unwrap();
+        assert!(list_shadow_candidates(&defs.into_values().collect::<Vec<_>>()).is_empty());
+    }
+
+    #[test]
+    fn overlay_scans_preserve_tags_fields_and_null_properties_for_nodes_and_edges() {
+        let graph=PropertyGraph::new();
+        let props=BTreeMap::from([("payload".into(),Value::Map(BTreeMap::from([
+            ("__tag".into(),Value::String("choice".into())),("field".into(),Value::Int(7)),
+        ])))]);
+        let a=graph.insert_node("P",props.clone());
+        let b=graph.insert_node("P",BTreeMap::new());
+        graph.insert_edge("R",&a,&b,props).unwrap();
+        graph.insert_edge("R",&b,&a,BTreeMap::new()).unwrap();
+        let defs=vec![PropertyDef{name:"payload".into(),data_type:DataType::Utf8,
+            carries_union_tag:true,struct_fields:vec!["field".into(),"missing".into()]}];
+        for edge in [false,true] {
+            let ids=if edge {graph.edge_ids("R")} else {graph.node_ids("P").unwrap()};
+            let batch=if edge {
+                materialize_edge_scan_batch("v","R",&ids,&graph,&defs,edge_schema("v",&defs),Language::Cypher).unwrap()
+            } else {
+                materialize_node_scan_batch("v","P",&ids,&graph,&defs,node_schema("v",&defs),Language::Cypher).unwrap()
+            };
+            let cell=|name: String,row|ScalarValue::try_from_array(batch.column(batch.schema().index_of(&name).unwrap()),row).unwrap();
+            assert_eq!(batch.num_rows(),2);
+            assert_eq!(cell(union_tag_col("v","payload"),0),ScalarValue::Utf8(Some("choice".into())));
+            assert_eq!(cell(struct_field_col("v","payload","field"),0),ScalarValue::Utf8(Some("7".into())));
+            assert!(cell(struct_field_col("v","payload","missing"),0).is_null());
+            assert!(cell(prop_col("v","payload"),1).is_null());
+            assert!(cell(union_tag_col("v","payload"),1).is_null());
+            assert!(materialize_property_array(&graph,edge,if edge {"R"} else {"P"},&ids,"payload",&DataType::Int8,Language::Cypher)
+                .unwrap_err().to_string().contains("overlay data"));
+        }
+        assert!(materialize_edge_scan_batch("v","R",&[999_i64.into()],&graph,&defs,edge_schema("v",&defs),Language::Cypher)
+            .unwrap_err().to_string().contains("has no endpoints"));
+    }
 }
+
