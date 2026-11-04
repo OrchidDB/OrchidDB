@@ -447,3 +447,7 @@ fn prune(node: &mut Node, demanded: &BTreeSet<String>) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/path_presence_proofs.rs"]
+mod presence_proof_tests;

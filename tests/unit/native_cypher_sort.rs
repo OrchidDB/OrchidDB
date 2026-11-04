@@ -16,8 +16,11 @@ async fn typed_cypher_sort_preserves_null_order_stability_and_empty_inputs() {
         for (dir,nulls,expected) in [
             (SortDir::Asc,NullsOrder::Last,vec![1,3,0,2]),
             (SortDir::Desc,NullsOrder::First,vec![2,0,1,3]),
+            (SortDir::Asc,NullsOrder::First,vec![2,1,3,0]),
+            (SortDir::Desc,NullsOrder::Last,vec![0,1,3,2]),
         ] {
             for wrapped in [false,true] {
+              for secondary in [false,true] {
                 let mut context = LoweringContext {
                     island_memo:None,graph:&graph,options:RelBackendOptions {native_values:true,..Default::default()},
                     policy:policy.clone(),language:Language::Cypher,scan_counter:0,correlate_plan:None,
@@ -25,11 +28,16 @@ async fn typed_cypher_sort_preserves_null_order_stability_and_empty_inputs() {
                     unordered_collects:Default::default(),unordered_distincts:Default::default(),
                 };
                 let expr = if wrapped {IrExpr::Call {name:"cypher_order_key".into(),args:vec![IrExpr::binding("value")]}} else {IrExpr::binding("value")};
-                let lowered = context.native_sort(LoweredNode::new(input.clone()),&[SortKey {expr,dir:dir.clone(),nulls}]).unwrap();
+                let mut keys=vec![SortKey {expr,dir:dir.clone(),nulls}];
+                if secondary {keys.push(SortKey {expr:IrExpr::binding("id"),dir:SortDir::Desc,nulls:NullsOrder::Last});}
+                let lowered = context.native_sort(LoweredNode::new(input.clone()),&keys).unwrap();
                 let batches = super::super::execute_test_plan(lowered.plan).await.unwrap();
                 let actual = batches.iter().flat_map(|batch|decode_rows(batch,&fields,&graph).unwrap())
                     .map(|row|row.bindings["id"].as_i64().unwrap()).collect::<Vec<_>>();
-                assert_eq!(actual,if empty {vec![]} else {expected.clone()},"{dir:?} {nulls:?} wrapped={wrapped}");
+                let mut ordered=expected.clone();
+                if secondary {let one=ordered.iter().position(|id|*id==1).unwrap();let three=ordered.iter().position(|id|*id==3).unwrap();ordered.swap(one,three);}
+                assert_eq!(actual,if empty {vec![]} else {ordered},"{dir:?} {nulls:?} wrapped={wrapped} secondary={secondary}");
+              }
             }
         }
     }
