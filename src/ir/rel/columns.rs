@@ -491,3 +491,7 @@ pub(super) fn requires_logical_node_labels(root: &Node) -> bool {
     }
     false
 }
+
+#[cfg(all(test, feature = "duckdb"))]
+#[path = "../../../tests/unit/identity_column_boundaries.rs"]
+mod identity_column_boundaries;

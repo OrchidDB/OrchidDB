@@ -514,6 +514,14 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
         }
         if let Expr::Literal(value, _) = &inner {
+            // DF53 cannot emit binary scalar literals. Reuse each adapter's
+            // byte-preserving codec rather than casting bytes through text.
+            if !value.is_null() && matches!(value, ScalarValue::Binary(_)
+                | ScalarValue::LargeBinary(_) | ScalarValue::BinaryView(_)
+                | ScalarValue::FixedSizeBinary(..)) {
+                return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
+                    .map_err(|e| DataFusionError::Plan(e.to_string()))?));
+            }
             // Custom adapters own structured and floating-point transport.
             // The generic unparser cannot render Trino ROW/ARRAY types,
             // and its decimal spelling of floats can exceed Trino precision.
