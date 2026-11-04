@@ -532,81 +532,13 @@ pub(crate) fn terminal_gremlin(root: &Node) -> bool {
 }
 
 #[cfg(test)]
-mod key_null_tests {
-    use super::*;
-
-    #[test]
-    fn native_signed_integer_groups_preserve_language_equivalence() {
-        // Adjacent integers above f64's exact range must remain separate.
-        let values = vec![None, Some(i64::MIN), Some(-1), Some(0), Some(1),
-            Some(9_007_199_254_740_992), Some(9_007_199_254_740_993),
-            Some(i64::MAX), Some(1), None];
-        let input = Arc::new(arrow::array::Int64Array::from(values.clone())) as ArrayRef;
-        let encoded = evaluate(KEY, &[input], values.len()).unwrap();
-        let encoded = encoded.as_any().downcast_ref::<arrow::array::BinaryArray>().unwrap();
-        for (i, left) in values.iter().enumerate() {
-            assert_eq!(encoded.is_null(i), left.is_none());
-            for (j, right) in values.iter().enumerate() {
-                let equal = if encoded.is_null(i) || encoded.is_null(j) {
-                    encoded.is_null(i) && encoded.is_null(j)
-                } else { encoded.value(i) == encoded.value(j) };
-                assert_eq!(equal, left == right);
-            }
-        }
-        for ty in [DataType::Float64, DataType::Utf8, DataType::Binary] {
-            assert!(!native_grouping_type(&ty));
-        }
-    }
-
-    #[test]
-    fn untyped_and_typed_nulls_produce_null_keys() {
-        for array in [
-            Arc::new(arrow::array::NullArray::new(3)) as ArrayRef,
-            Arc::new(arrow::array::Int64Array::from(vec![None, None, None])) as ArrayRef,
-        ] {
-            let keys = evaluate(KEY, &[array], 3).unwrap();
-            assert_eq!(keys.null_count(), 3);
-        }
-    }
-}
+#[path = "../../../tests/unit/extracted/ir__rel__language_functions__key_null_tests.rs"]
+mod key_null_tests;
 
 #[cfg(test)]
-mod node_text_tests {
-    use super::*;
-    #[test]
-    fn display_preserves_null_nodes_property_order_and_empty_values() {
-        use arrow::array::StringArray;
-        let strings = |values: Vec<Option<&str>>| -> ArrayRef { Arc::new(StringArray::from(values)) };
-        let properties: ArrayRef = Arc::new(StructArray::from(vec![
-            (Arc::new(Field::new("z", DataType::Utf8, true)), strings(vec![Some(""), None, Some("ignored")])),
-            (Arc::new(Field::new("a", DataType::Utf8, true)), strings(vec![Some("True"), Some("text"), None])),
-        ]));
-        let output = evaluate(NODE_TEXT, &[
-            strings(vec![Some("0"); 3]), strings(vec![Some("7"), Some("8"), None]),
-            strings(vec![Some("P"); 3]), properties,
-        ], 3).unwrap();
-        let output = output.as_any().downcast_ref::<StringArray>().unwrap();
-        assert_eq!(output.value(0), "{_ID: 0:7, _LABEL: P, z: , a: True}");
-        assert_eq!(output.value(1), "{_ID: 0:8, _LABEL: P, a: text}");
-        assert!(output.is_null(2));
-    }
-}
+#[path = "../../../tests/unit/extracted/ir__rel__language_functions__node_text_tests.rs"]
+mod node_text_tests;
 
 #[cfg(test)]
-mod stable_collection_tests {
-    use super::*;
-    #[test]
-    fn distinct_collection_keeps_first_order_and_omits_nulls() {
-        let input = ScalarValue::List(ScalarValue::new_list_nullable(&[
-            ScalarValue::Int64(Some(3)), ScalarValue::Int64(None),
-            ScalarValue::Int64(Some(1)), ScalarValue::Int64(Some(3)),
-            ScalarValue::Int64(Some(2)), ScalarValue::Int64(Some(1)),
-        ], &DataType::Int64));
-        let array = input.to_array_of_size(1).unwrap();
-        let actual = evaluate(COLLECT_DISTINCT, &[array], 1).unwrap();
-        let expected = ScalarValue::List(ScalarValue::new_list_nullable(&[
-            ScalarValue::Int64(Some(3)), ScalarValue::Int64(Some(1)), ScalarValue::Int64(Some(2)),
-        ], &DataType::Int64));
-        assert_eq!(ScalarValue::try_from_array(&actual, 0).unwrap(), expected);
-    }
-}
+#[path = "../../../tests/unit/extracted/ir__rel__language_functions__stable_collection_tests.rs"]
+mod stable_collection_tests;
