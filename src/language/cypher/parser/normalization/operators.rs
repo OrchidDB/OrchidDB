@@ -494,27 +494,6 @@ pub(super) fn factorial_atom_start(input: &str, atom_end: usize) -> usize {
         .unwrap_or(0)
 }
 
-pub(super) fn normalize_not_string_predicates(input: &str) -> String {
-    if !input.to_ascii_lowercase().contains(" contains ") {
-        return input.to_string();
-    }
-    let mut out = input.to_string();
-    if let Some(op) = find_keyword_outside_quotes(&out, " contains ") {
-        let before = out[..op].to_ascii_lowercase();
-        let Some(not_start) = before.rfind(" not ") else {
-            return out;
-        };
-        let lhs_start = not_start + " not ".len();
-        let rhs_start = op + " contains ".len();
-        let rhs_end = rhs_start + find_predicate_rhs_len(&out[rhs_start..]);
-        let lhs = out[lhs_start..op].trim();
-        let rhs = out[rhs_start..rhs_end].trim();
-        let replacement = format!("contains_fn({lhs}, {rhs}) = false");
-        out.replace_range(not_start + 1..rhs_end, &replacement);
-    }
-    out
-}
-
 pub(super) fn normalize_regex_match_operator(input: &str) -> String {
     if !input.contains("=~") {
         return input.to_string();
@@ -647,13 +626,6 @@ pub(super) fn is_clause_boundary(input: &str) -> bool {
 
 pub(super) fn find_operator_outside_quotes(input: &str, operator: &str) -> Option<usize> {
     find_outside_quotes(input, |rest| rest.starts_with(operator))
-}
-
-pub(super) fn find_keyword_outside_quotes(input: &str, keyword: &str) -> Option<usize> {
-    let lowered_keyword = keyword.to_ascii_lowercase();
-    find_outside_quotes(input, |rest| {
-        rest.to_ascii_lowercase().starts_with(&lowered_keyword)
-    })
 }
 
 pub(super) fn find_outside_quotes(input: &str, matches: impl Fn(&str) -> bool) -> Option<usize> {

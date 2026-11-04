@@ -144,3 +144,18 @@ fn invalid_conversion_domains_and_mixed_lists_keep_runtime_boundary() {
         );
     }
 }
+
+#[tokio::test]
+async fn negated_contains_preserves_parentheses_boolean_precedence_and_nulls() {
+    for (projection, expected) in [
+        ("NOT (x CONTAINS 'a'), NOT x CONTAINS 'a', NOT NOT (x CONTAINS 'a')", vec!["false|false|true", "true|true|false", "||"]),
+        ("NOT true OR x CONTAINS 'a'", vec!["true", "false", ""]),
+        ("NOT false AND x CONTAINS 'a'", vec!["true", "false", ""]),
+        ("NOT (x CONTAINS 'a' OR x CONTAINS 'b')", vec!["false", "false", ""]),
+        ("(NOT x CONTAINS 'a') OR (NOT x CONTAINS 'b')", vec!["false", "true", ""]),
+        ("'marker not token', NOT (x CONTAINS 'not')", vec!["marker not token|true", "marker not token|true", "marker not token|"]),
+    ] {
+        let query = format!("UNWIND ['abc','Abc',null] AS x RETURN {projection}");
+        assert_eq!(sql_rows(&query).await, expected, "{query}");
+    }
+}
