@@ -140,3 +140,19 @@
         assert!(analyze_outputs("RETURN coalesce(1, 'hello')").is_ok());
     }
 
+
+#[test]
+fn direct_ast_anonymous_outputs_get_distinct_stable_semantic_names() {
+    let mut query=parse_query("WITH 1 AS n RETURN n,n+1 AS first,n+2 AS second").unwrap();
+    let Clause::Return(result)=query.clauses.last_mut().unwrap() else {panic!("return clause")};
+    for item in result.projection.items.iter_mut().skip(1) {
+        item.alias=None;
+        item.explicit_alias=false;
+    }
+    let original=query.clone();
+    for _ in 0..2 {
+        let analyzed=analyze_query(&query).unwrap();
+        assert_eq!(analyzed.output_fields,["n","__semantic_expr_0","__semantic_expr_1"]);
+        assert_eq!(query,original,"analysis must leave the caller's AST intact");
+    }
+}
