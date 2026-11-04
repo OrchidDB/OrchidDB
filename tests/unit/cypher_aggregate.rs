@@ -474,3 +474,65 @@ fn legacy_typed_negation_and_label_predicates_retain_their_operations() {
     assert!(matches!(ir,IrExpr::Call{name,args} if name=="cypher_has_label" && args.len()==2));
     assert_eq!(rewrite.aggs[0].kind, AggKind::CollectNonNull);
 }
+
+#[test]
+fn aggregate_extraction_preserves_nested_syntax_and_shadowed_scopes() {
+    // These are rewrite contracts: collection/pattern locals remain local,
+    // while COUNT is extracted into exactly one aggregation slot.
+    for text in [
+        "-count(*)", "NOT (count(*)=0)", "count(*)+1",
+        "{v:count(*)}.v", "head(collect(1)):Person",
+        "count(*) IS NULL", "count(*) IS NOT NULL",
+        "toString(count(*)) STARTS WITH '1'",
+        "'1' ENDS WITH toString(count(*))",
+        "CASE count(*) WHEN 0 THEN 1 ELSE 2 END",
+        "CASE WHEN count(*)=0 THEN 1 END",
+        "CASE WHEN true THEN count(*) ELSE 0 END",
+        "CASE WHEN false THEN 0 ELSE count(*) END",
+        "[count(*),1]", "{v:count(*)}",
+        "[x IN [1,2] WHERE x>0 | x+count(*)]",
+        "[x IN [count(*)] | x]",
+        "[x IN [1,2] WHERE x<count(*) | x]",
+        "list_transform([1,2],x -> x+count(*))",
+        "list_filter([1,2],x -> x<count(*))",
+        "list_reduce([1,2],(acc,x) -> acc+x+count(*))",
+        "all(x IN [1,2] WHERE x<count(*))",
+        "[p=(a)-[r:R]->(b) WHERE count(*)>0 | length(p)]",
+        "[(a)-[r:R]->(b) | count(*)]",
+    ] {
+        for already_bound in [vec![], vec!["x"], vec!["acc","x"], vec!["a","r","b","p"]] {
+            let mut lowerer = Lowerer::new();
+            let mut rewrite = AggregateRewrite::default();
+            let original = names(&already_bound);
+            let mut bound = original.clone();
+            let rewritten = rewrite_aggregate_projection_expr(
+                &mut lowerer, &expr(text), &mut rewrite, None, &mut bound,
+            ).unwrap_or_else(|error| panic!("{text}: {error}"));
+            assert_eq!(bound, original, "scope escaped from {text}");
+            assert!(rewrite.group.is_empty(), "local binding grouped in {text}");
+            assert_eq!(rewrite.aggs.len(), 1, "{text}");
+            let aggregate = &rewrite.aggs[0];
+            let source = if text.contains("collect(1)") { "collect(1)" } else { "count(*)" };
+            assert_eq!(rewritten, expr(&text.replace(source, &aggregate.alias)), "{text}");
+            assert_eq!(aggregate.kind, if source == "collect(1)" { AggKind::CollectNonNull } else { AggKind::CountRows });
+        }
+    }
+}
+
+#[test]
+fn ast_aggregate_rewrite_rejects_volatile_and_invalid_calls() {
+    for text in ["sum(rand())", "collect(random())"] {
+        let error = rewrite_aggregate_projection_expr(
+            &mut Lowerer::new(), &expr(text), &mut AggregateRewrite::default(),
+            None, &mut BTreeSet::new(),
+        ).unwrap_err();
+        assert_eq!(error.classification(), Some(("SyntaxError", "NonConstantExpression")), "{text}: {error}");
+    }
+    for text in ["sum()", "count(1,2)", "percentileCont(1)", "percentileDisc(1,2,3)"] {
+        let error = rewrite_aggregate_projection_expr(
+            &mut Lowerer::new(), &expr(text), &mut AggregateRewrite::default(),
+            None, &mut BTreeSet::new(),
+        ).unwrap_err();
+        assert!(error.to_string().contains("requires exactly"), "{text}: {error}");
+    }
+}
