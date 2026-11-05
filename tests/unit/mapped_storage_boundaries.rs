@@ -150,3 +150,143 @@ fn mapped_temporal_list_writes_persist_typed_null_and_date_elements() {
     assert_eq!(ScalarValue::try_from_array(&dates.value(0), 0).unwrap(), ScalarValue::Date32(Some(1)));
     assert_eq!(ScalarValue::try_from_array(&dates.value(0), 1).unwrap(), ScalarValue::Date32(None));
 }
+
+#[derive(Debug)]
+struct WriteOrderHost(Option<RecordBatch>);
+impl HostRelational for WriteOrderHost {
+    fn query(&self, _: HostRequest) -> Result<RecordBatch, String> {
+        self.0.clone().ok_or_else(|| "new rows must not query old foreign keys".into())
+    }
+    fn execute(&self, _: HostRequest) -> Result<(), String> {
+        panic!("dependency planning must not execute writes")
+    }
+}
+
+fn composite_write_fixture() -> (RowAddress, RowAddress, Vec<Reference>, BTreeMap<String, Arc<Schema>>) {
+    let parent_key = KeyColumns::from(["tenant", "id"]);
+    let parent = ("parents".into(), parent_key.clone(),
+        ElementId::from_components(vec![ScalarValue::Int64(Some(1)), ScalarValue::Int64(Some(2))]).unwrap());
+    let child = ("children".into(), KeyColumns::from("id"), ElementId::from(10_i64));
+    let refs = vec![("children".into(), KeyColumns::from(["tenant", "parent"]), "parents".into(), parent_key)];
+    let schemas = BTreeMap::from([("parents".into(), Arc::new(Schema::new(vec![
+        Field::new("tenant", DataType::Int64, false), Field::new("id", DataType::Int64, false)])))]);
+    (parent, child, refs, schemas)
+}
+
+#[test]
+fn mapped_write_order_respects_composite_dependencies_and_match_simple_nulls() {
+    let (parent, child, refs, schemas) = composite_write_fixture();
+    for fk in [Some(2), None] {
+        let rows = BTreeMap::from([
+            (parent.clone(), RowWrite { existing: false, delete: false, values: BTreeMap::new() }),
+            (child.clone(), RowWrite { existing: false, delete: false, values: BTreeMap::from([
+                ("tenant".into(), ScalarValue::Int64(Some(1))), ("parent".into(), ScalarValue::Int64(fk))]) }),
+        ]);
+        let waves = write_order(&WriteOrderHost(None), &rows, &refs, &schemas).unwrap();
+        if fk.is_some() { assert_eq!(waves, vec![vec![parent.clone()], vec![child.clone()]]); }
+        else { assert_eq!(waves, vec![vec![child.clone(), parent.clone()]]); }
+    }
+    let first = address(1); let second = address(2);
+    let rows = BTreeMap::from([
+        (first.clone(), RowWrite {existing:false, delete:false, values:BTreeMap::from([("parent".into(),ScalarValue::Int64(Some(2)))])}),
+        (second.clone(), RowWrite {existing:false, delete:false, values:BTreeMap::from([("parent".into(),ScalarValue::Int64(Some(1)))])}),
+    ]);
+    let refs = vec![("people".into(),KeyColumns::from("parent"),"people".into(),KeyColumns::from("id"))];
+    let schemas = BTreeMap::from([("people".into(),Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,false)])))]);
+    assert_eq!(write_order(&WriteOrderHost(None),&rows,&refs,&schemas).unwrap(),vec![vec![first,second]],
+        "mapping cycles are submitted together for the physical backend to validate");
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn mapped_parent_deletion_requires_child_deletion_or_unlink_first() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE children(id BIGINT, tenant BIGINT, parent BIGINT); INSERT INTO children VALUES(10,1,2)").unwrap();
+    let host = crate::ir::rel::host::legacy::ConnectionHost(&db);
+    let (parent, child, refs, schemas) = composite_write_fixture();
+    for delete_child in [true, false] {
+        let rows = BTreeMap::from([
+            (parent.clone(), RowWrite {existing:true, delete:true, values:BTreeMap::new()}),
+            (child.clone(), RowWrite {existing:true, delete:delete_child,
+                values:if delete_child {BTreeMap::new()} else {BTreeMap::from([("parent".into(),ScalarValue::Int64(None))])}}),
+        ]);
+        assert_eq!(write_order(&host,&rows,&refs,&schemas).unwrap(),vec![vec![child.clone()],vec![parent.clone()]]);
+    }
+    let rows = BTreeMap::from([
+        (parent, RowWrite {existing:true, delete:true, values:BTreeMap::new()}),
+        (child, RowWrite {existing:true, delete:false, values:BTreeMap::new()}),
+    ]);
+    assert!(write_order(&host,&rows,&refs,&schemas).unwrap_err().contains("still referenced by a child row"));
+    let result = query(&host,"SELECT count(*) FROM children").unwrap();
+    assert_eq!(ScalarValue::try_from_array(result.column(0),0).unwrap(),ScalarValue::Int64(Some(1)));
+}
+
+#[test]
+fn mapped_write_order_rejects_a_scalar_result_for_a_composite_foreign_key() {
+    let (parent, child, refs, schemas) = composite_write_fixture();
+    let rows = BTreeMap::from([
+        (parent,RowWrite {existing:true,delete:true,values:BTreeMap::new()}),
+        (child,RowWrite {existing:true,delete:true,values:BTreeMap::new()}),
+    ]);
+    let batch = bind_batch(vec![("bad_fk".into(),ScalarValue::Int64(Some(2)))]).unwrap();
+    assert_eq!(write_order(&WriteOrderHost(Some(batch)),&rows,&refs,&schemas).unwrap_err(),
+        "foreign key result has wrong arity");
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn mapped_metadata_rejects_partition_keys_with_incompatible_physical_types() {
+    use crate::ir::rel::mapping::{NodeMapping, EdgeMapping};
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE a(id BIGINT); CREATE TABLE b(id BIGINT); CREATE TABLE c(id BIGINT); CREATE TABLE ab(id BIGINT, src BIGINT, dst BIGINT); CREATE TABLE ac(id VARCHAR, src BIGINT, dst BIGINT)").unwrap();
+    let host = crate::ir::rel::host::legacy::ConnectionHost(&db);
+    let mut mapping = GraphMapping::new();
+    for (label, table) in [("A","a"),("B","b"),("C","c")] {
+        mapping.map_node(NodeMapping::table(label,table,"id"));
+    }
+    mapping.map_edge_partition(EdgeMapping::table("R","ab","src","dst","A","B").with_id("id"));
+    mapping.map_edge_partition(EdgeMapping::table("R","ac","src","dst","A","C").with_id("id"));
+    let error = metadata(&host,Arc::new(mapping)).unwrap_err();
+    assert!(error.contains("partitions need a common key type"),"{error}");
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn mapped_metadata_loads_shared_defaults_once_without_evaluating_volatile_defaults() {
+    use crate::ir::rel::mapping::NodeMapping;
+    #[derive(Debug)]
+    struct ObservedHost<'a> {
+        connection: &'a duckdb::Connection,
+        defaults_reads: std::cell::Cell<usize>,
+    }
+    impl HostRelational for ObservedHost<'_> {
+        fn query(&self, request:HostRequest) -> Result<RecordBatch,String> {
+            if request.sql.starts_with("SELECT column_name, column_default") {
+                self.defaults_reads.set(self.defaults_reads.get()+1);
+            }
+            crate::ir::rel::host::legacy::ConnectionHost(self.connection).query(request)
+        }
+        fn execute(&self, _:HostRequest) -> Result<(),String> {panic!("metadata must not execute writes")}
+    }
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE SEQUENCE default_ids; CREATE TABLE people(id BIGINT PRIMARY KEY, fixed BIGINT DEFAULT (2+3), generated BIGINT DEFAULT nextval('default_ids'))").unwrap();
+    let host = ObservedHost {connection:&db,defaults_reads:std::cell::Cell::new(0)};
+    let mut mapping = GraphMapping::new();
+    for label in ["Person","Alias"] {
+        mapping.map_node(NodeMapping::table(label,"people","id").property("answer","fixed").property("generated","generated"));
+    }
+    let mapping = Arc::new(mapping);
+    let graph = metadata(&host,mapping.clone()).unwrap();
+    assert_eq!(host.defaults_reads.get(),1);
+    for label in ["Person","Alias"] {
+        assert_eq!(graph.mapped_defaults[&(false,label.into())]["answer"],Value::Int(5));
+        assert!(graph.unsupported_defaults[&(false,label.into())].contains("generated"));
+    }
+    let next = query(&host,"SELECT nextval('default_ids')").unwrap();
+    assert_eq!(ScalarValue::try_from_array(next.column(0),0).unwrap(),ScalarValue::Int64(Some(1)));
+    host.defaults_reads.set(0);
+    let unloaded = metadata_with_insert_defaults(&host,mapping,false).unwrap();
+    assert!(unloaded.mapped_defaults.is_empty());
+    assert!(unloaded.unsupported_defaults.is_empty());
+    assert_eq!(host.defaults_reads.get(),0);
+}
