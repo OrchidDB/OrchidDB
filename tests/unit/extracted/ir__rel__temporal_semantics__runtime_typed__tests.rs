@@ -395,3 +395,153 @@ fn typed_column_arithmetic_matches_native_and_sql_with_null_and_empty_batches() 
         }
     }
 }
+
+#[test]
+fn temporal_order_keys_match_golden_components_in_native_and_sql_execution() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+    for (kind, text, components, zone) in [
+        ("date", "2000-02-29", vec![2000,2,29], None),
+        ("date", "-1000000-12-31", vec![-1000000,12,31], None),
+        ("date", "+1000000-01-01", vec![1000000,1,1], None),
+        ("localdatetime", "2000-02-29T23:59:59.999999999", vec![2000,2,29,86399,999999999], None),
+        ("localdatetime", "-1000000-01-01T00:00:00.000000001", vec![-1000000,1,1,0,1], None),
+        ("localtime", "00:00:00.000000001", vec![0,1], None),
+        ("localtime", "23:59:59.999999999", vec![86399,999999999], None),
+        ("time", "00:00:00.000000001-00:01:02", vec![62,1,-62], None),
+        ("time", "00:00:00+01:00", vec![-3600,0,3600], None),
+        ("datetime", "1969-12-31T23:59:59.999999999Z", vec![-1,999999999,0], Some("")),
+        ("datetime", "1970-01-01T01:00:00+01:00", vec![0,0,3600], Some("")),
+        ("datetime", "1970-01-01T01:00:00+01:00[Europe/Stockholm]", vec![0,0,3600], Some("Europe/Stockholm")),
+    ] {
+        let value = crate::ir::temporal::parse(kind, text).unwrap();
+        let scalar = domain::scalar(&format!("cypher_temporal_{kind}"), ScalarValue::Utf8(Some(value.encode()))).unwrap();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("value", scalar.data_type(), true)]));
+        let plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+            produce_one_row: false, schema: Arc::new(datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap()),
+        });
+        let null = ScalarValue::try_from(&scalar.data_type()).unwrap();
+        let batch = RecordBatch::try_new(schema.clone(), vec![ScalarValue::iter_to_array(vec![scalar.clone(), null.clone()]).unwrap()]).unwrap();
+        for wrapped in [false, true] {
+            let input = IrExpr::binding("value");
+            let input = if wrapped { IrExpr::Call {name: "cypher_order_key".into(), args: vec![input]} } else { input };
+            let keys = order_keys(&context, &plan, &input).unwrap();
+            assert_eq!(keys.len(), if zone.is_some() {2} else {1});
+            for (index, key) in keys.iter().enumerate() {
+                let expected = if index == 0 {
+                    ScalarValue::List(ScalarValue::new_list_nullable(&components.iter().map(|v| ScalarValue::Int64(Some(*v))).collect::<Vec<_>>(), &DataType::Int64))
+                } else { ScalarValue::Utf8(Some(zone.unwrap().into())) };
+                let physical = datafusion_physical_expr::create_physical_expr(key, plan.schema(), &ExecutionProps::new()).unwrap();
+                let output = physical.evaluate(&batch).unwrap().into_array(2).unwrap();
+                assert_eq!(ScalarValue::try_from_array(&output, 0).unwrap(), expected, "{kind} {text}");
+                assert!(ScalarValue::try_from_array(&output, 1).unwrap().is_null());
+                assert_eq!(physical.evaluate(&RecordBatch::new_empty(schema.clone())).unwrap().into_array(0).unwrap().len(), 0);
+                let Expr::ScalarFunction(call) = key else { panic!() };
+                // Constant inputs exercise the scalar UDF path as well as batches.
+                for constant in [scalar.clone(), null.clone()] {
+                    let expr = call.func.call(vec![lit(constant.clone())]);
+                    let actual = datafusion_physical_expr::create_physical_expr(&expr, plan.schema(), &ExecutionProps::new()).unwrap()
+                        .evaluate(&batch).unwrap().into_array(2).unwrap();
+                    let actual = ScalarValue::try_from_array(&actual, 0).unwrap();
+                    if constant.is_null() { assert!(actual.is_null()); } else { assert_eq!(actual, expected); }
+                }
+                let function = call.func.inner().as_any().downcast_ref::<LogicalFunction>().unwrap();
+                let template = &function.sql_mapping("duckdb", 1).unwrap().value;
+                let sql = template.replace("__arg0", &quote(&value.encode()));
+                let actual: String = conn.query_row(&format!("SELECT CAST(to_json(({sql})) AS VARCHAR)"), [], |row| row.get(0)).unwrap();
+                let expected_json = if index == 0 { serde_json::json!(components) } else { serde_json::json!(zone.unwrap()) };
+                assert_eq!(serde_json::from_str::<serde_json::Value>(&actual).unwrap(), expected_json, "{kind} {text}");
+                let null_sql = template.replace("__arg0", "CAST(NULL AS VARCHAR)");
+                let is_null: bool = conn.query_row(&format!("SELECT ({null_sql}) IS NULL"), [], |row| row.get(0)).unwrap();
+                assert!(is_null);
+            }
+        }
+    }
+    for ty in [DataType::Date32, DataType::Int64, domain::data_type("cypher_temporal_duration", DataType::Utf8)] {
+        let schema = arrow::datatypes::Schema::new(vec![Field::new("value", ty.clone(), true)]);
+        let plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation { produce_one_row: false, schema: Arc::new(datafusion::common::DFSchema::try_from(schema).unwrap()) });
+        let result = order_keys(&context, &plan, &IrExpr::binding("value"));
+        if ty == DataType::Date32 { assert_eq!(result, Some(vec![datafusion::prelude::col("value")])); }
+        else { assert!(result.is_none()); }
+        assert!(order_keys(&context, &plan, &IrExpr::binding("missing")).is_none());
+    }
+}
+
+#[test]
+fn temporal_component_constructors_preserve_field_order_and_decline_unsupported_maps() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let plan = LogicalPlanBuilder::empty(true).build().unwrap();
+    let batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+    let map = |fields: Vec<(&str, Lit)>| IrExpr::Call { name: "map".into(), args: fields.into_iter().flat_map(|(k,v)| [IrExpr::Lit(Lit::String(k.into())), IrExpr::Lit(v)]).collect() };
+    for (kind, fields, expected_text) in [
+        ("date", vec![("day",Lit::Int(29)),("year",Lit::Int(2000)),("month",Lit::Int(2))], "2000-02-29"),
+        ("localtime", vec![("nanosecond",Lit::Int(4)),("second",Lit::Int(3)),("minute",Lit::Int(2)),("hour",Lit::Int(1))], "01:02:03.000000004"),
+        ("localtime", vec![("hour",Lit::Int(1))], "01:00"),
+        ("localtime", vec![("microsecond",Lit::Int(123)),("millisecond",Lit::Int(456))], "00:00:00.456123"),
+        ("time", vec![("timezone",Lit::String("+01:00".into())),("hour",Lit::Int(1))], "01:00+01:00"),
+        ("time", vec![("hour",Lit::Int(1)),("timezone",Lit::String("Z".into()))], "01:00Z"),
+        ("localdatetime", vec![("year",Lit::Int(2000)),("month",Lit::Int(2)),("day",Lit::Int(29)),("nanosecond",Lit::Int(1))], "2000-02-29T00:00:00.000000001"),
+        ("datetime", vec![("timezone",Lit::String("-00:01:02".into())),("year",Lit::Int(2000))], "2000-01-01T00:00-00:01:02"),
+        ("duration", vec![("nanoseconds",Lit::Int(-1)),("days",Lit::Int(-2)),("months",Lit::Int(-3))], "P-3M-2DT-0.000000001S"),
+        ("duration", vec![("years",Lit::Int(1)),("months",Lit::Int(2)),("weeks",Lit::Int(3)),("days",Lit::Int(4)),("hours",Lit::Int(5)),("minutes",Lit::Int(6)),("seconds",Lit::Int(7)),("milliseconds",Lit::Int(8)),("microseconds",Lit::Int(9)),("nanoseconds",Lit::Int(10))], "P1Y2M25DT5H6M7.008009010S"),
+    ] {
+        let expected = crate::ir::temporal::parse(kind, expected_text).unwrap();
+        for reverse in [false,true] {
+            let mut fields = fields.clone();
+            if reverse { fields.reverse(); }
+            let expr = constructor(&context, &plan, &format!("cypher_temporal.{kind}"), &[map(fields)])
+                .unwrap_or_else(|| panic!("{kind} {expected_text} should lower"));
+            let output = datafusion_physical_expr::create_physical_expr(&expr, plan.schema(), &ExecutionProps::new()).unwrap()
+                .evaluate(&batch).unwrap().into_array(1).unwrap();
+            assert_eq!(transport::decode(&ScalarValue::try_from_array(&output, 0).unwrap()).unwrap(), expected);
+            let Expr::ScalarFunction(call) = expr else { panic!() };
+            let function = call.func.inner().as_any().downcast_ref::<LogicalFunction>().unwrap();
+            let mut sql = function.sql_mapping("duckdb", call.args.len()).unwrap().value.clone();
+            for (i, arg) in call.args.iter().enumerate().rev() {
+                let replacement = match arg {
+                    Expr::Literal(ScalarValue::Int64(Some(n)), _) => n.to_string(),
+                    Expr::Literal(ScalarValue::Utf8(Some(s)), _) => quote(s),
+                    other => panic!("unexpected constructor argument {other:?}"),
+                };
+                sql = sql.replace(&format!("__arg{i}"), &replacement);
+            }
+            let actual: String = conn.query_row(&format!("SELECT CAST(({sql}) AS VARCHAR)"), [], |row| row.get(0)).unwrap();
+            assert_eq!(actual, if kind == "date" {expected.to_string()} else {expected.encode()}, "{kind} reverse={reverse}");
+        }
+    }
+    for (kind, input) in [
+        ("unknown", map(vec![])),
+        ("date", IrExpr::Lit(Lit::String("2000-01-01".into()))),
+        ("date", IrExpr::Call {name:"list".into(),args:vec![]}),
+        ("date", IrExpr::Call {name:"map".into(),args:vec![IrExpr::Lit(Lit::String("year".into()))]}),
+        ("date", IrExpr::Call {name:"map".into(),args:vec![IrExpr::Lit(Lit::Int(1)),IrExpr::Lit(Lit::Int(2000))]}),
+        ("date", map(vec![("year",Lit::Scalar(ScalarValue::Float64(Some(2000.5))))])),
+        ("date", map(vec![("year",Lit::Int(2000)),("month",Lit::Int(13))])),
+        ("date", map(vec![("year",Lit::Int(1000000))])),
+        ("date", map(vec![("year",Lit::Int(2000)),("ordinalDay",Lit::Int(60))])),
+        ("time", map(vec![("hour",Lit::Int(1))])),
+        ("time", map(vec![("hour",Lit::Int(1)),("timezone",Lit::String("+0100".into()))])),
+        ("datetime", map(vec![("year",Lit::Int(2000)),("timezone",Lit::String("Europe/Stockholm".into()))])),
+    ] {
+        assert!(constructor(&context, &plan, &format!("cypher_temporal.{kind}"), &[input.clone()]).is_none(), "{kind} {input:?}");
+    }
+    assert!(constructor(&context, &plan, "cypher_temporal.date", &[]).is_none());
+    assert!(constructor(&context, &plan, "date", &[]).is_none());
+}
