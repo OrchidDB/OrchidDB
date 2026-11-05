@@ -2,6 +2,59 @@
     use super::*;
 
 #[test]
+fn decimal_transport_keeps_all_supported_scales_exact_at_precision_limit() {
+    let digits="9".repeat(38);let magnitude=10_i128.pow(38)-1;
+    for scale in 0..=38_i8 {
+        let split=38-scale as usize;
+        let text=if scale==0 {digits.clone()} else {format!("{}.{}",if split==0 {"0"}else{&digits[..split]},&digits[split..])};
+        let field=Field::new("amount",DataType::Decimal128(38,scale),true);
+        for (sign,expected) in [("",magnitude),("-",-magnitude),("+",magnitude)] {
+            let array=rows::build_column(&field,&[vec![SqlValue::ExactNumber(format!("{sign}{text}"))]],0).unwrap();
+            assert_eq!(ScalarValue::try_from_array(&array,0).unwrap(),ScalarValue::Decimal128(Some(expected),38,scale));
+        }
+    }
+    assert_eq!(rows::parse_decimal_i128(&i128::MIN.to_string(),0),Ok(i128::MIN));
+    assert_eq!(rows::parse_decimal_i128(&i128::MAX.to_string(),0),Ok(i128::MAX));
+    assert!(rows::parse_decimal_i128("170141183460469231731687303715884105728",0).is_err());
+}
+
+#[test]
+fn nominal_json_and_integer_row_transport_keep_null_and_precision_boundaries() {
+    use crate::ir::functions::domain;
+    let json_type=domain::json_type();
+    let array=rows::build_column(&Field::new("json",json_type.clone(),true),
+        &[vec![SqlValue::Text("null".into())],vec![SqlValue::Null],vec![SqlValue::Domain(domain::json_scalar("[1,null]").unwrap())]],0).unwrap();
+    assert!(!array.is_null(0));assert!(array.is_null(1));
+    assert_eq!(domain::json_text(&ScalarValue::try_from_array(&array,0).unwrap()).unwrap(),Some("null".into()));
+    assert_eq!(domain::json_text(&ScalarValue::try_from_array(&array,2).unwrap()).unwrap(),Some("[1,null]".into()));
+    let integer_type=domain::data_type("cypher_integer",DataType::Decimal128(38,0));
+    let value=9007199254740993_i128;
+    let array=rows::build_column(&Field::new("integer",integer_type.clone(),true),
+        &[vec![SqlValue::ExactNumber(value.to_string())],vec![SqlValue::Null]],0).unwrap();
+    assert_eq!(domain::storage(&ScalarValue::try_from_array(&array,0).unwrap()).unwrap(),ScalarValue::Decimal128(Some(value),38,0));
+    assert!(array.is_null(1));
+    for ty in [json_type,integer_type] {
+        assert!(rows::build_column(&Field::new("value",ty.clone(),true),&[],0).unwrap().is_empty());
+        assert!(rows::build_column(&Field::new("value",ty,true),&[vec![SqlValue::Bool(true)]],0).is_err());
+    }
+}
+
+#[test]
+#[ignore="requires PostgreSQL"]
+fn postgres_negative_scale_decimal_results_reconstruct_without_changing_magnitude() {
+    let url=std::env::var("GRAPH_PG_URL").expect("GRAPH_PG_URL");
+    let result=std::process::Command::new("psql").args([&url,"-X","-A","-t","-v","ON_ERROR_STOP=1","-c",
+        "SELECT v::text FROM (VALUES (12300::numeric(10,-2)),(-12300::numeric(10,-2)),(0::numeric(10,-2))) AS t(v)"]).output().unwrap();
+    assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+    let values=String::from_utf8(result.stdout).unwrap().lines().map(|text|vec![SqlValue::ExactNumber(text.into())]).collect::<Vec<_>>();
+    let array=rows::build_column(&Field::new("amount",DataType::Decimal128(10,-2),false),&values,0).unwrap();
+    assert_eq!(array.len(),3);
+    for (row,expected) in [123_i128,-123,0].into_iter().enumerate() {
+        assert_eq!(ScalarValue::try_from_array(&array,row).unwrap(),ScalarValue::Decimal128(Some(expected),10,-2));
+    }
+}
+
+#[test]
 fn sql_integer_width_boundaries_preserve_values_and_reject_overflow() {
     for (ty,minimum,maximum) in [(DataType::Int8,-128,127),(DataType::Int16,-32768,32767),
         (DataType::UInt8,0,255),(DataType::UInt16,0,65535),(DataType::UInt32,0,4294967295)] {
