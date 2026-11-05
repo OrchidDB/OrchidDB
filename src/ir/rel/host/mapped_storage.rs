@@ -367,11 +367,16 @@ fn bind_batch(values: Vec<(String, ScalarValue)>) -> Result<RecordBatch, String>
 
 fn temporal_storage(value: ScalarValue, kind: &arrow::datatypes::DataType) -> Result<ScalarValue, String> {
     use arrow::datatypes::DataType;
+    // Null containers have no child values to unpack. Retarget the null before
+    // Arrow attempts to cast the nominal temporal child type itself.
+    if value.is_null() {
+        return ScalarValue::try_from(kind).map_err(|e| e.to_string());
+    }
     if *kind == DataType::Date32 && crate::ir::temporal::transport::is_date_type(&value.data_type())
         && crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
         return crate::ir::functions::domain::storage(&value).map_err(|e| e.to_string());
     }
-    if !value.is_null() && let (ScalarValue::List(array), DataType::List(field)) = (&value, kind) {
+    if let (ScalarValue::List(array), DataType::List(field)) = (&value, kind) {
         let items = array.value(0);
         let values = (0..items.len()).map(|i| {
             let item = ScalarValue::try_from_array(items.as_ref(), i).map_err(|e| e.to_string())?;
