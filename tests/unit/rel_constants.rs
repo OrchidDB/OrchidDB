@@ -837,3 +837,31 @@ fn constant_slice_and_index_helpers_preserve_unicode_and_boundary_semantics() {
         assert_eq!(constant_array_slice(&args).unwrap(),None);
     }
 }
+
+#[test]
+fn property_text_rendering_preserves_heterogeneous_native_payloads_and_nulls() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    use arrow::array::Array;
+    let union = crate::ir::functions::scalar_union::scalar;
+    let cases = vec![
+        (vec![union(&Value::Int(i64::MIN)).unwrap(),union(&Value::String("雪🙂'".into())).unwrap(),union(&Value::Bool(true)).unwrap(),union(&Value::Bool(false)).unwrap(),union(&Value::Null).unwrap()],vec![Some(i64::MIN.to_string()),Some("雪🙂'".into()),Some("True".into()),Some("False".into()),None]),
+        (vec![ScalarValue::Float64(Some(1.25)),ScalarValue::Float64(Some(-2.5)),ScalarValue::Float64(None)],vec![Some("1.250000".into()),Some("-2.500000".into()),None]),
+        (vec![ScalarValue::Float32(Some(1.25)),ScalarValue::Float32(None)],vec![Some("1.250000".into()),None]),
+        (vec![ScalarValue::Int64(Some(i64::MAX)),ScalarValue::Int64(None)],vec![Some(i64::MAX.to_string()),None]),
+        (vec![ScalarValue::LargeUtf8(Some("雪🙂'".into())),ScalarValue::LargeUtf8(None)],vec![Some("雪🙂'".into()),None]),
+        (vec![ScalarValue::Utf8View(Some("雪🙂'".into())),ScalarValue::Utf8View(None)],vec![Some("雪🙂'".into()),None]),
+    ];
+    for (values,expected) in cases {
+        let ty=values[0].data_type();
+        let schema=Arc::new(Schema::new(vec![Field::new("v",ty.clone(),true)]));
+        let batch=RecordBatch::try_new(schema.clone(),vec![ScalarValue::iter_to_array(values).unwrap()]).unwrap();
+        let df_schema=datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap();
+        let expr=render_property_text_expr(col("v"),&ty);
+        let physical=datafusion_physical_expr::create_physical_expr(&expr,&df_schema,&ExecutionProps::new()).unwrap();
+        let output=physical.evaluate(&batch).unwrap().into_array(batch.num_rows()).unwrap();
+        let actual=(0..output.len()).map(|i|if output.is_null(i){None}else{Some(arrow::util::display::array_value_to_string(output.as_ref(),i).unwrap())}).collect::<Vec<_>>();
+        assert_eq!(actual,expected,"{ty:?}");
+        let empty=RecordBatch::new_empty(schema);
+        assert_eq!(physical.evaluate(&empty).unwrap().into_array(0).unwrap().len(),0);
+    }
+}
