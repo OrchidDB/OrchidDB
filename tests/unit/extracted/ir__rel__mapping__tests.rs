@@ -105,3 +105,262 @@ total = "total"
         assert!(format!("{}", plan.display_indent()).contains("TableScan: customers"));
         assert!(mapping.plan_sql("SELECT * FROM missing").is_err());
     }
+
+#[test]
+fn mapped_views_track_transitive_dependencies_and_reject_cycles_atomically() {
+    use arrow::datatypes::{Field,Schema};
+    let mut mapping=GraphMapping::new();
+    mapping.register_table_schema("base",Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,false)])));
+    mapping.register_view("first","SELECT id FROM base").unwrap();
+    mapping.register_view("second","SELECT id FROM first").unwrap();
+    mapping.register_view("diamond","SELECT a.id FROM first a JOIN second b ON a.id=b.id").unwrap();
+    assert_eq!(mapping.view_dependencies["first"],BTreeSet::from(["base".into()]));
+    assert_eq!(mapping.view_dependencies["second"],BTreeSet::from(["first".into()]));
+    assert_eq!(mapping.table_schema("diamond").unwrap().field(0).data_type(),&DataType::Int64);
+    for sql in ["SELECT id FROM first","SELECT id FROM second","SELECT id FROM diamond"] {
+        let before=mapping.view_dependencies.clone();
+        let provider=mapping.tables["first"].clone();
+        assert!(mapping.register_view("first",sql).unwrap_err().to_string().contains("cyclic mapped view"));
+        assert_eq!(mapping.view_dependencies,before);
+        assert!(Arc::ptr_eq(&mapping.tables["first"],&provider));
+    }
+    let before=mapping.view_dependencies.clone();
+    assert!(mapping.register_view("bad","SELECT id FROM nonexistent").is_err());
+    assert!(!mapping.tables.contains_key("bad"));assert_eq!(mapping.view_dependencies,before);
+    mapping.register_view("first","SELECT id FROM base WHERE id > 10").unwrap();
+    assert_eq!(mapping.view_dependencies["first"],BTreeSet::from(["base".into()]));
+    assert!(format!("{mapping:?}").contains("diamond"));
+}
+
+#[test]
+fn mapped_source_metadata_validation_does_not_mutate_existing_registration() {
+    use crate::ir::rel::{source_metadata::{SourceMetadata,IndexMetadata},search::SearchMetric};
+    let index=IndexMetadata {column:"vector".into(),metric:SearchMetric::Cosine,options:Default::default()};
+    let valid=SourceMetadata {table:"vectors".into(),format:Some("lance".into()),options:Default::default(),indexes:vec![index.clone()]};
+    let mut mapping=GraphMapping::new();
+    for invalid in [SourceMetadata {table:String::new(),..valid.clone()},
+        SourceMetadata {format:Some(String::new()),..valid.clone()},
+        SourceMetadata {indexes:vec![index.clone(),index.clone()],..valid.clone()},
+        SourceMetadata {indexes:vec![IndexMetadata {column:String::new(),..index.clone()}],..valid.clone()}] {
+        assert!(mapping.register_source_metadata(invalid).is_err());
+        assert!(mapping.source_metadata.is_empty());
+    }
+    mapping.register_source_metadata(valid.clone()).unwrap();
+    assert!(mapping.register_source_metadata(valid.clone()).unwrap_err().to_string().contains("duplicate source metadata"));
+    assert_eq!(mapping.source_metadata["vectors"],valid);
+}
+
+#[test]
+fn mapped_search_index_merging_preserves_source_options_and_rejects_duplicates() {
+    use crate::ir::rel::search::{SearchIndex,SearchMetric,LegacySearchOptions};
+    let index=SearchIndex {table:"vectors".into(),column:"embedding".into(),metric:SearchMetric::Cosine,
+        backend:LegacySearchOptions {kind:"lance".into(),options:BTreeMap::from([
+            ("uri".into(),serde_json::json!("memory://vectors")),("nprobes".into(),serde_json::json!(8)),
+        ])}};
+    let mut mapping=GraphMapping::new();mapping.register_search_index(index.clone()).unwrap();
+    let original=mapping.source_metadata["vectors"].clone();
+    for invalid in [index.clone(),SearchIndex {column:String::new(),..index.clone()},
+        SearchIndex {backend:LegacySearchOptions {kind:"different".into(),options:index.backend.options.clone()},..index.clone()}] {
+        assert!(mapping.register_search_index(invalid).is_err());
+        assert_eq!(mapping.source_metadata["vectors"],original);
+    }
+    mapping.register_search_index(SearchIndex {metric:SearchMetric::Dot,..index}).unwrap();
+    let stored=&mapping.source_metadata["vectors"];
+    assert_eq!(stored.indexes.len(),2);
+    assert_eq!(stored.options,BTreeMap::from([("uri".into(),serde_json::json!("memory://vectors"))]));
+    for index in &stored.indexes {assert_eq!(index.options["nprobes"],serde_json::json!(8));}
+}
+
+#[test]
+fn mapped_logical_labels_cannot_alias_keys_or_properties() {
+    for column in ["","id","name"] {
+        let mut mapping=GraphMapping::new();
+        mapping.map_node(NodeMapping::table("Person","people","id").property("display","name").labels_column(column));
+        assert!(mapping.validate_foreign_keys().unwrap_err().to_string().contains("logical label column must be separate"));
+    }
+    let mut mapping=GraphMapping::new();
+    mapping.map_node(NodeMapping::table("Person","people","id").property("display","name").labels_column("labels"));
+    mapping.validate_foreign_keys().unwrap();
+}
+
+#[test]
+fn mapped_key_columns_reject_nested_components_and_keep_declared_order() {
+    use arrow::datatypes::{Field,Schema};
+    let columns=KeyColumns::from(["tenant","id"]);
+    let schema=Schema::new(vec![Field::new("id",DataType::UInt64,false),Field::new("tenant",DataType::Utf8,false)]);
+    let DataType::Struct(fields)=columns.data_type(&schema).unwrap() else {panic!("composite key")};
+    assert_eq!(fields[0].name(),"k0");assert_eq!(fields[0].data_type(),&DataType::Utf8);
+    assert_eq!(fields[1].name(),"k1");assert_eq!(fields[1].data_type(),&DataType::UInt64);
+    assert!(columns.values(&crate::ir::ElementId::from(7_i64)).unwrap_err().contains("component count"));
+    for kind in [DataType::Null,DataType::List(Arc::new(Field::new("item",DataType::Int64,true))),
+        DataType::Struct(vec![Field::new("part",DataType::Int64,false)].into())] {
+        let schema=Schema::new(vec![Field::new("id",kind,false)]);
+        assert!(KeyColumns::from("id").data_type(&schema).unwrap_err().contains("scalar identity type"));
+    }
+    assert!(KeyColumns::from("missing").data_type(&schema).is_err());
+    assert!(is_identity_type(&DataType::Struct(fields)));
+    assert!(!is_identity_type(&DataType::Struct(vec![Field::new("only",DataType::Int64,false)].into())));
+    assert!(!is_identity_type(&DataType::Struct(vec![Field::new("one",DataType::Int64,false),Field::new("bad",DataType::Null,true)].into())));
+}
+
+#[test]
+fn mapped_label_algebra_preserves_empty_and_negated_sets() {
+    for (expr,label,expected) in [
+        (LabelExpr::Any,"",true),
+        (LabelExpr::AnyOf(vec![]),"Person",false),
+        (LabelExpr::AllOf(vec![]),"Person",true),
+        (LabelExpr::AllOf(vec!["Person".into(),"Person".into()]),"Person",true),
+        (LabelExpr::AllOf(vec!["Person".into(),"Other".into()]),"Person",false),
+        (LabelExpr::AllOf(vec![String::new()]),"",false),
+        (LabelExpr::Not(Box::new(LabelExpr::AnyOf(vec!["Person".into()]))),"Other",true),
+        (LabelExpr::Not(Box::new(LabelExpr::Any)),"Person",false),
+    ] {assert_eq!(static_labels_match(&expr,label),expected,"{expr:?}/{label}");}
+    assert_eq!(mapped_label_predicate(&LabelExpr::AnyOf(vec![]),&|_|panic!("empty set")),lit(false));
+    assert_eq!(mapped_label_predicate(&LabelExpr::AllOf(vec![]),&|_|panic!("empty set")),lit(true));
+    let pred=mapped_label_predicate(&LabelExpr::Not(Box::new(LabelExpr::AnyOf(vec!["A".into(),"B".into()]))),&|name|col_exact(name));
+    assert_eq!(pred,Expr::Not(Box::new(col_exact("A").or(col_exact("B")))));
+}
+
+#[test]
+fn mapped_source_column_resolution_prefers_exact_names_and_diagnoses_missing_fields() {
+    use arrow::datatypes::{Field,Schema};
+    let plan=LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {produce_one_row:false,
+        schema:Arc::new(DFSchema::try_from(Schema::new(vec![Field::new("ID",DataType::Int64,false),Field::new("Name",DataType::Utf8,true),Field::new("name",DataType::Boolean,true)])).unwrap())});
+    assert_eq!(resolve_column(&plan,"id").unwrap(),"ID");
+    assert_eq!(resolve_column(&plan,"Name").unwrap(),"Name");
+    assert_eq!(resolve_column(&plan,"name").unwrap(),"name");
+    assert_eq!(resolve_column(&plan,"NAME").unwrap(),"NAME","ambiguous folded names must remain unresolved");
+    assert_eq!(resolve_column(&plan,"missing").unwrap(),"missing");
+    let error=source_column_type(&plan,"missing","node key").unwrap_err().to_string();
+    for fragment in ["node key","missing","ID","Name","name"] {assert!(error.contains(fragment),"{error}");}
+    assert_eq!(schema_field_type(plan.schema(),"Name"),Some(DataType::Utf8));
+    assert_eq!(schema_field_type(plan.schema(),"missing"),None);
+}
+
+#[test]
+fn mapped_query_boundaries_reject_multiple_statements_and_keep_dependencies_scoped() {
+    let mapping=GraphMapping::new();
+    for (sql,count) in [("",0),(";",0),("SELECT 1; SELECT 2",2)] {
+        let error=mapping.plan_sql(sql).unwrap_err().to_string();
+        assert!(error.contains(&format!("single statement, got {count}")),"{error}");
+    }
+    assert!(mapping.plan_sql("SELECT (").unwrap_err().to_string().contains("mapping query parse"));
+    assert!(mapping.plan_sql("SELECT missing FROM absent").unwrap_err().to_string().contains("mapping query plan"));
+    let (_,dependencies)=mapping.plan_sql_with_dependencies("SELECT 1 AS id").unwrap();assert!(dependencies.is_empty());
+    let provider=MappingContextProvider::new(&mapping);
+    assert!(provider.get_variable_type(&["parameter".into()]).is_none());
+    assert!(mapping.collection_sql("unregistered").is_none());
+    assert!(mapping.table_schema("unregistered").is_none());
+}
+
+#[test]
+fn mapped_scan_name_resolution_deduplicates_and_reports_unsupported_label_forms() {
+    assert_eq!(resolve_names(&LabelExpr::Any,||vec!["Z".into(),"A".into(),"A".into()],"node").unwrap(),vec!["A","Z"]);
+    assert_eq!(resolve_names(&LabelExpr::AnyOf(vec!["B".into(),"A".into(),"B".into()]),||panic!(),"node").unwrap(),vec!["A","B"]);
+    assert_eq!(resolve_names(&LabelExpr::AllOf(vec!["A".into()]),||panic!(),"node").unwrap(),vec!["A"]);
+    for labels in [vec![],vec!["A".into(),"B".into()]] {
+        assert!(resolve_names(&LabelExpr::AllOf(labels),||panic!(),"relationship").unwrap_err().to_string().contains("multi-relationship scan"));
+    }
+    assert!(resolve_names(&LabelExpr::Not(Box::new(LabelExpr::Any)),||panic!(),"node").unwrap_err().to_string().contains("negated node scan"));
+}
+
+#[test]
+fn mapped_cypher_relationship_arguments_create_isolated_collision_free_instances() {
+    use crate::catalog::{CypherRelationship,RelationshipParameter,RelationshipReturns};
+    let rule=CypherRelationship {name:"NEAR".into(),description:String::new(),source:"Person".into(),target:"Person".into(),
+        parameters:vec![RelationshipParameter {name:"k".into(),schema:serde_json::json!({"type":"integer","minimum":1}),default:Some(serde_json::json!(1))}],
+        cypher:"WITH source MATCH (target:Person) RETURN target LIMIT $k".into(),
+        returns:RelationshipReturns {target:"target".into(),properties:Default::default()}};
+    let mut mapping=GraphMapping::new();
+    mapping.map_edge(EdgeMapping::new("NEAR",MappedSource::Cypher(Box::new(rule.clone())),"src","dst","Person","Person"));
+    mapping.map_edge(EdgeMapping::table("__orchid_edge_arguments_0","occupied","src","dst","Person","Person"));
+    let supplied=BTreeMap::from([("k".into(),serde_json::json!(3))]);
+    let alias=mapping.bind_edge_arguments("NEAR",&supplied).unwrap();
+    assert_eq!(alias,"__orchid_edge_arguments_1");
+    let MappedSource::Cypher(bound)=&mapping.edge(&alias).unwrap().source else {panic!()};
+    assert_eq!(bound.parameters[0].default,Some(serde_json::json!(3)));
+    assert_eq!(mapping.edge("NEAR").unwrap().source,MappedSource::Cypher(Box::new(rule)));
+    let second=mapping.bind_edge_arguments("NEAR",&BTreeMap::new()).unwrap();
+    assert_eq!(second,"__orchid_edge_arguments_2");
+    let MappedSource::Cypher(default)=&mapping.edge(&second).unwrap().source else {panic!()};
+    assert_eq!(default.parameters[0].default,Some(serde_json::json!(1)));
+    let count=mapping.edge_instances.len();
+    for bad in [BTreeMap::from([("k".into(),serde_json::json!(0))]),BTreeMap::from([("extra".into(),serde_json::json!(1))])] {
+        assert!(mapping.bind_edge_arguments("NEAR",&bad).is_err());
+        assert_eq!(mapping.edge_instances.len(),count);
+    }
+    assert!(mapping.bind_edge_arguments("missing",&BTreeMap::new()).unwrap_err().contains("unknown relationship"));
+    assert!(mapping.bind_edge_arguments("__orchid_edge_arguments_0",&BTreeMap::new()).unwrap_err().contains("does not declare parameters"));
+}
+
+#[test]
+fn mapped_source_argument_failures_do_not_install_partial_tables_or_instances() {
+    use crate::catalog::RelationshipParameter;
+    use crate::ir::rel::source_metadata::SourceMetadata;
+    let mut mapping=GraphMapping::new();
+    assert!(mapping.bind_node_arguments("missing",&BTreeMap::new()).unwrap_err().contains("unknown node"));
+    let mut node=NodeMapping::query("Person","SELECT 1 AS id","id");
+    node.parameters=vec![RelationshipParameter {name:"limit".into(),schema:serde_json::json!({"type":"integer"}),default:Some(serde_json::json!(1))}];
+    mapping.map_node(node.clone());assert!(mapping.has_source_parameters());
+    assert!(mapping.bind_node_arguments("Person",&BTreeMap::new()).unwrap_err().contains("table-backed mapping"));
+    node.source=MappedSource::Table("people".into());mapping.map_node(node);
+    assert!(mapping.bind_node_arguments("Person",&BTreeMap::new()).unwrap_err().contains("source metadata is required"));
+    mapping.register_source_metadata(SourceMetadata {table:"people".into(),format:None,options:Default::default(),indexes:vec![]}).unwrap();
+    assert!(mapping.bind_node_arguments("Person",&BTreeMap::new()).unwrap_err().contains("source format is required"));
+    mapping.source_metadata.get_mut("people").unwrap().format=Some("duckdb".into());
+    assert!(mapping.bind_node_arguments("Person",&BTreeMap::new()).unwrap_err().contains("does not support source arguments"));
+    assert!(mapping.node_instances.is_empty());assert!(mapping.bound_table_sources.is_empty());assert!(mapping.tables.is_empty());
+}
+
+#[test]
+fn mapped_bound_node_labels_are_canonicalized_under_negation() {
+    let mut mapping=GraphMapping::new();
+    mapping.map_node(NodeMapping::table("Person","people","id"));
+    mapping.node_instances.insert("instance".into(),NodeMapping::table("Person","bound_people","id"));
+    let labels=LabelExpr::Not(Box::new(LabelExpr::AnyOf(vec!["instance".into(),"Other".into()])));
+    assert_eq!(mapping.canonical_node_labels(&labels),LabelExpr::Not(Box::new(LabelExpr::AnyOf(vec!["Person".into(),"Other".into()]))));
+    assert_eq!(mapping.node_scan_candidates(&LabelExpr::Any).unwrap().len(),1);
+    assert_eq!(mapping.node_scan_candidates(&labels).unwrap()[0].source,MappedSource::Table("people".into()));
+    assert_eq!(mapping.node_scan_candidates(&LabelExpr::AllOf(vec!["instance".into()])).unwrap()[0].source,MappedSource::Table("bound_people".into()));
+    assert!(mapping.node_scan_candidates(&LabelExpr::AllOf(vec!["instance".into(),"Person".into()])).unwrap_err().to_string().contains("one explicit node label"));
+}
+
+#[cfg(feature="duckdb")]
+#[tokio::test]
+async fn mapped_nested_views_execute_filters_without_losing_duplicate_rows() {
+    use arrow::{array::Int64Array,datatypes::{Field,Schema},record_batch::RecordBatch};
+    let schema=Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,true)]));
+    let batch=RecordBatch::try_new(schema.clone(),vec![Arc::new(Int64Array::from(vec![Some(1),Some(7),Some(7),None,Some(9)]))]).unwrap();
+    let mut mapping=GraphMapping::new();
+    mapping.register_table("base",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).unwrap()));
+    mapping.register_view("first","SELECT id FROM base WHERE id >= 7").unwrap();
+    mapping.register_view("second","SELECT id AS renamed FROM first WHERE id < 9").unwrap();
+    let plan=mapping.plan_sql("SELECT renamed FROM second").unwrap();
+    let batches=crate::ir::rel::execute_test_plan(plan).await.unwrap();
+    let values=batches.iter().flat_map(|batch|(0..batch.num_rows()).map(move |row|ScalarValue::try_from_array(batch.column(0),row).unwrap())).collect::<Vec<_>>();
+    assert_eq!(values,vec![ScalarValue::Int64(Some(7));2]);
+}
+
+#[test]
+fn mapped_cypher_relationship_registration_is_atomic_and_plans_bound_arguments() {
+    use arrow::datatypes::{Field,Schema};
+    let mut mapping=GraphMapping::new();
+    mapping.register_table_schema("people",Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,false)])));
+    mapping.map_node(NodeMapping::table("Person","people","id").property("id","id"));
+    let rule:crate::catalog::CypherRelationship=serde_json::from_value(serde_json::json!({
+        "name":"NEAR","source":"Person","target":"Person",
+        "parameters":[{"name":"k","schema":{"type":"integer","minimum":1},"default":1}],
+        "cypher":"WITH source MATCH (target:Person) WHERE target.id <> source.id RETURN target ORDER BY target.id LIMIT $k",
+        "returns":{"target":"target","properties":{}}
+    })).unwrap();
+    mapping.map_cypher_relationship(rule.clone()).unwrap();
+    assert!(mapping.edge("NEAR").is_some());
+    let alias=mapping.bind_edge_arguments("NEAR",&BTreeMap::from([("k".into(),serde_json::json!(2))])).unwrap();
+    let plan=mapping.source_plan(&mapping.edge(&alias).unwrap().source).unwrap();
+    assert!(!plan.schema().fields().is_empty());
+    let edges=mapping.edges.clone();let tables=mapping.physical_table_names();
+    let mut bad=rule;bad.name="BROKEN".into();bad.target="Missing".into();
+    assert!(mapping.map_cypher_relationship(bad).is_err());
+    assert_eq!(mapping.edges,edges);assert_eq!(mapping.physical_table_names(),tables);
+    assert!(mapping.edge("BROKEN").is_none());
+}
