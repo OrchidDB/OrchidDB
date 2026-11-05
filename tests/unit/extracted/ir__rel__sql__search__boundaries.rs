@@ -94,3 +94,50 @@ fn search_templates_reject_incomplete_bindings_and_metric_changes() {
         search.limit=0;lance_template_inner(&search).unwrap();
     }
 }
+
+fn lexical_candidate(table: &str) -> RankedJoin {
+    use arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::logical_expr::{create_udf, Volatility};
+    let mut search=candidate();
+    search.source=Arc::new(LogicalPlanBuilder::empty(true)
+        .project(vec![lit("orchid").alias("source_value")]).unwrap().build().unwrap());
+    let schema=Arc::new(Schema::new(vec![Field::new("target_value",DataType::Utf8,true)]));
+    let provider=datafusion::datasource::provider_as_source(Arc::new(datafusion::datasource::empty::EmptyTable::new(schema)));
+    search.target=Arc::new(LogicalPlanBuilder::scan(table,provider,None).unwrap().build().unwrap());
+    let score=create_udf("text.bm25",vec![DataType::Utf8,DataType::Utf8],DataType::Float64,
+        Volatility::Immutable,Arc::new(|_|unreachable!("SQL-only score expression")));
+    search.score=score.call(vec![col("source_value"),col("target_value")]);
+    search.index.as_mut().unwrap().metric=SearchMetric::Bm25;
+    search.limit=3;search
+}
+
+#[test]
+fn lexical_search_binds_source_values_and_keeps_target_score_projection() {
+    let mut search=lexical_candidate("documents");
+    for predicate in [None,Some(col("target_value").eq(col("source_value")))] {
+        search.predicate=predicate.clone();
+        let template=lance_template_inner(&search).unwrap();
+        assert_eq!(template.parameters,1);assert_eq!(template.dialect,"duckdb");
+        let statements=Parser::parse_sql(&DuckDbDialect{},&template.sql).unwrap();
+        assert_eq!(statements.len(),1);
+        assert!(template.sql.contains("lance_fts("),"{}",template.sql);
+        assert!(template.sql.contains("$1"),"{}",template.sql);
+        assert!(template.sql.contains("__search_target._score"),"{}",template.sql);
+        assert!(!template.sql.contains("__search_source"),"{}",template.sql);
+        assert!(template.sql.contains(SCORE_COLUMN),"{}",template.sql);
+        if predicate.is_some() {assert!(template.sql.contains("= $1"),"{}",template.sql);}
+    }
+}
+
+#[test]
+fn indexed_search_requires_exactly_one_matching_physical_scan() {
+    let wrong=lexical_candidate("other_documents");
+    assert!(lance_template_inner(&wrong).err().unwrap().to_string().contains("declared physical table"));
+    let mut no_scan=lexical_candidate("documents");
+    no_scan.target=Arc::new(LogicalPlanBuilder::empty(true).project(vec![lit("orchid").alias("target_value")]).unwrap().build().unwrap());
+    assert!(lance_template_inner(&no_scan).err().unwrap().to_string().contains("exactly one target scan"));
+    let mut two_scans=lexical_candidate("documents");
+    two_scans.target=Arc::new(LogicalPlanBuilder::from(two_scans.target.as_ref().clone())
+        .union(two_scans.target.as_ref().clone()).unwrap().build().unwrap());
+    assert!(lance_template_inner(&two_scans).err().unwrap().to_string().contains("exactly one target scan"));
+}
