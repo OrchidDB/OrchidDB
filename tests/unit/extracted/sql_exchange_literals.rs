@@ -605,3 +605,38 @@ async fn time_literals_preserve_supported_precision_and_reject_lossy_postgres_ty
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn dynamic_list_unique_omits_nulls_on_every_engine() {
+    use crate::ir::rel::*;
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let (pg, trino_session) = literal_test_engines();
+    let graph = PropertyGraph::new();
+    let ctx = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    for (items, expected) in [
+        (Some(vec![Some(3),None,Some(3),Some(7)]), "2"),
+        (Some(vec![None,None]), "0"), (Some(vec![]), "0"), (None, "null"),
+    ] {
+        let array = match items {
+            Some(items) => ScalarValue::List(ScalarValue::new_list_nullable(
+                &items.into_iter().map(ScalarValue::Int64).collect::<Vec<_>>(), &DataType::Int64)),
+            None => ScalarValue::try_from(&DataType::List(Arc::new(Field::new("item",DataType::Int64,true)))).unwrap(),
+        };
+        let input = LogicalPlanBuilder::empty(true).project(vec![lit(array).alias("items")]).unwrap().build().unwrap();
+        let unique = ctx.lower_dynamic_collection_function(&input,"list_unique",&[IrExpr::binding("items")]).unwrap().unwrap();
+        let plan = LogicalPlanBuilder::from(input).project(vec![unique.alias("n")]).unwrap().build().unwrap();
+        for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&trino::TRINO)] {
+            let sql = unparse::unparse_plan(plan.clone(),dialect).unwrap();
+            let query = format!("SELECT coalesce(CAST(n AS VARCHAR),'null') FROM ({sql}) AS result");
+            assert_eq!(execute_text_case(&query,dialect,&pg,&trino_session).await, expected, "{}: {sql}",dialect.name());
+        }
+    }
+}

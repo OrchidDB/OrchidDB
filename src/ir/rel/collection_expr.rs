@@ -136,18 +136,23 @@ impl<'a> LoweringContext<'a> {
                 let [items] = args else {
                     return Ok(None);
                 };
-                let distinct = datafusion::functions_nested::expr_fn::array_distinct(
-                    self.lower_native_list(plan, items)?,
-                );
+                // DataFusion retains a null member in array_distinct, whereas
+                // Cypher list_unique counts only non-null values. Filter before
+                // deduplication so native execution and SQL owners agree.
+                let non_null = self.lower_sql_lambda(plan, &IrExpr::ListFilter {
+                    list: Box::new(items.clone()),
+                    item: "__unique_item".into(),
+                    predicate: Box::new(IrExpr::IsNotNull(Box::new(
+                        IrExpr::binding("__unique_item"),
+                    ))),
+                })?;
+                let distinct = datafusion::functions_nested::expr_fn::array_distinct(non_null);
                 let count = Expr::Cast(Cast::new(
                     Box::new(datafusion::functions_nested::expr_fn::array_length(
                         distinct,
                     )),
                     DataType::Int64,
                 ));
-                // DataFusion and DuckDB both omit nulls from array_distinct.
-                // Cypher's list_unique follows the same rule, so the resulting
-                // array length is already the desired count.
                 Ok(Some(count))
             }
             "list_contains" | "list_has" | "array_contains" | "array_has" => {

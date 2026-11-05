@@ -279,9 +279,93 @@ fn dynamic_collection_dispatch_declines_bad_arity_and_unknown_functions() {
     let graph = PropertyGraph::new();
     let mut ctx = context(&graph, false);
     let plan = ctx.lower_node(&Node::GraphOneRow).unwrap().plan;
-    for name in ["list_append", "array_append", "array_push_back", "list_prepend", "array_prepend", "array_push_front", "list_extract", "list_element", "element_at", "list_unique", "not_a_collection_function"] {
+    for name in ["list_append", "array_append", "array_push_back", "list_prepend", "array_prepend", "array_push_front", "list_extract", "list_element", "element_at", "list_unique", "list_contains", "list_has", "array_contains", "array_has", "list_has_all", "not_a_collection_function"] {
         assert!(ctx.lower_dynamic_collection_function(&plan,name,&[]).unwrap().is_none(),"{name}");
     }
     let error=ctx.lower_constant_collection_function(&plan,"not_a_collection_function",&[IrExpr::binding("missing")]).unwrap_err().to_string();
     assert!(error.contains("not relationally lowered yet"),"{error}");
+}
+
+#[tokio::test]
+async fn dynamic_collection_membership_and_unique_execute_typed_lists() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    for values in [vec![Some(3), None, Some(3), Some(7)], vec![]] {
+        let list = ScalarValue::List(ScalarValue::new_list_nullable(
+            &values.iter().map(|v| ScalarValue::Int64(*v)).collect::<Vec<_>>(), &DataType::Int64));
+        let base = ctx.lower_node(&Node::GraphOneRow).unwrap().plan;
+        let plan = LogicalPlanBuilder::from(base).project(vec![lit(list).alias("items")]).unwrap().build().unwrap();
+        let mut expressions = Vec::new();
+        for name in ["list_contains", "list_has", "array_contains", "array_has"] {
+            for needle in [3, 99] {
+                expressions.push(ctx.lower_dynamic_collection_function(&plan, name,
+                    &[IrExpr::binding("items"), IrExpr::Lit(Lit::Int(needle))]).unwrap().unwrap().alias(format!("{name}_{needle}")));
+            }
+        }
+        for (i, needles) in [vec![3,7], vec![3,99], vec![]].into_iter().enumerate() {
+            expressions.push(ctx.lower_dynamic_collection_function(&plan, "list_has_all", &[
+                IrExpr::binding("items"), IrExpr::List(needles.into_iter().map(|v| IrExpr::Lit(Lit::Int(v))).collect())
+            ]).unwrap().unwrap().alias(format!("all_{i}")));
+        }
+        expressions.push(ctx.lower_dynamic_collection_function(&plan, "list_unique", &[IrExpr::binding("items")]).unwrap().unwrap().alias("unique"));
+        let plan = LogicalPlanBuilder::from(plan).project(expressions).unwrap().build().unwrap();
+        let batches = super::super::execute_test_plan(plan).await.unwrap();
+        let batch = &batches[0];
+        for column in 0..8 {
+            assert_eq!(ScalarValue::try_from_array(batch.column(column),0).unwrap(), ScalarValue::Boolean(Some(!values.is_empty() && column%2==0)));
+        }
+        for (column, expected) in [(8,!values.is_empty()), (9,false), (10,true)] {
+            assert_eq!(ScalarValue::try_from_array(batch.column(column),0).unwrap(), ScalarValue::Boolean(Some(expected)));
+        }
+        assert_eq!(integer(ScalarValue::try_from_array(batch.column(11),0).unwrap()), Some(if values.is_empty() {0} else {2}));
+    }
+}
+
+#[tokio::test]
+async fn dynamic_collection_indexing_keeps_selected_values_and_strict_bounds() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let base = ctx.lower_node(&Node::GraphOneRow).unwrap().plan;
+    let plan = LogicalPlanBuilder::from(base).project(vec![lit(7_i64).alias("value")]).unwrap().build().unwrap();
+    let list = IrExpr::List(vec![IrExpr::binding("value"), IrExpr::Lit(Lit::Int(9))]);
+    let mut expressions = vec![];
+    for name in ["list_extract", "list_element", "element_at"] {
+        for index in [1,-1] {
+            expressions.push(ctx.lower_dynamic_collection_function(&plan,name,&[list.clone(),IrExpr::Lit(Lit::Int(index))]).unwrap().unwrap().alias(format!("{name}_{index}")));
+        }
+    }
+    for name in ["list_element", "element_at"] {
+        expressions.push(ctx.lower_dynamic_collection_function(&plan,name,&[list.clone(),IrExpr::Lit(Lit::Int(99))]).unwrap().unwrap().alias(format!("{name}_missing")));
+        assert!(ctx.lower_dynamic_collection_function(&plan,name,&[list.clone(),IrExpr::binding("value")]).unwrap().is_none());
+    }
+    let projected = LogicalPlanBuilder::from(plan.clone()).project(expressions).unwrap().build().unwrap();
+    let batches = super::super::execute_test_plan(projected).await.unwrap();
+    for column in 0..6 { assert_eq!(integer(ScalarValue::try_from_array(batches[0].column(column),0).unwrap()),Some(if column%2==0 {7} else {9})); }
+    for column in 6..8 { assert!(ScalarValue::try_from_array(batches[0].column(column),0).unwrap().is_null()); }
+    let strict = ctx.lower_dynamic_collection_function(&plan,"list_extract",&[list,IrExpr::Lit(Lit::Int(99))]).unwrap().unwrap();
+    let projected = LogicalPlanBuilder::from(plan).project(vec![strict.alias("invalid")]).unwrap().build().unwrap();
+    assert!(super::super::execute_test_plan(projected).await.is_err());
+}
+
+#[tokio::test]
+async fn dynamic_collection_membership_nulls_match_constant_semantics() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let kind = DataType::List(Arc::new(Field::new("item",DataType::Int64,true)));
+    let present = ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(3)),ScalarValue::Int64(None)],&DataType::Int64));
+    for (items, needle, expected) in [
+        (present.clone(), ScalarValue::Int64(None), None),
+        (ScalarValue::try_from(&kind).unwrap(), ScalarValue::Int64(Some(3)), None),
+        (present, ScalarValue::Int64(Some(99)), Some(false)),
+    ] {
+        let base = ctx.lower_node(&Node::GraphOneRow).unwrap().plan;
+        let plan = LogicalPlanBuilder::from(base).project(vec![lit(items).alias("items"),lit(needle).alias("needle")]).unwrap().build().unwrap();
+        let mut expressions = vec![];
+        for name in ["list_contains", "list_has", "array_contains", "array_has"] {
+            expressions.push(ctx.lower_dynamic_collection_function(&plan,name,&[IrExpr::binding("items"),IrExpr::binding("needle")]).unwrap().unwrap().alias(name));
+        }
+        let projected = LogicalPlanBuilder::from(plan).project(expressions).unwrap().build().unwrap();
+        let batches = super::super::execute_test_plan(projected).await.unwrap();
+        for column in 0..4 { assert_eq!(ScalarValue::try_from_array(batches[0].column(column),0).unwrap(), ScalarValue::Boolean(expected)); }
+    }
 }
