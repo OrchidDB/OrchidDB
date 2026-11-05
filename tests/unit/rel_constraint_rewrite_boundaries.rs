@@ -329,3 +329,101 @@ fn payload_restoration_respects_computed_keys_and_row_merging_barriers() {
     ];
     for plan in wrappers { assert!(expose_occurrence_column(&plan,0,&missing_origin).unwrap().is_none()); }
 }
+
+#[test]
+fn equijoin_proofs_distinguish_residuals_null_awareness_and_lossy_casts() {
+    use super::super::properties::equijoin_pairs;
+    use datafusion::logical_expr::expr::Cast;
+    let left=LogicalPlanBuilder::from(scan(None,true)).alias("l").unwrap().build().unwrap();
+    let right=LogicalPlanBuilder::from(scan(None,true)).alias("r").unwrap().build().unwrap();
+    let LogicalPlan::Join(mut join)=LogicalPlanBuilder::from(left).join(right,JoinType::Inner,(vec!["l.id"],vec!["r.id"]),None).unwrap().build().unwrap() else {panic!("join")};
+    assert_eq!(equijoin_pairs(&join,false),Some(vec![(0,0)]));
+    join.null_aware=true;assert!(equijoin_pairs(&join,true).is_none());join.null_aware=false;
+    join.on=vec![(col("l.id"),col("r.payload"))];assert!(equijoin_pairs(&join,true).is_none());
+    join.on=vec![(col("missing"),col("r.id"))];assert!(equijoin_pairs(&join,true).is_none());
+    join.on.clear();
+    join.filter=Some(col("r.id").eq(col("l.id")).and(col("l.payload").is_not_null()));
+    assert_eq!(equijoin_pairs(&join,true),Some(vec![(0,0)]));assert!(equijoin_pairs(&join,false).is_none());
+    join.filter=Some(col("r.id").eq(col("l.id")));
+    assert_eq!(equijoin_pairs(&join,false),Some(vec![(0,0)]));
+    join.filter=Some(col("l.id").eq(col("r.payload")));
+    assert_eq!(equijoin_pairs(&join,true),Some(vec![]));assert!(equijoin_pairs(&join,false).is_none());
+    join.filter=None;
+    let cast=|name:&str|Expr::Cast(Cast::new(Box::new(col(name)),DataType::Int32));
+    join.on=vec![(cast("l.id"),cast("r.id"))];assert!(equijoin_pairs(&join,true).is_none());
+    join.on=vec![(col("l.id").alias("left_key"),col("r.id").alias("right_key"))];
+    assert_eq!(equijoin_pairs(&join,false),Some(vec![(0,0)]));
+}
+
+#[test]
+fn semi_and_anti_join_facts_follow_the_returned_side_and_mark_joins_are_proof_barriers() {
+    let left=LogicalPlanBuilder::from(scan(None,true)).alias("l").unwrap().build().unwrap();
+    let right=LogicalPlanBuilder::from(scan(None,true)).project(vec![col("people.payload"),col("people.id")]).unwrap().alias("r").unwrap().build().unwrap();
+    for kind in [JoinType::LeftSemi,JoinType::LeftAnti,JoinType::RightSemi,JoinType::RightAnti,JoinType::LeftMark,JoinType::RightMark] {
+        let plan=LogicalPlanBuilder::from(left.clone()).join(right.clone(),kind,(vec!["l.id"],vec!["r.id"]),None).unwrap().build().unwrap();
+        let facts=analyze(&plan);
+        assert!(facts.complete_sources.is_empty());assert!(!facts.removable);
+        if matches!(kind,JoinType::LeftMark|JoinType::RightMark) {
+            assert!(facts.unique_keys.is_empty());assert!(facts.non_null.is_empty());assert!(facts.origins.iter().all(Option::is_none));
+        } else {
+            let (source,key)=if matches!(kind,JoinType::RightSemi|JoinType::RightAnti) {(&right,1)} else {(&left,0)};
+            assert_eq!(facts.origins,analyze(source).origins);assert!(facts.unique_on(&[key],true));
+            assert!(facts.non_null.contains(&key));assert!(!facts.non_null.contains(&(1-key)));
+        }
+    }
+}
+
+#[test]
+fn distinct_on_and_grouping_sets_do_not_invent_projected_keys() {
+    use datafusion::logical_expr::GroupingSet;
+    let source=scan(None,false);
+    for (on,select,unique) in [
+        (vec![col("people.id")],vec![col("people.payload")],false),
+        (vec![col("people.id")+lit(1i64)],vec![col("people.payload")],false),
+        (vec![col("people.id")],vec![col("people.payload"),col("people.id").alias("key")],true),
+    ] {
+        let plan=LogicalPlanBuilder::from(source.clone()).distinct_on(on,select,None).unwrap().build().unwrap();
+        let facts=analyze(&plan);
+        assert_eq!(facts.unique_on(&(0..plan.schema().fields().len()).collect::<Vec<_>>(),true),unique);
+        assert!(facts.complete_sources.is_empty());assert!(!facts.removable);
+    }
+    let grouped=LogicalPlanBuilder::from(source).aggregate(vec![Expr::GroupingSet(GroupingSet::GroupingSets(vec![vec![col("people.id")],vec![]]))],Vec::<Expr>::new()).unwrap().build().unwrap();
+    let facts=analyze(&grouped);
+    assert!(facts.unique_keys.is_empty());assert!(facts.equality_keys.is_empty());assert!(!facts.removable);
+}
+
+#[tokio::test]
+async fn grouping_reduction_avoids_internal_alias_collisions_and_preserves_null_payloads() {
+    use datafusion::functions_aggregate::expr_fn::{count,sum};
+    use datafusion::common::ScalarValue;
+    let plan=LogicalPlanBuilder::from(scan(None,true)).aggregate(vec![col("people.id"),col("people.payload")],vec![
+        count(lit(1i64)).alias("__constraint_group_1"),sum(col("people.id")).alias("total"),
+    ]).unwrap().build().unwrap();
+    let (rewritten,proofs)=optimize(plan.clone()).unwrap();
+    assert!(proofs.iter().any(|proof|proof.rule=="reduce_grouping"));
+    // Rewriting tightens functional dependencies; the external row schema stays identical.
+    assert_eq!(rewritten.schema().as_arrow(),plan.schema().as_arrow());
+    assert_eq!(rewritten.schema().columns(),plan.schema().columns());
+    let batches=crate::ir::rel::execute_test_plan(rewritten).await.unwrap();
+    let mut rows=batches.iter().flat_map(|b|(0..b.num_rows()).map(move |r|(0..b.num_columns()).map(|c|ScalarValue::try_from_array(b.column(c),r).unwrap()).collect::<Vec<_>>())).collect::<Vec<_>>();
+    rows.sort_by(|a,b|a.partial_cmp(b).unwrap());
+    assert_eq!(rows,vec![
+        vec![ScalarValue::Int64(Some(1)),ScalarValue::Utf8(Some("Ada".into())),ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(1))],
+        vec![ScalarValue::Int64(Some(2)),ScalarValue::Utf8(None),ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(2))],
+    ]);
+}
+
+#[tokio::test]
+async fn contained_union_handles_reversed_inputs_and_keeps_disjoint_selections() {
+    let base=scan(None,false);
+    let first=LogicalPlanBuilder::from(base.clone()).filter(col("people.id").eq(lit(1i64))).unwrap().build().unwrap();
+    let second=LogicalPlanBuilder::from(base.clone()).filter(col("people.id").eq(lit(2i64))).unwrap().build().unwrap();
+    for (left,right,contained) in [(base.clone(),first.clone(),true),(first.clone(),base,true),(first,second,false)] {
+        let plan=LogicalPlanBuilder::from(left).union(right).unwrap().distinct().unwrap().build().unwrap();
+        let (rewritten,proofs)=optimize(plan.clone()).unwrap();
+        assert_eq!(proofs.iter().any(|p|p.rule=="contained_union"),contained);assert_eq!(rewritten.schema(),plan.schema());
+        let batches=crate::ir::rel::execute_test_plan(rewritten).await.unwrap();
+        let mut ids=batches.iter().flat_map(|b|b.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+        ids.sort();assert_eq!(ids,vec![1,2]);
+    }
+}
