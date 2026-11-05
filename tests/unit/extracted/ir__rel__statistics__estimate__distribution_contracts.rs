@@ -156,6 +156,10 @@ fn estimator_case_nullability_respects_ordered_arms_and_null_safe_boolean_wrappe
     }
 
 fn estimate_scan(name: &str, rows: f64) -> LogicalPlan {
+    estimate_scan_with(name, rows, |_| {})
+}
+
+fn estimate_scan_with(name: &str, rows: f64, configure: impl FnOnce(&mut SourceStatistics)) -> LogicalPlan {
     use std::sync::Arc;
     use arrow::datatypes::{Field, Schema};
     use datafusion::{datasource::{empty::EmptyTable, provider_as_source}, logical_expr::LogicalPlanBuilder};
@@ -164,12 +168,13 @@ fn estimate_scan(name: &str, rows: f64) -> LogicalPlan {
     let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false),
         Field::new("y", DataType::Int64, false),
         Field::new("items", DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), true)]));
-    let source = SourceStatistics { estimated_rows: Some(rows), estimated_bytes: Some(rows * 24.0),
+    let mut source = SourceStatistics { estimated_rows: Some(rows), estimated_bytes: Some(rows * 24.0),
         columns: BTreeMap::from([("x".into(), uniform.clone()), ("y".into(), uniform),
             ("items".into(), ColumnStatistics {list: Some(ListStatistics {parents: 10, total_lengths: 30,
                 ..Default::default()}), ..Default::default()})]),
         groups: vec![GroupStatistics {columns: vec!["x".into(), "y".into()], observations: 10,
             sample_distinct: 7, ..Default::default()}], ..Default::default() };
+    configure(&mut source);
     let snapshot = Arc::new(StatisticsSnapshot {revision: format!("revision-{name}"),
         sources: BTreeMap::from([(name.into(), source)]), version: VERSION, mapping: String::new(),
         collected_at: String::new(), relationships: vec![], rdf: vec![], report: Default::default()});
@@ -284,4 +289,77 @@ fn projected_constructor_statistics_preserve_ndv_width_and_nullability() {
     assert!(projected_column(&concat(vec![col("missing")]),&state).is_none());
     let unknown_rows = State {rows:None,..state};
     assert!(projected_column(&joined,&unknown_rows).is_none());
+}
+
+#[test]
+fn incomplete_statistics_do_not_invent_expansion_or_access_costs() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for omit_column in [false,true] {
+        let scan=estimate_scan_with("source",10.0,|source| {
+            if omit_column {source.columns.remove("items");}
+            else {source.columns.get_mut("items").unwrap().list=None;}
+        });
+        let plan=LogicalPlanBuilder::from(scan).unnest_column(datafusion::common::Column::from_name("items"))
+            .unwrap().build().unwrap();
+        let result=estimate(&plan);
+        assert!(result.estimated_rows.is_none());
+        assert!(result.estimated_expanded_rows.is_none());
+        assert!(result.estimated_work.is_none());
+    }
+    for missing_rows in [false,true] {
+        let scan=estimate_scan_with("source",10.0,|source| {
+            if missing_rows {source.estimated_rows=None;} else {source.estimated_bytes=None;}
+        });
+        assert!(source_access_cost(&scan,&["x".into()]).is_none());
+        let result=estimate(&scan);
+        assert!(result.estimated_work.is_none());
+        assert_eq!(result.estimated_input_rows.is_none(),missing_rows);
+    }
+}
+
+#[test]
+fn distinct_estimates_include_null_groups_and_sample_ndv_fallback() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for (nulls,expected) in [(0,5.0),(2,6.0)] {
+        let scan=estimate_scan_with("source",100.0,|source| {
+            let column=source.columns.get_mut("x").unwrap();
+            column.nulls=nulls;column.estimated_distinct=None;
+        });
+        let plan=LogicalPlanBuilder::from(scan).project(vec![col("x")]).unwrap().distinct().unwrap().build().unwrap();
+        close(estimate(&plan).estimated_rows,expected);
+    }
+}
+
+#[test]
+fn scan_predicates_and_residual_conjunctions_are_applied_once() {
+    let mut scan=estimate_scan("source",100.0);
+    let LogicalPlan::TableScan(table)=&mut scan else {panic!()};
+    table.filters=vec![col("x").eq(lit(1_i64)),col("x").eq(lit(1_i64))];
+    close(estimate(&scan).estimated_rows,20.0);
+    let mut state=State {rows:Some(100.0),columns:BTreeMap::from([("x".into(),sample()),("y".into(),sample())]),..Default::default()};
+    filter(&mut state,&col("x").eq(lit(1)).and(col("y").eq(lit(2))));
+    close(state.rows,12.0);
+    filter(&mut state,&col("x").eq(lit(1)).and(col("y").eq(lit(2))));
+    close(state.rows,12.0);
+    let mut unknown=State {rows:Some(100.0),..Default::default()};
+    filter(&mut unknown,&col("x").eq(lit(1)).and(col("y").eq(lit(2))));
+    assert!(unknown.rows.is_none());
+}
+
+#[test]
+fn join_probability_tolerates_unmatched_and_null_sample_values() {
+    let state=|values:Vec<(&str,u64)>|State {columns:BTreeMap::from([("x".into(),ColumnStatistics {
+        observations:10,sample_distinct:2,estimated_distinct:Some(2.0),
+        frequent:values.into_iter().map(|(v,n)|(v.to_owned(),n)).collect(),..Default::default()
+    })]),..Default::default()};
+    // Null equality cannot add a matching heavy-hitter contribution; unmatched
+    // sampled values still leave an uncertain overlapping tail.
+    let left=state(vec![("null",2),("1",4)]);
+    let right=state(vec![("null",2),("2",4)]);
+    close(join_probability(&left,&right,&[(col("x"),col("x"))]),0.5);
+    let missing=State::default();
+    assert!(join_probability(&left,&missing,&[(col("x"),col("x"))]).is_none());
+    assert!(join_probability(&left,&right,&[(col("x"),col("x")),(col("y"),col("y"))]).is_none());
+    let empty=state(vec![]);
+    close(join_probability(&left,&empty,&[(col("x"),col("x"))]),0.5);
 }
