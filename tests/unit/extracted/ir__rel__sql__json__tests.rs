@@ -276,3 +276,124 @@
             }
         }
     }
+
+    #[test]
+    #[ignore = "requires PostgreSQL and DuckDB CLI"]
+    fn live_json_mutation_paths_and_nulls() {
+        use serde_json::json;
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            let pg = dialect == SqlDialect::Postgres;
+            let ty = if pg { "JSONB" } else { "JSON" };
+            for (op, doc, path, value, expected) in [
+                ("set", "{\"a\":1}", "$", "2", json!(2)),
+                ("replace", "[1]", "$", "NULL", json!(null)),
+                ("insert", "[1]", "$", "2", json!([1])),
+                (
+                    "set",
+                    "{\"a\":[1,2]}",
+                    "$.a[-1]",
+                    "NULL",
+                    json!({"a":[1,null]}),
+                ),
+                ("insert", "[1,2]", "$[-1]", "9", json!([1, 9, 2])),
+                ("set", "[1,2]", "$[-9]", "9", json!([9, 1, 2])),
+                ("replace", "[1,2]", "$[9]", "9", json!([1, 2])),
+                (
+                    "set",
+                    "{\"a\":[{\"b\":1}]}",
+                    "/a/0/b",
+                    "9",
+                    json!({"a":[{"b":9}]}),
+                ),
+                ("insert", "{\"a\":{}}", "/a/01", "9", json!({"a":{"01":9}})),
+                ("set", "{\"a\":[1]}", "/a/01", "9", json!({"a":[1]})),
+                ("set", "{\"a\":null}", "$.a.b", "9", json!({"a":null})),
+                (
+                    "replace",
+                    "{\"a\":[1]}",
+                    "$.missing[0]",
+                    "9",
+                    json!({"a":[1]}),
+                ),
+            ] {
+                let lowered = render(op, &["doc", &string(path), value], dialect);
+                let sql = format!(
+                    "SELECT {lowered} FROM (SELECT CAST({} AS {ty}) doc) t;",
+                    string(doc)
+                );
+                let actual =
+                    execute(&sql, pg).unwrap_or_else(|e| panic!("{dialect:?} {op} {path}: {e}"));
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&actual).unwrap(),
+                    expected,
+                    "{dialect:?} {op} {doc} {path}"
+                );
+                let null_sql =
+                    format!("SELECT ({lowered}) IS NULL FROM (SELECT CAST(NULL AS {ty}) doc) t;");
+                assert_eq!(
+                    execute(&null_sql, pg).unwrap(),
+                    if pg { "t" } else { "true" },
+                    "{dialect:?} SQL NULL {op} {path}"
+                );
+            }
+            for (doc, paths, expected) in [
+                ("{\"a\":1,\"b\":2}", vec!["$.a", "$.b"], json!({})),
+                (
+                    "{\"a\":[1,2,3]}",
+                    vec!["$.a[-1]", "$.a[0]"],
+                    json!({"a":[2]}),
+                ),
+                (
+                    "{\"a\":[{\"b\":null,\"c\":2}]}",
+                    vec!["/a/0/b"],
+                    json!({"a":[{"c":2}]}),
+                ),
+                (
+                    "[1,2]",
+                    vec!["/01", "$[2147483648]", "$[-2147483649]"],
+                    json!([1, 2]),
+                ),
+                ("{\"a\":1}", vec!["$.missing"], json!({"a":1})),
+            ] {
+                let path_args = paths.iter().map(|p| string(p)).collect::<Vec<_>>();
+                let mut args = vec!["doc"];
+                args.extend(path_args.iter().map(String::as_str));
+                let lowered = render("remove", &args, dialect);
+                let sql = format!(
+                    "SELECT {lowered} FROM (SELECT CAST({} AS {ty}) doc) t;",
+                    string(doc)
+                );
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&execute(&sql, pg).unwrap()).unwrap(),
+                    expected,
+                    "{dialect:?} remove {doc} {paths:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn json_mutation_rejects_indefinite_paths_and_bad_arity() {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            for op in ["set", "insert", "replace", "remove"] {
+                for path in ["path_column", "'$[*]'", "'$..a'", "'$[broken'"] {
+                    let mut args = vec![expr("doc", dialect), expr(path, dialect)];
+                    if op != "remove" {
+                        args.push(expr("1", dialect));
+                    }
+                    assert!(
+                        lower(&format!("__orchiddb_json_{op}"), &args, dialect).is_err(),
+                        "{dialect:?} {op} {path}"
+                    );
+                }
+                assert!(lower(&format!("__orchiddb_json_{op}"), &[], dialect).is_err());
+            }
+            let args = vec![expr("doc", dialect), expr("'$'", dialect)];
+            let error = lower("__orchiddb_json_remove", &args, dialect).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("cannot remove the JSON document root")
+            );
+        }
+    }
