@@ -235,3 +235,32 @@ fn unaliased_ast_projection_retains_known_and_unknown_binding_types() {
     }
     assert_eq!(BindingKind::Unknown.cypher_type_name(),"ANY");
 }
+
+#[test]
+fn ast_boundary_procedure_semantics_requires_explicit_outputs_for_embedded_read_calls() {
+    for (name, field) in [("db.labels", "label"), ("db.relationshipTypes", "relationshipType"),
+                          ("db.propertyKeys", "propertyKey")] {
+        let standalone = parse_query(&format!("CALL {name}()")).unwrap();
+        assert_eq!(analyze_query(&standalone).unwrap().output_fields, [field]);
+        let mut embedded = parse_query(&format!("CALL {name}() YIELD {field} RETURN {field}")).unwrap();
+        let Clause::Call(call) = &mut embedded.clauses[0] else { panic!("expected procedure") };
+        call.signature = None;
+        call.standalone = false;
+        call.yield_all = false;
+        call.yields.clear();
+        let error = analyze_query(&embedded).unwrap_err().to_string();
+        assert!(error.contains("requires explicit YIELD"), "{name}: {error}");
+    }
+}
+
+#[test]
+fn ast_boundary_procedure_semantics_rejects_duplicate_output_aliases_before_scope_insertion() {
+    for (name, field) in [("db.labels", "label"), ("db.relationshipTypes", "relationshipType"),
+                          ("db.propertyKeys", "propertyKey")] {
+        let mut query = parse_query(&format!("CALL {name}() YIELD {field} AS result RETURN result")).unwrap();
+        let Clause::Call(call) = &mut query.clauses[0] else { panic!("expected procedure") };
+        call.yields.push(call.yields[0].clone());
+        let error = analyze_query(&query).unwrap_err().to_string();
+        assert!(error.contains("procedure YIELD contains duplicate output variables: result"), "{name}: {error}");
+    }
+}

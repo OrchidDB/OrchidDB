@@ -71,3 +71,40 @@
             "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
         ));
     }
+
+#[test]
+fn ast_boundary_implicit_projection_names_preserve_variables_and_allocate_computed_outputs() {
+    let variable = AstProjectionItem { expr: Expr::Variable("value".into()), alias: None, explicit_alias: false };
+    let constant = AstProjectionItem { expr: Expr::Literal(Literal::Integer("7".into())), alias: None, explicit_alias: false };
+    let mut lowerer = Lowerer::new();
+    lowerer.add_visible("value");
+    let body = projection_body(vec![variable.clone(), constant.clone()]);
+    let (plan, fields) = lower_projection_body(&mut lowerer, Node::GraphOneRow, &body, true).unwrap();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0], "value");
+    assert_ne!(fields[1], "value");
+    let Node::GraphProject { items, .. } = plan else { panic!("expected row projection") };
+    assert_eq!(items[0].alias, "value");
+    assert_eq!(items[0].expr, IrExpr::Binding("value".into()));
+    assert_eq!(items[1].alias, fields[1]);
+    assert!(validate_with_projection_aliases(&projection_body(vec![variable])).is_ok());
+    assert!(validate_with_projection_aliases(&projection_body(vec![constant])).unwrap_err().to_string().contains("must be aliased"));
+}
+
+#[test]
+fn ast_boundary_implicit_projection_aliases_distinguish_passthrough_shadowing_and_unnamed_values() {
+    let body = projection_body(vec![
+        AstProjectionItem { expr: Expr::Variable("source".into()), alias: None, explicit_alias: false },
+        aliased(Expr::Variable("source".into()), "target"),
+        AstProjectionItem { expr: Expr::Literal(Literal::Integer("1".into())), alias: None, explicit_alias: false },
+    ]);
+    assert_eq!(projection_aliases(&body), BTreeMap::from([
+        ("source".into(), Expr::Variable("source".into())),
+        ("target".into(), Expr::Variable("source".into())),
+    ]));
+    assert_eq!(shadowed_projection_fields(&body, &["source".into(), "target".into()]), BTreeSet::from(["target".into()]));
+    let candidates = BTreeSet::from(["outer".into()]);
+    let mut references = BTreeSet::from(["source".into(), "target".into(), "outer".into()]);
+    scope::remove_local_projection_bindings(&body, &candidates, &mut references);
+    assert_eq!(references, candidates);
+}
