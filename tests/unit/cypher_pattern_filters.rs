@@ -242,3 +242,56 @@ fn failed_pattern_query_can_be_followed_by_a_valid_query_on_the_same_lowerer() {
         assert!(lowerer.traversal_stack.is_empty());
     }
 }
+
+#[test]
+fn relationship_projection_preserves_input_when_no_path_or_expanded_binding_exists() {
+    let input=Node::GraphCorrelate{bindings:vec!["outside".into()]};
+    for visible in [false,true] {
+        let actual=apply_relationship_binding_projection(input.clone(),"rel",None,None,"source",visible,true);
+        assert_eq!(actual,input);
+        let actual=apply_relationship_binding_projection(input.clone(),"rel",None,None,"source",visible,false);
+        assert_eq!(actual,input);
+    }
+    let actual=apply_relationship_binding_projection(input.clone(),"rel",Some("expanded"),None,"source",true,false);
+    let Node::GraphFilter{condition,input:child}=actual else {panic!("identity filter")};
+    assert_eq!(*child,input);
+    assert_eq!(condition,IrExpr::Binary{op:IrBinaryOp::Eq,lhs:Box::new(IrExpr::Binding("expanded".into())),rhs:Box::new(IrExpr::Binding("rel".into()))});
+}
+
+#[test]
+fn recursive_predicate_failure_restores_scope_and_absent_predicate_preserves_input() {
+    let mut lowerer=Lowerer::new();let scope=BTreeSet::from(["path".into(),"source".into(),"outside".into()]);
+    lowerer.replace_scope(scope.iter().cloned());
+    let input=Node::GraphCorrelate{bindings:scope.iter().cloned().collect()};
+    let mut recursive=RecursiveRelationshipPattern{rel_variable:"edge".into(),node_variable:"vertex".into(),predicate:None,rel_projection_keys:None,node_projection_keys:None};
+    assert_eq!(apply_recursive_relationship_predicate(&mut lowerer,input.clone(),"path","source",&recursive,&scope).unwrap(),input);
+    recursive.predicate=Some(Expr::Function{name:"coverage_unknown_recursive_function".into(),distinct:false,args:vec![]});
+    let error=apply_recursive_relationship_predicate(&mut lowerer,input,"path","source",&recursive,&scope).unwrap_err();
+    assert!(error.to_string().contains("coverage_unknown_recursive_function"),"{error}");assert_eq!(lowerer.visible_set(),scope);
+}
+
+#[test]
+fn recursive_property_projection_retains_path_identity_and_explicit_key_order() {
+    let input=Node::GraphCorrelate{bindings:vec!["path".into()]};
+    let mut recursive=RecursiveRelationshipPattern{rel_variable:"edge".into(),node_variable:"vertex".into(),predicate:None,rel_projection_keys:None,node_projection_keys:None};
+    assert_eq!(apply_recursive_relationship_projection(input.clone(),"path",&recursive),input);
+    for keys in [vec![],vec!["weight".to_string(),"display name".to_string()]] {
+        recursive.rel_projection_keys=Some(keys.clone());
+        let result=apply_recursive_relationship_projection(input.clone(),"path",&recursive);
+        let Node::GraphProject{mode,items,error_policy,input:child}=result else {panic!("path projection")};
+        assert_eq!(mode,ProjectMode::PreserveVisible);assert_eq!(error_policy,ProjectErrorPolicy::PropagateError);assert_eq!(*child,input);
+        assert_eq!(items,vec![ProjectionItem{alias:"path".into(),expr:IrExpr::Call{name:"path_project_edges".into(),args:vec![IrExpr::Binding("path".into()),IrExpr::List(keys.into_iter().map(|key|IrExpr::Lit(Lit::String(key))).collect())]}}]);
+    }
+}
+
+#[test]
+fn scalar_pattern_property_predicates_preserve_caller_visibility() {
+    let mut lowerer=Lowerer::new();let scope=BTreeSet::from(["outside".into(),"path".into(),"source".into()]);
+    lowerer.replace_scope(scope.iter().cloned());
+    let input=Node::GraphCorrelate{bindings:scope.iter().cloned().collect()};
+    let predicate=Expr::Literal(Literal::Bool(true));
+    let Node::GraphFilter{condition,input:child}=apply_property_filters(&mut lowerer,input.clone(),"person",&predicate,&scope).unwrap() else {panic!("property filter")};
+    assert_eq!(condition,IrExpr::Lit(Lit::Bool(true)));assert_eq!(*child,input);assert_eq!(lowerer.visible_set(),scope);
+    let result=apply_variable_length_property_filters(&mut lowerer,input,"path","source",&predicate,&scope).unwrap();
+    assert!(matches!(result,Node::GraphFilter{..}));assert_eq!(lowerer.visible_set(),scope);
+}

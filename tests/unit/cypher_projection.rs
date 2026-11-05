@@ -941,3 +941,54 @@ fn invalid_sort_scopes_fail_without_changing_source_visibility() {
         assert_eq!(lowerer.visible_set(), before);
     }
 }
+
+#[test]
+fn with_subquery_aliases_materialize_volatile_values_once_before_final_modifiers() {
+    for alias in ["sample","source"] { for volatile in [false,true] { for distinct in [false,true] {
+        let expression=if volatile {"rand()"} else {"source + 1"};
+        let query=parse_query(&format!("WITH {}{expression} AS {alias} ORDER BY {alias} SKIP 1 LIMIT 2 WHERE EXISTS {{ RETURN {alias} + other AS x }} RETURN {alias}",if distinct {"DISTINCT "} else {""})).unwrap();
+        let Clause::With(clause)=&query.clauses[0] else {panic!("WITH")};
+        let mut lowerer=Lowerer::new();lowerer.replace_scope(["source".into(),"other".into()]);
+        assert!(matches!(lower_with_predicate_placement(&lowerer,&clause.projection,clause.predicate.as_ref().unwrap()).unwrap(),WithPredicatePlacement::MaterializeAliases));
+        let input=Node::GraphProject{mode:ProjectMode::ReplaceScope,error_policy:ProjectErrorPolicy::PropagateError,
+            items:vec![ProjectionItem{alias:"source".into(),expr:IrExpr::Lit(Lit::Int(7))},ProjectionItem{alias:"other".into(),expr:IrExpr::Lit(Lit::Int(2))}],input:Node::GraphOneRow.boxed()};
+        let result=lower_with(&mut lowerer,input,clause).unwrap();
+        assert_eq!(lowerer.visible_set(),names(&[alias]));
+        let mut pending=vec![&result];let mut barriers=0;let mut random_calls=0;let mut distincts=0;let mut slices=0;let mut sorts=0;
+        while let Some(node)=pending.pop() {
+            match node {
+                Node::GraphBarrier{materialize:true,..}=>barriers+=1,
+                Node::GraphProject{items,..}=>random_calls+=items.iter().filter(|item|matches!(&item.expr,IrExpr::Call{name,..} if name.eq_ignore_ascii_case("rand"))).count(),
+                Node::GraphDistinct{..}=>distincts+=1,
+                Node::GraphSort{..}=>sorts+=1,
+                Node::GraphSlice{slice,..}=>{slices+=1;assert_eq!(slice.offset,1);assert_eq!(slice.fetch,Some(2));},
+                _=>{},
+            }
+            pending.extend(crate::ir::analysis::children(node));
+        }
+        assert_eq!(barriers,usize::from(volatile));assert_eq!(random_calls,usize::from(volatile));
+        assert_eq!(distincts,usize::from(distinct));assert_eq!(slices,1);assert_eq!(sorts,1);
+    }}}
+}
+
+#[test]
+fn projection_slices_keep_parameters_dynamic_and_classify_invalid_literal_bounds() {
+    for (suffix,offset,fetch) in [("SKIP $offset",true,false),("LIMIT $limit",false,true),("SKIP $offset LIMIT $limit",true,true)] {
+        let query=parse_query(&format!("RETURN 1 AS value {suffix}")).unwrap();
+        let Clause::Return(clause)=&query.clauses[0] else {panic!("RETURN")};
+        let ProjectionSlice::Dynamic{offset:actual_offset,fetch:actual_fetch}=slice_from_projection(&Lowerer::new(),&clause.projection,&[]).unwrap() else {panic!("dynamic slice")};
+        for (actual,name,present) in [(actual_offset,"offset",offset),(actual_fetch,"limit",fetch)] {
+            assert_eq!(actual.is_some(),present);
+            if let Some(actual)=actual {assert_eq!(actual,IrExpr::Call{name:"parameter".into(),args:vec![IrExpr::Lit(Lit::String(name.into()))]});}
+        }
+    }
+    for (bound,expected) in [("-1","NegativeIntegerArgument"),("1.5","InvalidArgumentType")] {
+        for modifier in ["SKIP","LIMIT"] {
+            let query=parse_query(&format!("RETURN 1 AS value {modifier} {bound}")).unwrap();
+            let Clause::Return(clause)=&query.clauses[0] else {panic!("RETURN")};
+            let error=match slice_from_projection(&Lowerer::new(),&clause.projection,&[]) {Err(error)=>error,Ok(_)=>panic!("invalid bound accepted")};
+            assert!(format!("{error:?}").contains(expected),"{error:?}");
+        }
+    }
+    assert_eq!(literal_u64(&expr("-0")).unwrap(),Some(0));
+}
