@@ -81,3 +81,60 @@ fn cypher_float_udf_constant_folding_preserves_typed_null_and_negative_zero() {
         assert_eq!(actual.map(f64::to_bits),expected.map(f64::to_bits));
     }
 }
+
+#[test]
+fn cypher_list_comparison_preserves_three_valued_results_across_list_layouts() {
+    let list = |values: &[Option<i64>]| ScalarValue::List(ScalarValue::new_list_nullable(
+        &values.iter().map(|v| ScalarValue::Int64(*v)).collect::<Vec<_>>(), &DataType::Int64));
+    let cases: Vec<(Vec<Option<i64>>, Vec<Option<i64>>, [Option<bool>;6])> = vec![
+        (vec![],vec![],[Some(true),Some(false),Some(false),Some(true),Some(false),Some(true)]),
+        (vec![Some(1)],vec![Some(1),Some(2)],[Some(false),Some(true),Some(true),Some(true),Some(false),Some(false)]),
+        (vec![Some(1),None],vec![Some(1),Some(2)],[None,None,None,None,None,None]),
+        (vec![Some(1),None],vec![Some(2),None],[Some(false),Some(true),Some(true),Some(true),Some(false),Some(false)]),
+        (vec![None,Some(2)],vec![None,Some(3)],[Some(false),Some(true),None,None,None,None]),
+        (vec![Some(i64::MAX),Some(0)],vec![Some(i64::MAX-1),Some(0)],[Some(false),Some(true),Some(false),Some(false),Some(true),Some(true)]),
+    ];
+    for (left,right,expected) in cases {
+        let left=list(&left);let right=list(&right);
+        let item=Arc::new(Field::new("item",DataType::Int64,true));
+        let mut kinds=vec![left.data_type(),DataType::LargeList(item.clone())];
+        if let (ScalarValue::List(a),ScalarValue::List(b))=(&left,&right) {
+            if a.value_length(0)==2 && b.value_length(0)==2 {kinds.push(DataType::FixedSizeList(item,2));}
+        }
+        for kind in kinds {
+            let a=left.cast_to(&kind).unwrap().to_array().unwrap();
+            let b=right.cast_to(&kind).unwrap().to_array().unwrap();
+            for (op,expected) in ["eq","neq","lt","lte","gt","gte"].into_iter().zip(expected) {
+                let operation=ScalarValue::Utf8(Some(op.into())).to_array().unwrap();
+                let result=evaluate(LIST_COMPARE,&[operation,a.clone(),b.clone()],1).unwrap();
+                assert_eq!(ScalarValue::try_from_array(&result,0).unwrap(),ScalarValue::Boolean(expected),"{kind:?} {left:?} {op} {right:?}");
+            }
+        }
+    }
+    let null=ScalarValue::try_from(list(&[]).data_type()).unwrap().to_array().unwrap();
+    for op in ["eq","neq","lt","lte","gt","gte"] {
+        let result=evaluate(LIST_COMPARE,&[ScalarValue::Utf8(Some(op.into())).to_array().unwrap(),null.clone(),list(&[]).to_array().unwrap()],1).unwrap();
+        assert!(result.is_null(0));
+    }
+}
+
+#[test]
+fn cypher_distinct_collection_keeps_first_numeric_representation_and_exact_decimals() {
+    let input=ScalarValue::List(ScalarValue::new_list_nullable(&[
+        ScalarValue::Float64(Some(-0.0)),ScalarValue::Float64(Some(0.0)),ScalarValue::Float64(None),
+        ScalarValue::Float64(Some(2.5)),ScalarValue::Float64(Some(f64::INFINITY)),
+        ScalarValue::Float64(Some(2.5)),ScalarValue::Float64(Some(f64::NEG_INFINITY)),
+    ],&DataType::Float64));
+    let result=evaluate(COLLECT_DISTINCT,&[input.to_array().unwrap()],1).unwrap();
+    let ScalarValue::List(list)=ScalarValue::try_from_array(&result,0).unwrap() else {panic!("list")};
+    let array=list.value(0);
+    let values=array.as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+    assert_eq!(values.values().iter().map(|n|n.to_bits()).collect::<Vec<_>>(),vec![(-0.0_f64).to_bits(),2.5_f64.to_bits(),f64::INFINITY.to_bits(),f64::NEG_INFINITY.to_bits()]);
+    let ty=DataType::Decimal128(38,9);
+    let high=10_i128.pow(37);
+    let values=[Some(high),Some(high+1),None,Some(high),Some(-high)];
+    let input=ScalarValue::List(ScalarValue::new_list_nullable(&values.into_iter().map(|n|ScalarValue::Decimal128(n,38,9)).collect::<Vec<_>>(),&ty));
+    let result=evaluate(COLLECT_DISTINCT,&[input.to_array().unwrap()],1).unwrap();
+    let expected=ScalarValue::List(ScalarValue::new_list_nullable(&[high,high+1,-high].into_iter().map(|n|ScalarValue::Decimal128(Some(n),38,9)).collect::<Vec<_>>(),&ty));
+    assert_eq!(ScalarValue::try_from_array(&result,0).unwrap(),expected);
+}

@@ -135,3 +135,47 @@ fn compiled_kernel_rewrites_preserve_identity_and_validate_dependency_shape() {
     assert_eq!(copy.partial_cmp(kernel),Some(std::cmp::Ordering::Equal));
     assert!(!format!("{copy:?}").is_empty());
 }
+
+#[test]
+fn cypher_host_boundary_decodes_nullable_sql_columns_without_interpreting_aliases() {
+    use arrow::{array::{ArrayRef, Int64Array, StringArray}, datatypes::{DataType, Field, Schema}};
+    let graph = PropertyGraph::new();
+    let plan = crate::language::cypher::preparation::prepare("RETURN null AS x", &Default::default(), Some(graph.procedures.as_ref())).unwrap();
+    let compiled = compile_for_host(&plan, &graph, CompileOptions { sql_islands: false, rule_context: reference_context(), ..Default::default() }).unwrap();
+    let mut kernel = RowKernel::from_plan(&compiled).unwrap().clone();
+    let fields = vec!["x".to_string(), "__orchid_traverser_bulk".to_string()];
+    kernel.relational_input = Some(fields.clone());
+    kernel.relational_input_state = false;
+    let schema = Arc::new(Schema::new(vec![Field::new(&fields[0], DataType::Int64, true), Field::new(&fields[1], DataType::Utf8, true)]));
+    let batch = RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(Int64Array::from(vec![Some(7), None])) as ArrayRef,
+        Arc::new(StringArray::from(vec![Some("user value"), None])) as ArrayRef,
+    ]).unwrap();
+    let decoded = kernel.decode_input(batch).unwrap();
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(decoded[0].get("x"), Value::Long(7));
+    assert_eq!(decoded[1].get("x"), Value::Null);
+    assert_eq!(decoded[0].get("__orchid_traverser_bulk"), Value::String("user value".into()));
+    assert_eq!(decoded[1].get("__orchid_traverser_bulk"), Value::Null);
+    assert!(decoded.iter().all(|row| row.bulk == 1));
+    assert!(kernel.decode_input(RecordBatch::new_empty(schema)).unwrap().is_empty());
+}
+
+#[test]
+fn cypher_host_boundary_round_trips_native_values_and_rejects_wrong_transport() {
+    use arrow::datatypes::{DataType, Field, Schema};
+    let graph = PropertyGraph::new();
+    let plan = crate::language::cypher::preparation::prepare("RETURN [1,null,2] AS x", &Default::default(), Some(graph.procedures.as_ref())).unwrap();
+    let compiled = compile_for_host(&plan, &graph, CompileOptions { sql_islands: false, rule_context: reference_context(), ..Default::default() }).unwrap();
+    let mut kernel = RowKernel::from_plan(&compiled).unwrap().clone();
+    kernel.relational_input = None;
+    kernel.relational_output = None;
+    let row = Row { bindings: [("x".into(), Value::List(vec![Value::Long(1), Value::Null, Value::Long(2)]))].into(), bulk: 1 };
+    let batch = kernel.encode_output(vec![row.clone()], &KernelState::default()).unwrap();
+    let decoded = kernel.decode_input(batch).unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].bindings, row.bindings);
+    assert_eq!(decoded[0].bulk, 1);
+    let invalid = RecordBatch::new_empty(Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, true)])));
+    assert!(kernel.decode_input(invalid).unwrap_err().to_string().contains("Invalid traverser batch schema"));
+}

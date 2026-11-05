@@ -190,6 +190,8 @@ pub(crate) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Val
                 return if numeric(left) && numeric(right) {Value::Bool(false)} else {Value::Null};
             }
             fn compare(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
+                // Cypher null comparisons stay unknown at every nesting depth.
+                if matches!(left, Value::Null) || matches!(right, Value::Null) { return None; }
                 if let (Value::List(left), Value::List(right)) = (left, right) {
                     for (a, b) in left.iter().zip(right) {
                         if cypher_equal(a, b) == Some(true) { continue; }

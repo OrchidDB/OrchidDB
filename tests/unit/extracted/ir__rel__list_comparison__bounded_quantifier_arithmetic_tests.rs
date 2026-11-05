@@ -50,3 +50,20 @@
         assert_eq!(integer_list_item_bounds(&plan,&col_exact("list")),None);
         assert_eq!(integer_list_item_bounds(&plan,&datafusion::functions_nested::expr_fn::make_array(vec![])),None);
     }
+
+#[test]
+fn list_alignment_preserves_nulls_without_permitting_lossy_or_throwing_casts() {
+    let plan = LogicalPlanBuilder::empty(true).build().unwrap();
+    let array = datafusion::functions_nested::expr_fn::make_array;
+    let list = |ty| DataType::List(Arc::new(Field::new("item", ty, true)));
+    for (value, target, expected) in [
+        (array(vec![lit(ScalarValue::Null)]), list(DataType::Int64), true),
+        (array(vec![array(vec![lit(ScalarValue::Null)])]), list(list(DataType::Int64)), true),
+        (array(vec![lit(9_007_199_254_740_993_i64)]), list(DataType::Float64), false),
+        (array(vec![lit("invalid integer")]), list(DataType::Int64), false),
+        (array(vec![lit(i64::MAX) + lit(1_i64)]), list(DataType::Int64), false),
+    ] {
+        let cast = Expr::Cast(Cast::new(Box::new(value), target));
+        assert_eq!(repeatable(&plan, &cast), expected, "{cast}");
+    }
+}

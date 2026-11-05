@@ -432,6 +432,21 @@ impl LoweringContext<'_> {
                 "Mixed Cypher numeric comparison requires lossless runtime values".into(),
             ));
         }
+        let list = |ty: &DataType| matches!(ty, DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _));
+        if (list(&lt) && list(&rt))
+            || (matches!(lt, DataType::Struct(_)) && matches!(rt, DataType::Struct(_)))
+        {
+            // Keep the existing fence for throwing/error-sensitive producers.
+            // SQL array/struct comparison does not implement Cypher's nested
+            // null semantics. Preserve safe Arrow operands and use the shared
+            // scalar comparison kernel even when native result encoding is off.
+            if list_comparison::repeatable(plan, &lhs) && list_comparison::repeatable(plan, &rhs) {
+                return Ok(native_values::typed::call(name, vec![lhs, rhs]));
+            }
+            return Err(RelError::Unsupported(
+                "Cypher compound comparison requires three-valued element semantics".into(),
+            ));
+        }
         // Arrow string encodings represent the same Cypher value type.
         let text =
             |t: &DataType| matches!(t, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View);
@@ -443,17 +458,6 @@ impl LoweringContext<'_> {
         {
             return Err(RelError::Unsupported(
                 "Cypher comparisons must not coerce unrelated operand types".into(),
-            ));
-        }
-        if matches!(
-            lt,
-            DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_)
-        ) || matches!(
-            rt,
-            DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_)
-        ) {
-            return Err(RelError::Unsupported(
-                "Cypher compound comparison requires three-valued element semantics".into(),
             ));
         }
         let comparison = self.lower_bound_binary(plan, &args[0], op, &args[1], lhs.clone(), rhs.clone())?;

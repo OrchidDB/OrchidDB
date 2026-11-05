@@ -76,9 +76,9 @@ fn generated_list_equality_does_not_hide_throwing_bounds() {
 #[tokio::test]
 async fn primitive_list_ordering_stops_at_first_non_equal_pair() {
     assert_eq!(rows("UNWIND [[1,null],[2,null],[null,1],[1],[],[1,2],null] AS xs RETURN xs < [2,null], xs <= [2,null], xs > [2,null], xs >= [2,null]").await,
-        vec!["true|true|false|false", "false|true|false|true", "|||", "true|true|false|false", "true|true|false|false", "true|true|false|false", "|||"]);
+        vec!["true|true|false|false", "|||", "|||", "true|true|false|false", "true|true|false|false", "true|true|false|false", "|||"]);
     assert_eq!(rows("UNWIND [[null,1],[1,null],[1],[1,2],[]] AS xs RETURN xs < [null,2], xs <= [null,2]").await,
-        vec!["false|true", "|", "|", "|", "true|true"]);
+        vec!["|", "|", "|", "|", "true|true"]);
     assert_eq!(rows("UNWIND [[1],[1,2],[1,2,3],[]] AS xs RETURN xs < [1,2], xs > [1,2]").await,
         vec!["true|false", "false|false", "false|true", "true|false"]);
 }
@@ -138,4 +138,32 @@ fn list_comparison_accepts_duckdb_widened_integer_lists_losslessly() {
         let actual: bool = connection.query_row(&sql, [], |row| row.get(0)).unwrap();
         assert_eq!(actual, expected, "{sql}");
     }
+}
+
+#[tokio::test]
+async fn list_ordering_with_null_pairs_is_unknown_with_and_without_helpers() {
+    for helpers in [false,true] {
+        assert_eq!(rows_with_options("UNWIND [[null,1],[1,null],[1,2],[],null] AS xs RETURN xs < [null,2], xs <= [null,2], xs > [null,2], xs >= [null,2]", helpers).await,
+            vec!["|||","|||","|||","true|true|false|false","|||"], "helpers={helpers}");
+        assert_eq!(rows_with_options("UNWIND [[1,null],[2,null],[3,null]] AS xs RETURN xs < [2,null], xs <= [2,null], xs > [2,null], xs >= [2,null]", helpers).await,
+            vec!["true|true|false|false","|||","false|false|true|true"], "helpers={helpers}");
+    }
+}
+
+#[tokio::test]
+async fn compound_comparisons_without_helpers_preserve_nested_null_semantics() {
+    use orchiddb::ir::diagnostics::without_constant_folding;
+    without_constant_folding(async {
+        for helpers in [false, true] {
+            for (query, expected) in [
+                ("RETURN [[null,1]] < [[null,1]], [[null,1]] <= [[null,1]], [[null,1]] > [[null,1]], [[null,1]] >= [[null,1]]", "|||"),
+                ("RETURN [[null,1]] = [[null,1]], [[null,1]] <> [[null,1]], [[null,1]] = [[null,2]], [[null,1]] <> [[null,2]]", "||false|true"),
+                ("RETURN [[1,null]] < [[2,null]], [[1,null]] <= [[2,null]], [[2,null]] > [[1,null]], [[2,null]] >= [[1,null]]", "true|true|true|true"),
+                ("RETURN [[1]] < [[1,2]], [[1,2]] > [[1]], [[1]] = [[1]]", "true|true|true"),
+                ("RETURN [[]] < [[null,1]], [[]] = [[null,1]], [[null,1]] = [[null,1],[]], [[null,1]] < [[null,1],[]]", "true|false|false|"),
+            ] {
+                assert_eq!(rows_with_options(query, helpers).await, [expected], "{query}; helpers={helpers}");
+            }
+        }
+    }).await;
 }

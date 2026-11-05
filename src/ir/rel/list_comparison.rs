@@ -104,10 +104,8 @@ impl LoweringContext<'_> {
             let aggregate = LogicalPlanBuilder::from(expanded).aggregate(Vec::<Expr>::new(), vec![df_min(first_index).alias(&first)])?.build()?;
             let a = datafusion::functions_nested::expr_fn::array_element(left.clone(), col_exact(&first));
             let b = datafusion::functions_nested::expr_fn::array_element(right.clone(), col_exact(&first));
-            // Match the shared runtime: its first NULL/NULL pair compares as
-            // equal and terminates ordering, while a one-sided NULL is unknown.
-            let first_result = datafusion::logical_expr::when(a.clone().is_null().and(b.clone().is_null()), lit(matches!(op, BinaryOp::Lte | BinaryOp::Gte)))
-                .otherwise(binary(a, op, b))?;
+            // SQL comparison propagates either null, including a NULL/NULL pair.
+            let first_result = binary(a, op, b);
             let truth = datafusion::logical_expr::when(col_exact(&first).is_null(), binary(length(left), op, length(right)))
                 .otherwise(first_result)?;
             let subplan = LogicalPlanBuilder::from(aggregate).project(vec![truth.alias(&output)])?.build()?;
@@ -325,7 +323,21 @@ pub(super) fn repeatable(plan: &LogicalPlan, expr: &Expr) -> bool {
                 || integer_bounds(plan, expr).is_some())
                 && repeatable(plan, &e.left) && repeatable(plan, &e.right)
         }
-        Expr::Cast(cast) => integer_bounds(plan, expr).is_some() && repeatable(plan, &cast.expr),
+        Expr::Cast(cast) => {
+            // List construction aligns empty/null element types. Such casts
+            // preserve every defined value; numeric/string conversions do not.
+            fn compatible_items(from: &DataType, to: &DataType) -> bool {
+                from == to || matches!(from, DataType::Null) || match (from, to) {
+                    (DataType::List(a), DataType::List(b)) =>
+                        (b.is_nullable() || !a.is_nullable()) && compatible_items(a.data_type(), b.data_type()),
+                    _ => false,
+                }
+            }
+            let list_alignment = cast.expr.get_type(plan.schema()).is_ok_and(|from|
+                matches!((&from, &cast.data_type), (DataType::List(_), DataType::List(_)))
+                    && compatible_items(&from, &cast.data_type));
+            (integer_bounds(plan, expr).is_some() || list_alignment) && repeatable(plan, &cast.expr)
+        },
         Expr::ScalarFunction(call) if call.func.name() == "generate_series" => {
             let [start, stop, step] = call.args.as_slice() else { return false; };
             let Some((step_min, step_max)) = integer_bounds(plan, step) else { return false; };
