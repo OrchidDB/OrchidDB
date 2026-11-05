@@ -449,3 +449,169 @@ fn unconditional_local_call_hoisting_avoids_user_column_collisions() {
     assert_eq!(lifted.len(),1,"the local function must be evaluated in exactly one stage");
     assert!(lifted[0].columns.iter().any(|c|c.name=="__orchid_local_0_"));
 }
+
+struct RequestRecorder(Arc<std::sync::Mutex<Vec<Vec<serde_json::Value>>>>);
+#[async_trait::async_trait(?Send)]
+impl crate::federation::Session for RequestRecorder {
+    fn dialect(&self)->&str {"postgres"}
+    async fn execute_requests_stream(&mut self,mut requests:crate::federation::RequestStream,
+        _:Vec<TransferColumn>)->Result<BatchStream,String> {
+        let mut rows=0;
+        while let Some(requests)=requests.next().await {
+            let requests=requests?;
+            rows+=requests.len();
+            self.0.lock().unwrap().push(requests);
+        }
+        let output=batch(vec![Some(7);rows]);
+        Ok(BatchStream::new(output.schema(),futures::stream::iter([Ok(output)])))
+    }
+}
+
+fn parameter_request()->crate::operations::RequestTemplate {
+    use crate::operations::{RequestTemplate,RequestBinding,RequestEncoding};
+    RequestTemplate {adapter:"postgres".into(),parameters:1,
+        request:serde_json::json!({"value":null,"is_null":false,"literal":"$1"}),bindings:vec![
+            RequestBinding {pointer:"/value".into(),parameter:0,encoding:RequestEncoding::Value},
+            RequestBinding {pointer:"/is_null".into(),parameter:0,encoding:RequestEncoding::SqlNull},
+        ]}
+}
+
+#[tokio::test]
+async fn dependent_requests_batch_at_64_without_losing_order_nulls_or_empty_inputs() {
+    for count in [0,1,63,64,65,129] {
+        let values=(0..count).map(|i|if i%3==0 {None}else{Some(i as i64)}).collect::<Vec<_>>();
+        let recorded=Arc::new(std::sync::Mutex::new(vec![]));
+        let mut sources=BTreeMap::from([
+            ("input".into(),Box::new(FixedSource(batch(values.clone()))) as Box<dyn crate::federation::Session>),
+            ("requests".into(),Box::new(RequestRecorder(recorded.clone())) as Box<dyn crate::federation::Session>),
+        ]);
+        let plan=ExecutionPlan {version:1,result:1,nodes:vec![
+            wire_node(Operation::SourceSql {source:"input".into(),dialect:"postgres".into(),sql:"SELECT v".into()},1),
+            wire_node(Operation::SourceRequest {source:"requests".into(),input:Some(0),template:parameter_request()},1),
+        ]};
+        let result=execute(&plan,&mut sources,&Functions::new(),None).await.unwrap().collect_batches().await.unwrap();
+        assert_eq!(result.iter().map(RecordBatch::num_rows).sum::<usize>(),count);
+        let observed=recorded.lock().unwrap();
+        assert_eq!(observed.iter().map(Vec::len).collect::<Vec<_>>(),values.chunks(64).map(<[_]>::len).collect::<Vec<_>>());
+        let flattened=observed.iter().flatten().collect::<Vec<_>>();
+        for (value,request) in values.iter().zip(flattened) {
+            assert_eq!(request["value"],serde_json::json!(value));
+            assert_eq!(request["is_null"],serde_json::json!(value.is_none()));
+            assert_eq!(request["literal"],"$1");
+        }
+    }
+}
+
+#[tokio::test]
+async fn independent_request_binds_once_and_preserves_literal_payload() {
+    let recorded=Arc::new(std::sync::Mutex::new(vec![]));
+    let mut sources=BTreeMap::from([("requests".into(),Box::new(RequestRecorder(recorded.clone())) as Box<dyn crate::federation::Session>)]);
+    let payload=serde_json::json!({"query":"雪 '$1'\u{0000}","limit":i64::MAX});
+    let template=crate::operations::RequestTemplate {adapter:"postgres".into(),parameters:0,request:payload.clone(),bindings:vec![]};
+    let plan=ExecutionPlan {version:1,result:0,nodes:vec![wire_node(Operation::SourceRequest {source:"requests".into(),input:None,template},1)]};
+    let output=execute(&plan,&mut sources,&Functions::new(),None).await.unwrap().collect_batches().await.unwrap();
+    assert_eq!(output.iter().map(RecordBatch::num_rows).sum::<usize>(),1);
+    assert_eq!(*recorded.lock().unwrap(),vec![vec![payload]]);
+}
+
+#[tokio::test]
+async fn dependent_request_propagates_upstream_errors_without_sending_requests() {
+    let recorded=Arc::new(std::sync::Mutex::new(vec![]));
+    let calls=Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut sources=BTreeMap::from([
+        ("input".into(),Box::new(FailedCursor(calls.clone())) as Box<dyn crate::federation::Session>),
+        ("requests".into(),Box::new(RequestRecorder(recorded.clone())) as Box<dyn crate::federation::Session>),
+    ]);
+    let plan=ExecutionPlan {version:1,result:1,nodes:vec![
+        wire_node(Operation::SourceSql {source:"input".into(),dialect:"postgres".into(),sql:"SELECT v".into()},1),
+        wire_node(Operation::SourceRequest {source:"requests".into(),input:Some(0),template:parameter_request()},1),
+    ]};
+    let error=execute(&plan,&mut sources,&Functions::new(),None).await.err().expect("upstream error must propagate");
+    assert_eq!(error,"source cursor failed");
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst),1);
+    assert!(recorded.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn request_binding_errors_stop_at_chunk_boundary_without_partial_chunk_delivery() {
+    for invalid_row in [0,63,64,65,128] {
+        let recorded=Arc::new(std::sync::Mutex::new(vec![]));
+        let values=(0..=invalid_row).map(|row|if row==invalid_row {f64::NAN}else{row as f64}).collect::<Vec<_>>();
+        let input=RecordBatch::try_from_iter(vec![("v",Arc::new(arrow::array::Float64Array::from(values)) as ArrayRef)]).unwrap();
+        let mut sources=BTreeMap::from([
+            ("input".into(),Box::new(FixedSource(input)) as Box<dyn crate::federation::Session>),
+            ("requests".into(),Box::new(RequestRecorder(recorded.clone())) as Box<dyn crate::federation::Session>),
+        ]);
+        let mut input_node=wire_node(Operation::SourceSql {source:"input".into(),dialect:"postgres".into(),sql:"SELECT v".into()},1);
+        input_node.columns[0].data_type="float64".into();
+        let plan=ExecutionPlan {version:1,result:1,nodes:vec![input_node,
+            wire_node(Operation::SourceRequest {source:"requests".into(),input:Some(0),template:parameter_request()},1)]};
+        let error=execute(&plan,&mut sources,&Functions::new(),None).await.err().expect("non-finite parameter must fail");
+        assert!(error.contains("require finite numbers"),"{error}");
+        let requests=recorded.lock().unwrap();
+        assert_eq!(requests.len(),invalid_row/64);
+        assert!(requests.iter().all(|chunk|chunk.len()==64));
+        for (row,request) in requests.iter().flatten().enumerate() {
+            assert_eq!(request["value"].as_f64(),Some(row as f64));
+        }
+    }
+}
+
+struct ContinuationAdapter;
+impl crate::operations::RequestAdapter for ContinuationAdapter {
+    fn name(&self)->&str {"test_wire_continuation"}
+    fn lower(&self,plan:&LogicalPlan)->Result<Option<crate::operations::PreparedOperation>,String> {
+        use crate::operations::{PreparedOperation,RequestResult,RequestTemplate};
+        let LogicalPlan::TableScan(scan)=plan else {return Ok(None)};
+        let name=scan.table_name.to_string();
+        let Some(mode)=name.strip_prefix("continuation_") else {return Ok(None)};
+        let marker=||RequestResult {schema:plan.schema().clone()}.into_plan();
+        let replacement=match mode {
+            "missing"=>LogicalPlanBuilder::empty(true).project(vec![datafusion::logical_expr::lit(1_i64).alias("v")]).unwrap().build().unwrap(),
+            "multiple"=>LogicalPlanBuilder::from(marker()).union(marker()).unwrap().build().unwrap(),
+            "mismatch"=>RequestResult {schema:Arc::new(DFSchema::empty())}.into_plan(),
+            _=>marker(),
+        };
+        let source=if mode=="dependent" {Some(Arc::new(LogicalPlanBuilder::empty(true)
+            .project(vec![datafusion::logical_expr::lit(9_i64).alias("parameter")]).unwrap().build().unwrap()))} else {None};
+        Ok(Some(PreparedOperation {schema:plan.schema().clone(),replacement:Some(replacement),
+            template:RequestTemplate {adapter:self.name().into(),parameters:usize::from(source.is_some()),
+                request:serde_json::json!({"mode":mode}),bindings:vec![]},source}))
+    }
+}
+
+#[test]
+fn prepared_continuations_require_one_schema_matching_result_leaf() {
+    static REGISTER:std::sync::Once=std::sync::Once::new();
+    REGISTER.call_once(||crate::operations::register(Arc::new(ContinuationAdapter)).unwrap());
+    for mode in ["valid","dependent","missing","multiple","mismatch"] {
+        let name=format!("continuation_{mode}");
+        let request:CompileRequest=serde_json::from_value(serde_json::json!({
+            "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1",
+            "sources":{"requests":{"adapter":"test_wire_continuation"}},
+            "tables":[{"name":name,"engine":"requests","columns":[{"name":"v","data_type":"int64"}]}]
+        })).unwrap();
+        validate_request(&request).unwrap();
+        let table=datafusion::datasource::empty::EmptyTable::new(Arc::new(Schema::new(vec![Field::new("v",DataType::Int64,true)])));
+        let plan=LogicalPlanBuilder::scan(&name,datafusion::datasource::provider_as_source(Arc::new(table)),None).unwrap().build().unwrap();
+        let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
+            plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+        let result=builder.lower(&plan);
+        if matches!(mode,"missing"|"multiple") {
+            assert!(result.unwrap_err().contains("exactly one result leaf"));
+        } else if mode=="mismatch" {
+            assert!(result.unwrap_err().contains("continuation schema mismatch"));
+        } else {
+            let id=result.unwrap();
+            assert_eq!(builder.plan.nodes[id].columns.len(),1);
+            assert_eq!(builder.plan.nodes[id].columns[0].name,"v");
+            let requests=builder.plan.nodes.iter().filter_map(|node|match &node.operation {
+                Operation::SourceRequest {input,template,..}=>Some((input,template)),_=>None
+            }).collect::<Vec<_>>();
+            assert_eq!(requests.len(),1);
+            assert_eq!(requests[0].0.is_some(),mode=="dependent");
+            assert_eq!(requests[0].1.parameters,usize::from(mode=="dependent"));
+            assert!(builder.plan.nodes.iter().all(|n|!matches!(n.operation,Operation::Duckdb{..}|Operation::SourceSql{..})));
+        }
+    }
+}
