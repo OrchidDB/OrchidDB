@@ -120,6 +120,12 @@ impl LoweringContext<'_> {
         }
         let value = self.lower_expr(plan, arg)?;
         let ty = value.get_type(plan.schema())?;
+        if matches!((name, &ty),
+            ("cypher_convert.toboolean", DataType::Boolean)
+            | ("cypher_convert.tointeger", DataType::Int64)
+            | ("cypher_convert.tofloat", DataType::Float64)) {
+            return Ok(value);
+        }
         let int = matches!(
             ty,
             DataType::Int8

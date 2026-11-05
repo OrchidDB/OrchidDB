@@ -1282,3 +1282,76 @@ fn cypher_union_tags_require_property_metadata_and_preserve_projected_tags() {
     let projected=scalar_scope(vec![Field::new("x",DataType::Int64,true),Field::new(&projected_tag,DataType::Utf8,true)]);
     assert_eq!(ctx.lower_sql_expr(&projected,&call("union_tag",vec![binding("x")])).unwrap(),col_exact(&projected_tag));
 }
+
+#[test]
+fn cypher_sql_conversions_preserve_primitive_types_and_skip_identity_casts() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let cases = [
+        ("cypher_convert.tofloat", ScalarValue::Float64(Some(1.5)), ScalarValue::Float64(Some(1.5))),
+        ("cypher_convert.tofloat", ScalarValue::Float64(None), ScalarValue::Float64(None)),
+        ("cypher_convert.tofloat", ScalarValue::Float64(Some(f64::INFINITY)), ScalarValue::Float64(Some(f64::INFINITY))),
+        ("cypher_convert.tofloat", ScalarValue::Float32(Some(1.5)), ScalarValue::Float64(Some(1.5))),
+        ("cypher_convert.tointeger", ScalarValue::Boolean(Some(true)), ScalarValue::Int64(Some(1))),
+        ("cypher_convert.tointeger", ScalarValue::UInt64(Some(u64::MAX)), ScalarValue::Int64(None)),
+        ("cypher_convert.tointeger", ScalarValue::Int8(Some(-128)), ScalarValue::Int64(Some(-128))),
+        ("cypher_convert.tointeger", ScalarValue::Int16(Some(32767)), ScalarValue::Int64(Some(32767))),
+        ("cypher_convert.tointeger", ScalarValue::Int32(Some(i32::MIN)), ScalarValue::Int64(Some(i32::MIN as i64))),
+        ("cypher_convert.tointeger", ScalarValue::Int64(Some(i64::MAX)), ScalarValue::Int64(Some(i64::MAX))),
+        ("cypher_convert.tointeger", ScalarValue::Int32(None), ScalarValue::Int64(None)),
+        ("cypher_convert.tointeger", ScalarValue::Null, ScalarValue::Int64(None)),
+        ("cypher_convert.toboolean", ScalarValue::Boolean(Some(true)), ScalarValue::Boolean(Some(true))),
+        ("cypher_convert.toboolean", ScalarValue::Boolean(Some(false)), ScalarValue::Boolean(Some(false))),
+        ("cypher_convert.toboolean", ScalarValue::Boolean(None), ScalarValue::Boolean(None)),
+        ("cypher_convert.toboolean", ScalarValue::Null, ScalarValue::Boolean(None)),
+        ("cypher_convert.tostring", ScalarValue::Boolean(Some(true)), ScalarValue::Utf8(Some("true".into()))),
+        ("cypher_convert.tostring", ScalarValue::Int8(Some(-128)), ScalarValue::Utf8(Some("-128".into()))),
+        ("cypher_convert.tostring", ScalarValue::Int16(Some(32767)), ScalarValue::Utf8(Some("32767".into()))),
+        ("cypher_convert.tostring", ScalarValue::Int32(Some(i32::MIN)), ScalarValue::Utf8(Some(i32::MIN.to_string()))),
+        ("cypher_convert.tostring", ScalarValue::Int64(Some(i64::MAX)), ScalarValue::Utf8(Some(i64::MAX.to_string()))),
+        ("cypher_convert.tostring", ScalarValue::Utf8(Some("雪\0'".into())), ScalarValue::Utf8(Some("雪\0'".into()))),
+        ("cypher_convert.tostring", ScalarValue::Utf8(None), ScalarValue::Utf8(None)),
+        ("cypher_convert.tostring", ScalarValue::Null, ScalarValue::Utf8(None)),
+    ];
+    for (name, input, expected) in cases {
+        let scope = scalar_scope(vec![Field::new("value", input.data_type(), true)]);
+        let lowered = ctx.lower_sql_expr(&scope, &call(name, vec![binding("value")])).unwrap();
+        assert_eq!(lowered.get_type(scope.schema()).unwrap(), expected.data_type());
+        if input.data_type() == expected.data_type() { assert!(matches!(&lowered, Expr::Column(_)), "unnecessary cast for {name}: {lowered}"); }
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), expected, "{name}: {input:?}");
+    }
+    for (name, kinds) in [
+        ("cypher_convert.tointeger", vec![DataType::Utf8, DataType::Date32]),
+        ("cypher_convert.toboolean", vec![DataType::Date32, DataType::Float64]),
+        ("cypher_convert.tostring", vec![DataType::Float64, DataType::UInt64, DataType::Date32]),
+    ] {
+        for kind in kinds {
+            let scope = scalar_scope(vec![Field::new("value", kind, true)]);
+            assert!(ctx.lower_sql_expr(&scope, &call(name, vec![binding("value")])).is_err(), "{name} bypassed native semantics");
+        }
+    }
+}
+
+#[test]
+fn cypher_sql_coalesce_aligns_nulls_but_defers_heterogeneous_native_values() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    for input in [ScalarValue::Int64(Some(7)), ScalarValue::Int64(None), ScalarValue::Boolean(Some(false)),
+        ScalarValue::Utf8(Some("雪".into()))] {
+        let scope = scalar_scope(vec![Field::new("value", input.data_type(), true)]);
+        let expression = call("cypher_coalesce", vec![IrExpr::Lit(Lit::Null), binding("value"), IrExpr::Lit(Lit::Null)]);
+        let lowered = ctx.lower_sql_expr(&scope, &expression).unwrap();
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), input);
+    }
+    let scope = scalar_scope(vec![Field::new("integer", DataType::Int64, true), Field::new("text", DataType::Utf8, true)]);
+    let error = ctx.lower_sql_expr(&scope, &call("cypher_coalesce", vec![binding("integer"), binding("text")])).unwrap_err();
+    assert!(error.to_string().contains("Heterogeneous Cypher coalesce"));
+}
