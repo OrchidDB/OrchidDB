@@ -17,8 +17,8 @@ fn cypher_transport_rewrites_preserve_identity_schema_and_dependency_count() {
     assert_eq!(rewritten.name(),"DecodeTraversers");
     assert!(rewritten.expressions().is_empty());
     assert_ne!(rewritten,original);
-    assert_eq!(rewritten.cmp(&original),std::cmp::Ordering::Equal);
-    assert_eq!(rewritten.partial_cmp(&original),Some(std::cmp::Ordering::Equal));
+    assert_eq!(rewritten.partial_cmp(&original),replacement.partial_cmp(&input));
+    assert_ne!(rewritten.partial_cmp(&original),Some(std::cmp::Ordering::Equal));
     assert!(original.with_exprs_and_inputs(vec![lit(true)],vec![input]).is_err());
     assert!(original.with_exprs_and_inputs(vec![],vec![]).is_err());
     assert_eq!(original.prevent_predicate_push_down_columns().len(),original.schema.fields().len());
@@ -83,4 +83,34 @@ fn cypher_mutation_snapshot_proof_selects_only_filtered_pure_prefixes() {
     assert!(initial_snapshot_reads(&branched).is_empty(),"branch ordering provides no unary-prefix proof");
     let outer = mutation(filter(branched));
     assert!(initial_snapshot_reads(&outer).is_empty(),"mutation-bearing input cannot be a pure snapshot");
+}
+
+#[test]
+fn cypher_kernel_ordering_agrees_with_equality_after_input_rewrites() {
+    use std::cmp::Ordering;
+    let first=LogicalPlanBuilder::empty(true).build().unwrap();
+    let second=LogicalPlanBuilder::empty(false).build().unwrap();
+    let original=row_kernel(&kernel("DecodeTraversers",vec![first.clone()],|mut rows,_|Ok(rows.remove(0))));
+    let changed=original.with_exprs_and_inputs(vec![],vec![second]).unwrap();
+    let unchanged=original.with_exprs_and_inputs(vec![],vec![first.clone()]).unwrap();
+    let separate=row_kernel(&kernel("DecodeTraversers",vec![first],|mut rows,_|Ok(rows.remove(0))));
+    let values=[original.clone(),original,changed,unchanged,separate];
+    for a in &values {
+        for b in &values {
+            assert_eq!(a.partial_cmp(b)==Some(Ordering::Equal),a==b);
+            assert_eq!(a.partial_cmp(b),b.partial_cmp(a).map(Ordering::reverse));
+        }
+    }
+}
+
+#[test]
+fn cypher_kernel_ordering_preserves_incomparable_extension_inputs() {
+    let first=kernel("DecodeTraversers",vec![],|_,_|Ok(vec![]));
+    let second=crate::operations::RequestResult {schema:first.schema().clone()}.into_plan();
+    assert_eq!(first.partial_cmp(&second),None);
+    let original=row_kernel(&kernel("DecodeTraversers",vec![first],|mut rows,_|Ok(rows.remove(0))));
+    let changed=original.with_exprs_and_inputs(vec![],vec![second]).unwrap();
+    assert_ne!(original,changed);
+    assert_eq!(original.partial_cmp(&changed),None);
+    assert_eq!(changed.partial_cmp(&original),None);
 }

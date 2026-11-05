@@ -91,12 +91,12 @@ impl Hash for RowKernel {
 }
 impl PartialOrd for RowKernel {
     fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(o))
-    }
-}
-impl Ord for RowKernel {
-    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        self.id.cmp(&o.id)
+        // Rewrites retain the operator identity but may change its inputs.
+        // Logical plans have a partial ordering, so preserve that contract.
+        match self.id.cmp(&o.id) {
+            std::cmp::Ordering::Equal => self.inputs.partial_cmp(&o.inputs),
+            ordering => Some(ordering),
+        }
     }
 }
 impl UserDefinedLogicalNodeCore for RowKernel {
