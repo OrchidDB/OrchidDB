@@ -362,3 +362,46 @@ fn representation_column_alignment_merges_nullability_without_coercing_types() {
             .all(|candidate| candidate.estimate.estimated_cost.is_none())
     );
 }
+
+#[tokio::test]
+async fn constrained_representation_selection_preserves_predicates_and_projection() {
+    use crate::ir::rel::constraints::{Constraint, ConstraintCatalog, Fact};
+    use datafusion::{common::ScalarValue, prelude::col};
+    let (plan, providers) = fixture();
+    let representation: Arc<dyn TableProvider> = Arc::new(
+        RepresentationProvider::try_new(definition(), vec![plan], &providers).unwrap());
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert("logical", Constraint::enforced("known_text", Fact::NonNull{columns:vec!["text".into()]}));
+    let wrapped = crate::ir::rel::constraints::bind("logical",representation,&catalog,None).unwrap();
+    assert!(provider(&wrapped).is_some());
+    assert!(provider(providers.get("physical").unwrap()).is_none());
+    let plan = LogicalPlanBuilder::scan_with_filters("logical",provider_as_source(wrapped),Some(vec![1,0]),
+        vec![col("id").is_not_null(),col("text").eq(lit("a"))]).unwrap().build().unwrap();
+    let selected = select(plan).unwrap();
+    assert_eq!(selected.representation_selections.len(),1);
+    assert_eq!(selected.representation_selections[0].predicates.len(),2);
+    let batches = crate::ir::rel::execute_test_plan(selected.plan).await.unwrap();
+    let rows = batches.iter().flat_map(|batch|(0..batch.num_rows()).map(move |row|{
+        (ScalarValue::try_from_array(batch.column(0),row).unwrap(),ScalarValue::try_from_array(batch.column(1),row).unwrap())
+    })).collect::<Vec<_>>();
+    assert_eq!(rows,vec![(ScalarValue::Utf8(Some("a".into())),ScalarValue::Int64(Some(7)));2]);
+}
+
+#[test]
+fn stale_representation_candidates_never_replace_a_current_default_without_statistics() {
+    let (plan, providers) = fixture();
+    let mut definition = definition();
+    let mut stale = definition.representations[0].clone();
+    stale.name="stale".into(); stale.generation="old".into();
+    definition.representations.insert(0,stale);
+    let source: Arc<dyn TableProvider> = Arc::new(
+        RepresentationProvider::try_new(definition,vec![plan.clone(),plan],&providers).unwrap());
+    let input = LogicalPlanBuilder::scan("logical",provider_as_source(source),None).unwrap().build().unwrap();
+    let selected = select(input).unwrap();
+    let decision = &selected.representation_selections[0];
+    assert_eq!(decision.representation,"primary");
+    assert_eq!(decision.candidates.len(),2);
+    assert_eq!(decision.candidates[0].reason,"stale generation");
+    assert!(decision.candidates[0].estimate.estimated_cost.is_none());
+    assert_eq!(decision.candidates[1].reason,"selected default; unknown default cost");
+}
