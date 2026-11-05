@@ -1672,7 +1672,8 @@ impl<'a> LoweringContext<'a> {
         {
             return Ok(lit(ScalarValue::Null));
         }
-        if !matches!(index_expr.get_type(plan.schema())?,
+        let index_type = index_expr.get_type(plan.schema())?;
+        if !matches!(index_type,
             DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
             DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Null)
         {
@@ -1681,16 +1682,26 @@ impl<'a> LoweringContext<'a> {
         if matches!(data_type, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
             return Err(RelError::Unsupported("Cypher strings are not indexable lists".into()));
         }
-        let index = Expr::Cast(Cast::new(
-            Box::new(index_expr),
-            DataType::Int64,
-        ));
+        // An unsigned index outside Int64 cannot address an Arrow list. It is
+        // out of bounds, not an invalid integer conversion.
+        let index = if index_type == DataType::UInt64 {
+            Expr::TryCast(TryCast::new(Box::new(index_expr), DataType::Int64))
+        } else {
+            index_expr.cast_to(&DataType::Int64, plan.schema())?
+        };
         match data_type {
             DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+                // array_element validates its physical offset width before
+                // checking bounds. Turn impossible indices into NULL first.
+                let max_offset = if matches!(data_type, DataType::LargeList(_)) {
+                    i64::MAX
+                } else { i64::from(i32::MAX) };
+                let outside_offsets = index.clone().gt_eq(lit(max_offset))
+                    .or(index.clone().lt(lit(-max_offset)));
                 let position = Expr::Case(Case::new(
                     None,
                     vec![
-                        (Box::new(index.clone().eq(lit(i64::MAX))), Box::new(lit(ScalarValue::Int64(None)))),
+                        (Box::new(outside_offsets), Box::new(lit(ScalarValue::Int64(None)))),
                         (Box::new(binary(index.clone(), BinaryOp::Gte, lit(0_i64))),
                          Box::new(binary(index.clone(), BinaryOp::Add, lit(1_i64)))),
                     ],

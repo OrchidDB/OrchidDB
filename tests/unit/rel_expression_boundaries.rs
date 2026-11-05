@@ -79,6 +79,71 @@ fn scalar_scope(fields: Vec<Field>) -> LogicalPlan {
 }
 fn binding(name: &str) -> IrExpr { IrExpr::binding(name) }
 
+#[test]
+fn cypher_temporal_parts_execute_for_text_and_preserve_native_runtime_boundary() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let days = chrono::NaiveDate::from_ymd_opt(2024, 2, 29).unwrap()
+        .signed_duration_since(chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days();
+    for input in [ScalarValue::Date32(Some(days as i32)),
+        ScalarValue::TimestampNanosecond(Some(days * 86_400_000_000_000), None),
+        ScalarValue::Utf8(Some("2024-02-29".into())),
+        ScalarValue::LargeUtf8(Some("2024-02-29 12:34:56".into())),
+        ScalarValue::Utf8View(Some("2024-02-29".into())),
+        ScalarValue::Date32(None), ScalarValue::Utf8(Some("not a date".into()))] {
+        for dynamic_unit in [false, true] {
+            let plan = scalar_scope(vec![Field::new("value", input.data_type(), true), Field::new("unit", DataType::Utf8, true)]);
+            let unit = if dynamic_unit { binding("unit") } else { IrExpr::Lit(Lit::String("year".into())) };
+            let result = ctx.lower_sql_expr(&plan, &call("date_part", vec![unit, binding("value")]));
+            if input.data_type() == DataType::Date32 {
+                assert!(result.unwrap_err().to_string().contains("Temporal operand requires typed runtime evaluation"));
+                continue;
+            }
+            let lowered = result.unwrap();
+            let bound = lowered.transform_up(|expr| Ok(match &expr {
+                Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+                Expr::Column(column) if column.name == "unit" => Transformed::yes(lit("year")),
+                _ => Transformed::no(expr),
+            })).unwrap().data;
+            let expected = if input.is_null() || input == ScalarValue::Utf8(Some("not a date".into())) { None } else { Some(2024) };
+            assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), ScalarValue::Int32(expected), "{input:?}, dynamic={dynamic_unit}");
+        }
+    }
+    for name in ["date_part", "date_trunc"] {
+        for count in [0, 1, 3] {
+            let error = ctx.lower_sql_expr(&scalar_scope(vec![]), &call(name, vec![binding("missing"); count])).unwrap_err();
+            assert!(error.to_string().contains("arity"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn cypher_temporal_truncation_preserves_date_only_text_and_native_runtime_boundary() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let stamp = chrono::NaiveDate::from_ymd_opt(2024, 2, 29).unwrap().and_hms_opt(12, 34, 56).unwrap()
+        .and_utc().timestamp_nanos_opt().unwrap();
+    for (input, expected) in [
+        (ScalarValue::Utf8(Some("2024-02-29".into())), Some("2024-02-01")),
+        (ScalarValue::LargeUtf8(Some("2024-02-29".into())), Some("2024-02-01")),
+        (ScalarValue::Utf8View(Some("2024-02-29".into())), Some("2024-02-01")),
+        (ScalarValue::TimestampNanosecond(Some(stamp), None), Some("2024-02-01T00:00:00")),
+        (ScalarValue::Utf8(Some("2024-02-29 12:34:56".into())), Some("2024-02-01T00:00:00")),
+        (ScalarValue::TimestampNanosecond(None, None), None),
+        (ScalarValue::Utf8(None), None),
+        (ScalarValue::Utf8(Some("invalid".into())), None),
+    ] {
+        let plan = scalar_scope(vec![Field::new("value", input.data_type(), true)]);
+        let result = ctx.lower_sql_expr(&plan, &call("date_trunc", vec![IrExpr::Lit(Lit::String("month".into())), binding("value")]));
+        let lowered = result.unwrap();
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound).cast_to(&DataType::Utf8).unwrap(), ScalarValue::Utf8(expected.map(str::to_owned)), "{input:?}");
+    }
+}
+
 fn fold_cypher_boundary_expression(plan: &LogicalPlan, expression: Expr) -> ScalarValue {
     use datafusion::{logical_expr::simplify::SimplifyContext,
         optimizer::simplify_expressions::ExprSimplifier};
@@ -656,5 +721,63 @@ fn property_equality_crosses_identity_projection_and_one_row_inner_apply_only() 
     assert_eq!(*input,Node::GraphFilter { condition:predicate.clone(),input:Box::new(source.clone()) });
     for plan in [apply(ApplyKind::Optional,Node::GraphOneRow),apply(ApplyKind::Inner,source)] {
         assert!(ctx.push_expand_equality(&predicate,&plan).unwrap().is_none());
+    }
+}
+#[test]
+fn cypher_list_subscripts_execute_zero_based_negative_null_and_extreme_indices() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let list = ScalarValue::List(ScalarValue::new_list_nullable(&[
+        ScalarValue::Int64(Some(11)), ScalarValue::Int64(None), ScalarValue::Int64(Some(33)),
+    ], &DataType::Int64));
+    let item = Arc::new(Field::new("item", DataType::Int64, true));
+    for kind in [list.data_type(), DataType::LargeList(item.clone()), DataType::FixedSizeList(item, 3)] {
+    let list = list.cast_to(&kind).unwrap();
+    for (index, expected) in [
+        (ScalarValue::Int8(Some(0)), Some(11)),
+        (ScalarValue::UInt8(Some(2)), Some(33)),
+        (ScalarValue::Int16(Some(-1)), Some(33)),
+        (ScalarValue::Int32(Some(-3)), Some(11)),
+        (ScalarValue::Int64(Some(1)), None),
+        (ScalarValue::Int64(Some(3)), None),
+        (ScalarValue::Int64(Some(-4)), None),
+        (ScalarValue::Int64(Some(i64::MIN)), None),
+        (ScalarValue::Int64(Some(i64::MAX)), None),
+        (ScalarValue::Int64(Some(i64::from(i32::MAX))), None),
+        (ScalarValue::Int64(Some(i64::from(i32::MIN) - 1)), None),
+        (ScalarValue::UInt64(Some(u64::MAX)), None),
+        (ScalarValue::UInt64(Some(1_u64 << 63)), None),
+        (ScalarValue::Int64(None), None),
+    ] {
+        let plan = scalar_scope(vec![Field::new("items", list.data_type(), true), Field::new("index", index.data_type(), true)]);
+        let lowered = ctx.lower_sql_expr(&plan, &call("cypher_subscript", vec![binding("items"), binding("index")])).unwrap();
+        if index.data_type() == DataType::Int64 {
+            lowered.apply(|expr| {
+                assert!(!matches!(expr, Expr::Cast(cast) if matches!(cast.expr.as_ref(), Expr::Column(column) if column.name == "index")), "redundant index cast: {expr}");
+                Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+            }).unwrap();
+        }
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "items" => Transformed::yes(lit(list.clone())),
+            Expr::Column(column) if column.name == "index" => Transformed::yes(lit(index.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), ScalarValue::Int64(expected), "{index:?}");
+    }
+    }
+}
+#[tokio::test]
+async fn cypher_parsed_extreme_subscripts_return_null_without_constant_folding() {
+    let graph = PropertyGraph::new();
+    let query = "UNWIND [-9223372036854775808,-2147483649,2147483647,9223372036854775807] AS i RETURN [11,22][i] AS value";
+    let plan = crate::language::cypher::preparation::prepare(query, &Default::default(), None).unwrap();
+    for native in [false, true] {
+        let returned = crate::ir::diagnostics::without_constant_folding(async {
+            RelBackend::with_options(RelBackendOptions { native_values: native, ..Default::default() })
+                .execute(&plan, &graph).await
+        }).await.unwrap();
+        let rows = native_values::decode_rows(&returned.batch, &returned.fields, &graph).unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows { assert_eq!(row.get("value"), Value::Null, "native={native}"); }
     }
 }
