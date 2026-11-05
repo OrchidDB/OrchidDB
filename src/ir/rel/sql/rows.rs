@@ -180,9 +180,14 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
                 match &row[index] {
                     SqlValue::Null => builder.append_null(),
                     SqlValue::Int(value) => {
-                        let scaled = i128::from(*value)
-                            .checked_mul(10_i128.pow((*scale).max(0) as u32))
-                            .ok_or_else(|| mismatch(&row[index]))?;
+                        let scaled = if *scale < 0 {
+                            parse_decimal_i128(&value.to_string(), *scale)
+                                .map_err(|_| mismatch(&row[index]))?
+                        } else {
+                            i128::from(*value)
+                                .checked_mul(10_i128.pow(*scale as u32))
+                                .ok_or_else(|| mismatch(&row[index]))?
+                        };
                         builder.append_value(scaled);
                     }
                     SqlValue::ExactNumber(value) => {
@@ -194,7 +199,13 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
                 }
             }
             let array = builder.finish();
-            array.validate_decimal_precision(*precision)?;
+            // Arrow's array-level validator compares scale as u8, rejecting
+            // valid negative scales. The builder has checked the type; validate
+            // each present unscaled value using the decimal type's validator.
+            use arrow::datatypes::{Decimal128Type, DecimalType};
+            for value in array.iter().flatten() {
+                Decimal128Type::validate_decimal_precision(value, *precision, *scale)?;
+            }
             Arc::new(array)
         }
         DataType::Binary | DataType::LargeBinary | DataType::BinaryView => {
@@ -278,13 +289,32 @@ pub(super) fn checked_cast(array: &ArrayRef, field: &Field) -> SqlResult<ArrayRe
 }
 
 pub(super) fn parse_decimal_i128(value: &str, scale: i8) -> Result<i128, ()> {
-    if scale < 0 {
-        return Err(());
-    }
     let (negative, unsigned) = value
         .strip_prefix('-')
-        .map_or((false, value), |rest| (true, rest));
+        .map_or((false, value.strip_prefix('+').unwrap_or(value)), |rest| (true, rest));
     let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if (whole.is_empty() && fraction.is_empty())
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(());
+    }
+    if scale < 0 {
+        if fraction.bytes().any(|byte| byte != b'0') {
+            return Err(());
+        }
+        if whole.bytes().all(|byte| byte == b'0') {
+            return Ok(0);
+        }
+        let places = scale.unsigned_abs() as usize;
+        let split = whole.len().checked_sub(places).ok_or(())?;
+        if whole[split..].bytes().any(|byte| byte != b'0') {
+            return Err(());
+        }
+        let digits = &whole[..split];
+        return if negative { format!("-{digits}").parse().map_err(|_| ()) }
+            else { digits.parse().map_err(|_| ()) };
+    }
     let scale = scale as usize;
     if fraction.len() > scale && fraction[scale..].bytes().any(|byte| byte != b'0') {
         return Err(());
@@ -293,10 +323,9 @@ pub(super) fn parse_decimal_i128(value: &str, scale: i8) -> Result<i128, ()> {
     digits.push_str(if whole.is_empty() { "0" } else { whole });
     digits.push_str(&fraction[..fraction.len().min(scale)]);
     digits.push_str(&"0".repeat(scale.saturating_sub(fraction.len())));
-    let magnitude = digits.parse::<i128>().map_err(|_| ())?;
     if negative {
-        magnitude.checked_neg().ok_or(())
+        format!("-{digits}").parse().map_err(|_| ())
     } else {
-        Ok(magnitude)
+        digits.parse().map_err(|_| ())
     }
 }
