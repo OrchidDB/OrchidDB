@@ -295,3 +295,30 @@ fn scalar_pattern_property_predicates_preserve_caller_visibility() {
     let result=apply_variable_length_property_filters(&mut lowerer,input,"path","source",&predicate,&scope).unwrap();
     assert!(matches!(result,Node::GraphFilter{..}));assert_eq!(lowerer.visible_set(),scope);
 }
+
+#[test]
+fn property_expression_lowering_errors_restore_scope_after_reference_validation() {
+    for recursive in [false,true] {
+        for map in [false,true] {
+            let mut lowerer=Lowerer::new();
+            let outer=BTreeSet::from(["outside".to_string(),"path".to_string(),"source".to_string()]);
+            lowerer.replace_scope(outer.iter().cloned());
+            let allowed=BTreeSet::from(["path".to_string(),"source".to_string()]);
+            let input=Node::GraphCorrelate{bindings:outer.iter().cloned().collect()};
+            let expression=Expr::Function{name:"unknown_pattern_property_function".into(),distinct:false,args:vec![]};
+            let expression=if map {Expr::Map(vec![("weight".into(),expression)])}else{expression};
+            let depth=lowerer.scopes.len();
+            let result=if recursive {
+                apply_variable_length_property_filters(&mut lowerer,input.clone(),"path","source",&expression,&allowed)
+            }else{
+                apply_property_filters(&mut lowerer,input.clone(),"person",&expression,&allowed)
+            };
+            let error=result.unwrap_err().to_string();
+            assert!(error.contains("unknown_pattern_property_function"),"{error}");
+            assert_eq!(lowerer.visible_set(),outer);assert_eq!(lowerer.scopes.len(),depth);
+            let valid=Expr::Map(vec![("weight".into(),Expr::Literal(Literal::Integer("3".into())))]);
+            apply_property_filters(&mut lowerer,input,"person",&valid,&allowed).unwrap();
+            assert_eq!(lowerer.visible_set(),outer);assert_eq!(lowerer.scopes.len(),depth);
+        }
+    }
+}
