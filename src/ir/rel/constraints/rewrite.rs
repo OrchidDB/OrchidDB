@@ -625,3 +625,7 @@ impl OptimizerRule for ConstraintOptimizer {
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/rel_constraint_rewrite_boundaries.rs"]
+mod constraint_rewrite_boundaries;

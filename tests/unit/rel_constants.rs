@@ -731,3 +731,45 @@ fn dynamic_slice_accepts_only_proven_nonnegative_finite_bounds() {
         assert!(dynamic_slice::bound(&expr).is_none());
     }
 }
+
+#[test]
+fn constant_result_scalars_keep_narrow_unsigned_and_float_domains() {
+    for (value,expected) in [
+        (Value::Byte(i8::MIN),ScalarValue::Int8(Some(i8::MIN))),
+        (Value::UInt8(u8::MAX),ScalarValue::UInt8(Some(u8::MAX))),
+        (Value::Short(i16::MIN),ScalarValue::Int16(Some(i16::MIN))),
+        (Value::UInt16(u16::MAX),ScalarValue::UInt16(Some(u16::MAX))),
+        (Value::UInt32(u32::MAX),ScalarValue::UInt32(Some(u32::MAX))),
+        (Value::UInt64(u64::MAX),ScalarValue::UInt64(Some(u64::MAX))),
+        (Value::Float32(1.25),ScalarValue::Float32(Some(1.25))),
+        (Value::Float(f64::INFINITY),ScalarValue::Float64(Some(f64::INFINITY))),
+        (Value::Scalar(ScalarValue::Decimal128(Some(125),12,2)),ScalarValue::Decimal128(Some(125),12,2)),
+        (Value::Scalar(ScalarValue::Int16(None)),ScalarValue::Int16(None)),
+    ] {
+        let result=scalar(constant_result_expr(&value,Language::Cypher,DisplayContext::Scalar));
+        assert_eq!(result.data_type(),expected.data_type(),"{value:?}");
+        assert_eq!(result,expected,"{value:?}");
+    }
+}
+
+#[test]
+fn constant_range_dispatch_preserves_direction_and_rejects_zero_step() {
+    for name in ["range","RANGE","cypher_range"] {
+        for (start,end,step,expected) in [(1,5,2,vec![1,3,5]),(5,1,-2,vec![5,3,1]),(5,1,1,vec![]),(1,5,-1,vec![])] {
+            let result=constant_value_expr(&call(name,vec![integer(start),integer(end),integer(step)])).unwrap();
+            assert_eq!(result,Some(Value::List(expected.into_iter().map(Value::Int).collect())),"{name}");
+        }
+        assert!(constant_value_expr(&call(name,vec![integer(1),integer(5),integer(0)])).is_err());
+    }
+}
+
+#[test]
+fn constant_temporal_dispatch_keeps_nulls_and_defers_row_dependent_inputs() {
+    for name in ["date","to_date","timestamp"] {
+        assert_eq!(constant_value_expr(&call(name,vec![string("2026-01-02")])).unwrap(),Some(Value::DateTime("2026-01-02".into())));
+        assert_eq!(constant_value_expr(&call(name,vec![IrExpr::Lit(Lit::Null)])).unwrap(),Some(Value::Null));
+        assert_eq!(constant_value_expr(&call(name,vec![IrExpr::binding("input")])).unwrap(),None);
+        assert_eq!(constant_value_expr(&call(name,vec![])).unwrap(),None);
+        assert_eq!(constant_value_expr(&call(name,vec![integer(1)])).unwrap(),None);
+    }
+}
