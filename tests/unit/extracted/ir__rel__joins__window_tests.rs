@@ -177,3 +177,101 @@ async fn unordered_distinct_without_keys_preserves_empty_input_cardinality() {
         assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(),usize::from(produce));
     }
 }
+
+#[tokio::test]
+async fn cypher_ordered_distinct_preserves_first_rows_across_transparent_scopes() {
+    for mask in 0_u8..16 {
+        let rows = [(1_i64,30_i64),(1,10),(2,20),(2,40)];
+        let mut input = LogicalPlanBuilder::values(rows.iter().map(|(k,v)|vec![lit(*k),lit(*v)]).collect()).unwrap()
+            .project(vec![col_exact("column1").alias("key"),col_exact("column2").alias("value"),
+                lit(101_i64).alias("__distinct_ordinal_7500"),lit(102_i64).alias("__distinct_rank_7500"),
+                lit(103_i64).alias("__distinct_input_guard_7500"),lit(104_i64).alias("__distinct_guard_7500")]).unwrap()
+            .sort(vec![col_exact("value").sort(false,false)]).unwrap().build().unwrap();
+        if mask & 1 != 0 { input=LogicalPlanBuilder::from(input).alias("ordered_source").unwrap().build().unwrap(); }
+        if mask & 2 != 0 {
+            let mut columns=existing_columns_by_name(&input,&BTreeSet::new());
+            columns[1]=(col_exact("value")+lit(0_i64)).alias("value");
+            input=LogicalPlanBuilder::from(input).project(columns).unwrap().build().unwrap();
+        }
+        if mask & 4 != 0 { input=LogicalPlanBuilder::from(input).filter(col_exact("value").not_eq(lit(30_i64))).unwrap().build().unwrap(); }
+        if mask & 8 != 0 { input=LogicalPlanBuilder::from(input).limit(1,Some(2)).unwrap().build().unwrap(); }
+        let fields=input.schema().as_arrow().clone();
+        let result=keyed_distinct(input,&["key".into()],7500).unwrap();
+        assert_eq!(result.schema().as_arrow(),&fields,"mask={mask}");
+        let batches=crate::ir::rel::execute_test_plan(result).await
+            .unwrap_or_else(|error|panic!("mask={mask}: {error}"));
+        let mut actual=Vec::new();
+        for batch in batches {
+            for row in 0..batch.num_rows() {
+                actual.push((batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap().value(row),
+                    batch.column(1).as_any().downcast_ref::<Int64Array>().unwrap().value(row)));
+                for (column,value) in [(2,101_i64),(3,102),(4,103),(5,104)] {
+                    assert_eq!(ScalarValue::try_from_array(batch.column(column),row).unwrap(),ScalarValue::Int64(Some(value)));
+                }
+            }
+        }
+        let mut expected=rows.to_vec(); expected.sort_by_key(|(_,v)|std::cmp::Reverse(*v));
+        if mask & 4 != 0 { expected.retain(|(_,v)|*v!=30); }
+        if mask & 8 != 0 { expected=expected.into_iter().skip(1).take(2).collect(); }
+        let mut seen=BTreeSet::new(); expected.retain(|(k,_)|seen.insert(*k));
+        assert_eq!(actual,expected,"mask={mask}");
+    }
+}
+
+#[tokio::test]
+async fn cypher_ordered_distinct_keeps_label_qualified_identity_and_correlation_groups() {
+    let rows=[(1_i64,"A",1_i64,10_i64),(1,"A",1,11),(1,"B",1,12),(1,"A",2,13),(1,"A",2,14)];
+    let input=LogicalPlanBuilder::values(rows.iter().map(|(id,label,corr,value)|vec![lit(*id),lit(*label),lit(*corr),lit(*value)]).collect()).unwrap()
+        .project(vec![col_exact("column1").alias(id_col("n")),col_exact("column2").alias(label_col("n")),
+            col_exact("column3").alias("__apply_corr_key_0"),col_exact("column4").alias(prop_col("n","value"))]).unwrap()
+        .sort(vec![col_exact(prop_col("n","value")).sort(true,false)]).unwrap().build().unwrap();
+    for (keys,expected) in [(vec!["n".into()],vec![10_i64,12,13]),
+        (vec!["missing".into()],vec![10_i64,13]),(vec![],vec![10_i64,11,12,13,14])] {
+        let result=keyed_distinct(input.clone(),&keys,7501).unwrap();
+        let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+        let actual=batches.iter().flat_map(|b|b.column(3).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+        assert_eq!(actual,expected,"keys={keys:?}");
+    }
+}
+
+#[tokio::test]
+async fn cypher_ordered_distinct_preserves_null_key_and_empty_slice_cardinality() {
+    for empty in [false,true] {
+        let input=LogicalPlanBuilder::values(vec![vec![lit(ScalarValue::Int64(None)),lit(1_i64)],
+            vec![lit(ScalarValue::Int64(None)),lit(2_i64)],vec![lit(9_i64),lit(3_i64)]]).unwrap()
+            .project(vec![col_exact("column1").alias("key"),col_exact("column2").alias("value")]).unwrap()
+            .sort(vec![col_exact("value").sort(false,false)]).unwrap()
+            .limit(0,if empty {Some(0)}else{None}).unwrap().build().unwrap();
+        let result=keyed_distinct(input,&["key".into()],7502).unwrap();
+        let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+        let actual=batches.iter().flat_map(|b|b.column(1).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+        assert_eq!(actual,if empty {vec![]}else{vec![3,2]});
+    }
+}
+
+#[tokio::test]
+async fn cypher_ordered_distinct_preserves_nested_slices_and_qualified_renames() {
+    for alias in [false,true] {
+    for rename in [false,true] {
+        let mut input=LogicalPlanBuilder::values(vec![vec![lit(1_i64),lit(60_i64)],
+            vec![lit(1_i64),lit(50_i64)],vec![lit(2_i64),lit(40_i64)],
+            vec![lit(2_i64),lit(30_i64)],vec![lit(3_i64),lit(20_i64)],vec![lit(3_i64),lit(10_i64)]]).unwrap()
+            .project(vec![col_exact("column1").alias("key"),col_exact("column2").alias("value")]).unwrap()
+            .sort(vec![col_exact("value").sort(false,false)]).unwrap()
+            .limit(1,Some(4)).unwrap()
+            .filter(col_exact("value").not_eq(lit(40_i64))).unwrap().build().unwrap();
+        if alias { input=LogicalPlanBuilder::from(input).alias("slice_input").unwrap().build().unwrap(); }
+        if rename { input=LogicalPlanBuilder::from(input).project(vec![col_exact("key").alias("renamed_key"),
+            col_exact("value").alias("renamed_value")]).unwrap().build().unwrap(); }
+        input=LogicalPlanBuilder::from(input).limit(1,Some(2)).unwrap().build().unwrap();
+        let key=if rename {"renamed_key"}else{"key"};
+        let result=keyed_distinct(input,&[key.into()],7503).unwrap();
+        let batches=crate::ir::rel::execute_test_plan(result).await
+            .unwrap_or_else(|error|panic!("alias={alias}, rename={rename}: {error}"));
+        let actual=batches.iter().flat_map(|batch|(0..batch.num_rows()).map(|row|(
+            batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap().value(row),
+            batch.column(1).as_any().downcast_ref::<Int64Array>().unwrap().value(row))).collect::<Vec<_>>()).collect::<Vec<_>>();
+        assert_eq!(actual,vec![(2,30),(3,20)],"alias={alias}, rename={rename}");
+    }
+    }
+}

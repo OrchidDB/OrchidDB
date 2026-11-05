@@ -370,7 +370,23 @@ pub(super) fn with_distinct_ordinal(plan: LogicalPlan, ordinal: &str) -> RelResu
     }
     if let LogicalPlan::Limit(limit) = &plan {
         let mut limit = limit.clone();
-        limit.input = Arc::new(with_distinct_ordinal(limit.input.as_ref().clone(), ordinal)?);
+        let numbered = with_distinct_ordinal(limit.input.as_ref().clone(), ordinal)?;
+        // Complete numbering and filtering before slicing. Otherwise the SQL
+        // unparser can move ROW_NUMBER outside LIMIT while leaving a QUALIFY
+        // predicate in a SELECT that no longer contains a window function.
+        let schema = numbered.schema().clone();
+        let scoped = LogicalPlanBuilder::from(numbered)
+            .alias(format!("__w_sql_cte_distinct_limit_{ordinal}"))?.build()?;
+        let columns = scoped.schema().columns().into_iter().zip(schema.iter())
+            .map(|(column, (qualifier, field))| Expr::Column(column)
+                .alias_qualified(qualifier.cloned(), field.name())).collect();
+        let restored = LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(
+            columns, Arc::new(scoped), schema,
+        )?);
+        // The CTE is a relation, so explicitly restore encounter order at the
+        // LIMIT rather than relying on the CTE's physical row order.
+        limit.input = Arc::new(LogicalPlanBuilder::from(restored)
+            .sort(vec![col_exact(ordinal).sort(true, false)])?.build()?);
         return Ok(LogicalPlan::Limit(limit));
     }
     let order = match &plan {
