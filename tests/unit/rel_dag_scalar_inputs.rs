@@ -411,3 +411,71 @@ fn sql_nested_execution_statistics_accumulate_work_without_recounting_result_siz
     let physical=parent.physical_plan.clone();let logical=parent.logical_plan.clone();parent.merge_execution(&DagStats::default());
     assert_eq!(parent.physical_plan,physical);assert_eq!(parent.logical_plan,logical);
 }
+
+#[tokio::test]
+async fn transport_literal_input_rewrites_keep_typed_batches_and_repeatable_streams() {
+    use arrow::{array::{Int64Array, RecordBatch}, datatypes::{Field, Schema}};
+    let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, true)]));
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(vec![Some(7), None]))]).unwrap();
+    let empty = RecordBatch::new_empty(schema.clone());
+    let input: Arc<dyn ExecutionPlan> = Arc::new(engine_exec::InputBatches::new(schema.clone(), vec![batch.clone(), empty.clone()]));
+    assert!(input.children().is_empty());
+    let rewritten = input.clone().with_new_children(vec![]).unwrap();
+    assert!(Arc::ptr_eq(&input, &rewritten));
+    assert!(input.clone().with_new_children(vec![input.clone()]).unwrap_err().to_string().contains("has no dependencies"));
+    assert_eq!(engine_exec::explain(&input), "LiteralInput\n");
+    for _ in 0..2 {
+        let batches = engine_exec::collect(rewritten.clone(), Arc::new(TaskContext::default())).await.unwrap();
+        assert_eq!(batches, vec![batch.clone(), empty.clone()]);
+    }
+    let empty_input: Arc<dyn ExecutionPlan> = Arc::new(engine_exec::InputBatches::new(schema.clone(), vec![]));
+    let stream = engine_exec::execute_stream(empty_input.clone(), Arc::new(TaskContext::default())).unwrap();
+    assert_eq!(stream.schema(), schema);
+    assert!(engine_exec::collect(empty_input, Arc::new(TaskContext::default())).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn transport_stream_adapter_preserves_schema_and_delivers_errors_in_order() {
+    use arrow::{array::{Int64Array, RecordBatch}, datatypes::{Field, Schema}};
+    use futures::StreamExt;
+    use engine_exec::RecordBatchStream;
+    let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, false)]));
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(vec![42]))]).unwrap();
+    let source = futures::stream::iter(vec![Ok(batch.clone()), Err(DataFusionError::Execution("source disconnected".into()))]);
+    let mut stream = engine_exec::RecordBatchStreamAdapter::new(schema.clone(), source);
+    assert_eq!(stream.schema(), schema);
+    assert_eq!(stream.next().await.unwrap().unwrap(), batch);
+    let error = stream.next().await.unwrap().unwrap_err();
+    assert!(matches!(error, DataFusionError::Execution(ref message) if message == "source disconnected"));
+    assert!(stream.next().await.is_none());
+}
+
+#[test]
+fn transport_memory_reservations_keep_failed_growth_atomic_and_release_on_drop() {
+    use engine_exec::{GreedyMemoryPool, MemoryPool, MemoryConsumer};
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(8));
+    let context = TaskContext::default().with_batch_size(0).with_memory_pool(pool.clone());
+    assert_eq!(context.batch_size(), 1);
+    assert!(Arc::ptr_eq(context.memory_pool(), &pool));
+    {
+        let first = MemoryConsumer::new("first").register(&pool);
+        let second = MemoryConsumer::new("second").register(&pool);
+        first.try_grow(5).unwrap(); second.try_grow(2).unwrap();
+        assert!(matches!(first.try_grow(2), Err(DataFusionError::ResourcesExhausted(_))));
+        assert_eq!((first.size(), second.size(), pool.reserved()), (5, 2, 7));
+        first.try_resize(4).unwrap(); second.try_resize(0).unwrap();
+        assert_eq!(pool.reserved(), 4);
+        first.free(); first.free();
+        assert_eq!(pool.reserved(), 0);
+        first.try_resize(8).unwrap();
+        assert_eq!(pool.reserved(), 8);
+    }
+    assert_eq!(pool.reserved(), 0);
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(usize::MAX));
+    let reservation = MemoryConsumer::new("accounting overflow").register(&pool);
+    reservation.try_grow(usize::MAX).unwrap();
+    assert!(reservation.try_grow(1).is_err());
+    assert_eq!(reservation.size(), usize::MAX);
+    drop(reservation);
+    assert_eq!(pool.reserved(), 0);
+}
