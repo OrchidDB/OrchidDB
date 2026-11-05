@@ -141,3 +141,49 @@ fn indexed_search_requires_exactly_one_matching_physical_scan() {
         .union(two_scans.target.as_ref().clone()).unwrap().build().unwrap());
     assert!(lance_template_inner(&two_scans).err().unwrap().to_string().contains("exactly one target scan"));
 }
+
+fn indexed_candidate(metric: SearchMetric) -> RankedJoin {
+    use crate::ir::functions::logical::{LogicalFunction,SqlFunctionMapping};
+    let mut search=lexical_candidate("documents");
+    search.source=Arc::new(LogicalPlanBuilder::empty(true)
+        .project(vec![lit("[1,0]").alias("source_value")]).unwrap().build().unwrap());
+    let Expr::ScalarFunction(score)=&search.score else {panic!("score function")};
+    let function=LogicalFunction::new("test_indexed_score",score.func.clone(),
+        BTreeMap::from([("postgres".into(),SqlFunctionMapping{value:"0.0".into(),ordering:None})]))
+        .with_search_metric(metric.clone()).into_udf();
+    search.score=function.call(vec![col("source_value"),col("target_value")]);
+    search.index.as_mut().unwrap().metric=metric;search
+}
+
+#[test]
+fn postgres_ranked_templates_preserve_metric_exactness_predicates_and_ties() {
+    for (metric,operator) in [(SearchMetric::Cosine,"<=>"),(SearchMetric::Dot,"<#>"),(SearchMetric::L2,"<->")] {
+        for exact in [false,true] {
+            for filtered in [false,true] {
+                for ties in [false,true] {
+                    let mut search=indexed_candidate(metric.clone());
+                    search.exact=exact;
+                    search.predicate=filtered.then(||col("target_value").not_eq(col("source_value")));
+                    search.target_keys=if ties {vec![col("target_value")]}else{vec![]};
+                    let template=postgres_template(&search).unwrap();
+                    assert_eq!(template.parameters,1);assert_eq!(template.dialect,"postgres");
+                    let inline=statement(&search,SqlDialect::Postgres).unwrap().to_string();
+                    for sql in [&template.sql,&inline] {
+                        assert!(sql.contains(operator),"{sql}");
+                        assert_eq!(sql.contains("+ 0.0"),exact,"{sql}");
+                        // One ordering key is the distance; exact mode alone adds a stable tie key.
+                        assert_eq!(sql.matches("ASC NULLS LAST").count(),1+usize::from(exact&&ties),"{sql}");
+                        assert!(sql.contains("LIMIT 3"),"{sql}");
+                        assert_eq!(sql.to_ascii_uppercase().contains("WHERE TRUE"),!filtered,"{sql}");
+                    }
+                    assert!(template.sql.contains("$1"),"{}",template.sql);
+                    assert!(!template.sql.contains("__search_source"),"{}",template.sql);
+                    assert!(inline.contains("LATERAL"),"{inline}");
+                }
+            }
+        }
+    }
+    let search=indexed_candidate(SearchMetric::Bm25);
+    assert!(postgres_template(&search).err().unwrap().to_string().contains("does not implement this metric"));
+    assert!(statement(&search,SqlDialect::Postgres).err().unwrap().to_string().contains("no indexed operator"));
+}
