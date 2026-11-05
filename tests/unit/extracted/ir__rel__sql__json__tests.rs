@@ -111,6 +111,8 @@
                 ("[7]", "$['0']", "missing"),
                 ("{\"0\":8}", "$[0]", "missing"),
                 ("[7]", "/0", "7"),
+                ("[7,8]", "$[-1]", "8"),
+                ("[7,8]", "$[-3]", "missing"),
                 ("{\"0\":8}", "/0", "8"),
             ] {
                 let expression = render("value", &["doc", &string(path)], dialect);
@@ -286,6 +288,8 @@
             let ty = if pg { "JSONB" } else { "JSON" };
             for (op, doc, path, value, expected) in [
                 ("set", "{\"a\":1}", "$", "2", json!(2)),
+                ("set", "[1,2]", "/0", "9", json!([9,2])),
+                ("insert", "[1,2]", "/1", "9", json!([1,9,2])),
                 ("replace", "[1]", "$", "NULL", json!(null)),
                 ("insert", "[1]", "$", "2", json!([1])),
                 (
