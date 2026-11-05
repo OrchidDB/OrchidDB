@@ -207,3 +207,165 @@
             }
         }
     }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn native_node_rebinding_recovers_label_qualified_identity_and_properties() {
+        let graph = PropertyGraph::new();
+        graph.insert_node("A", BTreeMap::from([("value".into(), Value::Int(11))]));
+        graph.insert_node("B", BTreeMap::from([("value".into(), Value::Int(22))]));
+        graph.insert_node("A", BTreeMap::from([("value".into(), Value::Int(33))]));
+        for (labels, expected) in [
+            (LabelExpr::Any, vec![("A", 0_i64, 11_i64), ("A", 1, 33), ("B", 0, 22)]),
+            (LabelExpr::label("A"), vec![("A", 0, 11), ("A", 1, 33)]),
+            (LabelExpr::label("B"), vec![("B", 0, 22)]),
+        ] {
+            let mut ctx = context(&graph);
+            let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+            let native = ctx.native_expr(&input.plan, &IrExpr::binding("n")).unwrap();
+            let plan = LogicalPlanBuilder::from(input.plan).project(vec![native.alias("value")]).unwrap().build().unwrap();
+            let input = LoweredNode::new(plan);
+            assert!(has_binding_shape(&input.plan, "value").is_none());
+            let rebound = ctx.bind_native_node_with_labels(input, "value", &labels).unwrap();
+            assert_eq!(has_binding_shape(&rebound.plan, "value"), Some(BindingShape::Node));
+            assert!(has_exact_col(&rebound.plan, "value"));
+            assert!(!rebound.plan.schema().fields().iter().any(|field| field.name().starts_with("__orchid_value_node_")));
+            let plan = LogicalPlanBuilder::from(rebound.plan).project(vec![
+                col_exact(label_col("value")).alias("label"), col_exact(id_col("value")).alias("id"),
+                col_exact(prop_col("value", "value")).alias("property"),
+            ]).unwrap().build().unwrap();
+            let lowered = LoweredPlan { plan, fields: vec!["label".into(), "id".into(), "property".into()],
+                result_form: ResultForm::RowSet, rule_context: Default::default(), islands: rebound.islands };
+            let mut executor = sql::DuckDbExecutor::default();
+            executor.set_language_functions(true).unwrap();
+            let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+            let mut actual = (0..batch.num_rows()).map(|row| (
+                ScalarValue::try_from_array(batch.column(0), row).unwrap().to_string(),
+                ScalarValue::try_from_array(batch.column(1), row).unwrap().to_string().parse::<i64>().unwrap(),
+                ScalarValue::try_from_array(batch.column(2), row).unwrap().to_string().parse::<i64>().unwrap(),
+            )).collect::<Vec<_>>();
+            actual.sort();
+            assert_eq!(actual, expected.into_iter().map(|(label, id, value)| (label.to_owned(), id, value)).collect::<Vec<_>>(), "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn native_node_rebinding_does_not_open_computed_sources() {
+        use crate::ir::rel::mapping::{GraphMapping, NodeMapping};
+        let graph = PropertyGraph::new();
+        graph.insert_node("A", BTreeMap::new());
+        let mut ctx = context(&graph);
+        let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+        let native = ctx.native_expr(&input.plan, &IrExpr::binding("n")).unwrap();
+        let plan = LogicalPlanBuilder::from(input.plan).project(vec![native.alias("value")]).unwrap().build().unwrap();
+        let mut mapping = GraphMapping::new();
+        mapping.map_node(NodeMapping::query("External", "SELECT id FROM external_service", "id"));
+        ctx.options.mapping = Some(Arc::new(mapping));
+        let before = ctx.scan_counter;
+        let rebound = ctx.bind_native_node(LoweredNode::new(plan.clone()), "value").unwrap();
+        assert_eq!(rebound.plan, plan);
+        assert_eq!(ctx.scan_counter, before);
+    }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn native_relationship_history_preserves_membership_after_list_transport() {
+        let graph = PropertyGraph::new();
+        let ctx = context(&graph);
+        for (new_label, new_id, expected_rows) in [("A", "1", 0), ("B", "1", 1), ("A", "2", 1)] {
+            for packed_list in [true, false] {
+                let plan = LogicalPlanBuilder::empty(true).project(vec![
+                    lit("1").alias(id_col("r")), lit("A").alias(label_col("r")),
+                ]).unwrap().build().unwrap();
+                let first = ctx.track_relationship(LoweredNode::new(plan), "trail", "r").unwrap();
+                let packed = native_values::typed::call("pack", vec![col_exact("trail")]);
+                let history = if packed_list { packed } else { native_values::typed::call("items", vec![packed]) };
+                let plan = LogicalPlanBuilder::from(first.plan).project(vec![
+                    history.alias("trail"), lit(new_id).alias(id_col("r")), lit(new_label).alias(label_col("r")),
+                ]).unwrap().build().unwrap();
+                let second = ctx.track_relationship(LoweredNode::new(plan), "trail", "r").unwrap();
+                let plan = LogicalPlanBuilder::from(second.plan).project(vec![
+                    datafusion::functions_nested::expr_fn::array_length(col_exact("trail")).alias("length"),
+                ]).unwrap().build().unwrap();
+                let lowered = LoweredPlan { plan, fields: vec!["length".into()], result_form: ResultForm::RowSet,
+                    rule_context: Default::default(), islands: second.islands };
+                let mut executor = sql::DuckDbExecutor::default();
+                executor.set_language_functions(true).unwrap();
+                let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+                assert_eq!(batch.num_rows(), expected_rows, "{new_label}/{new_id}, packed={packed_list}");
+                if expected_rows > 0 {
+                    assert_eq!(ScalarValue::try_from_array(batch.column(0), 0).unwrap().to_string(), "2");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn native_node_rebinding_keeps_duplicates_and_rejects_non_node_values() {
+        let graph = PropertyGraph::new();
+        graph.insert_node("A", BTreeMap::new());
+        let mut ctx = context(&graph);
+        let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+        let native = ctx.native_expr(&input.plan, &IrExpr::binding("n")).unwrap();
+        let one = LogicalPlanBuilder::from(input.plan).project(vec![native.alias("v")]).unwrap().build().unwrap();
+        let duplicate = LogicalPlanBuilder::from(one.clone()).union(one).unwrap().build().unwrap();
+        for (plan, expected_rows) in std::iter::once((duplicate, 2)).chain([
+            lit(ScalarValue::Null), lit(0_i64), lit("A:0"), lit(false),
+        ].into_iter().map(|value| (LogicalPlanBuilder::empty(true).project(vec![
+            native_values::typed::call("pack", vec![value]).alias("v"),
+        ]).unwrap().build().unwrap(), 0))) {
+            let rebound = ctx.bind_native_node(LoweredNode::new(plan), "v").unwrap();
+            let plan = LogicalPlanBuilder::from(rebound.plan).project(vec![col_exact(id_col("v")).alias("id")]).unwrap().build().unwrap();
+            let lowered = LoweredPlan { plan, fields: vec!["id".into()], result_form: ResultForm::RowSet,
+                rule_context: Default::default(), islands: rebound.islands };
+            let mut executor = sql::DuckDbExecutor::default();
+            executor.set_language_functions(true).unwrap();
+            let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+            assert_eq!(batch.num_rows(), expected_rows);
+            for row in 0..batch.num_rows() {
+                assert_eq!(ScalarValue::try_from_array(batch.column(0), row).unwrap().to_string(), "0");
+            }
+        }
+    }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn relationship_history_retains_binary_and_composite_identity_domains() {
+        let graph = PropertyGraph::new();
+        let ctx = context(&graph);
+        let composite = |number, text| df_core::named_struct(vec![lit("number"), lit(number), lit("text"), lit(text)]);
+        for (old_id, other_id) in [
+            (lit(ScalarValue::Binary(Some(vec![0, 255, 58]))), lit(ScalarValue::Binary(Some(vec![0, 255, 59])))),
+            (lit(ScalarValue::Binary(Some(vec![]))), lit(ScalarValue::Binary(Some(vec![0])))),
+            (composite(1_i64, "a:b"), composite(1_i64, "a:c")),
+            (composite(1_i64, "same"), composite(2_i64, "same")),
+        ] {
+            for (new_label, new_id, expected_rows) in [
+                ("A", old_id.clone(), 0), ("A", other_id, 1), ("B", old_id.clone(), 1),
+            ] {
+                for typed_history in [true, false] {
+                    let plan = LogicalPlanBuilder::empty(true).project(vec![
+                        old_id.clone().alias(id_col("r")), lit("A").alias(label_col("r")),
+                    ]).unwrap().build().unwrap();
+                    let first = ctx.track_relationship(LoweredNode::new(plan), "trail", "r").unwrap();
+                    let mut columns = vec![col_exact("trail"), new_id.clone().alias(id_col("r")), lit(new_label).alias(label_col("r"))];
+                    if typed_history { columns.extend([col_exact("trail__e0_id"), col_exact("trail__e0_label")]); }
+                    let plan = LogicalPlanBuilder::from(first.plan).project(columns).unwrap().build().unwrap();
+                    let second = ctx.track_relationship(LoweredNode::new(plan), "trail", "r").unwrap();
+                    let plan = LogicalPlanBuilder::from(second.plan).project(vec![
+                        datafusion::functions_nested::expr_fn::array_length(col_exact("trail")).alias("length"),
+                    ]).unwrap().build().unwrap();
+                    let lowered = LoweredPlan { plan, fields: vec!["length".into()], result_form: ResultForm::RowSet,
+                        rule_context: Default::default(), islands: second.islands };
+                    let mut executor = sql::DuckDbExecutor::default();
+                    executor.set_language_functions(true).unwrap();
+                    let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+                    assert_eq!(batch.num_rows(), expected_rows, "old={old_id:?}, new={new_id:?}, label={new_label}, typed={typed_history}");
+                    if expected_rows > 0 {
+                        assert_eq!(ScalarValue::try_from_array(batch.column(0), 0).unwrap().to_string(), "2");
+                    }
+                }
+            }
+        }
+    }
