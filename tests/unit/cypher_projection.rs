@@ -878,3 +878,66 @@ fn projected_sort_rewrites_null_and_string_predicates_to_aggregate_outputs() {
         assert_eq!(rewrite_projected_sort_expr(&clause.projection,&fields,&expr(source)),expr(expected),"{source}");
     }
 }
+
+#[test]
+fn mixed_sort_aliases_use_source_values_and_hide_temporary_columns() {
+    for alias in ["renamed", "a"] {
+        for (direction, expected_direction) in [("ASC", SortDir::Asc), ("DESC", SortDir::Desc)] {
+            for replace_scope in [false, true] {
+                let query = parse_query(&format!("RETURN a + 1 AS {alias} ORDER BY {alias} + b {direction}")).unwrap();
+                let Clause::Return(clause) = &query.clauses[0] else { panic!() };
+                let mut lowerer = Lowerer::new();
+                lowerer.replace_scope(["a".to_owned(), "b".to_owned()]);
+                let before = lowerer.visible_set();
+                let (result, fields) = lower_projection_body(&mut lowerer, Node::GraphOneRow, &clause.projection, replace_scope).unwrap();
+                assert_eq!(fields, vec![alias]);
+                assert_eq!(lowerer.visible_set(), before);
+                let Node::GraphProject { mode: ProjectMode::ReplaceScope, items, input, .. } = result else { panic!("hidden sort columns must be removed") };
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].alias, alias);
+                assert_eq!(items[0].expr, IrExpr::Binding(alias.into()));
+                let Node::GraphSort { keys, input } = *input else { panic!("missing sort") };
+                assert_eq!(keys.len(), 1);
+                assert_eq!(keys[0].dir, expected_direction);
+                let Node::GraphProject { mode, items, .. } = *input else { panic!("missing computed sort input") };
+                assert_eq!(mode, if replace_scope { ProjectMode::ReplaceScope } else { ProjectMode::PreserveVisible });
+                assert_eq!(items.len(), 2);
+                let hidden = &items[1];
+                assert_ne!(hidden.alias, alias);
+                assert_eq!(keys[0].expr, IrExpr::Call {
+                    name: "cypher_order_key".into(),
+                    args: vec![IrExpr::Binding(hidden.alias.clone())],
+                });
+                let expected = IrExpr::Binary {
+                    op: IrBinaryOp::Add,
+                    lhs: Box::new(IrExpr::Binary {
+                        op: IrBinaryOp::Add,
+                        lhs: Box::new(IrExpr::Binding("a".into())),
+                        rhs: Box::new(IrExpr::Lit(Lit::Int(1))),
+                    }),
+                    rhs: Box::new(IrExpr::Binding("b".into())),
+                };
+                assert_eq!(hidden.expr, expected, "{alias} {direction}");
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_sort_scopes_fail_without_changing_source_visibility() {
+    for (text, expected) in [
+        ("RETURN a AS renamed ORDER BY sum(b)", "AGGREGATE_FUNCTION"),
+        ("RETURN a AS renamed ORDER BY EXISTS { RETURN renamed + b AS v }", "may not mix"),
+        ("RETURN DISTINCT a AS renamed ORDER BY b", "ORDER BY"),
+        ("RETURN a AS renamed ORDER BY missing", "missing"),
+    ] {
+        let query = parse_query(text).unwrap();
+        let Clause::Return(clause) = &query.clauses[0] else { panic!() };
+        let mut lowerer = Lowerer::new();
+        lowerer.replace_scope(["a".to_owned(), "b".to_owned()]);
+        let before = lowerer.visible_set();
+        let error = lower_projection_body(&mut lowerer, Node::GraphOneRow, &clause.projection, true).unwrap_err();
+        assert!(error.to_string().contains(expected), "{text}: {error}");
+        assert_eq!(lowerer.visible_set(), before);
+    }
+}

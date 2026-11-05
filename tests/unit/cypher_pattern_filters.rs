@@ -121,3 +121,124 @@ fn expansion_retains_empty_range_input_and_selects_relationship_reuse_policy() {
         }
     }
 }
+
+fn parsed_part(pattern: &str) -> PatternPart {
+    use crate::language::cypher::{parser::parse_query, ast::Clause};
+    let query = parse_query(&format!("MATCH {pattern} RETURN 1")).unwrap();
+    let Clause::Match(clause) = &query.clauses[0] else { panic!("expected MATCH") };
+    clause.patterns[0].clone()
+}
+
+#[test]
+fn pattern_binding_conflicts_leave_outer_scope_and_kinds_intact() {
+    for (pattern, name, kind, message) in [
+        ("(x)", "x", BindingKind::Int, "node pattern"),
+        ("(a)-[r]->(x)", "x", BindingKind::Relationship, "node pattern"),
+        ("(a)-[x]->(b)", "x", BindingKind::Node, "expected"),
+        ("(a)-[x*1..2]->(b)", "x", BindingKind::Relationship, "expected"),
+        ("(a)-[x]->(b)", "x", BindingKind::RecursiveRelationship, "expected"),
+        ("x = (a)-[r]->(b)", "x", BindingKind::Path, "VariableAlreadyBound"),
+        ("x = (x)-[r]->(b)", "outside", BindingKind::Int, "VariableAlreadyBound"),
+        ("x = (a)-[x]->(b)", "outside", BindingKind::Int, "VariableAlreadyBound"),
+        ("x = (a)-[r]->(x)", "outside", BindingKind::Int, "VariableAlreadyBound"),
+    ] {
+        for optional in [false, true] {
+            let mut lowerer = Lowerer::new();
+            lowerer.add_visible_kind(name, kind);
+            let before = lowerer.visible_set();
+            let error = lower_pattern_part(&mut lowerer, Node::GraphOneRow,
+                &parsed_part(pattern), optional, None, false).unwrap_err();
+            assert!(error.to_string().contains(message), "{pattern}: {error}");
+            assert_eq!(lowerer.visible_set(), before, "{pattern}");
+            assert_eq!(lowerer.binding_kind(name), Some(kind));
+        }
+    }
+}
+
+#[test]
+fn optional_pattern_outputs_are_typed_and_only_new_bindings_become_nullable() {
+    for optional in [false, true] {
+        for (range, expected_rel) in [("", BindingKind::Relationship), ("*0..2", BindingKind::RecursiveRelationship)] {
+            let mut lowerer = Lowerer::new();
+            lowerer.add_visible_kind("a", BindingKind::Node);
+            lowerer.add_visible_kind("outside", BindingKind::Int);
+            let part = parsed_part(&format!("p = (a)-[r:R{range}]->(b)"));
+            let result = lower_pattern_part(&mut lowerer, Node::GraphOneRow, &part, optional, None, false).unwrap();
+            let Node::GraphApply { kind, correlation, outputs, optional_missing, .. } = result else { panic!("missing apply") };
+            assert_eq!(kind, if optional { ApplyKind::Optional } else { ApplyKind::Inner });
+            assert_eq!(optional_missing, OptionalMissing::Null);
+            assert_eq!(correlation, vec!["a"]);
+            assert_eq!(outputs, vec!["b", "p", "r"]);
+            for (name, kind) in [("a", BindingKind::Node), ("b", BindingKind::Node), ("p", BindingKind::Path), ("r", expected_rel), ("outside", BindingKind::Int)] {
+                assert_eq!(lowerer.binding_kind(name), Some(kind));
+            }
+            let nullable = &lowerer.scopes.last().unwrap().nullable;
+            assert_eq!(nullable, &if optional { BTreeSet::from(["b".into(), "p".into(), "r".into()]) } else { BTreeSet::new() });
+        }
+    }
+}
+
+#[test]
+fn pattern_property_dependencies_and_history_are_correlated_once() {
+    for pattern in ["(a {v: outside})", "(a)-[r:R {v: outside}]->(b)", "(a)-[r:R]->(b {v: outside})"] {
+        for available in [false, true] {
+            let mut lowerer = Lowerer::new();
+            lowerer.add_visible_kind("outside", BindingKind::Int);
+            lowerer.add_visible_kind("unused", BindingKind::String);
+            let part = parsed_part(pattern);
+            let result = lower_pattern_part(&mut lowerer, Node::GraphOneRow, &part, false, Some("history"), available).unwrap();
+            let Node::GraphApply { correlation, outputs, .. } = result else { panic!("missing apply") };
+            let mut expected = vec!["outside".to_owned()];
+            if available { expected.push("history".into()); }
+            assert_eq!(correlation, expected, "{pattern}");
+            assert_eq!(outputs.iter().filter(|name| name.as_str() == "history").count(), usize::from(!part.element.chains.is_empty()));
+            assert!(!lowerer.is_visible("history"), "internal history must not leak into user scope");
+            assert!(!outputs.iter().any(|name| name == "outside" || name == "unused"));
+        }
+    }
+}
+
+#[test]
+fn reused_relationships_remain_correlated_without_redeclaring_their_binding() {
+    for (range, kind) in [("", BindingKind::Relationship), ("*1..2", BindingKind::RecursiveRelationship), ("*1..2", BindingKind::ListRelationship)] {
+        for direction in ["->", "-"] {
+            let mut lowerer = Lowerer::new();
+            lowerer.add_visible_kind("r", kind);
+            let part = parsed_part(&format!("(a)-[r:R{range}]{direction}(b)"));
+            let result = lower_pattern_part(&mut lowerer, Node::GraphOneRow, &part, false, None, false).unwrap();
+            let Node::GraphApply { correlation, outputs, right, .. } = result else { panic!("missing apply") };
+            assert_eq!(correlation, vec!["r"]);
+            assert_eq!(outputs, vec!["a", "b"]);
+            assert_eq!(lowerer.binding_kind("r"), Some(kind));
+            // Equality is a filter on the existing value, never a new output alias.
+            let Node::GraphFilter { condition: IrExpr::Binary { op: IrBinaryOp::Eq, .. }, .. } = *right else { panic!("reused relationship must be checked for equality") };
+        }
+    }
+}
+
+#[test]
+fn failed_pattern_query_can_be_followed_by_a_valid_query_on_the_same_lowerer() {
+    use crate::language::cypher::parser::parse_query;
+    for query in [
+        "MATCH p = (a) MATCH p = (b) RETURN p",
+        "MATCH (a)-[r]->(b) MATCH (r) RETURN r",
+        "MATCH (a)-[r]->(b) MATCH (x)-[r*1..2]->(y) RETURN y",
+        "MATCH p = (p)-[r]->(b) RETURN p",
+        "MATCH (a {v: missing}) RETURN a",
+        "MATCH (a)-[r {v: missing}]->(b) RETURN b",
+        "MATCH (a)-[r*1..2 {v: missing}]->(b) RETURN b",
+    ] {
+        let mut lowerer = Lowerer::new();
+        let original = lowerer.visible_set();
+        let original_depth = lowerer.scopes.len();
+        assert!(lowerer.lower_query_body(&parse_query(query).unwrap()).is_err(), "{query}");
+        assert_eq!(lowerer.visible_set(), original, "{query}");
+        assert_eq!(lowerer.scopes.len(), original_depth, "scope leak: {query}");
+        assert!(lowerer.traversal_stack.is_empty(), "traversal leak: {query}");
+        let result = lowerer.lower_query_body(&parse_query("MATCH (n) RETURN n").unwrap()).unwrap();
+        let Node::GraphReturn { fields, .. } = result else { panic!("missing return after {query}") };
+        assert_eq!(fields, vec!["n"]);
+        assert_eq!(lowerer.scopes.len(), original_depth);
+        assert!(lowerer.traversal_stack.is_empty());
+    }
+}
