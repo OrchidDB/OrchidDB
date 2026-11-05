@@ -1381,3 +1381,80 @@ async fn source_only_dialects_are_rejected_before_caller_execution() {
         "{error}"
     );
 }
+
+#[test]
+fn sql_array_coercion_ignores_values_outside_sliced_nested_arrays() {
+    use arrow::array::{Array,ArrayRef,ListArray,LargeListArray,FixedSizeListArray};
+    use arrow::datatypes::{Field,Int64Type};
+    let rows=vec![Some(vec![Some(128),Some(129)]),Some(vec![Some(7),None]),Some(vec![Some(-129),Some(-130)])];
+    let item=Arc::new(Field::new("item",DataType::Int8,true));
+    let targets=[DataType::List(item.clone()),DataType::LargeList(item.clone()),DataType::FixedSizeList(item,2)];
+    for array in [
+        Arc::new(ListArray::from_iter_primitive::<Int64Type,_,_>(rows.clone())) as ArrayRef,
+        Arc::new(LargeListArray::from_iter_primitive::<Int64Type,_,_>(rows.clone())) as ArrayRef,
+        Arc::new(FixedSizeListArray::from_iter_primitive::<Int64Type,_,_>(rows,2)) as ArrayRef,
+    ] {
+        for target in &targets {
+            for (offset,length) in [(0,0),(1,1),(3,0)] {
+                let sliced=array.slice(offset,length);
+                let result=coerce_sql_array(&sliced,target).expect("hidden overflow must not invalidate visible values");
+                assert_eq!(result.len(),length);assert_eq!(result.data_type(),target);
+                if length==0 {continue;}
+                let value=ScalarValue::try_from_array(&result,0).unwrap();
+                let children=match value {ScalarValue::List(a)=>a.value(0),ScalarValue::LargeList(a)=>a.value(0),ScalarValue::FixedSizeList(a)=>a.value(0),_=>panic!()};
+                assert_eq!(ScalarValue::try_from_array(&children,0).unwrap(),ScalarValue::Int8(Some(7)));
+                assert!(children.is_null(1));
+            }
+            assert!(coerce_sql_array(&array,target).is_err(),"visible overflow must still fail");
+        }
+    }
+}
+
+#[test]
+fn sql_array_coercion_recursively_restricts_nested_child_slices() {
+    use arrow::datatypes::Field;
+    let nested=|values:Vec<ScalarValue>,kind:&DataType| {
+        let inner=ScalarValue::List(ScalarValue::new_list_nullable(&values,kind));
+        ScalarValue::List(ScalarValue::new_list_nullable(&[inner.clone()],&inner.data_type()))
+    };
+    let good=nested(vec![ScalarValue::Int64(Some(7)),ScalarValue::Int64(None)],&DataType::Int64);
+    let bad=nested(vec![ScalarValue::Int64(Some(128))],&DataType::Int64);
+    let source=ScalarValue::iter_to_array(vec![bad.clone(),good,bad]).unwrap();
+    let item=Arc::new(Field::new("item",DataType::Int8,true));
+    let expected=nested(vec![ScalarValue::Int8(Some(7)),ScalarValue::Int8(None)],&DataType::Int8);
+    for inner in [DataType::List(item.clone()),DataType::LargeList(item.clone()),DataType::FixedSizeList(item,2)] {
+        let field=Arc::new(Field::new("item",inner,true));
+        for target in [DataType::List(field.clone()),DataType::LargeList(field.clone()),DataType::FixedSizeList(field,1)] {
+            let result=coerce_sql_array(&source.slice(1,1),&target).unwrap();
+            assert_eq!(ScalarValue::try_from_array(&result,0).unwrap(),expected.cast_to(&target).unwrap());
+            assert!(coerce_sql_array(&source,&target).is_err());
+        }
+    }
+}
+
+#[test]
+fn sql_array_coercion_retains_list_layout_limits_and_zero_width_parent_rows() {
+    use arrow::array::{Array,ArrayRef,FixedSizeListArray,LargeListArray,NullArray};
+    use arrow::buffer::{OffsetBuffer,ScalarBuffer};
+    use arrow::datatypes::{Field,Int64Type};
+    let fixed=Arc::new(FixedSizeListArray::from_iter_primitive::<Int64Type,_,_>(
+        vec![Some(vec![Some(1),Some(2)])],2)) as ArrayRef;
+    let target=DataType::FixedSizeList(Arc::new(Field::new("item",DataType::Int8,true)),3);
+    assert!(coerce_sql_array(&fixed,&target).is_err(),"layout changes cannot invent a third child");
+    // NullArray carries only a length, so this checks offset bounds without
+    // allocating a multi-gigabyte value buffer.
+    let length=i32::MAX as usize+1;
+    let field=Arc::new(Field::new("item",DataType::Null,true));
+    let large=Arc::new(LargeListArray::new(field.clone(),OffsetBuffer::new(ScalarBuffer::from(vec![0_i64,length as i64])),
+        Arc::new(NullArray::new(length)),None)) as ArrayRef;
+    assert!(coerce_sql_array(&large,&DataType::List(field)).is_err(),"32-bit offsets must not wrap");
+    let empty=Arc::new(FixedSizeListArray::from_iter_primitive::<Int64Type,_,_>(
+        vec![Some(vec![]),None,Some(vec![])],0)) as ArrayRef;
+    assert_eq!(empty.len(),3);
+    let item=Arc::new(Field::new("item",DataType::Int8,true));
+    for target in [DataType::List(item.clone()),DataType::LargeList(item.clone()),DataType::FixedSizeList(item,0)] {
+        let result=coerce_sql_array(&empty,&target).unwrap();
+        assert_eq!(result.len(),3);assert_eq!(result.null_count(),1);
+        assert!(!result.is_null(0));assert!(result.is_null(1));assert!(!result.is_null(2));
+    }
+}

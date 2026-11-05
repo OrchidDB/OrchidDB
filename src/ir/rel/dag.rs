@@ -1122,6 +1122,48 @@ pub(crate) fn coerce_sql_array(
     if target == &DataType::Null && array.null_count() == array.len() {
         return Ok(new_null_array(target, array.len()));
     }
+    fn visible_list<O: arrow::array::OffsetSizeTrait>(
+        input: &arrow::array::GenericListArray<O>,
+    ) -> std::result::Result<Option<arrow::array::ArrayRef>, arrow::error::ArrowError> {
+        let start = input.value_offsets()[0];
+        let first = start.as_usize();
+        let end = input.value_offsets()[input.len()].as_usize();
+        if first == 0 && end == input.values().len() {
+            return Ok(None);
+        }
+        // List slices retain the entire child array. Remove unreferenced
+        // children before any cast, including changes to the list layout.
+        let (field, offsets, values, nulls) = input.clone().into_parts();
+        let values = values.slice(first, end - first);
+        let offsets = if first == 0 {
+            offsets
+        } else {
+            arrow::buffer::OffsetBuffer::new(offsets.iter().map(|offset| *offset - start).collect::<Vec<_>>().into())
+        };
+        Ok(Some(Arc::new(arrow::array::GenericListArray::<O>::try_new(
+            field, offsets, values, nulls,
+        )?)))
+    }
+    let visible = match array.data_type() {
+        DataType::List(_) => visible_list(array.as_any().downcast_ref::<arrow::array::ListArray>().unwrap())?,
+        DataType::LargeList(_) => visible_list(array.as_any().downcast_ref::<arrow::array::LargeListArray>().unwrap())?,
+        _ => None,
+    };
+    let array = visible.as_ref().unwrap_or(array);
+    // Convert nested values recursively before Arrow changes the outer layout;
+    // Arrow's layout casts otherwise recurse over untrimmed nested children.
+    let intermediate = match (array.data_type(), target) {
+        (DataType::List(_), DataType::LargeList(field) | DataType::FixedSizeList(field, _)) => Some(DataType::List(field.clone())),
+        (DataType::LargeList(_), DataType::List(field) | DataType::FixedSizeList(field, _)) => Some(DataType::LargeList(field.clone())),
+        (DataType::FixedSizeList(_, size), DataType::List(field) | DataType::LargeList(field)) => Some(DataType::FixedSizeList(field.clone(), *size)),
+        (DataType::FixedSizeList(_, size), DataType::FixedSizeList(field, target_size)) if size != target_size => Some(DataType::FixedSizeList(field.clone(), *size)),
+        _ => None,
+    };
+    if let Some(intermediate) = intermediate {
+        let values = coerce_sql_array(array, &intermediate)?;
+        return arrow::compute::cast_with_options(&values, target,
+            &arrow::compute::CastOptions { safe: false, ..Default::default() });
+    }
     let children = match (array.data_type(), target) {
         (DataType::List(_), DataType::List(field))
         | (DataType::LargeList(_), DataType::LargeList(field)) => Some(vec![field.data_type()]),
