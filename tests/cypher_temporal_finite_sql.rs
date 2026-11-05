@@ -166,9 +166,41 @@ async fn temporal_case_without_else_includes_null_in_its_domain() {
     );
 }
 
-#[test]
-fn volatile_case_does_not_prove_repeatable_temporal_input() {
-    let query = "WITH CASE WHEN rand()<0.5 THEN date('2020-01-01') ELSE date('2021-01-01') END AS d RETURN d.year,d=d";
-    let plan = CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
-    assert!(RelBackend::new().with_language_functions(true).lower(&plan, &PropertyGraph::new()).is_err());
+#[tokio::test]
+async fn volatile_temporal_bindings_keep_one_value_for_all_uses() {
+    for (prefix, expected_rows) in [("", 1), ("UNWIND range(1,64) AS k ", 64)] {
+        let query = format!(
+            "{prefix}WITH CASE WHEN rand()<0.5 THEN date('2020-01-01') ELSE date('2021-01-01') END AS d RETURN d.year AS year,d=d AS same"
+        );
+        let plan = CypherPlanner::new()
+            .plan(&parse_query(&query).unwrap())
+            .unwrap();
+        let lowered = RelBackend::new()
+            .with_language_functions(true)
+            .lower(&plan, &PropertyGraph::new())
+            .unwrap();
+        let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered)
+            .await
+            .unwrap();
+        assert_eq!(result.batch.num_rows(), expected_rows);
+        assert_eq!(result.batch.num_columns(), 2);
+        for row in 0..result.batch.num_rows() {
+            let year = datafusion::common::ScalarValue::try_from_array(result.batch.column(0), row)
+                .unwrap();
+            assert!(
+                matches!(
+                    year,
+                    datafusion::common::ScalarValue::Int64(Some(2020 | 2021))
+                ),
+                "{year:?}"
+            );
+            let same = datafusion::common::ScalarValue::try_from_array(result.batch.column(1), row)
+                .unwrap();
+            assert_eq!(
+                same,
+                datafusion::common::ScalarValue::Boolean(Some(true)),
+                "a WITH binding must not reevaluate its volatile date for each use"
+            );
+        }
+    }
 }
