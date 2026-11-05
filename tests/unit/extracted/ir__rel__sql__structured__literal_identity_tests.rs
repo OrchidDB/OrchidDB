@@ -135,3 +135,53 @@ fn structured_union_literals_execute_with_null_members_and_quoted_field_names() 
         let different = ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(2))], &DataType::Int64));
         assert_ne!(first, literal_expr(&different, SqlDialect::DuckDb).unwrap());
     }
+
+#[test]
+fn fixed_size_structured_lists_reject_wrong_lengths_including_nested_values() {
+    let item=Arc::new(Field::new("item",DataType::Int64,true));
+    for width in [1,2,3] {
+        let ty=DataType::FixedSizeList(item.clone(),width);
+        for len in 0..=4 {
+            let payload=Value::Array((0..len).map(|i|if i%2==0 {json!(i.to_string())} else {Value::Null}).collect());
+            let result=decode(&payload,&ty);
+            if len==width as usize {
+                let actual=result.unwrap();assert!(!actual.is_null());assert_eq!(encode(&actual).unwrap(),payload);
+            } else {assert!(result.is_err(),"width {width} silently accepted {payload}");}
+            let outer=DataType::List(Arc::new(Field::new("item",ty.clone(),true)));
+            let nested=decode(&json!([null,payload]),&outer);
+            assert_eq!(nested.is_ok(),len==width as usize,"nested width {width} length {len}");
+        }
+        assert!(decode(&Value::Null,&ty).unwrap().is_null());
+    }
+}
+
+#[test]
+fn malformed_map_schemas_return_errors_without_panicking() {
+    for entries in [DataType::Int64,DataType::Struct(Vec::<Field>::new().into()),
+        DataType::Struct(vec![Field::new("key",DataType::Utf8,false)].into()),
+        DataType::Struct(vec![Field::new("key",DataType::Utf8,false),Field::new("value",DataType::Int64,true),Field::new("extra",DataType::Int64,true)].into())] {
+        let ty=DataType::Map(Arc::new(Field::new("entries",entries,false)),false);
+        for payload in [json!([]),json!([{"key":"a","value":"7"}])] {
+            let result=std::panic::catch_unwind(||decode(&payload,&ty));
+            assert!(result.is_ok(),"malformed map schema panicked: {ty}");
+            assert!(result.unwrap().is_err(),"malformed map schema accepted: {ty}");
+        }
+    }
+}
+
+#[test]
+fn nested_structured_records_preserve_missing_fields_and_binary_json_leaves() {
+    let json_type=crate::ir::functions::domain::json_type();
+    let ty=DataType::Struct(vec![Field::new("payload",json_type,true),
+        Field::new("raw",DataType::BinaryView,true),
+        Field::new("items",DataType::LargeList(Arc::new(Field::new("item",DataType::Int64,true))),true),
+        Field::new("missing",DataType::Utf8,true)].into());
+    let payload=json!({"payload":"null","raw":"\\x00ff27","items":["7",null]});
+    let value=decode(&payload,&ty).unwrap();
+    assert_eq!(encode(&value).unwrap(),json!({"payload":"null","raw":"\\x00ff27","items":["7",null],"missing":null}));
+    assert_eq!(decode(&encode(&value).unwrap(),&ty).unwrap(),value);
+    for malformed in [json!([]),json!(true),json!("record")] {assert!(decode(&malformed,&ty).is_err());}
+    for payload in [json!({"raw":"\\x0"}),json!({"raw":"\\xgg"}),json!({"items":["overflow"]}),json!({"payload":"invalid JSON"})] {
+        assert!(decode(&payload,&ty).is_err(),"accepted malformed nested leaf: {payload}");
+    }
+}

@@ -99,6 +99,9 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
             let DataType::Struct(fs) = f.data_type() else {
                 return Err(invalid());
             };
+            if fs.len() != 2 {
+                return Err(invalid());
+            }
             let entries = value.as_array().ok_or_else(invalid)?;
             let keys = entries
                 .iter()
@@ -158,7 +161,13 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
                 a,
                 None,
             )?);
-            ScalarValue::try_from_array(&arrow::compute::cast(&list, ty)?, 0)?
+            let array = if list.data_type() == ty {
+                list
+            } else {
+                let options = arrow::compute::CastOptions { safe: false, ..Default::default() };
+                arrow::compute::cast_with_options(&list, ty, &options)?
+            };
+            ScalarValue::try_from_array(&array, 0)?
         }
         DataType::BinaryView => {
             let v = crate::federation::json_scalar(value, &DataType::Binary)
