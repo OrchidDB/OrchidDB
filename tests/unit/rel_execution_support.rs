@@ -28,3 +28,6 @@ pub(crate) async fn execute_test_plan(plan: LogicalPlan) -> datafusion::common::
         .map_err(|error| DataFusionError::Plan(error.to_string()))
 }
 
+
+#[path = "rel_representation_contracts.rs"]
+mod representation_contracts;
