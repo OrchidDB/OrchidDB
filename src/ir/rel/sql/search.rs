@@ -596,3 +596,7 @@ pub(crate) fn postgres_template(search: &RankedJoin) -> SqlResult<SearchTemplate
         )
     })
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/extracted/ir__rel__sql__search__boundaries.rs"]
+mod boundaries;

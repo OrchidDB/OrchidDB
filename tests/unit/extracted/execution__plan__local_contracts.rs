@@ -565,6 +565,7 @@ impl crate::operations::RequestAdapter for ContinuationAdapter {
         let LogicalPlan::TableScan(scan)=plan else {return Ok(None)};
         let name=scan.table_name.to_string();
         let Some(mode)=name.strip_prefix("continuation_") else {return Ok(None)};
+        if mode=="adapter_error" {return Err("continuation adapter rejected plan".into());}
         let marker=||RequestResult {schema:plan.schema().clone()}.into_plan();
         let replacement=match mode {
             "missing"=>LogicalPlanBuilder::empty(true).project(vec![datafusion::logical_expr::lit(1_i64).alias("v")]).unwrap().build().unwrap(),
@@ -572,10 +573,10 @@ impl crate::operations::RequestAdapter for ContinuationAdapter {
             "mismatch"=>RequestResult {schema:Arc::new(DFSchema::empty())}.into_plan(),
             _=>marker(),
         };
-        let source=if mode=="dependent" {Some(Arc::new(LogicalPlanBuilder::empty(true)
-            .project(vec![datafusion::logical_expr::lit(9_i64).alias("parameter")]).unwrap().build().unwrap()))} else {None};
-        Ok(Some(PreparedOperation {schema:plan.schema().clone(),replacement:Some(replacement),
-            template:RequestTemplate {adapter:self.name().into(),parameters:usize::from(source.is_some()),
+        let source=if matches!(mode,"dependent"|"direct_dependent") {Some(Arc::new(LogicalPlanBuilder::empty(true)
+            .project(vec![datafusion::logical_expr::lit(9_i64).alias("parameter")]).unwrap().build().unwrap()))} else if mode=="invalid_source" {Some(Arc::new(marker()))} else {None};
+        Ok(Some(PreparedOperation {schema:plan.schema().clone(),replacement:if mode.starts_with("direct") {None}else{Some(replacement)},
+            template:RequestTemplate {adapter:if mode=="invalid_template" {String::new()}else{self.name().into()},parameters:usize::from(source.is_some()),
                 request:serde_json::json!({"mode":mode}),bindings:vec![]},source}))
     }
 }
@@ -584,7 +585,7 @@ impl crate::operations::RequestAdapter for ContinuationAdapter {
 fn prepared_continuations_require_one_schema_matching_result_leaf() {
     static REGISTER:std::sync::Once=std::sync::Once::new();
     REGISTER.call_once(||crate::operations::register(Arc::new(ContinuationAdapter)).unwrap());
-    for mode in ["valid","dependent","missing","multiple","mismatch"] {
+    for mode in ["valid","dependent","direct","direct_dependent","missing","multiple","mismatch","adapter_error","invalid_template","invalid_source"] {
         let name=format!("continuation_{mode}");
         let request:CompileRequest=serde_json::from_value(serde_json::json!({
             "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1",
@@ -597,7 +598,16 @@ fn prepared_continuations_require_one_schema_matching_result_leaf() {
         let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
             plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
         let result=builder.lower(&plan);
-        if matches!(mode,"missing"|"multiple") {
+        if matches!(mode,"adapter_error"|"invalid_template"|"invalid_source") {
+            let expected=match mode {
+                "adapter_error"=>"continuation adapter rejected plan",
+                "invalid_template"=>"request adapter cannot be empty",
+                _=>"unsupported source operation",
+            };
+            let error=result.unwrap_err();
+            assert!(error.contains(expected),"{mode}: {error}");
+            assert!(builder.plan.nodes.is_empty(),"{mode}: failed planning created executable nodes");
+        } else if matches!(mode,"missing"|"multiple") {
             assert!(result.unwrap_err().contains("exactly one result leaf"));
         } else if mode=="mismatch" {
             assert!(result.unwrap_err().contains("continuation schema mismatch"));
@@ -609,8 +619,8 @@ fn prepared_continuations_require_one_schema_matching_result_leaf() {
                 Operation::SourceRequest {input,template,..}=>Some((input,template)),_=>None
             }).collect::<Vec<_>>();
             assert_eq!(requests.len(),1);
-            assert_eq!(requests[0].0.is_some(),mode=="dependent");
-            assert_eq!(requests[0].1.parameters,usize::from(mode=="dependent"));
+            assert_eq!(requests[0].0.is_some(),matches!(mode,"dependent"|"direct_dependent"));
+            assert_eq!(requests[0].1.parameters,usize::from(matches!(mode,"dependent"|"direct_dependent")));
             assert!(builder.plan.nodes.iter().all(|n|!matches!(n.operation,Operation::Duckdb{..}|Operation::SourceSql{..})));
         }
     }
@@ -752,5 +762,21 @@ fn local_identity_casts_reuse_buffers_and_widening_keeps_nulls() {
     let widened=evaluate(&cast("float64"),&input,&Functions::new()).unwrap();
     for (row,expected) in [Some(-128.0),None,Some(127.0)].into_iter().enumerate() {
         assert_eq!(ScalarValue::try_from_array(&widened,row).unwrap(),ScalarValue::Float64(expected));
+    }
+}
+
+
+#[test]
+fn unbound_request_result_cannot_become_a_source_or_one_row_input() {
+    let request:CompileRequest=serde_json::from_value(serde_json::json!({
+        "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]
+    })).unwrap();
+    for schema in [DFSchema::empty(),DFSchema::try_from(Schema::new(vec![Field::new("v",DataType::Int64,true)])).unwrap()] {
+        let marker=crate::operations::RequestResult {schema:Arc::new(schema)}.into_plan();
+        let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
+            plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+        let error=builder.lower(&marker).unwrap_err();
+        assert!(error.contains("unsupported source operation"),"{error}");
+        assert!(builder.plan.nodes.is_empty(),"An unbound result must not create executable input");
     }
 }
