@@ -545,3 +545,94 @@ fn temporal_component_constructors_preserve_field_order_and_decline_unsupported_
     assert!(constructor(&context, &plan, "cypher_temporal.date", &[]).is_none());
     assert!(constructor(&context, &plan, "date", &[]).is_none());
 }
+
+#[test]
+fn temporal_kind_inference_handles_finite_mixed_null_and_untyped_inputs() {
+    use datafusion::prelude::col;
+    let encoded = |kind, text| transport::encoded_scalar(&crate::ir::temporal::parse(kind,text).unwrap()).unwrap();
+    let date = encoded("date", "2000-01-01");
+    let other_date = encoded("date", "2001-02-03");
+    let time = encoded("localtime", "12:34:56");
+    let null = ScalarValue::try_from(&date.data_type()).unwrap();
+    let empty = LogicalPlanBuilder::empty(true).build().unwrap();
+    assert_eq!(expression_kind(&empty, &lit(date.clone())), Some("date".into()));
+    assert_eq!(expression_kind(&empty, &lit(ScalarValue::Int64(Some(1)))), None);
+    assert_eq!(expression_kind(&empty, &lit(null.clone())), None);
+    assert_eq!(expression_kind(&empty, &col("missing")), None);
+    for (values, expected) in [
+        (vec![date.clone(), other_date, null.clone()], Some("date")),
+        (vec![date.clone(), time], None),
+        (vec![null.clone(), null], None),
+        (vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(2))], None),
+    ] {
+        let mut inputs = values.into_iter().map(|v| LogicalPlanBuilder::empty(true).project(vec![lit(v).alias("value")]).unwrap().build().unwrap());
+        let mut plan = inputs.next().unwrap();
+        for next in inputs { plan = LogicalPlanBuilder::from(plan).union(next).unwrap().build().unwrap(); }
+        assert_eq!(expression_kind(&plan, &col("value")), expected.map(str::to_owned));
+        assert_eq!(expression_kind(&plan, &col("value").alias("alias")), None);
+    }
+    let projected = LogicalPlanBuilder::empty(true).project(vec![lit(date).alias("value")]).unwrap().build().unwrap();
+    assert_eq!(expression_kind(&projected, &col("value")), Some("date".into()));
+}
+
+#[test]
+fn temporal_runtime_dispatch_preserves_fallbacks_and_native_date_storage() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let temporal = |kind, text| IrExpr::Lit(Lit::Scalar(transport::scalar(&crate::ir::temporal::parse(kind,text).unwrap()).unwrap()));
+    let duration = temporal("duration", "P1M");
+    let date = temporal("date", "2000-01-31");
+    let empty = LogicalPlanBuilder::empty(true).build().unwrap();
+    let two = IrExpr::Binary {op:BinaryOp::Add,lhs:Box::new(IrExpr::Lit(Lit::Int(1))),rhs:Box::new(IrExpr::Lit(Lit::Int(1)))};
+    for (op, left, right) in [
+        (BinaryOp::Mul,duration.clone(),two.clone()),
+        (BinaryOp::Mul,two.clone(),duration.clone()),
+        (BinaryOp::Div,duration.clone(),two),
+    ] {
+        let expr = arithmetic(&context,&empty,op,&left,&right).expect("constant arithmetic duration factor");
+        let batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
+        let array = datafusion_physical_expr::create_physical_expr(&expr,empty.schema(),&ExecutionProps::new()).unwrap().evaluate(&batch).unwrap().into_array(1).unwrap();
+        let actual = transport::decode(&ScalarValue::try_from_array(&array,0).unwrap()).unwrap();
+        let Value::Temporal(expected) = crate::ir::temporal::arithmetic(op,&Value::Temporal(crate::ir::temporal::parse("duration","P1M").unwrap()),&Value::Int(2)).unwrap() else {panic!()};
+        assert_eq!(actual,expected);
+    }
+    for (op, left, right) in [
+        (BinaryOp::And,date.clone(),duration.clone()),
+        (BinaryOp::Div,duration.clone(),IrExpr::Lit(Lit::Int(0))),
+        (BinaryOp::Div,duration.clone(),IrExpr::Lit(Lit::Float(f64::NAN))),
+        (BinaryOp::Mul,duration.clone(),IrExpr::binding("unknown")),
+        (BinaryOp::Add,date.clone(),date.clone()),
+        (BinaryOp::Mul,date.clone(),IrExpr::Lit(Lit::Int(2))),
+        (BinaryOp::Add,temporal("datetime","2000-01-01T00:00+01:00[Europe/Stockholm]"),duration.clone()),
+    ] { assert!(arithmetic(&context,&empty,op,&left,&right).is_none(), "{op:?} {left:?} {right:?}"); }
+    for expr in [
+        IrExpr::Lit(Lit::Int(1)),
+        IrExpr::Call {name:"cypher_subscript".into(), args:vec![]},
+        IrExpr::Call {name:"cypher_subscript".into(), args:vec![date.clone(),IrExpr::Lit(Lit::Int(1))]},
+    ] { assert!(lower(&context,&empty,&expr).is_none()); }
+    // Generic temporal columns can use calendar SQL only when their finite
+    // values prove that every datetime has a fixed offset rather than a zone.
+    for text in ["2000-01-01T00:00+01:00", "2000-01-01T00:00+01:00[Europe/Stockholm]"] {
+        let value = transport::encoded_scalar(&crate::ir::temporal::parse("datetime",text).unwrap()).unwrap();
+        let plan = LogicalPlanBuilder::empty(true).project(vec![lit(value).alias("value")]).unwrap().build().unwrap();
+        let expr = arithmetic(&context,&plan,BinaryOp::Add,&IrExpr::binding("value"),&duration);
+        assert_eq!(expr.is_some(), !text.contains('['));
+    }
+    let scalar = transport::scalar(&crate::ir::temporal::parse("date","2000-01-31").unwrap()).unwrap();
+    let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("value",scalar.data_type(),true)]));
+    let plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {produce_one_row:false,schema:Arc::new(datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap())});
+    let batch = RecordBatch::try_new(schema,vec![ScalarValue::iter_to_array(vec![scalar.clone(),ScalarValue::try_from(&scalar.data_type()).unwrap()]).unwrap()]).unwrap();
+    let expr = lower(&context,&plan,&IrExpr::Binary {op:BinaryOp::Add,lhs:Box::new(IrExpr::binding("value")),rhs:Box::new(duration)}).unwrap();
+    let array = datafusion_physical_expr::create_physical_expr(&expr,plan.schema(),&ExecutionProps::new()).unwrap().evaluate(&batch).unwrap().into_array(2).unwrap();
+    let result = ScalarValue::try_from_array(&array,0).unwrap();
+    assert_eq!(result.data_type(),scalar.data_type());
+    assert_eq!(transport::decode(&result).unwrap(),crate::ir::temporal::parse("date","2000-02-29").unwrap());
+    assert!(ScalarValue::try_from_array(&array,1).unwrap().is_null());
+}
