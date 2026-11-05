@@ -1104,3 +1104,280 @@ async fn caller_source_bindings_keep_same_named_schemas_and_repeated_scans_disti
         }
     }
 }
+
+fn exchange_dialects() -> [sql::SqlDialect; 3] {
+    [
+        sql::SqlDialect::DuckDb,
+        sql::SqlDialect::Postgres,
+        sql::SqlDialect::Custom(&sql::trino::TRINO),
+    ]
+}
+
+fn local_exchange_identity(kind: DataType) -> Arc<datafusion::logical_expr::ScalarUDF> {
+    Arc::new(create_udf(
+        "local_exchange_identity",
+        vec![kind.clone()],
+        kind,
+        Volatility::Volatile,
+        Arc::new(|args| Ok(args[0].clone())),
+    ))
+}
+
+#[test]
+fn exchange_keeps_ordered_native_inputs_outside_unordered_transport() {
+    use datafusion::logical_expr::Sort;
+    let source = scan(vec![
+        ScalarValue::Int64(Some(7)),
+        ScalarValue::Int64(Some(2)),
+    ])
+    .build()
+    .unwrap();
+    let identity = local_exchange_identity(DataType::Int64);
+    for fetch in [None, Some(1)] {
+        let ordered = LogicalPlan::Sort(Sort {
+            expr: vec![identity.call(vec![col("column1")]).sort(true, true)],
+            input: Arc::new(source.clone()),
+            fetch,
+        });
+        let parent = LogicalPlanBuilder::from(ordered)
+            .project(vec![col("column1")])
+            .unwrap()
+            .build()
+            .unwrap();
+        for dialect in exchange_dialects() {
+            let mut eligibility = SqlEligibility {
+                dialect: Some(dialect),
+                ..Default::default()
+            };
+            assert!(eligibility.visit(&parent).is_some());
+            let mut next = 0;
+            assert!(
+                exchange::cut_inputs(&parent, &mut eligibility, &mut next, &Default::default())
+                    .unwrap()
+                    .is_none(),
+                "{dialect:?}, fetch={fetch:?}"
+            );
+            assert_eq!(next, 0, "reject before allocating a transport name");
+        }
+    }
+}
+
+#[test]
+fn exchange_cardinality_carriers_preserve_empty_schemas_and_avoid_external_names() {
+    let empty = LogicalPlanBuilder::empty(false).build().unwrap();
+    let parent = LogicalPlanBuilder::from(empty.clone())
+        .project(vec![lit(7_i64).alias("value")])
+        .unwrap()
+        .build()
+        .unwrap();
+    let external = [
+        "__orchid_runtime_input_0".into(),
+        "__orchid_runtime_input_1".into(),
+    ]
+    .into();
+    for dialect in exchange_dialects() {
+        let mut eligibility = SqlEligibility {
+            dialect: Some(dialect),
+            ..Default::default()
+        };
+        let mut next = 0;
+        let (rewritten, bindings) =
+            exchange::cut_inputs(&parent, &mut eligibility, &mut next, &external)
+                .unwrap()
+                .unwrap();
+        assert_eq!(rewritten.schema(), parent.schema());
+        assert_eq!(next, 3);
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].0, empty);
+        let table = &bindings[0].1;
+        assert_eq!(table.name, "__orchid_runtime_input_2");
+        assert_eq!(table.schema.fields().len(), 1);
+        assert_eq!(table.schema.field(0).name(), "__orchid_cardinality");
+        assert_eq!(table.schema.field(0).data_type(), &DataType::Int64);
+        assert!(!table.schema.field(0).is_nullable());
+        assert!(table.batches.is_empty());
+        assert!(rewritten.inputs()[0].schema().fields().is_empty());
+    }
+}
+
+#[test]
+fn exchange_rejects_duplicate_transport_field_names_without_losing_qualifiers() {
+    use datafusion::common::{Column, TableReference};
+    let identity = local_exchange_identity(DataType::Int64);
+    let native = scan(vec![ScalarValue::Int64(Some(7))])
+        .project(vec![
+            identity
+                .call(vec![col("column1")])
+                .alias_qualified(Some(TableReference::bare("left")), "value"),
+            identity
+                .call(vec![col("column1")])
+                .alias_qualified(Some(TableReference::bare("right")), "value"),
+        ])
+        .unwrap()
+        .build()
+        .unwrap();
+    let parent = LogicalPlanBuilder::from(native)
+        .project(vec![Expr::Column(Column::new(
+            Some(TableReference::bare("left")),
+            "value",
+        ))])
+        .unwrap()
+        .build()
+        .unwrap();
+    for dialect in exchange_dialects() {
+        let mut eligibility = SqlEligibility {
+            dialect: Some(dialect),
+            ..Default::default()
+        };
+        assert!(
+            exchange::cut_inputs(&parent, &mut eligibility, &mut 0, &Default::default())
+                .unwrap()
+                .is_none(),
+            "{dialect:?}"
+        );
+    }
+}
+
+#[test]
+fn exchange_unnest_preserves_typed_list_dependencies_and_output_schema() {
+    let kind = DataType::List(Arc::new(arrow::datatypes::Field::new(
+        "item",
+        DataType::Int64,
+        true,
+    )));
+    let identity = local_exchange_identity(kind);
+    let list = ScalarValue::List(ScalarValue::new_list(
+        &[ScalarValue::Int64(Some(7)), ScalarValue::Int64(None)],
+        &DataType::Int64,
+        true,
+    ));
+    let native = scan(vec![list])
+        .project(vec![identity.call(vec![col("column1")]).alias("items")])
+        .unwrap()
+        .build()
+        .unwrap();
+    let plan = LogicalPlanBuilder::from(native.clone())
+        .unnest_column("items")
+        .unwrap()
+        .build()
+        .unwrap();
+    let LogicalPlan::Unnest(original) = &plan else {
+        panic!()
+    };
+    for dialect in exchange_dialects() {
+        let mut eligibility = SqlEligibility {
+            dialect: Some(dialect),
+            ..Default::default()
+        };
+        let (rewritten, bindings) =
+            exchange::cut_inputs(&plan, &mut eligibility, &mut 0, &Default::default())
+                .unwrap()
+                .unwrap();
+        let LogicalPlan::Unnest(updated) = &rewritten else {
+            panic!()
+        };
+        assert_eq!(updated.exec_columns, original.exec_columns);
+        assert_eq!(updated.schema, original.schema);
+        assert_eq!(updated.input.schema(), original.input.schema());
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].0, native);
+        assert_eq!(bindings[0].1.schema.as_ref(), native.schema().as_arrow());
+    }
+}
+
+#[tokio::test]
+async fn zero_column_empty_inputs_remain_empty_after_sql_cardinality_transport() {
+    for mode in [0, 2] {
+        let resource = resources(mode);
+        for filter in [true, false] {
+            let plan = LogicalPlanBuilder::empty(false)
+                .filter(lit(filter))
+                .unwrap()
+                .project(vec![lit(7_i64).alias("value")])
+                .unwrap()
+                .build()
+                .unwrap();
+            let (result, _) = execute_with_extensions(lowered(plan), vec![], None, Some(&resource))
+                .await
+                .unwrap();
+            assert_eq!(result.batch.num_rows(), 0);
+            assert_eq!(result.batch.num_columns(), 1);
+            assert_eq!(result.batch.column(0).data_type(), &DataType::Int64);
+        }
+    }
+}
+
+#[tokio::test]
+async fn zero_column_batches_retain_every_row_across_sql_input_transport() {
+    use arrow::datatypes::{Field, Schema};
+    for mode in [0, 2] {
+        for count in [0, 1, 3, 64] {
+            let resource = resources(mode);
+            let empty = Arc::new(Schema::empty());
+            let batch = RecordBatch::try_new_with_options(
+                empty.clone(),
+                vec![],
+                &arrow::array::RecordBatchOptions::new().with_row_count(Some(count)),
+            )
+            .unwrap();
+            let carrier = Arc::new(Schema::new(vec![Field::new(
+                "__orchid_cardinality",
+                DataType::Int64,
+                false,
+            )]));
+            let table = sql::TableData {
+                name: "empty schema input".into(),
+                schema: carrier.clone(),
+                batches: vec![],
+            };
+            let exec = physical_boundary(
+                sql::PreparedSql::query_only(
+                    "SELECT __orchid_cardinality FROM \"empty schema input\"".into(),
+                    carrier,
+                ),
+                &resource,
+                vec![],
+                vec![Arc::new(engine_exec::InputBatches::new(empty, vec![batch]))],
+                vec![table],
+            );
+            assert_eq!(
+                boundary_rows(exec).await,
+                vec![vec![ScalarValue::Int64(Some(1))]; count],
+                "mode={mode}, cardinality={count}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn source_only_dialects_are_rejected_before_caller_execution() {
+    #[derive(Debug)]
+    struct PostgresSource;
+    impl sql::region::RegionSession for PostgresSource {
+        fn dialect(&self) -> sql::SqlDialect {
+            sql::SqlDialect::Postgres
+        }
+        fn query(
+            &mut self,
+            _: &str,
+            _: arrow::datatypes::SchemaRef,
+        ) -> sql::SqlResult<RecordBatch> {
+            panic!("source-only session must not execute completion SQL")
+        }
+    }
+    let mut resource = resources(0);
+    resource.region_session = Some(Arc::new(Mutex::new(Box::new(PostgresSource))));
+    let plan = LogicalPlanBuilder::empty(true)
+        .project(vec![lit(7_i64).alias("value")])
+        .unwrap()
+        .build()
+        .unwrap();
+    let error = execute_with_extensions(lowered(plan), vec![], None, Some(&resource))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("source dialect, not an executable engine"),
+        "{error}"
+    );
+}
