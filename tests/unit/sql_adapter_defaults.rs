@@ -180,3 +180,114 @@ fn prepared_sql_templates_reject_invalid_statements_and_placeholders_without_reu
         assert!(template.bind(&[]).unwrap_err().to_string().contains("parameter count mismatch"));
     }
 }
+
+fn relation_function(source:bool,binding:crate::ir::rel::dependent::ArgumentBinding)->crate::ir::rel::dependent::TableFunction {
+    use crate::ir::rel::dependent::TableFunction;
+    use arrow::datatypes::Field;
+    use datafusion::{common::DFSchema,prelude::{col,lit}};
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(7i64).alias("seed"),lit("original $2").alias("text value")]).unwrap().build().unwrap();
+    TableFunction::new(vec!["schema with space".into(),"fn\"quoted".into()],
+        if source {vec![col("seed")+lit(1i64),col("text value")]} else {vec![lit(8i64),lit("literal $1")]},
+        source.then(||Arc::new(input)),binding,
+        Arc::new(DFSchema::try_from(Schema::new(vec![Field::new("result",DataType::Int64,false)])).unwrap())).unwrap()
+}
+
+#[test]
+fn table_function_lowering_preserves_quoted_names_outer_rows_and_bound_column_order() {
+    use crate::ir::rel::dependent::ArgumentBinding;
+    use super::super::lowering::{LoweringContext,LoweringMode,RelationLowering,lower_relation};
+    for dialect in [SqlDialect::Postgres,SqlDialect::DuckDb,SqlDialect::Custom(&super::super::trino::TRINO)] {
+        for source in [false,true] { for binding in [ArgumentBinding::Correlated,ArgumentBinding::PrepareTime] {
+            for mode in [LoweringMode::InIsland,LoweringMode::Bound] { for outer in [false,true] { for ordinal in [false,true] {
+                let function=relation_function(source,binding).with_expansion(outer,ordinal.then(||"position".into())).unwrap();
+                let plan=function.clone().into_plan();
+                let lowered=lower_relation(&plan,&LoweringContext{dialect,mode}).unwrap().unwrap();
+                let expected_bound=source && (mode==LoweringMode::Bound || binding==ArgumentBinding::PrepareTime);
+                let statement=match lowered {
+                    RelationLowering::Dependent{source:input,template,schema}=>{
+                        assert!(expected_bound);assert_eq!(schema,plan.schema().clone());
+                        assert_eq!(input.schema().fields().len(),2);assert_eq!(template.parameters,2);
+                        assert_eq!(template.dialect,dialect.name());
+                        let bound=template.bind(&[ScalarValue::Int64(Some(19)),ScalarValue::Utf8(Some("'); DROP TABLE x; -- $1".into()))]).unwrap();
+                        let parser=dialect.parser_dialect();
+                        let statements=Parser::parse_sql(parser.as_ref(),&bound).unwrap();assert_eq!(statements.len(),1);
+                        let statement=statements.into_iter().next().unwrap();
+                        let mut placeholders=0;
+                        let _=ast::visit_expressions(&statement,|e|{
+                            if matches!(e,ast::Expr::Value(v) if matches!(v.value,ast::Value::Placeholder(_))) {placeholders+=1;}
+                            std::ops::ControlFlow::<()>::Continue(())
+                        });
+                        assert_eq!(placeholders,0);
+                        statement
+                    },
+                    RelationLowering::Sql(statement)=>{assert!(!expected_bound);statement},
+                    other=>panic!("unexpected {other:?}"),
+                };
+                let sql=statement.to_string();
+                assert!(sql.contains(&dialect.quote_ident("schema with space")) && sql.contains(&dialect.quote_ident("fn\"quoted")),"{sql}");
+                assert_eq!(sql.contains("WITH ORDINALITY"),ordinal,"{sql}");
+                assert_eq!(sql.contains("LEFT JOIN LATERAL"),outer,"{sql}");
+                let ast::Statement::Query(query)=statement else {panic!("query")};
+                let ast::SetExpr::Select(select)=*query.body else {panic!("select")};
+                assert_eq!(select.projection.len(),usize::from(source)*2+1+usize::from(ordinal));
+                if expected_bound {
+                    for (item,name) in select.projection.iter().zip(["seed","text value"]) {
+                        let ast::SelectItem::ExprWithAlias{alias,..}=item else {panic!("source column lost its name")};
+                        assert_eq!(alias.value,name);
+                    }
+                }
+            }}}
+        }}
+    }
+}
+
+#[derive(Debug)]
+struct PlacementProtocol(bool);
+static SAME_PLACEMENT:PlacementProtocol=PlacementProtocol(false);
+static WRONG_PLACEMENT:PlacementProtocol=PlacementProtocol(true);
+impl DialectAdapter for PlacementProtocol {
+    fn name(&self)->&'static str {"coverage_placement_protocol"}
+    fn parser_dialect(&self)->Box<dyn ParserDialect>{Box::new(GenericDialect{})}
+    fn unparser_dialect(&self)->Box<dyn UnparserDialect>{Box::new(DefaultDialect{})}
+    fn sql_type(&self,_:&DataType)->SqlResult<String>{Ok("BIGINT".into())}
+    fn relation_placement(&self,plan:&LogicalPlan)->Option<super::super::lowering::RelationPlacement> {
+        let mut placement=super::super::lowering::placement(plan)?;
+        if self.0 {placement.target=Some(Arc::new(protocol_plan()));}
+        Some(placement)
+    }
+}
+#[test]
+fn adapters_must_agree_with_table_function_input_ownership() {
+    use super::super::lowering::{placement,placement_for};
+    use crate::ir::rel::dependent::ArgumentBinding;
+    for source in [false,true] {
+        let function=relation_function(source,ArgumentBinding::Correlated);
+        let expected=function.source.clone();let plan=function.into_plan();
+        let selected=placement(&plan).unwrap();assert_eq!(selected.source,expected);assert!(selected.target.is_none());
+        assert_eq!(placement_for(&plan,SqlDialect::Custom(&SAME_PLACEMENT)).unwrap(),Some(selected));
+        assert!(placement_for(&plan,SqlDialect::Custom(&WRONG_PLACEMENT)).unwrap_err().to_string().contains("conflicting relational placement"));
+    }
+    assert!(placement_for(&protocol_plan(),SqlDialect::Custom(&SAME_PLACEMENT)).unwrap().is_none());
+}
+
+#[test]
+fn relation_unparser_requires_context_generates_unique_aliases_and_rejects_dependent_work() {
+    use super::super::lowering::RelationUnparser;
+    use crate::ir::rel::dependent::ArgumentBinding;
+    use datafusion::sql::unparser::{Unparser,ast::RelationBuilder,extension_unparser::{UserDefinedLogicalNodeUnparser,UnparseWithinStatementResult,UnparseToStatementResult}};
+    let function=relation_function(false,ArgumentBinding::Correlated);
+    let dialect=SqlDialect::Postgres;let parser_dialect=dialect.unparser_dialect();let unparser=Unparser::new(parser_dialect.as_ref());
+    let relation_unparser=RelationUnparser::new(dialect);
+    assert!(relation_unparser.unparse(&function,&unparser,&mut None,&mut None,&mut None).err().unwrap().to_string().contains("missing SQL context"));
+    for index in 0..2 {
+        let mut builder=RelationBuilder::default();
+        assert!(matches!(relation_unparser.unparse(&function,&unparser,&mut None,&mut None,&mut Some(&mut builder)).unwrap(),UnparseWithinStatementResult::Modified));
+        let ast::TableFactor::Derived{alias,..}=builder.build().unwrap().unwrap() else {panic!("derived relation")};
+        assert_eq!(alias.unwrap().name.value,format!("__lowered_relation_{index}"));
+    }
+    let unsupported=RelationUnparser::new(SqlDialect::Custom(&RELATION_PROTOCOLS[8]));
+    assert!(matches!(unsupported.unparse_to_statement(&function,&unparser).unwrap(),UnparseToStatementResult::Unmodified));
+    assert!(matches!(unsupported.unparse(&function,&unparser,&mut None,&mut None,&mut None).unwrap(),UnparseWithinStatementResult::Unmodified));
+    let dependent=relation_function(true,ArgumentBinding::PrepareTime);
+    assert!(relation_unparser.unparse_to_statement(&dependent,&unparser).err().unwrap().to_string().contains("requires bound source inputs"));
+}
