@@ -475,12 +475,35 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
         LogicalPlan::Join(mut join) if matches!(join.join_type,
             datafusion::logical_expr::JoinType::LeftSemi | datafusion::logical_expr::JoinType::LeftAnti) => {
             let mut changed = false;
-            if !repair_scopes && (matches!(join.left.as_ref(), LogicalPlan::Filter(_))
-                || aggregate_scope(&join.left)) {
+            let output_schema = join.schema.clone();
+            let mut output_expressions = None;
+            let qualifier = join.left.schema().iter().next().and_then(|(q, _)| q);
+            let mixed_scope = !join.left.schema().fields().is_empty()
+                && (qualifier.is_none() || join.left.schema().iter().any(|(q, _)| q != qualifier));
+            if mixed_scope || (!repair_scopes && (matches!(join.left.as_ref(), LogicalPlan::Filter(_))
+                || aggregate_scope(&join.left))) {
                 // DF's EXISTS conversion replaces the SELECT's WHERE rather
                 // than combining it with the preserved-side predicate.
-                join.left = Arc::new(hoist_scoped_operator(join.left.as_ref().clone(),
-                    "existence_left_filter", &mut plain_ctes, &mut seen)?);
+                let old_columns = join.left.schema().columns();
+                let input = hoist_scoped_operator(join.left.as_ref().clone(),
+                    "existence_left_filter", &mut plain_ctes, &mut seen)?;
+                let new_columns = input.schema().columns();
+                let rebind = |expression: Expr| expression.transform_up(|node| {
+                    if let Expr::Column(column) = &node
+                        && let Some(index) = old_columns.iter().position(|old| old == column)
+                    {
+                        return Ok(Transformed::yes(Expr::Column(new_columns[index].clone())));
+                    }
+                    Ok(Transformed::no(node))
+                }).map(|result| result.data);
+                join.on = join.on.into_iter().map(|(left, right)| Ok((rebind(left)?, rebind(right)?)))
+                    .collect::<datafusion::common::Result<Vec<_>>>()?;
+                join.filter = join.filter.map(rebind).transpose()?;
+                output_expressions = Some(new_columns.into_iter().zip(output_schema.iter())
+                    .map(|(column, (qualifier, field))| Expr::Column(column)
+                        .alias_qualified(qualifier.cloned(), field.name())).collect::<Vec<_>>());
+                join.left = Arc::new(input);
+                join.schema = join.left.schema().clone();
                 changed = true;
             }
             if (!repair_scopes || join.right.schema().fields().is_empty())
@@ -517,9 +540,10 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
             if changed {
                 // EXISTS conversion needs an explicit SELECT list even inside
                 // UNION arms; a bare semi join otherwise emits the dummy row.
-                let columns = join.schema.columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
-                let plan = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Join(join))
-                    .project(columns)?.build()?;
+                let columns = output_expressions.unwrap_or_else(||
+                    join.schema.columns().into_iter().map(Expr::Column).collect());
+                let plan = LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(
+                    columns, Arc::new(LogicalPlan::Join(join)), output_schema)?);
                 Ok(Transformed::yes(plan))
             } else {
                 Ok(Transformed::no(LogicalPlan::Join(join)))
@@ -647,11 +671,10 @@ fn hoist_scoped_operator(
                 .alias(qualifier.clone())?.build();
         }
     }
-    let expressions = scan.schema().columns().into_iter().zip(schema.iter())
-        .map(|(column, (qualifier, field))| Expr::Column(column)
-            .alias_qualified(qualifier.cloned(), field.name())).collect();
-    Ok(LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new_with_schema(
-        expressions, Arc::new(scan), schema)?))
+    // Mixed logical qualifiers do not create FROM aliases in SQL. Keep the
+    // CTE's real qualifier; the caller rebinds join predicates and restores
+    // the original output schema above the EXISTS boundary.
+    Ok(scan)
 }
 
 fn hoist_operator(

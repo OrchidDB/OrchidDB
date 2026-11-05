@@ -125,3 +125,28 @@ async fn connected_search_retains_manifest_and_file_costs() {
         "{after}"
     );
 }
+
+#[tokio::test]
+async fn expanded_value_joins_preserve_results_with_statistics_and_distinct() {
+    let (db, mut request) = fixture();
+    let nested = request["representation_sources"][0]["representations"][1].clone();
+    request["representation_sources"][0]["representations"] = json!([nested]);
+    request["representation_sources"][0]["default_representation"] = json!("nested");
+    let snapshot = statistics::generate_duckdb(&db, request.clone()).unwrap();
+    for query in [
+        "MATCH (t:Item), (c:Customer) WHERE t.value=c.id AND c.kind='rare' RETURN t.owner,t.value ORDER BY t.owner,t.value",
+        "MATCH (t:Item) WITH DISTINCT t.owner AS owner, t.value AS value MATCH (c:Customer) WHERE value=c.id AND c.kind='rare' RETURN owner,value ORDER BY owner,value",
+    ] {
+        request["query"] = json!(query);
+        request.as_object_mut().unwrap().remove("statistics");
+        let before = compile(&request).await;
+        request["statistics"] = serde_json::to_value(&snapshot).unwrap();
+        let after = compile(&request).await;
+        let count: i64 = db.query_row(&format!("SELECT count(*) FROM ({}) AS result",after["sql"].as_str().unwrap()),[],|row|row.get(0)).unwrap();
+        assert_eq!(count,2000,"{query}");
+        for disabled in [false,true] {
+            db.execute_batch(if disabled { "SET disabled_optimizers='join_order,build_side_probe_side'" } else { "SET disabled_optimizers=''" }).unwrap();
+            assert_eq!(rows(&db,&before),rows(&db,&after),"{query}");
+        }
+    }
+}

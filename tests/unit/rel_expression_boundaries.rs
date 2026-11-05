@@ -1,4 +1,6 @@
 use super::*;
+use crate::ir::policy::{PropertyMissing, OptionalMissing};
+use crate::ir::plan::ProjectErrorPolicy;
 
 #[test]
 fn collection_type_unification_widens_only_compatible_integer_domains() {
@@ -329,5 +331,52 @@ fn cypher_same_type_casts_preserve_columns_without_sql_cast_nodes() {
     for (kind,function) in [(DataType::Int64,"tointeger"),(DataType::Float64,"tofloat"),(DataType::Boolean,"toboolean"),(DataType::Utf8,"tostring")] {
         let plan=scalar_scope(vec![Field::new("x",kind,true)]);
         assert_eq!(ctx.lower_sql_expr(&plan,&call(function,vec![binding("x")])).unwrap(),col_exact("x"),"{function}");
+    }
+}
+
+#[test]
+fn property_star_without_catalog_properties_retains_one_typed_null_cell() {
+    let graph=PropertyGraph::new(); let ctx=cypher_context(&graph);
+    let plan=scalar_scope(vec![Field::new(id_col("n"),DataType::Int64,false),Field::new(label_col("n"),DataType::Utf8,false)]);
+    let result=ctx.project_item_exprs(&plan,"out",&call("cypher_property_star",vec![binding("n")])).unwrap();
+    assert_eq!(result,vec![lit(ScalarValue::Utf8(None)).alias(format!("out{STAR_SEP}"))]);
+    assert_eq!(result[0].get_type(plan.schema()).unwrap(),DataType::Utf8);
+}
+
+#[test]
+fn property_star_uses_struct_shadow_field_order_and_types_without_neighbor_fields() {
+    let graph=PropertyGraph::new(); let ctx=cypher_context(&graph);
+    let fields=[("z",DataType::Int64),("a",DataType::Boolean),("text",DataType::Utf8)];
+    let mut schema=fields.iter().map(|(name,kind)|Field::new(struct_field_col("n","payload",name),kind.clone(),true)).collect::<Vec<_>>();
+    schema.push(Field::new(struct_field_col("n","other","hidden"),DataType::Int64,true));
+    let plan=scalar_scope(schema);
+    let property=IrExpr::property("n","payload",PropertyMissing::NullOnMissing);
+    let result=ctx.project_item_exprs(&plan,"out",&call("cypher_property_star",vec![property])).unwrap();
+    assert_eq!(result.len(),3);
+    for (expr,(name,kind)) in result.iter().zip(fields) {
+        assert_eq!(expr,&col_exact(struct_field_col("n","payload",name)).alias(format!("out{STAR_SEP}{name}")));
+        assert_eq!(expr.get_type(plan.schema()).unwrap(),kind);
+    }
+}
+
+#[test]
+fn property_equality_crosses_identity_projection_and_one_row_inner_apply_only() {
+    let graph=PropertyGraph::new(); let mut ctx=cypher_context(&graph);
+    ctx.options.mapping=Some(Arc::new(mapping::GraphMapping::new()));
+    let source=Node::GraphNodeScan { graph:"g".into(),binding:"a".into(),labels:LabelExpr::Any };
+    let predicate=IrExpr::eq(IrExpr::property("a","age",PropertyMissing::NullOnMissing),IrExpr::Lit(Lit::Int(7)));
+    let projection=|expr|Node::GraphProject { mode:ProjectMode::ReplaceScope,items:vec![ProjectionItem { alias:"a".into(),expr }],error_policy:ProjectErrorPolicy::PropagateError,input:Box::new(source.clone()) };
+    let identity=projection(binding("a"));
+    let result=ctx.push_expand_equality(&predicate,&identity).unwrap().unwrap();
+    let Node::GraphProject { input,.. }=result else { panic!("identity projection must remain") };
+    assert_eq!(*input,Node::GraphFilter { condition:predicate.clone(),input:Box::new(source.clone()) });
+    assert!(ctx.push_expand_equality(&predicate,&projection(IrExpr::Lit(Lit::Int(3)))).unwrap().is_none());
+    let apply=|kind,left|Node::GraphApply { kind,correlation:vec![],outputs:vec!["a".into()],optional_missing:OptionalMissing::Null,left:Box::new(left),right:Box::new(identity.clone()) };
+    let result=ctx.push_expand_equality(&predicate,&apply(ApplyKind::Inner,Node::GraphOneRow)).unwrap().unwrap();
+    let Node::GraphApply { right,.. }=result else { panic!("apply must remain") };
+    let Node::GraphProject { input,.. }=*right else { panic!("identity projection must remain") };
+    assert_eq!(*input,Node::GraphFilter { condition:predicate.clone(),input:Box::new(source.clone()) });
+    for plan in [apply(ApplyKind::Optional,Node::GraphOneRow),apply(ApplyKind::Inner,source)] {
+        assert!(ctx.push_expand_equality(&predicate,&plan).unwrap().is_none());
     }
 }

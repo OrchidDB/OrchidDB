@@ -950,3 +950,7 @@ pub(super) fn text(batch: &RecordBatch, column: usize, row: usize) -> Result<Str
         _ => Err("Host metadata expected text".into()),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/mapped_storage_boundaries.rs"]
+mod mapped_storage_boundaries;

@@ -340,7 +340,14 @@ fn parent_restriction(
         LogicalPlan::Unnest(u) => {
             if keys.iter().any(|e| {
                 e.column_refs().iter().any(|c| {
-                    u.input.schema().index_of_column(c).is_err() || u.exec_columns.contains(c)
+                    let Ok(index) = u.input.schema().index_of_column(c) else {
+                        return true;
+                    };
+                    // UNNEST drops the qualifier on an expanded output. Compare
+                    // resolved input fields so `items` still fences `parent.items`.
+                    u.exec_columns.iter().any(|expanded| {
+                        u.input.schema().index_of_column(expanded).is_ok_and(|expanded_index| expanded_index == index)
+                    })
                 })
             }) {
                 return Ok(None);

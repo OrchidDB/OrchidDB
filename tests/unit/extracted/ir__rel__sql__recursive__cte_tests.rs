@@ -66,3 +66,48 @@ fn aliased_scalar_aggregates_preserve_values_and_cardinality() {
         }
     }
 }
+
+#[test]
+fn semi_and_anti_joins_keep_filtered_and_grouped_preserved_inputs() {
+    use datafusion::logical_expr::JoinType;
+    let scan = |name: &str| {
+        let schema = Arc::new(Schema::new(vec![Field::new("n",DataType::Int64,false)]));
+        LogicalPlanBuilder::scan(name,provider_as_source(Arc::new(EmptyTable::new(schema))),None).unwrap().build().unwrap()
+    };
+    let filtered = LogicalPlanBuilder::from(scan("numbers")).filter(col("numbers.n").gt(lit(1i64))).unwrap().build().unwrap();
+    let grouped = LogicalPlanBuilder::from(filtered.clone()).aggregate(vec![col("numbers.n")],Vec::<Expr>::new()).unwrap().build().unwrap();
+    let mixed = LogicalPlanBuilder::from(scan("numbers"))
+        .project(vec![col("numbers.n"),(col("numbers.n") * lit(10i64)).alias_qualified(Some("other"),"scaled")]).unwrap()
+        .filter(col("numbers.n").gt(lit(1i64))).unwrap().build().unwrap();
+    let unqualified = LogicalPlanBuilder::from(scan("numbers"))
+        .project(vec![col("numbers.n").alias("n")]).unwrap()
+        .filter(col("n").gt(lit(1i64))).unwrap().build().unwrap();
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE numbers(n BIGINT); INSERT INTO numbers VALUES (1),(2),(3); CREATE TABLE selected(n BIGINT); INSERT INTO selected VALUES (1),(2),(2)").unwrap();
+    for left in [filtered,grouped,mixed,unqualified] {
+        for (kind,expected) in [(JoinType::LeftSemi,vec![2i64]),(JoinType::LeftAnti,vec![3i64])] {
+            let right = if left.schema().iter().all(|(qualifier, _)| qualifier.is_none()) {
+                LogicalPlanBuilder::from(scan("selected"))
+                    .project(vec![col("selected.n").alias("key")]).unwrap()
+                    .alias("selected_keys").unwrap().build().unwrap()
+            } else { scan("selected") };
+            let predicate = Expr::Column(left.schema().columns()[0].clone())
+                .eq(Expr::Column(right.schema().columns()[0].clone()));
+            let plan=LogicalPlanBuilder::from(left.clone()).join_on(right,kind,vec![predicate]).unwrap().build().unwrap();
+            let (rewritten,ctes,_) = extract_ctes(plan.clone(),false).unwrap();
+            assert_eq!(rewritten.schema(),plan.schema());
+            assert!(ctes.iter().any(|cte|cte.name.contains("existence_left_filter")));
+            for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,
+                #[cfg(feature="trino")]
+                SqlDialect::Custom(&super::super::trino::TRINO)] {
+                let sql=unparse_plan(plan.clone(),dialect).unwrap();
+                assert!(sql.to_ascii_lowercase().contains("exists"),"{dialect:?}: {sql}");
+                if matches!(dialect,SqlDialect::DuckDb) {
+                    let mut statement=db.prepare(&sql).unwrap_or_else(|e|panic!("{e}: {sql}"));
+                    let actual=statement.query_map([],|row|row.get::<_,i64>(0)).unwrap().collect::<duckdb::Result<Vec<_>>>().unwrap();
+                    assert_eq!(actual,expected,"{sql}");
+                }
+            }
+        }
+    }
+}
