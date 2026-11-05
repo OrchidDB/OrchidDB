@@ -476,3 +476,102 @@ fn engine_nominal_and_structured_transport_retains_logical_identity() {
         }
     }
 }
+
+struct VectorTransportSnapshot;
+impl duckdb::vscalar::VScalar for VectorTransportSnapshot {
+    type State=();
+    fn signatures()->Vec<duckdb::vscalar::ScalarFunctionSignature> {
+        vec![duckdb::vscalar::ScalarFunctionSignature::exact(vec![duckdb::core::LogicalTypeId::Any.into()],duckdb::core::LogicalTypeId::Varchar.into())]
+    }
+    unsafe fn invoke(_: &(),input:&mut duckdb::core::DataChunkHandle,output:&mut dyn duckdb::vtab::arrow::WritableVector)->Result<(),Box<dyn std::error::Error>> {
+        let arrays=super::language_vectors::arrays(input)?;
+        let values=(0..input.len()).map(|row|{
+            let scalar=ScalarValue::try_from_array(&arrays[0],row)?;
+            Ok(serde_json::to_string(&crate::ir::expr::Lit::Scalar(scalar))?)
+        }).collect::<Result<Vec<String>,Box<dyn std::error::Error>>>()?;
+        let array=Arc::new(arrow::array::StringArray::from(values)) as arrow::array::ArrayRef;
+        duckdb::vtab::arrow::write_arrow_array_to_vector(&array,output)
+    }
+}
+fn vector_snapshot(connection:&duckdb::Connection,sql:&str)->Vec<ScalarValue> {
+    connection.prepare(sql).unwrap().query_map([],|row|row.get::<_,String>(0)).unwrap()
+        .map(|row|{let crate::ir::expr::Lit::Scalar(value)=serde_json::from_str(&row.unwrap()).unwrap() else {panic!()};value}).collect()
+}
+fn vector_record(value:ScalarValue)->ScalarValue {
+    ScalarValue::Struct(Arc::new(arrow::array::StructArray::new(
+        vec![Field::new("v",value.data_type(),true)].into(),vec![value.to_array().unwrap()],None)))
+}
+
+#[test]
+fn duckdb_vector_callback_preserves_nested_scalar_widths_and_temporal_precision() {
+    use arrow::datatypes::i256;
+    let connection=duckdb::Connection::open_in_memory().unwrap();
+    connection.register_scalar_function::<VectorTransportSnapshot>("coverage_vector_snapshot").unwrap();
+    let cases=vec![
+        ("BOOLEAN","true",ScalarValue::Boolean(Some(true))),
+        ("TINYINT","-128",ScalarValue::Int8(Some(i8::MIN))),
+        ("SMALLINT","-32768",ScalarValue::Int16(Some(i16::MIN))),
+        ("INTEGER","-2147483648",ScalarValue::Int32(Some(i32::MIN))),
+        ("BIGINT","-9223372036854775808",ScalarValue::Int64(Some(i64::MIN))),
+        ("UTINYINT","255",ScalarValue::UInt8(Some(u8::MAX))),
+        ("USMALLINT","65535",ScalarValue::UInt16(Some(u16::MAX))),
+        ("UINTEGER","4294967295",ScalarValue::UInt32(Some(u32::MAX))),
+        ("UBIGINT","18446744073709551615",ScalarValue::UInt64(Some(u64::MAX))),
+        ("HUGEINT","'-170141183460469231731687303715884105728'",ScalarValue::Decimal256(Some(i256::from_i128(i128::MIN)),39,0)),
+        ("FLOAT","1.25",ScalarValue::Float32(Some(1.25))),
+        ("DOUBLE","-2.5",ScalarValue::Float64(Some(-2.5))),
+        ("DECIMAL(4,2)","-12.34",ScalarValue::Decimal128(Some(-1234),4,2)),
+        ("DECIMAL(9,3)","-123456.789",ScalarValue::Decimal128(Some(-123456789),9,3)),
+        ("DECIMAL(18,6)","-123456789012.345678",ScalarValue::Decimal128(Some(-123456789012345678),18,6)),
+        ("DECIMAL(38,9)","'-12345678901234567890.123456789'",ScalarValue::Decimal128(Some(-12345678901234567890123456789),38,9)),
+        ("DATE","'1969-12-31'",ScalarValue::Date32(Some(-1))),
+        ("TIMESTAMP_S","'1969-12-31 23:59:59'",ScalarValue::TimestampSecond(Some(-1),None)),
+        ("TIMESTAMP_MS","'1969-12-31 23:59:59.123'",ScalarValue::TimestampMillisecond(Some(-877),None)),
+        ("TIMESTAMP","'1969-12-31 23:59:59.123456'",ScalarValue::TimestampMicrosecond(Some(-876544),None)),
+        ("TIMESTAMP_NS","'1969-12-31 23:59:59.123456789'",ScalarValue::TimestampNanosecond(Some(-876543211),None)),
+        ("TIMESTAMPTZ","'1969-12-31 23:59:59.123456+00'",ScalarValue::TimestampMicrosecond(Some(-876544),Some("UTC".into()))),
+        ("VARCHAR","'short'",ScalarValue::Utf8(Some("short".into()))),
+        ("VARCHAR","'O''Reilly 雪🙂 longer than inline'",ScalarValue::Utf8(Some("O'Reilly 雪🙂 longer than inline".into()))),
+        ("BLOB","from_hex('00ff27')",ScalarValue::Binary(Some(vec![0,255,39]))),
+    ];
+    for (kind,literal,expected) in cases {
+        let sql=format!("SELECT coverage_vector_snapshot(struct_pack(v := value)) FROM (VALUES (0,CAST(NULL AS {kind})),(1,CAST({literal} AS {kind})),(2,CAST(NULL AS {kind}))) t(i,value) ORDER BY i");
+        let null=ScalarValue::try_from(&expected.data_type()).unwrap();
+        assert_eq!(vector_snapshot(&connection,&sql),vec![vector_record(null.clone()),vector_record(expected),vector_record(null)],"{kind}");
+    }
+}
+
+#[test]
+fn duckdb_vector_callback_materializes_nested_dictionary_and_constant_children() {
+    let connection=duckdb::Connection::open_in_memory().unwrap();
+    connection.register_scalar_function::<VectorTransportSnapshot>("coverage_vector_snapshot").unwrap();
+    let sql="SELECT coverage_vector_snapshot(struct_pack(v := CASE WHEN i % 3 = 0 THEN NULL::BIGINT[] WHEN i % 3 = 1 THEN []::BIGINT[] ELSE [i,NULL,i] END)) FROM range(4097) t(i) WHERE i % 2 = 0 ORDER BY i";
+    let actual=vector_snapshot(&connection,sql);
+    let expected=(0..4097_i64).filter(|i|i%2==0).map(|i|{
+        let ty=DataType::List(Arc::new(Field::new("item",DataType::Int64,true)));
+        let value=match i%3 {
+            0=>ScalarValue::try_from(&ty).unwrap(),
+            1=>ScalarValue::List(ScalarValue::new_list_nullable(&[],&DataType::Int64)),
+            _=>ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(i)),ScalarValue::Int64(None),ScalarValue::Int64(Some(i))],&DataType::Int64)),
+        };vector_record(value)
+    }).collect::<Vec<_>>();
+    assert_eq!(actual,expected);
+    let value=ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int32(None),ScalarValue::Int32(None)],&DataType::Int32));
+    assert_eq!(vector_snapshot(&connection,"SELECT coverage_vector_snapshot(struct_pack(v := [NULL,NULL]::INTEGER[])) FROM range(3)"),vec![vector_record(value);3]);
+}
+
+#[test]
+fn duckdb_empty_vector_transport_retains_schema_and_rejects_unsupported_types() {
+    use duckdb::core::{DataChunkHandle,LogicalTypeHandle as T,LogicalTypeId as L};
+    let types=vec![L::Bigint.into(),L::Blob.into(),T::decimal(38,9),T::list(&L::Integer.into()),T::struct_type(&[("v",L::Integer.into())])];
+    let input=DataChunkHandle::new(&types);input.set_len(0);
+    let arrays=super::language_vectors::arrays(&input).unwrap();
+    assert_eq!(arrays.len(),5);assert!(arrays.iter().all(|a|a.is_empty()));
+    assert_eq!(arrays[0].data_type(),&DataType::Int64);assert_eq!(arrays[1].data_type(),&DataType::Binary);assert_eq!(arrays[2].data_type(),&DataType::Decimal128(38,9));
+    assert_eq!(arrays[3].data_type(),&DataType::List(Arc::new(Field::new("item",DataType::Int32,true))));
+    assert_eq!(arrays[4].data_type(),&DataType::Struct(vec![Field::new("v",DataType::Int32,true)].into()));
+    for kind in [L::Interval.into(),T::array(&L::Integer.into(),2)] {
+        let input=DataChunkHandle::new(&[kind]);input.set_len(0);
+        assert!(super::language_vectors::arrays(&input).unwrap_err().to_string().contains("unsupported language vector type"));
+    }
+}
