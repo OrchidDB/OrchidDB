@@ -363,3 +363,110 @@ fn join_probability_tolerates_unmatched_and_null_sample_values() {
     let empty=state(vec![]);
     close(join_probability(&left,&empty,&[(col("x"),col("x"))]),0.5);
 }
+
+#[test]
+fn filter_probability_keeps_uncollected_sources_and_unknown_predicates_unknown() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let scan=estimate_scan("source",100.0);
+    close(filter_probability(&scan,&col("x").eq(lit(1_i64))),0.2);
+    assert!(filter_probability(&scan,&col("missing").eq(lit(1_i64))).is_none());
+    let empty=LogicalPlanBuilder::empty(false).build().unwrap();
+    assert!(explain(&empty).is_empty());
+    assert!(estimate(&empty).estimated_rows.is_none());
+    assert!(filter_probability(&empty,&col("x").eq(lit(1_i64))).is_none());
+    let no_observations=BTreeMap::from([("x".into(),ColumnStatistics::default())]);
+    assert!(selectivity(&col("x").in_list(vec![lit(1)],false),&no_observations).is_none());
+    let unknown=BTreeMap::new();
+    assert!(selectivity(&col("x").is_null(),&unknown).is_none());
+    assert!(selectivity(&col("x").in_list(vec![],false),&unknown).is_none());
+}
+
+#[test]
+fn projected_cases_propagate_unknown_branch_and_else_nullability() {
+    let columns=BTreeMap::from([("x".into(),sample())]);
+    for (then,otherwise) in [(col("missing"),lit(1)),(lit(1),col("missing"))] {
+        let expression=Expr::Case(Case::new(None,vec![(Box::new(col("x").eq(lit(1))),Box::new(then))],Some(Box::new(otherwise))));
+        assert!(nonnull(&expression,&columns).is_none());
+    }
+    let direct=Expr::Case(Case::new(Some(Box::new(col("x"))),vec![(Box::new(lit(1)),Box::new(lit("one")))],None));
+    assert!(nonnull(&direct,&columns).is_none());
+    let projected=State {rows:Some(4.0),columns:BTreeMap::from([("x".into(),ColumnStatistics {estimated_distinct:None,..sample()})]),..Default::default()};
+    let expression=Expr::Case(Case::new(None,vec![(Box::new(col("x").eq(lit(1))),Box::new(lit(1)))],None));
+    assert_eq!(projected_column(&expression,&projected).unwrap().estimated_distinct,Some(3.0));
+}
+
+#[test]
+fn estimated_joins_use_computed_key_fallback_without_claiming_unknown_join_kinds() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let cast=|name:&str|Expr::Cast(Cast::new(Box::new(col(name)),DataType::Int64));
+    let plan=LogicalPlanBuilder::from(estimate_scan("l",10.0))
+        .join_on(estimate_scan("r",10.0),JoinType::Inner,vec![cast("l.x").eq(cast("r.x"))])
+        .unwrap().build().unwrap();
+    close(estimate(&plan).estimated_rows,20.0);
+    for kind in [JoinType::RightSemi,JoinType::RightAnti] {
+        let plan=LogicalPlanBuilder::from(estimate_scan("l",10.0))
+            .join_on(estimate_scan("r",10.0),kind,vec![col("l.x").eq(col("r.x"))])
+            .unwrap().build().unwrap();
+        assert!(estimate(&plan).estimated_rows.is_none());
+    }
+    let plan=LogicalPlanBuilder::from(estimate_scan("l",10.0))
+        .join_on(estimate_scan("r",10.0),JoinType::Inner,vec![col("l.x").eq(col("l.y"))])
+        .unwrap().build().unwrap();
+    assert!(estimate(&plan).estimated_rows.is_none());
+}
+
+#[test]
+fn cost_optimizer_orders_total_predicates_by_expected_comparisons() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let expensive=col("x").in_list(vec![lit(1_i64),lit(2_i64),lit(3_i64),lit(4_i64)],false);
+    let selective=col("y").eq(lit(1_i64));
+    for consecutive in [false,true] {
+        let builder=LogicalPlanBuilder::from(estimate_scan("source",100.0));
+        let plan=if consecutive {builder.filter(expensive.clone()).unwrap().filter(selective.clone()).unwrap()}
+            else {builder.filter(expensive.clone().and(selective.clone())).unwrap()}.build().unwrap();
+        let (optimized,decisions)=super::super::optimize::optimize(plan).unwrap();
+        let LogicalPlan::Filter(residual) = &optimized else {panic!("residual filter must remain")};
+        close(input_rows(&residual.input),16.0);
+        let Expr::BinaryExpr(predicate) = &residual.predicate else {panic!("conjunction must remain")};
+        assert_eq!(predicate.op,Operator::And);
+        assert!(predicate.left.to_string().contains("y"));
+        assert!(predicate.right.to_string().contains("IN"));
+        let decision=decisions.iter().find(|d|d.optimization=="order_pure_filters");
+        if consecutive {
+            // DataFusion merges consecutive filters parent-first, so the
+            // selective outer predicate is already first before costing.
+            assert!(decision.is_none());
+        } else {
+            let decision=decision.expect("cost-based predicate ordering");
+            // Inexact pushdown leaves 100 * 0.8 * 0.2 = 16 estimated rows.
+            close(Some(decision.estimated_work_before),76.8);
+            close(Some(decision.estimated_work_after),28.8);
+            assert!(decision.after[0].contains("y"));
+            assert!(decision.after[1].contains("IN"));
+        }
+        let (_,again)=super::super::optimize::optimize(optimized).unwrap();
+        assert!(again.iter().all(|d|d.optimization!="order_pure_filters"));
+    }
+}
+
+#[test]
+fn cost_optimizer_preserves_error_boundaries_and_unknown_costs() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for predicate in [
+        (col("x")/lit(0_i64)).eq(lit(1_i64)).and(col("y").eq(lit(1_i64))),
+        Expr::Cast(Cast::new(Box::new(col("x")),DataType::Int8)).eq(lit(1_i8)).and(col("y").eq(lit(1_i64))),
+    ] {
+        let plan=LogicalPlanBuilder::from(estimate_scan("source",100.0)).filter(predicate).unwrap().build().unwrap();
+        let (_,decisions)=super::super::optimize::optimize(plan).unwrap();
+        assert!(decisions.iter().all(|d|d.optimization!="order_pure_filters"));
+    }
+    for missing_rows in [false,true] {
+        let scan=estimate_scan_with("source",100.0,|source| {
+            if missing_rows {source.estimated_rows=None;} else {source.columns.clear();}
+        });
+        let plan=LogicalPlanBuilder::from(scan).filter(col("x").eq(lit(1_i64)).and(col("y").eq(lit(1_i64))))
+            .unwrap().build().unwrap();
+        let (_,decisions)=super::super::optimize::optimize(plan).unwrap();
+        assert!(decisions.iter().all(|d|d.optimization!="order_pure_filters"));
+    }
+}
