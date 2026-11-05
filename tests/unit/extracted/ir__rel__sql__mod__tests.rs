@@ -364,3 +364,6 @@ fn duckdb_region_session_rejects_unverified_helpers_and_poisoned_sessions() {
     assert!(matches!(RegionSession::validate_float_helper(&session, &capability),
         Err(SqlError::Execution(message)) if message == "DuckDB session poisoned"));
 }
+
+#[path = "sql_exchange_literals.rs"]
+mod exchange_literals;
