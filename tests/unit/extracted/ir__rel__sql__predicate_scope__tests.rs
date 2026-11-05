@@ -68,3 +68,101 @@ fn predicate_scope_only_substitutes_total_aliases_and_typed_nulls() {
     assert!(!value(&(col("x") + lit(1_i64))));
     assert_eq!(filtered(plan.clone(), lit(true)).unwrap(), plan);
 }
+
+fn scope_values(name: &str, values: &[Option<i64>]) -> LogicalPlan {
+    use crate::ir::rel::constraints::{bind, Constraint, ConstraintCatalog, Fact};
+    use datafusion::datasource::{MemTable, provider_as_source};
+    let schema = Arc::new(arrow::datatypes::Schema::new(vec![
+        Field::new("row_id", DataType::Int64, false), Field::new("x", DataType::Int64, true)]));
+    let batch = RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(arrow::array::Int64Array::from_iter_values(0..values.len() as i64)),
+        Arc::new(arrow::array::Int64Array::from(values.to_vec()))]).unwrap();
+    let table = Arc::new(MemTable::try_new(schema, vec![vec![batch]]).unwrap());
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert(name, Constraint::enforced("row_id_present", Fact::NonNull { columns: vec!["row_id".into()] }));
+    let table = bind(name, table, &catalog, None).unwrap();
+    LogicalPlanBuilder::scan(name, provider_as_source(table), None).unwrap()
+        .project(vec![datafusion::prelude::col(format!("{name}.x"))]).unwrap().build().unwrap()
+}
+async fn scope_rows(plan: LogicalPlan) -> Vec<Vec<String>> {
+    let batches = crate::ir::rel::execute_test_plan(plan).await.unwrap();
+    let mut rows = Vec::new();
+    for batch in batches {
+        for row in 0..batch.num_rows() {
+            rows.push(batch.columns().iter().map(|array| if array.is_null(row) { "NULL".into() }
+                else { arrow::util::display::array_value_to_string(array, row).unwrap() }).collect());
+        }
+    }
+    rows.sort(); rows
+}
+
+#[tokio::test]
+async fn total_predicate_movement_preserves_union_alias_filter_and_limit_results() {
+    use datafusion::prelude::col;
+    for wrapper in 0..5 {
+        let base = scope_values("source", &[None, Some(1), Some(2), Some(2), Some(3)]);
+        let (plan, name, expected_count) = match wrapper {
+            0 => (LogicalPlanBuilder::from(base).project(vec![col("source.x").alias("renamed")]).unwrap().build().unwrap(), "renamed", 3),
+            1 => (LogicalPlanBuilder::from(base).alias("renamed").unwrap().build().unwrap(), "renamed.x", 3),
+            2 => (LogicalPlanBuilder::from(base).filter(col("source.x").is_not_null()).unwrap().build().unwrap(), "source.x", 3),
+            3 => (LogicalPlanBuilder::from(base).project(vec![col("source.x").alias("x")]).unwrap().union(LogicalPlanBuilder::from(scope_values("other", &[Some(2), None])).project(vec![col("other.x").alias("x")]).unwrap().build().unwrap()).unwrap().build().unwrap(), "x", 4),
+            _ => (LogicalPlanBuilder::from(base).limit(0, Some(2)).unwrap().build().unwrap(), "source.x", 0),
+        };
+        let original = LogicalPlanBuilder::from(plan).filter(col(name).gt(lit(1_i64))).unwrap().build().unwrap();
+        let optimized = rewrite(original.clone()).unwrap();
+        let actual = scope_rows(optimized.clone()).await;
+        assert_eq!(actual, scope_rows(original.clone()).await, "wrapper {wrapper}");
+        assert_eq!(actual.len(), expected_count, "wrapper {wrapper}");
+        if wrapper == 4 { assert_eq!(optimized, original); }
+        else { assert_ne!(optimized, original, "wrapper {wrapper} did not exercise movement"); }
+    }
+}
+
+#[tokio::test]
+async fn join_predicate_partitioning_keeps_mixed_terms_duplicates_and_outer_nulls() {
+    use datafusion::prelude::col;
+    for join_type in [JoinType::Inner, JoinType::Left] {
+        let left = scope_values("l", &[None, Some(1), Some(2), Some(2), Some(4)]);
+        let right = scope_values("r", &[Some(1), Some(2), Some(2), Some(3)]);
+        let joined = LogicalPlanBuilder::from(left).join(right, join_type,
+            (vec!["l.x"], vec!["r.x"]), None).unwrap().build().unwrap();
+        let predicate = col("l.x").gt(lit(1_i64)).and(col("r.x").lt(lit(4_i64)))
+            .and(col("l.x").eq(col("r.x")));
+        let original = LogicalPlanBuilder::from(joined).filter(predicate).unwrap().build().unwrap();
+        let optimized = rewrite(original.clone()).unwrap();
+        let actual = scope_rows(optimized.clone()).await;
+        assert_eq!(actual, vec![vec!["2".to_string(), "2".to_string()]; 4]);
+        assert_eq!(actual, scope_rows(original.clone()).await);
+        if join_type == JoinType::Inner { assert_ne!(optimized, original); }
+        else { assert_eq!(optimized, original); }
+    }
+}
+
+#[tokio::test]
+async fn join_specialization_propagates_non_null_constants_from_either_side() {
+    use datafusion::prelude::col;
+    for constant_on_left in [false, true] {
+        for value in [Some(2_i64), None] {
+            let constant = LogicalPlanBuilder::from(scope_values("constant_source", &[Some(0)])).project(vec![lit(ScalarValue::Int64(value)).alias("x")]).unwrap()
+                .alias("c").unwrap().build().unwrap();
+            let dynamic = scope_values("d", &[None, Some(1), Some(2), Some(2), Some(3)]);
+            let (left, right, left_key, right_key) = if constant_on_left { (constant, dynamic, "c.x", "d.x") }
+                else { (dynamic, constant, "d.x", "c.x") };
+            let original = LogicalPlanBuilder::from(left).join(right, JoinType::Inner,
+                (vec![left_key], vec![right_key]), None).unwrap().build().unwrap();
+            let specialized = specialize(original.clone()).unwrap();
+            assert_eq!(specialized.transformed, value.is_some());
+            let actual = scope_rows(specialized.data).await;
+            assert_eq!(actual, scope_rows(original).await);
+            assert_eq!(actual.len(), if value.is_some() { 2 } else { 0 });
+        }
+    }
+    let same = LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("x")]).unwrap().build().unwrap();
+    let union = LogicalPlanBuilder::from(same.clone()).union(same).unwrap().build().unwrap();
+    assert_eq!(constant(&union, &Column::from_name("x")), Some(ScalarValue::Int64(Some(7))));
+    let different = LogicalPlanBuilder::empty(true).project(vec![lit(8_i64).alias("x")]).unwrap().build().unwrap();
+    let union = LogicalPlanBuilder::from(union).union(different).unwrap().build().unwrap();
+    assert_eq!(constant(&union, &Column::from_name("x")), None);
+    assert_eq!(constant(&union, &Column::from_name("missing")), None);
+    assert!(!total(&(col("x") / lit(0_i64)), union.schema()));
+}

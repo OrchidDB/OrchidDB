@@ -906,7 +906,16 @@ pub(super) fn strip_identity_projections(plan: LogicalPlan) -> SqlResult<Logical
 /// qualifier is required and is kept: it names a `SubqueryAlias`/table that
 /// exists as a FROM alias in the emitted SQL.
 pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, DataFusionError> {
-    let transformed = plan.transform_up_with_subqueries(|node| {
+    fn rewrite_scope(plan: LogicalPlan, in_join: bool) -> Result<Transformed<LogicalPlan>, DataFusionError> {
+        let child_join_scope = match &plan {
+            LogicalPlan::Join(_) => true,
+            LogicalPlan::Filter(_) | LogicalPlan::Projection(_) => in_join,
+            _ => false,
+        };
+        let subqueries = plan.map_subqueries(|subquery| rewrite_scope(subquery, false))?;
+        let children = subqueries.data.map_children(|child| rewrite_scope(child, child_join_scope))?;
+        let children_changed = subqueries.transformed || children.transformed;
+        let node = children.data;
         // Count how many input fields share each unqualified name in this
         // node's scope; only unique names can safely lose their qualifier.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -957,7 +966,12 @@ pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, 
                 *logical = (*logical).max(count);
             }
         }
-        let unique = |name: &str| counts.get(name).copied().unwrap_or(0) <= 1;
+        // A filter immediately over a named relation can be flattened into an
+        // enclosing JOIN's ON clause. Its locally unique columns may collide
+        // with the other input there; the relation alias is still SQL-visible.
+        let named_filter_input = matches!(&node, LogicalPlan::Filter(filter)
+            if matches!(filter.input.as_ref(), LogicalPlan::TableScan(_) | LogicalPlan::SubqueryAlias(_)));
+        let unique = |name: &str| !(in_join && named_filter_input) && counts.get(name).copied().unwrap_or(0) <= 1;
         // Aggregate/projection expression names are referenced by parent nodes.
         // Removing a qualifier inside sum(t.x) must not rename its output.
         let preserve_names = matches!(
@@ -988,10 +1002,12 @@ pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, 
         if rewritten.transformed {
             Ok(Transformed::yes(rewritten.data.recompute_schema()?))
         } else {
+            let mut rewritten = rewritten;
+            rewritten.transformed |= children_changed;
             Ok(rewritten)
         }
-    })?;
-    Ok(transformed.data)
+    }
+    Ok(rewrite_scope(plan, false)?.data)
 }
 
 pub(super) fn is_identity_projection(projection: &datafusion::logical_expr::Projection) -> bool {
