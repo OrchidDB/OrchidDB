@@ -166,3 +166,44 @@ async fn join_specialization_propagates_non_null_constants_from_either_side() {
     assert_eq!(constant(&union, &Column::from_name("missing")), None);
     assert!(!total(&(col("x") / lit(0_i64)), union.schema()));
 }
+
+#[tokio::test]
+async fn filtered_join_inputs_preserve_qualifiers_across_alias_and_projection_boundaries() {
+    use datafusion::prelude::col;
+    for left_wrapper in 0..4 {
+        for right_wrapper in 0..4 {
+            let wrap = |name: &str, alias: &str, wrapper: usize, values: &[Option<i64>], predicate: Expr| {
+                let mut builder = LogicalPlanBuilder::from(scope_values(name, values)).filter(predicate).unwrap();
+                if wrapper == 2 { builder = builder.project(vec![col(format!("{name}.x")).alias("x")]).unwrap(); }
+                if wrapper == 3 { builder = builder.project(vec![(col(format!("{name}.x")) + lit(0_i64)).alias("x")]).unwrap(); }
+                if wrapper > 0 { builder = builder.alias(alias).unwrap(); }
+                builder.build().unwrap()
+            };
+            let left = wrap("l", "left_scope", left_wrapper, &[None, Some(1), Some(2), Some(2), Some(4)], col("l.x").gt(lit(1_i64)));
+            let right = wrap("r", "right_scope", right_wrapper, &[Some(1), Some(2), Some(2), Some(3)], col("r.x").lt(lit(4_i64)));
+            let left_key = if left_wrapper == 0 { "l.x" } else { "left_scope.x" };
+            let right_key = if right_wrapper == 0 { "r.x" } else { "right_scope.x" };
+            let original = LogicalPlanBuilder::from(left).join(right, JoinType::Inner,
+                (vec![left_key], vec![right_key]), None).unwrap().build().unwrap();
+            let optimized = rewrite(original.clone()).unwrap();
+            let expected = vec![vec!["2".to_string(), "2".to_string()]; 4];
+            assert_eq!(scope_rows(original).await, expected, "original wrappers {left_wrapper}/{right_wrapper}");
+            assert_eq!(scope_rows(optimized).await, expected, "rewritten wrappers {left_wrapper}/{right_wrapper}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn filter_scope_lifting_keeps_predicates_on_pruned_columns_below_projection() {
+    use datafusion::prelude::col;
+    let LogicalPlan::Projection(projected) = scope_values("source", &[None, Some(1), Some(2)]) else { panic!() };
+    let original = LogicalPlanBuilder::from(projected.input.as_ref().clone())
+        .filter(col("source.row_id").gt(lit(0_i64))).unwrap()
+        .project(vec![col("source.x").alias("visible")]).unwrap().build().unwrap();
+    let stripped = super::super::unparse::strip_column_qualifiers(original.clone()).unwrap();
+    let LogicalPlan::Projection(projection) = &stripped else { panic!("filter crossed a projection that pruned its input") };
+    assert!(matches!(projection.input.as_ref(), LogicalPlan::Filter(_)));
+    let expected = vec![vec!["1".to_string()], vec!["2".to_string()]];
+    assert_eq!(scope_rows(original).await, expected);
+    assert_eq!(scope_rows(stripped).await, expected);
+}
