@@ -283,6 +283,42 @@ fn cypher_to_integer_truncates_fractional_values_toward_zero_and_keeps_nulls() {
     }
 }
 
+#[test]
+fn cypher_canonical_integer_conversion_matches_runtime_float_boundaries() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    for (input, expected) in [
+        (ScalarValue::Float64(Some(9_223_372_036_854_775_808.0)), Some(i64::MAX)),
+        (ScalarValue::Float64(Some(-9_223_372_036_854_775_808.0)), Some(i64::MIN)),
+        (ScalarValue::Float64(Some(f64::MAX)), Some(i64::MAX)),
+        (ScalarValue::Float64(Some(-f64::MAX)), Some(i64::MIN)),
+        (ScalarValue::Float64(Some(f64::INFINITY)), None),
+        (ScalarValue::Float64(Some(f64::NEG_INFINITY)), None),
+        (ScalarValue::Float64(Some(f64::NAN)), None),
+        (ScalarValue::Float64(Some(-1.9)), Some(-1)),
+        (ScalarValue::Float64(None), None),
+        (ScalarValue::Float32(Some(f32::MAX)), Some(i64::MAX)),
+        (ScalarValue::Float32(Some(-1.9)), Some(-1)),
+    ] {
+        let plan = scalar_scope(vec![Field::new("value", input.data_type(), true)]);
+        // This is the canonical operation emitted by the parsed Cypher planner.
+        let lowered = ctx.lower_expr(&plan, &call("cypher_convert.tointeger", vec![binding("value")])).unwrap();
+        assert_eq!(lowered.get_type(plan.schema()).unwrap(), DataType::Int64);
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        let empty = scalar_scope(vec![]);
+        let actual = fold_cypher_boundary_expression(&empty, bound);
+        assert_eq!(actual, ScalarValue::Int64(expected), "{input:?}");
+        let converted = native_values::typed::call("cypher_convert.tointeger", vec![lit(input.clone())]);
+        let text = native_values::typed::call("scalar_text", vec![converted]);
+        let runtime = fold_cypher_boundary_expression(&empty, text);
+        assert_eq!(runtime, ScalarValue::Utf8(expected.map(|v| v.to_string())), "runtime {input:?}");
+    }
+}
+
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
