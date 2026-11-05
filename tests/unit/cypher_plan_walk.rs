@@ -22,6 +22,7 @@ fn correlation_discovery_reaches_each_merge_arm_without_inventing_bindings() {
 #[test]
 fn cypher_plan_walk_finds_mutations_procedures_and_collection_inputs() {
     use crate::language::cypher::{parser::parse_query,planner::lower_query};
+    let mut failures = Vec::new();
     for (query,required) in [
         ("CREATE (n:Person {name:'Ada'}) RETURN n","GraphCreate"),
         ("MERGE (n:Person {name:'Ada'}) RETURN n","GraphMerge"),
@@ -29,14 +30,27 @@ fn cypher_plan_walk_finds_mutations_procedures_and_collection_inputs() {
         ("MATCH (n) DETACH DELETE n","GraphDelete"),
         ("UNWIND [1,2] AS n RETURN n","GraphUnwind"),
         ("CALL db.labels() YIELD label RETURN label","GraphProcedureCall"),
+        ("UNWIND [1,2] AS n RETURN n SKIP $offset LIMIT $take", "GraphSliceExpr"),
+        ("UNWIND [1,2] AS n WITH rand() AS x WHERE EXISTS { RETURN n + x AS y } RETURN x", "GraphBarrier"),
+        ("RETURN all(x IN $items WHERE x > $threshold) AS value", "GraphQuantifier"),
+        ("RETURN [x IN [1,2] | EXISTS { RETURN x }] AS values", "GraphApply"),
+        ("RETURN [(a)-->(b) | b] AS values", "GraphCollect"),
     ] {
-        let plan=lower_query(&parse_query(query).unwrap()).unwrap();
+        let parsed = match parse_query(query) {
+            Ok(parsed) => parsed,
+            Err(error) => { failures.push(format!("{query}: {error}")); continue; }
+        };
+        let plan = match lower_query(&parsed) {
+            Ok(plan) => plan,
+            Err(error) => { failures.push(format!("{query}: {error}")); continue; }
+        };
         let mut pending=vec![plan.root.as_ref()];let mut found=false;let mut count=0;
         while let Some(node)=pending.pop() {
             count+=1;assert!(count<100,"walk failed to terminate: {query}");
             found|=unsupported_node_name(node)==required;
             pending.extend(node_children(node));
         }
-        assert!(found,"missing {required} under {query}");
+        if !found { failures.push(format!("missing {required} under {query}")); }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
