@@ -79,6 +79,68 @@ fn scalar_scope(fields: Vec<Field>) -> LogicalPlan {
 }
 fn binding(name: &str) -> IrExpr { IrExpr::binding(name) }
 
+fn fold_cypher_boundary_expression(plan: &LogicalPlan, expression: Expr) -> ScalarValue {
+    use datafusion::{logical_expr::simplify::SimplifyContext,
+        optimizer::simplify_expressions::ExprSimplifier};
+    let simplifier = ExprSimplifier::new(SimplifyContext::default().with_schema(plan.schema().clone()));
+    let expression = simplifier.simplify(simplifier.coerce(expression, plan.schema()).unwrap()).unwrap();
+    let Expr::Literal(value, _) = expression else { panic!("not folded: {expression:?}") };
+    value
+}
+
+#[test]
+fn cypher_native_binary_lowering_executes_numeric_and_comparison_semantics() {
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![]);
+    let left = IrExpr::Lit(Lit::Int(8));
+    let right = IrExpr::Lit(Lit::Int(2));
+    for (op, expected) in [(BinaryOp::Add,10), (BinaryOp::Sub,6), (BinaryOp::Mul,16), (BinaryOp::Div,4)] {
+        for native_left in [false, true] {
+            let (lhs, rhs) = if native_left {
+                (native_values::literal(&Value::Int(8)).unwrap(), lit(2_i64))
+            } else {
+                (lit(8_i64), native_values::literal(&Value::Int(2)).unwrap())
+            };
+            let result = ctx.lower_bound_binary(&plan, &left, op, &right, lhs, rhs).unwrap();
+            let equal = native_values::typed::call("cypher_eq", vec![result, lit(expected as i64)]);
+            assert_eq!(fold_cypher_boundary_expression(&plan, equal), ScalarValue::Boolean(Some(true)), "{op:?}");
+        }
+    }
+    for (op, expected) in [(BinaryOp::Eq,false), (BinaryOp::Neq,true), (BinaryOp::Lt,false),
+        (BinaryOp::Lte,false), (BinaryOp::Gt,true), (BinaryOp::Gte,true)] {
+        for null in [false, true] {
+            let lhs = native_values::literal(&if null {Value::Null} else {Value::Int(8)}).unwrap();
+            let result = ctx.lower_bound_binary(&plan, &left, op, &right, lhs, lit(2_i64)).unwrap();
+            assert_eq!(fold_cypher_boundary_expression(&plan, result),
+                ScalarValue::Boolean((!null).then_some(expected)), "{op:?}, null={null}");
+        }
+    }
+}
+
+#[test]
+fn cypher_native_boolean_lowering_preserves_three_valued_logic() {
+    let graph = PropertyGraph::new();
+    let mut ctx = cypher_context(&graph);
+    ctx.options.native_values = true;
+    let plan = scalar_scope(vec![]);
+    for (left, right, and, or) in [
+        (Value::Bool(true), Value::Bool(false), Some(false), Some(true)),
+        (Value::Null, Value::Bool(false), Some(false), None),
+        (Value::Null, Value::Bool(true), None, Some(true)),
+        (Value::Null, Value::Null, None, None),
+    ] {
+        for (lhs, rhs) in [(&left, &right), (&right, &left)] {
+            for (op, expected) in [(BinaryOp::And,and), (BinaryOp::Or,or)] {
+                let result = ctx.lower_bound_binary(&plan, &binding("a"), op, &binding("b"),
+                    native_values::literal(lhs).unwrap(), native_values::literal(rhs).unwrap()).unwrap();
+                assert_eq!(fold_cypher_boundary_expression(&plan, result), ScalarValue::Boolean(expected),
+                    "{lhs:?} {op:?} {rhs:?}");
+            }
+        }
+    }
+}
+
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
