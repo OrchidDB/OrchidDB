@@ -79,6 +79,44 @@ fn scalar_scope(fields: Vec<Field>) -> LogicalPlan {
 }
 fn binding(name: &str) -> IrExpr { IrExpr::binding(name) }
 
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    for (integer, exact) in [("18446744073709551616", true), ("18446744073709551617", false)] {
+        let original = call("integer_literal", vec![IrExpr::Lit(Lit::String(integer.into()))]);
+        for value in [None, Some(18_446_744_073_709_551_616.0), Some(0.0)] {
+            let plan = LogicalPlanBuilder::empty(true).project(vec![
+                lit(ScalarValue::Float64(value)).alias("x")]).unwrap().build().unwrap();
+            for reverse in [false, true] {
+                for op in [BinaryOp::Eq, BinaryOp::Neq] {
+                    let (left, right, lhs, rhs) = if reverse {
+                        (binding("x"), original.clone(), col_exact("x"), lit(integer))
+                    } else {
+                        (original.clone(), binding("x"), lit(integer), col_exact("x"))
+                    };
+                    let result = ctx.lower_bound_binary(&plan, &left, op, &right, lhs, rhs).unwrap();
+                    let output = LogicalPlanBuilder::from(plan.clone()).project(vec![result.alias("result")]).unwrap().build().unwrap();
+                    let batches = crate::ir::rel::execute_test_plan(output).await.unwrap();
+                    let actual = ScalarValue::try_from_array(batches[0].column(0), 0).unwrap();
+                    let expected = value.map(|v| {
+                        let equal = exact && v == 18_446_744_073_709_551_616.0;
+                        if op == BinaryOp::Eq { equal } else { !equal }
+                    });
+                    assert_eq!(actual, ScalarValue::Boolean(expected), "{integer}, {value:?}, {op:?}, reversed={reverse}");
+                }
+            }
+            for op in [BinaryOp::Lt, BinaryOp::Lte, BinaryOp::Gt, BinaryOp::Gte] {
+                let error = ctx.lower_bound_binary(&plan, &original, op, &binding("x"),
+                    lit(integer), col_exact("x")).unwrap_err();
+                assert!(error.to_string().contains("exact ordering"), "{error}");
+            }
+        }
+    }
+}
+
 #[test]
 fn cypher_scalar_columns_preserve_physical_types_without_redundant_casts() {
     let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);

@@ -1,5 +1,6 @@
 
     use super::*;
+    use arrow::array::Array as _;
 
     #[test]
     fn scalar_values_keep_width_and_null_validity() {
@@ -203,6 +204,32 @@ fn encoded_property_fields_validate_source_types_and_missing_column_cardinality(
 }
 
 #[test]
+fn base_property_encoding_preserves_raw_text_and_rejects_invalid_storage_types() {
+    let metadata = std::collections::HashMap::from([
+        ("orchiddb.value_type".into(), "value".into())]);
+    let texts = Arc::new(StringArray::from(vec![Some("unencoded text"), None,
+        Some("Int(7)")])) as ArrayRef;
+    let batch = RecordBatch::try_new(Arc::new(Schema::new(vec![
+        Field::new("payload", DataType::Utf8, true).with_metadata(metadata.clone())])),
+        vec![texts]).unwrap();
+    let decoded = property_array(&batch, "payload", &DataType::Utf8, 3, Language::Cypher).unwrap();
+    assert_eq!(decoded.to_data(), StringArray::from(vec![Some("unencoded text"), None, Some("7")]).to_data());
+    let error = property_array(&batch, "payload", &DataType::Int64, 3, Language::Cypher).unwrap_err();
+    assert!(error.to_string().contains("expected Int64"), "{error}");
+    let malformed = RecordBatch::try_new(Arc::new(Schema::new(vec![
+        Field::new("payload", DataType::Int64, false).with_metadata(metadata)])),
+        vec![Arc::new(Int64Array::from(vec![7]))]).unwrap();
+    let error = property_array(&malformed, "payload", &DataType::Int64, 1, Language::Cypher).unwrap_err();
+    assert!(error.to_string().contains("not a string column"), "{error}");
+    for rows in [0, 3] {
+        let absent = property_array(&batch, "absent", &DataType::UInt64, rows, Language::Cypher).unwrap();
+        assert_eq!(absent.data_type(), &DataType::UInt64);
+        assert_eq!(absent.len(), rows);
+        assert_eq!(absent.null_count(), rows);
+    }
+}
+
+#[test]
 fn base_table_normalization_retains_structured_properties_and_endpoint_identity() {
     let payload = Value::Map(BTreeMap::from([("field".into(), Value::Int(7)), ("__tag".into(), Value::String("choice".into()))]));
     let values = Arc::new(StringArray::from(vec![Some(format!("{payload:?}")), None])) as ArrayRef;
@@ -244,6 +271,165 @@ fn base_edge_normalization_reports_missing_endpoint_columns() {
         let missing = if present == "__src_id" { "__dst_id" } else { "__src_id" };
         assert!(error.contains(&format!("missing {missing}")), "{error}");
     }
+}
+
+#[test]
+fn base_property_fallback_preserves_exact_arrow_cells_for_nodes_and_edges() {
+    use arrow::array::{Int8Array, UInt64Array, Float32Array};
+    for column in [
+        Arc::new(Int8Array::from(vec![Some(-128), None])) as ArrayRef,
+        Arc::new(UInt64Array::from(vec![Some(u64::MAX), None])) as ArrayRef,
+        Arc::new(Float32Array::from(vec![Some(-0.0), None])) as ArrayRef,
+    ] {
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(NodeTable { label: "P".into(), batch:
+            RecordBatch::try_from_iter(vec![("payload", column.clone())]).unwrap() });
+        graph.add_edges(EdgeTable { rel_type: "R".into(), src_label: "P".into(), dst_label: "P".into(), batch:
+            RecordBatch::try_from_iter(vec![
+                ("__src_id", Arc::new(Int64Array::from(vec![0, 1])) as ArrayRef),
+                ("__dst_id", Arc::new(Int64Array::from(vec![1, 0])) as ArrayRef),
+                ("payload", column.clone()),
+            ]).unwrap() }).unwrap();
+        for (edge, element) in [(false, "P"), (true, "R")] {
+            let result = materialize_property_array(&graph, edge, element,
+                &[0.into(), 1.into()], "payload", column.data_type(), Language::Cypher).unwrap();
+            assert_eq!(result.to_data(), column.to_data());
+            let error = materialize_property_array(&graph, edge, element,
+                &[0.into()], "absent", column.data_type(), Language::Cypher).unwrap_err();
+            assert!(error.to_string().contains("missing from its base schema"), "{error}");
+        }
+        graph.set_property(&Value::Node { label: "P".into(), id: 0.into() },
+            "payload", Value::String("changed".into())).unwrap();
+        let error = materialize_property_array(&graph, false, "P", &[0.into()],
+            "payload", column.data_type(), Language::Cypher).unwrap_err();
+        assert!(error.to_string().contains("overlay data"), "{error}");
+        let untouched = materialize_property_array(&graph, false, "P", &[1.into()],
+            "payload", column.data_type(), Language::Cypher).unwrap();
+        assert_eq!(untouched.data_type(), column.data_type());
+        assert!(untouched.is_null(0));
+    }
+}
+
+fn cypher_scan_context(graph: &PropertyGraph) -> LoweringContext<'_> {
+    LoweringContext {
+        island_memo: None, graph, options: RelBackendOptions::default(),
+        policy: GraphPlanPolicy::cypher(), language: Language::Cypher, scan_counter: 0,
+        correlate_plan: None, rdf_typed_terms_used: false, scan_logical_labels: false,
+        gremlin_label_binds: Default::default(), unordered_collects: Default::default(),
+        unordered_distincts: Default::default(),
+    }
+}
+
+#[test]
+fn cypher_scan_labels_are_deduplicated_and_unsupported_predicates_decline() {
+    let graph = PropertyGraph::new();
+    let ctx = cypher_scan_context(&graph);
+    let repeated = LabelExpr::AnyOf(vec!["B".into(), "A".into(), "A".into()]);
+    assert_eq!(ctx.node_labels(&repeated).unwrap(), vec!["A", "B"]);
+    assert_eq!(ctx.rel_types(&repeated).unwrap(), vec!["A", "B"]);
+    assert_eq!(ctx.node_labels(&LabelExpr::AllOf(vec!["A".into()])).unwrap(), vec!["A"]);
+    assert_eq!(ctx.rel_types(&LabelExpr::AllOf(vec!["R".into()])).unwrap(), vec!["R"]);
+    for labels in [vec![], vec!["A".into(), "B".into()]] {
+        assert!(ctx.node_labels(&LabelExpr::AllOf(labels.clone())).unwrap().is_empty());
+        assert!(ctx.rel_types(&LabelExpr::AllOf(labels)).unwrap_err().to_string().contains("multi-type"));
+    }
+    let negated = LabelExpr::Not(Box::new(LabelExpr::label("A")));
+    assert!(ctx.node_labels(&negated).unwrap_err().to_string().contains("negated label"));
+    assert!(ctx.rel_types(&negated).unwrap_err().to_string().contains("negated relationship"));
+    graph.insert_node("B", BTreeMap::new());
+    graph.insert_node("A", BTreeMap::new());
+    assert_eq!(ctx.node_labels(&LabelExpr::AllOf(vec!["A".into(), "B".into()])).unwrap(), vec!["A", "B"]);
+}
+
+#[test]
+fn cypher_overlay_properties_decline_incompatible_types_across_elements() {
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node("A", BTreeMap::from([("payload".into(), Value::Int(7))]));
+    let b = graph.insert_node("B", BTreeMap::from([("payload".into(), Value::String("seven".into()))]));
+    graph.insert_edge("R", &a, &b, BTreeMap::from([("payload".into(), Value::Int(7))])).unwrap();
+    graph.insert_edge("S", &b, &a, BTreeMap::from([("payload".into(), Value::String("seven".into()))])).unwrap();
+    let ctx = cypher_scan_context(&graph);
+    for labels in [vec!["A".into(), "B".into()], vec!["B".into(), "A".into()]] {
+        assert!(ctx.node_property_defs(&labels).unwrap_err().to_string().contains("incompatible types across labels"));
+    }
+    for types in [vec!["R".into(), "S".into()], vec!["S".into(), "R".into()]] {
+        assert!(ctx.edge_property_defs(&types).unwrap_err().to_string().contains("incompatible types across relationship types"));
+    }
+    assert_eq!(ctx.node_property_defs(&["A".into()]).unwrap()[0].data_type, DataType::Int32);
+    assert_eq!(ctx.edge_property_defs(&["S".into()]).unwrap()[0].data_type, DataType::Utf8);
+}
+
+#[test]
+fn cypher_temporal_properties_require_lossless_transport() {
+    use crate::ir::temporal::{TemporalValue, transport};
+    let date = TemporalValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 2, 29).unwrap());
+    let value = Value::Temporal(date.clone());
+    for kind in [DataType::Date32, transport::scalar(&date).unwrap().data_type(),
+        transport::encoded_scalar(&date).unwrap().data_type()] {
+        let result = value_to_scalar(&value, &kind, Language::Cypher).unwrap();
+        assert_eq!(result.data_type(), kind);
+        assert_eq!(transport::decode(&result).unwrap(), date);
+        assert_eq!(value_to_scalar(&Value::Null, &kind, Language::Cypher).unwrap(),
+            ScalarValue::try_from(&kind).unwrap());
+        for invalid in [Value::String("2024-02-29".into()), Value::Int(19782)] {
+            let error = value_to_scalar(&invalid, &kind, Language::Cypher).unwrap_err();
+            assert!(error.to_string().contains("requires temporal or null"), "{error}");
+        }
+    }
+    for nested in [value.clone(), Value::List(vec![value.clone()]),
+        Value::Map(BTreeMap::from([("date".into(), value)]))] {
+        let error = value_to_scalar(&nested, &DataType::Utf8, Language::Cypher).unwrap_err();
+        assert!(error.to_string().contains("require a residual kernel"), "{error}");
+    }
+}
+
+#[test]
+fn cypher_property_inference_preserves_temporals_and_declines_mixed_scalars() {
+    use crate::ir::temporal::{TemporalValue, transport};
+    let date = TemporalValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 2, 29).unwrap());
+    for (values, expected) in [
+        (vec![Value::Null, Value::Temporal(date.clone())], Some(transport::scalar(&date).unwrap().data_type())),
+        (vec![Value::Int(1), Value::Long(i64::MAX)], None),
+        (vec![Value::Temporal(date), Value::String("2024-02-29".into())], None),
+        (vec![Value::UInt64(u64::MAX), Value::Float(1.0)], None),
+        (vec![Value::Null, Value::Null], Some(DataType::Utf8)),
+    ] {
+        let graph = PropertyGraph::new();
+        let endpoints: Vec<_> = values.iter().map(|value| graph.insert_node("P",
+            BTreeMap::from([("payload".into(), value.clone())]))).collect();
+        for value in &values {
+            graph.insert_edge("R", &endpoints[0], &endpoints[1],
+                BTreeMap::from([("payload".into(), value.clone())])).unwrap();
+        }
+        for (edge, element) in [(false, "P"), (true, "R")] {
+            let result = infer_element_property_type(&graph, edge, element, "payload", Language::Cypher);
+            match &expected {
+                Some(kind) => assert_eq!(&result.unwrap(), kind),
+                None => assert!(result.unwrap_err().to_string().contains("Heterogeneous Cypher properties")),
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_structured_property_discovery_handles_implicit_order_and_bad_metadata() {
+    let metadata = std::collections::HashMap::from([("orchiddb.value_type".into(), "value".into())]);
+    let map = Value::Map(BTreeMap::from([
+        ("z".into(), Value::Int(1)), ("a".into(), Value::Null),
+        ("__internal".into(), Value::Int(9)),
+    ]));
+    let batch = RecordBatch::try_new(Arc::new(Schema::new(vec![
+        Field::new("payload", DataType::Utf8, true).with_metadata(metadata.clone())])),
+        vec![Arc::new(StringArray::from(vec![format!("{map:?}")]))]).unwrap();
+    let mut defs = BTreeMap::new();
+    merge_property_defs(&mut defs, batch.schema().as_ref(), &[]).unwrap();
+    merge_struct_field_defs(&mut defs, &batch).unwrap();
+    assert_eq!(defs["payload"].struct_fields, vec!["a", "z"]);
+    let malformed = RecordBatch::try_new(Arc::new(Schema::new(vec![
+        Field::new("payload", DataType::Int64, false).with_metadata(metadata)])),
+        vec![Arc::new(Int64Array::from(vec![7]))]).unwrap();
+    let error = merge_struct_field_defs(&mut defs, &malformed).unwrap_err();
+    assert!(error.to_string().contains("structured property `payload` is not text"), "{error}");
 }
 
 #[test]
