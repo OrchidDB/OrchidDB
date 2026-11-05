@@ -25,3 +25,64 @@
         let batches = crate::ir::rel::execute_test_plan(plan).await.unwrap();
         assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(), 0);
     }
+
+#[tokio::test]
+async fn correlation_keys_preserve_nulls_and_avoid_existing_internal_aliases() {
+    let input = LogicalPlanBuilder::empty(true).project(vec![
+        lit(ScalarValue::Null).alias("value"),lit(7_i64).alias("__apply_corr_key_0"),
+        lit(8_i64).alias("__apply_corr_key_0_1"),
+    ]).unwrap().build().unwrap();
+    let (plan, keys, cleanup) = with_apply_correlation_keys(input.clone(), &["value".into(),"value".into()]).unwrap();
+    assert_eq!(keys,vec!["__apply_corr_key_0_2"]);
+    assert_eq!(cleanup,BTreeSet::from([keys[0].clone()]));
+    assert_eq!(plan.schema().field_with_unqualified_name(&keys[0]).unwrap().data_type(),&DataType::Int64);
+    let batches = crate::ir::rel::execute_test_plan(plan).await.unwrap();
+    assert_eq!(batches[0].num_columns(),4);
+    assert!(ScalarValue::try_from_array(batches[0].column(3),0).unwrap().is_null());
+    assert_eq!(ScalarValue::try_from_array(batches[0].column(1),0).unwrap(),ScalarValue::Int64(Some(7)));
+    let (unchanged,keys,cleanup) = with_apply_correlation_keys(input.clone(),&[]).unwrap();
+    assert_eq!(unchanged,input); assert!(keys.is_empty() && cleanup.is_empty());
+}
+
+#[test]
+fn correlation_columns_expand_entities_without_crossing_neighbor_bindings() {
+    let fields = vec![Field::new(id_col("n"),DataType::Int64,true),Field::new(label_col("n"),DataType::Utf8,true),
+        Field::new(prop_col("n","age"),DataType::Int64,true),Field::new(prop_col("neighbor","age"),DataType::Int64,true),
+        Field::new("scalar",DataType::Boolean,true),Field::new("__pattern_result",DataType::Boolean,true)];
+    let plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+        produce_one_row:false,schema:Arc::new(datafusion::common::DFSchema::try_from(Schema::new(fields)).unwrap()),
+    });
+    let mut expected = vec![id_col("n"),label_col("n"),"scalar".into()];expected.sort();
+    assert_eq!(correlation_key_columns(&plan,&["n".into(),"scalar".into(),"n".into()]).unwrap(),expected);
+    let mut expected = vec![id_col("n"),label_col("n"),prop_col("n","age"),"__pattern_result".into()];expected.sort();
+    assert_eq!(right_apply_output_columns(&plan,&["n".into(),"__pattern_result".into(),"n".into()]).unwrap(),expected);
+    assert!(correlation_key_columns(&plan,&["missing".into()]).unwrap_err().to_string().contains("not available relationally"));
+    assert!(right_apply_output_columns(&plan,&["__missing_pattern".into()]).unwrap_err().to_string().contains("not available relationally"));
+    assert!(binding_column_names(&plan,"scalar").unwrap_err().to_string().contains("not an element binding"));
+}
+
+#[tokio::test]
+async fn apply_join_preparation_matches_nullable_nested_and_uncorrelated_rows() {
+    let lists = |v| ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(None),ScalarValue::Int64(Some(v))],&DataType::Int64));
+    for (left_values,right_values,correlated,expected) in [
+        (vec![ScalarValue::Int64(None),ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(1))],vec![ScalarValue::Int64(None),ScalarValue::Int64(Some(1))],true,3),
+        (vec![lists(1),lists(2)],vec![lists(1),lists(2)],true,2),
+        (vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(2))],vec![ScalarValue::Int64(Some(9)),ScalarValue::Int64(Some(8)),ScalarValue::Int64(Some(7))],false,6),
+    ] {
+        let source = |values:Vec<ScalarValue>,right:bool| {
+            LogicalPlanBuilder::values(values.into_iter().map(|v|vec![lit(v)]).collect()).unwrap().project(if right {
+                vec![col_exact("column1").alias("key"),lit(10_i64).alias("out"),lit(99_i64).alias("__apply_right_key_0")]
+            } else {vec![col_exact("column1").alias("key")]}).unwrap().build().unwrap()
+        };
+        let left=source(left_values,false);let right=source(right_values,true);
+        let keys=if correlated {vec!["key".into()]} else {vec![]};
+        let (left,right,predicates,cleanup)=prepare_apply_join_inputs(left,right,&keys,&["out".into()]).unwrap();
+        assert!(cleanup.contains("__apply_right_key_0_1"));
+        let plan=LogicalPlanBuilder::from(left).join_on(right,JoinType::Inner,predicates).unwrap().build().unwrap();
+        let batches=crate::ir::rel::execute_test_plan(plan).await.unwrap();
+        assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(),expected);
+    }
+    let left=LogicalPlanBuilder::empty(true).project(vec![lit(1_i64).alias("key")]).unwrap().build().unwrap();
+    let right=LogicalPlanBuilder::empty(true).project(vec![lit(2_i64).alias("output")]).unwrap().build().unwrap();
+    assert!(prepare_apply_join_inputs(left,right,&["key".into()],&["output".into()]).unwrap_err().to_string().contains("dropped correlation key"));
+}
