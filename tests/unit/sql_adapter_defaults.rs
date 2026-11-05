@@ -291,3 +291,63 @@ fn relation_unparser_requires_context_generates_unique_aliases_and_rejects_depen
     let dependent=relation_function(true,ArgumentBinding::PrepareTime);
     assert!(relation_unparser.unparse_to_statement(&dependent,&unparser).err().unwrap().to_string().contains("requires bound source inputs"));
 }
+
+#[tokio::test]
+async fn native_table_function_rewrites_preserve_empty_outer_rows_duplicates_and_ordinality() {
+    use arrow::{array::{ArrayRef,Int64Array,StructArray},datatypes::Field};
+    use crate::ir::rel::dependent::ArgumentBinding;
+    use super::super::lowering::{LoweringContext,LoweringMode,RelationLowering,lower_relation,transform_relations};
+    use datafusion::prelude::lit;
+    let item=DataType::Struct(vec![Field::new("result",DataType::Int64,true)].into());
+    let rows=[Some(4i64),None,Some(4i64)].into_iter().map(|value|ScalarValue::Struct(Arc::new(StructArray::from(vec![
+        (Arc::new(Field::new("result",DataType::Int64,true)),Arc::new(Int64Array::from(vec![value])) as ArrayRef)
+    ])))).collect::<Vec<_>>();
+    let populated=ScalarValue::List(ScalarValue::new_list_nullable(&rows,&item));
+    let empty=ScalarValue::List(ScalarValue::new_list_nullable(&[],&item));
+    let null=ScalarValue::try_from(empty.data_type()).unwrap();
+    for (values,nonempty) in [(populated,true),(empty,false),(null,false)] {
+        for source in [false,true] { for outer in [false,true] { for ordinal in [false,true] {
+            let function=relation_function(source,ArgumentBinding::Correlated).with_native_list(lit(values.clone())).unwrap()
+                .with_expansion(outer,ordinal.then(||"position".into())).unwrap();
+            let plan=function.into_plan();
+            for dialect in [SqlDialect::Postgres,SqlDialect::DuckDb,SqlDialect::Custom(&super::super::trino::TRINO)] {
+                let RelationLowering::Rewrite(rewritten)=lower_relation(&plan,&LoweringContext{dialect,mode:LoweringMode::InIsland}).unwrap().unwrap() else {panic!("native rewrite")};
+                assert_eq!(rewritten.schema(),plan.schema());
+                let transformed=transform_relations(plan.clone(),dialect).unwrap();
+                assert_eq!(transformed.schema(),plan.schema());
+                if dialect!=SqlDialect::DuckDb {continue;}
+                let batches=crate::ir::rel::execute_test_plan(transformed).await.unwrap();
+                let result_index=usize::from(source)*2;
+                let actual=batches.iter().flat_map(|b|(0..b.num_rows()).map(move |row|{
+                    let value=ScalarValue::try_from_array(b.column(result_index),row).unwrap();
+                    let position=ordinal.then(||ScalarValue::try_from_array(b.column(result_index+1),row).unwrap());
+                    if source {assert_eq!(ScalarValue::try_from_array(b.column(0),row).unwrap(),ScalarValue::Int64(Some(7)));}
+                    (value,position)
+                })).collect::<Vec<_>>();
+                let expected=if nonempty {
+                    vec![(ScalarValue::Int64(Some(4)),ordinal.then_some(ScalarValue::Int64(Some(1)))),
+                         (ScalarValue::Int64(None),ordinal.then_some(ScalarValue::Int64(Some(2)))),
+                         (ScalarValue::Int64(Some(4)),ordinal.then_some(ScalarValue::Int64(Some(3))))]
+                } else if outer {vec![(ScalarValue::Int64(None),ordinal.then_some(ScalarValue::Int64(None)))]} else {vec![]};
+                assert_eq!(actual,expected,"source={source}, outer={outer}, ordinal={ordinal}, nonempty={nonempty}");
+            }
+        }}}
+    }
+}
+
+#[test]
+fn physical_relation_identity_supports_plan_comparison_and_statement_rendering() {
+    use super::super::lowering::{transform_relations,RelationUnparser};
+    use datafusion::sql::unparser::{Unparser,extension_unparser::{UserDefinedLogicalNodeUnparser,UnparseToStatementResult}};
+    use std::hash::{Hash,Hasher};
+    let plan=transform_relations(protocol_plan(),SqlDialect::Custom(&RELATION_PROTOCOLS[7])).unwrap();
+    let LogicalPlan::Extension(extension)=&plan else {panic!("physical relation")};
+    let copy=extension.node.with_exprs_and_inputs(vec![],vec![]).unwrap();
+    assert!(extension.node.dyn_eq(copy.as_ref()));
+    assert_eq!(extension.node.dyn_ord(copy.as_ref()),Some(std::cmp::Ordering::Equal));
+    let mut left=std::collections::hash_map::DefaultHasher::new();let mut right=std::collections::hash_map::DefaultHasher::new();
+    plan.hash(&mut left);plan.clone().hash(&mut right);assert_eq!(left.finish(),right.finish());
+    let dialect=SqlDialect::Postgres;let sql_dialect=dialect.unparser_dialect();let unparser=Unparser::new(sql_dialect.as_ref());
+    let UnparseToStatementResult::Modified(statement)=RelationUnparser::new(dialect).unparse_to_statement(extension.node.as_ref(),&unparser).unwrap() else {panic!("stored statement")};
+    assert_eq!(statement.to_string(),"SELECT 7 AS id");
+}
