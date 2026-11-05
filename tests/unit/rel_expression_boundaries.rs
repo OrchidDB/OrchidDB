@@ -1033,3 +1033,53 @@ fn cypher_slice_null_list_cannot_overflow_one_based_start_conversion() {
         assert!(result.is_null(),"{result:?}");
     }
 }
+
+#[test]
+fn cypher_bitwise_lowering_preserves_signed_widths_nulls_and_exact_bits() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let kinds=[DataType::Int8,DataType::Int16,DataType::Int32,DataType::Int64,DataType::Null];
+    for left_type in &kinds {
+        for right_type in &kinds {
+            let plan=scalar_scope(vec![Field::new("left",left_type.clone(),true),Field::new("right",right_type.clone(),true)]);
+            for name in ["bitwise_and","bitwise_or"] {
+                let lowered=ctx.lower_sql_expr(&plan,&call(name,vec![binding("left"),binding("right")])).unwrap();
+                let Expr::BinaryExpr(binary)=&lowered else {panic!("expected SQL bitwise operator")};
+                if *left_type==DataType::Int64 {assert!(matches!(binary.left.as_ref(),Expr::Column(_)));}
+                if *right_type==DataType::Int64 {assert!(matches!(binary.right.as_ref(),Expr::Column(_)));}
+                for (left,right) in [(Some(-128),Some(127)),(Some(-1),Some(5)),(None,Some(1)),(Some(1),None),(None,None)] {
+                    let left=if *left_type==DataType::Null {None}else{left};
+                    let right=if *right_type==DataType::Null {None}else{right};
+                    let scalar=|value,kind:&DataType|if *kind==DataType::Null {ScalarValue::Null}else{ScalarValue::Int64(value).cast_to(kind).unwrap()};
+                    let bound=bind_boundary_columns(lowered.clone(),&[("left",scalar(left,left_type)),("right",scalar(right,right_type))]);
+                    let expected=left.zip(right).map(|(a,b)|if name=="bitwise_and" {a&b}else{a|b});
+                    assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]),bound),ScalarValue::Int64(expected),"{name} {left_type:?} {right_type:?}");
+                }
+            }
+        }
+    }
+    for invalid in [DataType::UInt8,DataType::UInt64,DataType::Float64,DataType::Utf8,DataType::Boolean] {
+        for swapped in [false,true] {
+            let plan=scalar_scope(vec![Field::new("invalid",invalid.clone(),true),Field::new("valid",DataType::Int64,true)]);
+            let args=if swapped {vec![binding("valid"),binding("invalid")]}else{vec![binding("invalid"),binding("valid")]};
+            for name in ["bitwise_and","bitwise_or"] {
+                assert!(ctx.lower_sql_expr(&plan,&call(name,args.clone())).unwrap_err().to_string().contains("integral SQL types"));
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_literal_modulo_preserves_signed_remainders_and_nulls() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let plan=scalar_scope(vec![Field::new("value",DataType::Int64,true)]);
+    for name in ["mod","MOD"] {
+        for divisor in [-7_i64,-2,2,7] {
+            let lowered=ctx.lower_sql_expr(&plan,&call(name,vec![binding("value"),IrExpr::Lit(Lit::Int(divisor))])).unwrap();
+            assert!(matches!(&lowered,Expr::BinaryExpr(binary) if binary.op==Operator::Modulo));
+            for value in [None,Some(i64::MIN),Some(-9),Some(0),Some(9),Some(i64::MAX)] {
+                let bound=bind_boundary_columns(lowered.clone(),&[("value",ScalarValue::Int64(value))]);
+                assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]),bound),ScalarValue::Int64(value.map(|v|v%divisor)),"{name} {value:?} divisor={divisor}");
+            }
+        }
+    }
+}
