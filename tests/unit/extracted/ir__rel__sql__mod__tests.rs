@@ -367,3 +367,112 @@ fn duckdb_region_session_rejects_unverified_helpers_and_poisoned_sessions() {
 
 #[path = "sql_exchange_literals.rs"]
 mod exchange_literals;
+
+#[test]
+fn engine_scalar_transport_preserves_primitive_values_and_typed_nulls() {
+    let cases = vec![
+        (ScalarValue::Boolean(Some(false)), SqlValue::Bool(false)),
+        (ScalarValue::Int8(Some(i8::MIN)), SqlValue::Int(i8::MIN.into())),
+        (ScalarValue::Int16(Some(i16::MIN)), SqlValue::Int(i16::MIN.into())),
+        (ScalarValue::Int32(Some(i32::MIN)), SqlValue::Int(i32::MIN.into())),
+        (ScalarValue::Int64(Some(i64::MIN)), SqlValue::Int(i64::MIN)),
+        (ScalarValue::UInt8(Some(u8::MAX)), SqlValue::Int(u8::MAX.into())),
+        (ScalarValue::UInt16(Some(u16::MAX)), SqlValue::Int(u16::MAX.into())),
+        (ScalarValue::UInt32(Some(u32::MAX)), SqlValue::Int(u32::MAX.into())),
+        (ScalarValue::UInt64(Some(i64::MAX as u64)), SqlValue::Int(i64::MAX)),
+        (ScalarValue::Float32(Some(1.25)), SqlValue::Float(1.25)),
+        (ScalarValue::Float64(Some(-2.5)), SqlValue::Float(-2.5)),
+        (ScalarValue::Utf8(Some("雪🙂'".into())), SqlValue::Text("雪🙂'".into())),
+        (ScalarValue::LargeUtf8(Some("雪🙂'".into())), SqlValue::Text("雪🙂'".into())),
+        (ScalarValue::Utf8View(Some("雪🙂'".into())), SqlValue::Text("雪🙂'".into())),
+        (ScalarValue::Binary(Some(vec![0,255,39])), SqlValue::Binary(vec![0,255,39])),
+        (ScalarValue::LargeBinary(Some(vec![0,255,39])), SqlValue::Binary(vec![0,255,39])),
+        (ScalarValue::BinaryView(Some(vec![0,255,39])), SqlValue::Binary(vec![0,255,39])),
+        (ScalarValue::Date32(Some(0)), SqlValue::Text("1970-01-01".into())),
+    ];
+    for (value, expected) in cases {
+        let null=ScalarValue::try_from(&value.data_type()).unwrap();
+        let array=ScalarValue::iter_to_array([null.clone(),value.clone()]).unwrap();
+        assert_eq!(scalar_to_sql_value(&value).unwrap(),expected,"{value:?}");
+        assert_eq!(sql_value_from_array(array.as_ref(),1).unwrap(),expected);
+        assert_eq!(scalar_to_sql_value(&null).unwrap(),SqlValue::Null);
+        assert_eq!(sql_value_from_array(array.as_ref(),0).unwrap(),SqlValue::Null);
+    }
+    assert_eq!(scalar_to_sql_value(&ScalarValue::Null).unwrap(),SqlValue::Null);
+    for value in [i64::MAX as u64+1,u64::MAX] {
+        assert!(matches!(scalar_to_sql_value(&ScalarValue::UInt64(Some(value))),Err(SqlError::Conversion(message)) if message.contains("overflows i64")));
+    }
+    assert!(matches!(scalar_to_sql_value(&ScalarValue::TimestampNanosecond(Some(0),None)),Err(SqlError::Unsupported(message)) if message.contains("engine value of type")));
+}
+
+#[test]
+fn engine_decimal_transport_is_exact_for_every_arrow_scale() {
+    // Arrow permits negative scales down to i8::MIN. Never negate that value
+    // in i8 or pass exact fixed-point values through floating point.
+    for scale in i8::MIN..=38 {
+        for value in [0_i128,1,-1,12345,-12345,10_i128.pow(38)-1] {
+            let expected=if scale<=0 {
+                format!("{value}{}","0".repeat(-(scale as i16) as usize))
+            } else {
+                let magnitude=value.unsigned_abs();
+                let factor=10_u128.pow(scale as u32);
+                format!("{}{}.{:0width$}",if value<0 {"-"} else {""},magnitude/factor,magnitude%factor,width=scale as usize)
+            };
+            assert_eq!(rows::parse_decimal_i128(&expected,scale),Ok(value));
+            let scalar=ScalarValue::Decimal128(Some(value),38,scale);
+            assert_eq!(scalar_to_sql_value(&scalar).unwrap(),SqlValue::ExactNumber(expected.clone()),"{value} scale {scale}");
+            let array=scalar.to_array().unwrap();
+            assert_eq!(sql_value_from_array(array.as_ref(),0).unwrap(),SqlValue::ExactNumber(expected));
+            assert_eq!(scalar_to_sql_value(&ScalarValue::Decimal128(None,38,scale)).unwrap(),SqlValue::Null);
+        }
+    }
+}
+
+#[test]
+fn engine_nested_transport_distinguishes_null_empty_and_populated_lists() {
+    use arrow::array::{ArrayRef,FixedSizeListArray,Int64Array,LargeListArray,ListArray};
+    use arrow::buffer::{NullBuffer,OffsetBuffer};
+    let field=Arc::new(Field::new("item",DataType::Int64,true));
+    let values=Arc::new(Int64Array::from(vec![Some(7),None,Some(-3)])) as ArrayRef;
+    let arrays:Vec<ArrayRef>=vec![
+        Arc::new(ListArray::new(field.clone(),OffsetBuffer::new(vec![0_i32,0,0,3].into()),values.clone(),Some(NullBuffer::from(vec![false,true,true])))),
+        Arc::new(LargeListArray::new(field.clone(),OffsetBuffer::new(vec![0_i64,0,0,3].into()),values.clone(),Some(NullBuffer::from(vec![false,true,true])))),
+    ];
+    for array in arrays {
+        assert_eq!(sql_value_from_array(array.as_ref(),0).unwrap(),SqlValue::Null);
+        assert_eq!(sql_value_from_array(array.as_ref(),1).unwrap(),SqlValue::List(vec![]));
+        assert_eq!(sql_value_from_array(array.as_ref(),2).unwrap(),SqlValue::List(vec![SqlValue::Int(7),SqlValue::Null,SqlValue::Int(-3)]));
+        let outer=ListArray::new(Arc::new(Field::new("item",array.data_type().clone(),true)),OffsetBuffer::new(vec![0,3].into()),array,None);
+        assert_eq!(sql_value_from_array(&outer,0).unwrap(),SqlValue::List(vec![SqlValue::Null,SqlValue::List(vec![]),SqlValue::List(vec![SqlValue::Int(7),SqlValue::Null,SqlValue::Int(-3)])]));
+    }
+    let fixed=FixedSizeListArray::new(field,3,values,None);
+    assert_eq!(sql_value_from_array(&fixed,0).unwrap(),SqlValue::List(vec![SqlValue::Int(7),SqlValue::Null,SqlValue::Int(-3)]));
+    let null=ScalarValue::try_from(fixed.data_type()).unwrap();
+    assert_eq!(scalar_to_sql_value(&null).unwrap(),SqlValue::Null);
+}
+
+#[test]
+fn engine_nominal_and_structured_transport_retains_logical_identity() {
+    use crate::ir::functions::domain;
+    let record_type=DataType::Struct(vec![Field::new("name",DataType::Utf8,true),Field::new("amount",DataType::Int64,true)].into());
+    let record=structured::decode(&serde_json::json!({"name":"雪","amount":7}),&record_type).unwrap();
+    for value in [
+        domain::json_scalar("null").unwrap(),
+        domain::json_scalar("{\"a\":[1,null]}").unwrap(),
+        domain::scalar("cypher_integer",ScalarValue::Decimal128(Some(10_i128.pow(37)),38,0)).unwrap(),
+        domain::scalar("custom_integer",ScalarValue::Int64(None)).unwrap(),
+        record,
+    ] {
+        assert_eq!(scalar_to_sql_value(&value).unwrap(),SqlValue::Domain(value.clone()));
+        let array=value.to_array().unwrap();
+        assert_eq!(sql_value_from_array(array.as_ref(),0).unwrap(),SqlValue::Domain(value.clone()));
+        let field=Field::new("v",value.data_type(),true);
+        let decoded=rows::build_column(&field,&[vec![SqlValue::Domain(value.clone())],vec![SqlValue::Null]],0).unwrap();
+        assert_eq!(ScalarValue::try_from_array(decoded.as_ref(),0).unwrap(),value);
+        assert!(decoded.is_null(1));
+        let null=ScalarValue::try_from(&value.data_type()).unwrap();
+        if domain::descriptor(&value.data_type()).is_some() {
+            assert_eq!(scalar_to_sql_value(&null).unwrap(),SqlValue::Null);
+        }
+    }
+}

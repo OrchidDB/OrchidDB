@@ -609,7 +609,7 @@ fn nested_sql_values(outer: &dyn Array, items: ArrayRef) -> SqlResult<SqlValue> 
 #[cfg(feature = "duckdb")]
 fn render_scaled_i128(value: i128, scale: i8) -> String {
     if scale <= 0 {
-        return format!("{value}{}", "0".repeat((-scale) as usize));
+        return format!("{value}{}", "0".repeat(scale.unsigned_abs() as usize));
     }
     let negative = value.is_negative();
     let mut digits = value.unsigned_abs().to_string();
