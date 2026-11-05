@@ -141,6 +141,38 @@ fn cypher_native_boolean_lowering_preserves_three_valued_logic() {
     }
 }
 
+#[test]
+fn cypher_native_case_predicates_preserve_nulls_and_reject_truthy_coercions() {
+    use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs};
+    let graph = PropertyGraph::new();
+    let empty = scalar_scope(vec![]);
+    let plan = scalar_scope(vec![Field::new("predicate", native_values::value_type(), true)]);
+    let pack = |value: &Value| fold_cypher_boundary_expression(&empty, native_values::literal(value).unwrap());
+    for native in [false, true] {
+        let mut ctx = cypher_context(&graph);
+        ctx.options.native_values = native;
+        let expression = ctx.lower_case_condition(&plan, &binding("predicate")).unwrap();
+        let Expr::ScalarFunction(call) = expression else { panic!("expected predicate validator") };
+        let invoke = |values: Vec<ScalarValue>| {
+            let rows = values.len();
+            call.func.invoke_with_args(ScalarFunctionArgs {
+                args: vec![ColumnarValue::Array(ScalarValue::iter_to_array(values).unwrap())],
+                arg_fields: vec![Arc::new(Field::new("predicate", native_values::value_type(), true))],
+                number_rows: rows, return_field: Arc::new(Field::new("result", DataType::Boolean, true)),
+                config_options: Default::default(),
+            })
+        };
+        let output = invoke(vec![pack(&Value::Bool(true)), pack(&Value::Null), pack(&Value::Bool(false))])
+            .unwrap().into_array(3).unwrap();
+        for (row, expected) in [Some(true), None, Some(false)].into_iter().enumerate() {
+            assert_eq!(ScalarValue::try_from_array(&output, row).unwrap(), ScalarValue::Boolean(expected));
+        }
+        for invalid in [Value::Int(1), Value::String("true".into()), Value::List(vec![])] {
+            assert!(invoke(vec![pack(&invalid)]).is_err(), "must not coerce {invalid:?} to a predicate");
+        }
+    }
+}
+
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
