@@ -173,6 +173,65 @@ fn cypher_native_case_predicates_preserve_nulls_and_reject_truthy_coercions() {
     }
 }
 
+#[test]
+fn cypher_case_preserves_selected_native_and_plain_values_without_common_type_casts() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("condition", DataType::Boolean, true),
+        Field::new("native", native_values::value_type(), true), Field::new("plain", DataType::Utf8, true)]);
+    let empty = scalar_scope(vec![]);
+    for native_then in [false, true] {
+        let expression = IrExpr::Case {
+            arms: vec![(binding("condition"), binding(if native_then {"native"} else {"plain"}))],
+            otherwise: Some(Box::new(binding(if native_then {"plain"} else {"native"}))),
+        };
+        let lowered = ctx.lower_sql_expr(&plan, &expression).unwrap();
+        assert_eq!(lowered.get_type(plan.schema()).unwrap(), native_values::value_type());
+        for condition in [Some(true), Some(false), None] {
+            let bound = lowered.clone().transform_up(|expr| {
+                Ok(match &expr {
+                    Expr::Column(column) => Transformed::yes(match column.name.as_str() {
+                        "condition" => lit(ScalarValue::Boolean(condition)),
+                        "native" => native_values::literal(&Value::Long(i64::MAX)).unwrap(),
+                        "plain" => lit("other"),
+                        _ => panic!("unexpected column {column}"),
+                    }),
+                    _ => Transformed::no(expr),
+                })
+            }).unwrap().data;
+            let expected = if (condition == Some(true)) == native_then {
+                Value::Long(i64::MAX)
+            } else {Value::String("other".into())};
+            let equal = native_values::typed::call("cypher_eq", vec![bound,
+                native_values::literal(&expected).unwrap()]);
+            assert_eq!(fold_cypher_boundary_expression(&empty, equal), ScalarValue::Boolean(Some(true)),
+                "native_then={native_then}, condition={condition:?}");
+        }
+    }
+}
+
+#[test]
+fn cypher_native_case_without_else_retains_a_typed_null() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("condition", DataType::Boolean, true),
+        Field::new("native", native_values::value_type(), true)]);
+    let expression = IrExpr::Case { arms: vec![(binding("condition"), binding("native"))], otherwise: None };
+    let lowered = ctx.lower_sql_expr(&plan, &expression).unwrap();
+    for condition in [Some(false), None] {
+        let bound = lowered.clone().transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "condition" => Transformed::yes(lit(ScalarValue::Boolean(condition))),
+            Expr::Column(column) if column.name == "native" => Transformed::yes(native_values::literal(&Value::Int(7)).unwrap()),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        let result = fold_cypher_boundary_expression(&scalar_scope(vec![]), bound);
+        assert_eq!(result.data_type(), native_values::value_type());
+        assert!(result.is_null());
+    }
+}
+
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
