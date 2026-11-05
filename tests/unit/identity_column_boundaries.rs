@@ -88,3 +88,57 @@ async fn binary_identity_literals_execute_on_postgres_and_trino() {
         }
     }
 }
+
+#[test]
+fn binding_column_exclusion_preserves_neighbor_names_and_schema_order() {
+    let mut names = vec!["n".to_string(), id_col("n"), label_col("n"), node_labels_col("n"),
+        src_id_col("n"), src_label_col("n"), dst_id_col("n"), dst_label_col("n"),
+        path_len_col("n"), path_inner_col("n"), prop_col("n", "odd.property"),
+        "n2".into(), id_col("n2"), prop_col("n2", "x"), "unrelated".into()];
+    names.push(id_col("other"));
+    let plan = LogicalPlanBuilder::empty(true).project(names.iter().enumerate()
+        .map(|(i,name)| lit(i as i64).alias(name)).collect::<Vec<_>>()).unwrap().build().unwrap();
+    let columns = |expressions: Vec<Expr>| expressions.into_iter().map(|expr| {
+        let Expr::Column(column) = expr else { panic!("expected preserved column") }; column.name
+    }).collect::<Vec<_>>();
+    assert_eq!(columns(existing_columns_excluding_bindings(&plan, &["n", "other"])),
+        vec!["n2".to_string(), id_col("n2"), prop_col("n2", "x"), "unrelated".into()]);
+    assert_eq!(columns(existing_columns_excluding_bindings(&plan, &[])), names);
+    assert_eq!(columns(existing_columns_excluding_bindings(&plan, &["absent"])), names);
+}
+
+#[test]
+fn binding_duplication_preserves_encoded_values_properties_labels_and_endpoint_types() {
+    for edge in [false, true] {
+        let from = "original"; let to = "copy.with.dot";
+        let mut fields = vec![
+            lit(i64::MAX).alias(id_col(from)), lit("Person").alias(label_col(from)),
+            lit("encoded properties").alias(from),
+            lit(ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Utf8(Some("Person".into()))], &DataType::Utf8))).alias(node_labels_col(from)),
+            lit(ScalarValue::Int16(Some(7))).alias(prop_col(from, "age")),
+            lit("neighbor").alias(prop_col("original2", "age")),
+        ];
+        if edge { fields.extend([
+            lit("Source").alias(src_label_col(from)), lit(ScalarValue::Int32(Some(1))).alias(src_id_col(from)),
+            lit("Target").alias(dst_label_col(from)), lit("uuid-key").alias(dst_id_col(from)),
+        ]); }
+        let plan = LogicalPlanBuilder::empty(true).project(fields).unwrap().build().unwrap();
+        let copied = duplicate_binding_projection_only(&plan, from, to).unwrap();
+        let copied_plan = LogicalPlanBuilder::from(plan.clone()).project(copied.clone()).unwrap().build().unwrap();
+        assert_eq!(copied_plan.schema().fields().len(), if edge {9} else {5});
+        for expr in &copied {
+            let Expr::Alias(alias) = expr else { panic!("expected alias") };
+            let Expr::Column(column) = alias.expr.as_ref() else { panic!("copy must not cast values") };
+            let original_type = plan.schema().field_with_unqualified_name(&column.name).unwrap().data_type();
+            assert_eq!(copied_plan.schema().field_with_unqualified_name(&alias.name).unwrap().data_type(), original_type);
+            assert!(is_binding_column(&alias.name, to));
+        }
+        assert_eq!(has_binding_shape(&copied_plan, to), Some(if edge {BindingShape::Edge} else {BindingShape::Node}));
+        let full = LogicalPlanBuilder::from(plan.clone()).project(duplicate_binding_projection(&plan, from, to).unwrap()).unwrap().build().unwrap();
+        assert_eq!(full.schema().fields().len(), plan.schema().fields().len()+copied.len());
+        assert!(has_exact_col(&full, &prop_col("original2", "age")));
+    }
+    let scalar = value_plan(lit(1_i64));
+    let error = duplicate_binding_projection_only(&scalar, "key", "copy").unwrap_err();
+    assert!(error.to_string().contains("not an element binding"), "{error}");
+}

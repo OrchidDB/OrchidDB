@@ -381,3 +381,45 @@ async fn mapped_shared_primary_key_relationships_require_explicit_consistent_edg
         assert_eq!(id, 1);
     }
 }
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn default_host_plan_execution_preserves_transaction_visibility_types_and_empty_schema() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE people(id BIGINT, name VARCHAR); INSERT INTO people VALUES(1,'Ada'); BEGIN; INSERT INTO people VALUES(2,NULL)").unwrap();
+    let host = crate::ir::rel::host::legacy::ConnectionHost(&db);
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("people", Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, true), Field::new("name", DataType::Utf8, true),
+    ])));
+    let plan = mapping.plan_sql("SELECT id, name FROM people ORDER BY id").unwrap();
+    let (batch, queries) = host.execute_plan(&mapping, plan.clone()).unwrap();
+    assert_eq!(batch.num_rows(), 2);
+    assert_eq!(batch.schema().field(0).data_type(), &DataType::Int64);
+    assert_eq!(ScalarValue::try_from_array(batch.column(0), 1).unwrap(), ScalarValue::Int64(Some(2)));
+    assert!(ScalarValue::try_from_array(batch.column(1), 1).unwrap().is_null());
+    assert_eq!(queries.len(), 1);
+    assert!(queries[0].contains("people"));
+    let empty = mapping.plan_sql("SELECT id, name FROM people WHERE false").unwrap();
+    let (empty, _) = host.execute_plan(&mapping, empty).unwrap();
+    assert_eq!(empty.num_rows(), 0);
+    assert_eq!(empty.schema().fields(), batch.schema().fields());
+    db.execute_batch("ROLLBACK").unwrap();
+    let (after, _) = host.execute_plan(&mapping, plan).unwrap();
+    assert_eq!(after.num_rows(), 1);
+    assert_eq!(ScalarValue::try_from_array(after.column(0), 0).unwrap(), ScalarValue::Int64(Some(1)));
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn default_host_plan_execution_propagates_storage_errors_without_creating_sources() {
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    let host = crate::ir::rel::host::legacy::ConnectionHost(&db);
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("missing_source", Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, true)])));
+    let plan = mapping.plan_sql("SELECT id FROM missing_source").unwrap();
+    let error = host.execute_plan(&mapping, plan).unwrap_err();
+    assert!(error.contains("missing_source") && error.contains("does not exist"), "{error}");
+    let count: i64 = db.query_row("SELECT count(*) FROM duckdb_tables() WHERE table_name='missing_source'", [], |r| r.get(0)).unwrap();
+    assert_eq!(count, 0);
+}
