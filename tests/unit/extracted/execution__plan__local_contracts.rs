@@ -615,3 +615,111 @@ fn prepared_continuations_require_one_schema_matching_result_leaf() {
         }
     }
 }
+
+#[test]
+fn shared_apply_occurrences_are_reused_only_in_the_same_binding_scope() {
+    use datafusion::logical_expr::lit;
+    let request:CompileRequest=serde_json::from_value(serde_json::json!({
+        "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]
+    })).unwrap();
+    let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
+        plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+    let base=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("v")]).unwrap().build().unwrap();
+    let shared=LogicalPlanBuilder::from(base.clone()).alias("__w_sql_cte_apply_row_7").unwrap().build().unwrap();
+    let first=builder.lower(&shared).unwrap();
+    let size=builder.plan.nodes.len();
+    assert_eq!(builder.lower(&shared).unwrap(),first);
+    assert_eq!(builder.plan.nodes.len(),size);
+    builder.bound.insert("outer_scope".into(),first);
+    let second=builder.lower(&shared).unwrap();
+    assert_ne!(first,second);
+    assert_eq!(builder.lower(&shared).unwrap(),second);
+    builder.bound.clear();
+    assert_eq!(builder.lower(&shared).unwrap(),first);
+    let ordinary=LogicalPlanBuilder::from(base).alias("ordinary_alias").unwrap().build().unwrap();
+    let one=builder.lower(&ordinary).unwrap();
+    let two=builder.lower(&ordinary).unwrap();
+    assert_ne!(one,two,"ordinary aliases must not acquire occurrence sharing implicitly");
+    assert_eq!(builder.shared_occurrences.len(),2);
+}
+
+#[test]
+fn trino_source_graph_results_decode_only_graph_columns() {
+    use crate::ir::{PropertyGraph,Row,value::Value,policy::{GraphPlanPolicy,ResultForm}};
+    use crate::ir::rel::native_values;
+    let graph=PropertyGraph::new();
+    let node=graph.insert_node("Person",BTreeMap::new());
+    let fields=vec!["entity".to_owned(),"number".to_owned()];
+    let rows=vec![Row::new().with("entity",node).with("number",Value::Int(7))];
+    let batch=native_values::result_batch(&fields,ResultForm::RowSet,&rows,&graph,&GraphPlanPolicy::cypher()).unwrap();
+    // The native result helper wraps every field; construct a genuinely mixed
+    // schema so only the graph carrier needs the Trino decode operation.
+    let batch=RecordBatch::try_from_iter(vec![("entity",batch.column(0).clone()),
+        ("number",Arc::new(Int64Array::from(vec![7])) as ArrayRef)]).unwrap();
+    let table=datafusion::datasource::MemTable::try_new(batch.schema(),vec![vec![batch]]).unwrap();
+    let plan=LogicalPlanBuilder::scan("source",datafusion::datasource::provider_as_source(Arc::new(table)),None).unwrap().build().unwrap();
+    let request:CompileRequest=serde_json::from_value(serde_json::json!({
+        "version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]
+    })).unwrap();
+    for dialect in ["postgres","duckdb","trino"] {
+        let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],
+            plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+        let result=builder.source_sql(&plan,"db".into(),dialect.into(),"SELECT entity, number FROM source".into()).unwrap();
+        assert!(matches!(&builder.plan.nodes[0].operation,Operation::SourceSql {dialect:actual,..} if actual==dialect));
+        assert_eq!(builder.plan.nodes[result].columns.len(),2);
+        if dialect=="trino" {
+            assert_eq!(result,1);
+            let Operation::LocalProject {input,expressions}=&builder.plan.nodes[result].operation else {panic!("Trino graph decode required")};
+            assert_eq!(*input,0);
+            assert!(matches!(&expressions[0],LocalExpr::GraphElement {input,..} if matches!(input.as_ref(),LocalExpr::Column {index:0})));
+            assert!(matches!(&expressions[1],LocalExpr::Column {index:1}));
+        } else {assert_eq!(result,0);assert_eq!(builder.plan.nodes.len(),1);}
+    }
+}
+
+#[test]
+fn source_request_validation_rejects_ambiguous_tables_and_unknown_owners() {
+    let base=serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1",
+        "sources":{"db":{"adapter":"postgres"}},"tables":[]});
+    for (tables,expected) in [
+        (serde_json::json!([{"name":"items","columns":[]}]),"requires an explicit source"),
+        (serde_json::json!([{"name":"items","engine":"missing","columns":[]}]),"unknown source missing"),
+        (serde_json::json!([{"name":"items","engine":"db","columns":[]},{"name":"\"items\"","engine":"db","columns":[]}]),"duplicate SQL table identity"),
+    ] {
+        let mut request=base.clone();request["tables"]=tables;
+        let request:CompileRequest=serde_json::from_value(request).unwrap();
+        assert!(validate_request(&request).unwrap_err().contains(expected));
+    }
+    for (sources,expected) in [
+        (serde_json::json!({"":{"adapter":"postgres"}}),"source name cannot be empty"),
+        (serde_json::json!({"db":{"adapter":"unknown_source_adapter"}}),"unknown source adapter"),
+    ] {
+        let mut request=base.clone();request["sources"]=sources;
+        let request:CompileRequest=serde_json::from_value(request).unwrap();
+        assert!(validate_request(&request).unwrap_err().contains(expected));
+    }
+}
+
+#[test]
+fn source_metadata_owners_validate_table_and_index_options() {
+    let base=serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1",
+        "sources":{"db":{"adapter":"postgres"}},"tables":[]});
+    for on_index in [false,true] {
+        for (options,error) in [
+            (serde_json::json!({"source":"db"}),None),
+            (serde_json::json!({"engine":"db"}),None),
+            (serde_json::json!({"source":"db","engine":"missing"}),None),
+            (serde_json::json!({"source":"missing"}),Some("unknown source metadata owner missing")),
+            (serde_json::json!({"engine":42}),Some("source metadata owner must be a string")),
+            (serde_json::json!({"source":null}),Some("source metadata owner must be a string")),
+        ] {
+            let metadata=if on_index {serde_json::json!({"table":"items","indexes":[{"column":"v","metric":"cosine","options":options}]})}
+                else {serde_json::json!({"table":"items","options":options})};
+            let mut request=base.clone();request["source_metadata"]=serde_json::json!([metadata]);
+            let request:CompileRequest=serde_json::from_value(request).unwrap();
+            let result=validate_request(&request);
+            if let Some(expected)=error {assert_eq!(result.unwrap_err(),expected);}
+            else {result.unwrap();}
+        }
+    }
+}
