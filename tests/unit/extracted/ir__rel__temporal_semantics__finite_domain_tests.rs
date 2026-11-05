@@ -312,3 +312,81 @@ async fn direct_finite_temporal_order_preserves_duplicates_nulls_and_property_bi
     assert!(finite_order_key(&context,&mixed,&IrExpr::binding("value")).is_none());
     assert!(finite_order_key(&context,&mixed,&IrExpr::binding("missing")).is_none());
 }
+
+#[tokio::test]
+async fn finite_temporal_comparisons_and_components_execute_with_nulls() {
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let date = |text| crate::ir::temporal::transport::encoded_scalar(&crate::ir::temporal::parse("date",text).unwrap()).unwrap();
+    let a = date("2000-01-01"); let b = date("2001-01-01");
+    let null = ScalarValue::try_from(&a.data_type()).unwrap();
+    let mut inputs = [(a.clone(),b.clone()),(b.clone(),a.clone()),(null.clone(),a.clone()),(a.clone(),null)]
+        .into_iter().map(|(a,b)|LogicalPlanBuilder::empty(true).project(vec![lit(a).alias("a"),lit(b).alias("b")]).unwrap().build().unwrap());
+    let mut input = inputs.next().unwrap();
+    for next in inputs {input=LogicalPlanBuilder::from(input).union(next).unwrap().build().unwrap();}
+    for (op,name,expected) in [
+        (crate::ir::expr::BinaryOp::Eq,"cypher_eq",[false,false]),
+        (crate::ir::expr::BinaryOp::Neq,"cypher_neq",[true,true]),
+        (crate::ir::expr::BinaryOp::Lt,"cypher_lt",[true,false]),
+        (crate::ir::expr::BinaryOp::Lte,"cypher_lte",[true,false]),
+        (crate::ir::expr::BinaryOp::Gt,"cypher_gt",[false,true]),
+        (crate::ir::expr::BinaryOp::Gte,"cypher_gte",[false,true]),
+    ] {
+        for expr in [IrExpr::Binary {op,lhs:Box::new(IrExpr::binding("a")),rhs:Box::new(IrExpr::binding("b"))},IrExpr::Call {name:name.into(),args:vec![IrExpr::binding("a"),IrExpr::binding("b")]}] {
+            let lowered=lower_finite(&context,&input,&expr).unwrap();
+            let plan=LogicalPlanBuilder::from(input.clone()).project(vec![lowered.alias("result")]).unwrap().build().unwrap();
+            let batches=crate::ir::rel::execute_test_plan(plan).await.unwrap();
+            let actual=batches.iter().flat_map(|batch|(0..batch.num_rows()).map(|i|ScalarValue::try_from_array(batch.column(0),i).unwrap())).collect::<Vec<_>>();
+            assert_eq!(actual,vec![ScalarValue::Boolean(Some(expected[0])),ScalarValue::Boolean(Some(expected[1])),ScalarValue::Boolean(None),ScalarValue::Boolean(None)],"{name} {expr:?}");
+        }
+    }
+    for expr in [IrExpr::property("a","year",crate::ir::policy::PropertyMissing::NullOnMissing),IrExpr::Call {name:"cypher_subscript".into(),args:vec![IrExpr::binding("a"),IrExpr::Lit(Lit::String("year".into()))]}] {
+        let lowered=lower_finite(&context,&input,&expr).unwrap();
+        let plan=LogicalPlanBuilder::from(input.clone()).project(vec![lowered.alias("result")]).unwrap().build().unwrap();
+        let batches=crate::ir::rel::execute_test_plan(plan).await.unwrap();
+        let actual=batches.iter().flat_map(|batch|(0..batch.num_rows()).map(|i|ScalarValue::try_from_array(batch.column(0),i).unwrap())).collect::<Vec<_>>();
+        assert_eq!(actual,vec![ScalarValue::Int64(Some(2000)),ScalarValue::Int64(Some(2001)),ScalarValue::Int64(None),ScalarValue::Int64(Some(2000))]);
+    }
+    for expr in [
+        IrExpr::binding("a"), IrExpr::Lit(Lit::Int(1)),
+        IrExpr::Binary {op:crate::ir::expr::BinaryOp::Add,lhs:Box::new(IrExpr::binding("a")),rhs:Box::new(IrExpr::binding("b"))},
+        IrExpr::Call {name:"reverse".into(),args:vec![IrExpr::binding("a")]},
+        IrExpr::Call {name:"cypher_eq".into(),args:vec![IrExpr::binding("a"),IrExpr::binding("missing")]},
+    ] {assert!(lower_finite(&context,&input,&expr).is_none(),"{expr:?}");}
+}
+
+#[test]
+fn finite_temporal_specialization_caps_cartesian_domains_and_keeps_direct_properties() {
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let date=|day|crate::ir::temporal::transport::encoded_scalar(&crate::ir::temporal::parse("date",&format!("2000-01-{day:02}")).unwrap()).unwrap();
+    for count in [8,9] {
+        let mut inputs=(0..count).map(|i|LogicalPlanBuilder::empty(true).project(vec![lit(date(i+1)).alias("a"),lit(date(i%8+1)).alias("b")]).unwrap().build().unwrap());
+        let mut plan=inputs.next().unwrap();
+        for next in inputs {plan=LogicalPlanBuilder::from(plan).union(next).unwrap().build().unwrap();}
+        let expr=IrExpr::Call {name:"cypher_lt".into(),args:vec![IrExpr::binding("a"),IrExpr::binding("b")]};
+        assert_eq!(lower_finite(&context,&plan,&expr).is_some(),count==8);
+    }
+    let name=prop_col("node","born");
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(date(1)).alias(&name)]).unwrap().build().unwrap();
+    let property=IrExpr::property("node","born",crate::ir::policy::PropertyMissing::NullOnMissing);
+    assert!(lower_finite(&context,&input,&property).is_none());
+    let expr=IrExpr::Call {name:"cypher_eq".into(),args:vec![property,IrExpr::Lit(Lit::Scalar(date(1)))]};
+    let (_,values)=finite_expression(&context,&input,&expr).unwrap();
+    assert_eq!(values,vec![ScalarValue::Boolean(Some(true))]);
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(date(1)).alias("a"),lit(1_i64).alias("number")]).unwrap().build().unwrap();
+    let expr=IrExpr::Call {name:"cypher_eq".into(),args:vec![IrExpr::binding("a"),IrExpr::binding("number")]};
+    assert!(lower_finite(&context,&input,&expr).is_none());
+}
