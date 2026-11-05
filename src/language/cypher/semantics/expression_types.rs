@@ -559,7 +559,7 @@ pub(super) fn validate_coalesce_static_types(args: &[Expr]) -> CypherPlanResult<
 }
 
 pub(super) fn validate_bool_operand(expr: &Expr) -> CypherPlanResult<()> {
-    match static_expr_type_name(expr)? {
+    match static_expr_type_name(expr) {
         Some(type_name) if type_name != "BOOL" => Err(CypherPlanError::Invalid(format!(
             "Binder exception: Expression {} has data type {type_name} but expected BOOL. Implicit cast is not supported.",
             display_literal_expr(expr)
@@ -568,33 +568,27 @@ pub(super) fn validate_bool_operand(expr: &Expr) -> CypherPlanResult<()> {
     }
 }
 
-pub(super) fn static_expr_type_name(expr: &Expr) -> CypherPlanResult<Option<String>> {
+pub(super) fn static_expr_type_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(Literal::Null) => Ok(None),
-        Expr::Literal(Literal::Bool(_)) => Ok(Some("BOOL".to_string())),
-        Expr::Literal(Literal::Integer(_)) => Ok(Some("INT64".to_string())),
-        Expr::Literal(Literal::Float(_)) => Ok(Some("DOUBLE".to_string())),
-        Expr::Literal(Literal::String(_)) => Ok(Some("STRING".to_string())),
-        Expr::List(items) if items.is_empty() => Ok(Some("INT64[]".to_string())),
-        Expr::List(items) => Ok(infer_literal_list_type(items)?
+        Expr::Literal(Literal::Null) => None,
+        Expr::Literal(Literal::Bool(_)) => Some("BOOL".to_string()),
+        Expr::Literal(Literal::Integer(_)) => Some("INT64".to_string()),
+        Expr::Literal(Literal::Float(_)) => Some("DOUBLE".to_string()),
+        Expr::Literal(Literal::String(_)) => Some("STRING".to_string()),
+        Expr::List(items) if items.is_empty() => Some("INT64[]".to_string()),
+        Expr::List(items) => Some(infer_literal_list_type(items)
             .map(|inner| format!("{}[]", inner.cypher_name()))
-            .or(Some("INT64[]".to_string()))),
-        Expr::Map(items) => Ok(Some(static_map_type_name(items)?)),
-        _ => Ok(None),
+            .unwrap_or_else(|| "INT64[]".to_string())),
+        Expr::Map(items) => Some(static_map_type_name(items)),
+        _ => None,
     }
 }
 
-pub(super) fn static_map_type_name(items: &[(String, Expr)]) -> CypherPlanResult<String> {
-    let fields = items
-        .iter()
-        .map(|(key, value)| {
-            Ok(format!(
-                "{key} {}",
-                static_expr_type_name(value)?.unwrap_or_else(|| "ANY".to_string())
-            ))
-        })
-        .collect::<CypherPlanResult<Vec<_>>>()?;
-    Ok(format!("STRUCT({})", fields.join(", ")))
+pub(super) fn static_map_type_name(items: &[(String, Expr)]) -> String {
+    let fields = items.iter().map(|(key, value)| {
+        format!("{key} {}", static_expr_type_name(value).unwrap_or_else(|| "ANY".to_string()))
+    }).collect::<Vec<_>>();
+    format!("STRUCT({})", fields.join(", "))
 }
 
 pub(super) fn validate_regexp_replace_option(option: &Expr) -> CypherPlanResult<()> {
@@ -628,37 +622,24 @@ pub(super) fn display_property_expr(expr: &Expr) -> String {
     }
 }
 
-pub(super) fn validate_literal_list_types(items: &[Expr]) -> CypherPlanResult<()> {
-    let _ = infer_literal_list_type(items)?;
-    Ok(())
-}
-
-pub(super) fn infer_literal_list_type(items: &[Expr]) -> CypherPlanResult<Option<LiteralListType>> {
+pub(super) fn infer_literal_list_type(items: &[Expr]) -> Option<LiteralListType> {
     // Infer each child once: repeating inference for preference and validation
     // makes deeply nested collection literals take exponential time.
-    let inferred = items
-        .iter()
-        .map(literal_list_type)
-        .collect::<CypherPlanResult<Vec<_>>>()?;
-    let mut expected = preferred_literal_list_type(&inferred);
+    let inferred = items.iter().map(literal_list_type).collect::<Vec<_>>();
+    let mut expected = preferred_literal_list_type(&inferred)?;
     for actual in inferred.into_iter().flatten() {
-        let Some(expected_type) = expected.as_ref() else {
-            expected = Some(actual.clone());
-            continue;
-        };
-        if expected_type.compatible_with(&actual) {
-            if matches!(expected_type, LiteralListType::EmptyList)
+        if expected.compatible_with(&actual) {
+            if matches!(expected, LiteralListType::EmptyList)
                 && matches!(actual, LiteralListType::List(_))
             {
-                expected = Some(actual);
+                expected = actual;
             }
-            continue;
+        } else {
+            // Cypher collections may contain arbitrary heterogeneous values.
+            expected = LiteralListType::Any;
         }
-        // Cypher collections contain arbitrary values. Keep a heterogeneous
-        // element type instead of rejecting a valid list at bind time.
-        expected = Some(LiteralListType::Any);
     }
-    Ok(expected)
+    Some(expected)
 }
 
 fn preferred_literal_list_type(
@@ -741,19 +722,19 @@ impl LiteralListType {
     }
 }
 
-pub(super) fn literal_list_type(expr: &Expr) -> CypherPlanResult<Option<LiteralListType>> {
+pub(super) fn literal_list_type(expr: &Expr) -> Option<LiteralListType> {
     match expr {
-        Expr::Literal(Literal::Null) => Ok(None),
-        Expr::Literal(Literal::Bool(_)) => Ok(Some(LiteralListType::Bool)),
-        Expr::Literal(Literal::Integer(_)) => Ok(Some(LiteralListType::Int)),
-        Expr::Literal(Literal::Float(_)) => Ok(Some(LiteralListType::Float)),
-        Expr::Literal(Literal::String(_)) => Ok(Some(LiteralListType::String)),
-        Expr::Map(_) => Ok(Some(LiteralListType::Map)),
-        Expr::List(items) if items.is_empty() => Ok(Some(LiteralListType::EmptyList)),
-        Expr::List(items) => Ok(infer_literal_list_type(items)?
+        Expr::Literal(Literal::Null) => None,
+        Expr::Literal(Literal::Bool(_)) => Some(LiteralListType::Bool),
+        Expr::Literal(Literal::Integer(_)) => Some(LiteralListType::Int),
+        Expr::Literal(Literal::Float(_)) => Some(LiteralListType::Float),
+        Expr::Literal(Literal::String(_)) => Some(LiteralListType::String),
+        Expr::Map(_) => Some(LiteralListType::Map),
+        Expr::List(items) if items.is_empty() => Some(LiteralListType::EmptyList),
+        Expr::List(items) => Some(infer_literal_list_type(items)
             .map(|inner| LiteralListType::List(Box::new(inner)))
-            .or(Some(LiteralListType::EmptyList))),
-        _ => Ok(None),
+            .unwrap_or(LiteralListType::EmptyList)),
+        _ => None,
     }
 }
 

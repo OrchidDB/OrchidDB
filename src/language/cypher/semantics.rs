@@ -4,7 +4,7 @@ use crate::language::cypher::planner::CypherSemanticError;
 mod expression_types;
 use expression_types::{
     projected_expr_kind, unwind_element_kind, validate_expr_kinds, validate_list_source,
-    validate_literal_list_types, validate_regexp_replace_option, validate_static_expression_types,
+    validate_regexp_replace_option, validate_static_expression_types,
 };
 mod validation;
 use validation::{
@@ -776,7 +776,6 @@ impl SemanticAnalyzer {
             {
                 validate_regexp_replace_option(&args[3])
             }
-            Expr::List(items) => validate_literal_list_types(items),
             _ => Ok(()),
         }
     }

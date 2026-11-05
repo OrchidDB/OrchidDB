@@ -107,6 +107,8 @@ fn lexical_candidate(table: &str) -> RankedJoin {
     let score=create_udf("text.bm25",vec![DataType::Utf8,DataType::Utf8],DataType::Float64,
         Volatility::Immutable,Arc::new(|_|unreachable!("SQL-only score expression")));
     search.score=score.call(vec![col("source_value"),col("target_value")]);
+    search.schema=LogicalPlanBuilder::from(search.source.as_ref().clone()).cross_join(search.target.as_ref().clone()).unwrap()
+        .project(vec![col("source_value").alias("source_value"),col("target_value").alias("target_value"),search.score.clone().alias(SCORE_COLUMN)]).unwrap().build().unwrap().schema().clone();
     search.index.as_mut().unwrap().metric=SearchMetric::Bm25;
     search.limit=3;search
 }
@@ -186,4 +188,47 @@ fn postgres_ranked_templates_preserve_metric_exactness_predicates_and_ties() {
     let search=indexed_candidate(SearchMetric::Bm25);
     assert!(postgres_template(&search).err().unwrap().to_string().contains("does not implement this metric"));
     assert!(statement(&search,SqlDialect::Postgres).err().unwrap().to_string().contains("no indexed operator"));
+}
+
+#[test]
+fn search_placement_respects_owner_format_and_execution_mode() {
+    use super::super::lowering::{LoweringContext,LoweringMode,RelationLowering};
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::resolve("trino").unwrap()] {
+        for mode in [LoweringMode::InIsland,LoweringMode::Bound] {
+            let context=LoweringContext{dialect,mode};
+            let ordinary=LogicalPlanBuilder::empty(true).build().unwrap();
+            assert!(lower_relation(&ordinary,&context).unwrap().is_none());
+            let other_extension=crate::operations::RequestResult{schema:ordinary.schema().clone()}.into_plan();
+            assert!(lower_relation(&other_extension,&context).unwrap().is_none());
+            let lance=candidate();
+            let result=lower_relation(&lance.clone().into_plan(),&context);
+            if dialect==SqlDialect::DuckDb {
+                let Some(RelationLowering::Dependent{source,schema,template})=result.unwrap() else {panic!("Lance requires bound retrieval")};
+                assert_eq!(source,lance.source);assert_eq!(schema,lance.schema);assert_eq!(template.dialect,"duckdb");
+            }else {assert!(result.err().unwrap().to_string().contains("requires DuckDB ownership"));}
+            let mut indexed=indexed_candidate(SearchMetric::L2);
+            indexed.source_metadata.as_mut().unwrap().format=Some("pgvector".into());
+            let result=lower_relation(&indexed.clone().into_plan(),&context);
+            if dialect==SqlDialect::Postgres {
+                match (mode,result.unwrap().unwrap()) {
+                    (LoweringMode::InIsland,RelationLowering::Sql(_))=>{},
+                    (LoweringMode::Bound,RelationLowering::Dependent{source,schema,template})=>{
+                        assert_eq!(source,indexed.source);assert_eq!(schema,indexed.schema);assert_eq!(template.dialect,"postgres");
+                    },
+                    _=>panic!("wrong search placement"),
+                }
+            }else {assert!(result.err().unwrap().to_string().contains("registered transformation"));}
+            indexed.source_metadata.as_mut().unwrap().format=Some("unsupported_search_format".into());
+            let error=lower_relation(&indexed.into_plan(),&context).err().unwrap().to_string();
+            assert!(error.contains("does not lower indexed access"),"{error}");
+            for metric in [SearchMetric::L2,SearchMetric::Bm25] {
+                if dialect==SqlDialect::Postgres&&metric==SearchMetric::L2 {continue;}
+                let mut native=indexed_candidate(metric);native.index=None;native.source_metadata=None;
+                let result=lower_relation(&native.clone().into_plan(),&context).unwrap().unwrap();
+                let RelationLowering::Rewrite(plan)=result else {panic!("unindexed search must lower relationally")};
+                assert_eq!(plan.schema(),&native.schema);
+                assert!(!plan.display_indent().to_string().contains("RankedSearchJoin"));
+            }
+        }
+    }
 }

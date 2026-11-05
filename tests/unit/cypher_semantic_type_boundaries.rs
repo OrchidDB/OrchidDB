@@ -61,7 +61,7 @@ fn static_type_diagnostics_preserve_nested_shapes_and_dynamic_fields() {
         ("[1,2.0]", "INT64[]"), ("[2.0,1]", "DOUBLE[]"), ("[1,'a']", "ANY[]"),
         ("{a:1,b:unknown,c:[true]}", "STRUCT(a INT64, b ANY, c BOOL[])"),
     ] {
-        assert_eq!(static_expr_type_name(&expression(text)).unwrap().as_deref(), Some(expected), "{text}");
+        assert_eq!(static_expr_type_name(&expression(text)).as_deref(), Some(expected), "{text}");
     }
     assert_eq!(display_order_expr(&expression("ID(n)")), "n._ID");
     assert_eq!(display_order_expr(&expression("id(n,m)")), "id(n,m)");
@@ -129,4 +129,47 @@ fn temporal_arithmetic_errors_name_the_actual_operand_types() {
         assert_eq!(error.classification(),Some(("SyntaxError","InvalidArgumentType")));
         assert!(error.to_string().contains(&format!("{name},BOOL")),"{error}");
     }
+}
+
+#[test]
+fn nested_binding_kind_errors_keep_the_original_property_diagnostic() {
+    let mut scope=SemanticScope::default();scope.insert("n",BindingKind::Int);
+    let baseline=validate_expr_kinds(&expression("n.value"),&scope).unwrap_err();
+    assert_eq!(baseline.classification(),Some(("TypeError","InvalidArgumentType")));
+    for text in [
+        "NOT n.value","n.value IS NULL","n.value IS NOT NULL",
+        "n.value + 1","1 + n.value","n.value STARTS WITH 'x'","'x' STARTS WITH n.value",
+        "coalesce(null,n.value)","[1,n.value]","{a:1,b:n.value}",
+        "CASE n.value WHEN 1 THEN 2 ELSE 3 END",
+        "CASE WHEN n.value THEN 1 ELSE 2 END",
+        "CASE WHEN true THEN n.value ELSE 2 END",
+        "CASE WHEN true THEN 1 ELSE n.value END",
+        "[x IN n.value | x]","[x IN [1] WHERE n.value | x]","[x IN [1] | n.value]",
+        "list_transform(n.value,x -> x)","list_transform([1],x -> n.value)",
+        "list_filter(n.value,x -> true)","list_filter([1],x -> n.value)",
+        "list_reduce(n.value,(acc,x) -> acc)","list_reduce([1],(acc,x) -> n.value)",
+        "all(x IN n.value WHERE true)","all(x IN [1] WHERE n.value)",
+        "[(a)-->(b) WHERE n.value | b]","[(a)-->(b) | n.value]",
+    ] {
+        let error=validate_expr_kinds(&expression(text),&scope).expect_err(text);
+        assert_eq!(error.classification(),baseline.classification(),"{text}: {error}");
+        assert_eq!(error.to_string(),baseline.to_string(),"{text}");
+    }
+    let invalid_collection=validate_expr_kinds(&expression("all(x IN 1 WHERE true)"),&scope).unwrap_err();
+    assert!(invalid_collection.to_string().contains("LIST was expected"),"{invalid_collection}");
+}
+
+#[test]
+fn infallible_literal_inference_preserves_unknown_and_nested_element_types() {
+    for (text, expected) in [
+        ("[null,unknown]", "INT64[]"), ("[[],[1]]", "INT64[][]"),
+        ("[[1],[]]", "INT64[][]"), ("[[null],[true]]", "BOOL[][]"),
+        ("[1,[2]]", "ANY[]"), ("[{a:1},{a:true}]", "STRUCT[]"),
+        ("[unknown,true]", "BOOL[]"), ("{x:[null,unknown],y:{z:unknown}}", "STRUCT(x INT64[], y STRUCT(z ANY))"),
+    ] {
+        assert_eq!(static_expr_type_name(&expression(text)).as_deref(),Some(expected),"{text}");
+    }
+    assert_eq!(infer_literal_list_type(&[]),None);
+    assert_eq!(infer_literal_list_type(&[expression("null"),expression("unknown")]),None);
+    assert_eq!(static_expr_type_name(&expression("unknown")),None);
 }
