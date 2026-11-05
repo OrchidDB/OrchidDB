@@ -470,3 +470,75 @@ fn cost_optimizer_preserves_error_boundaries_and_unknown_costs() {
         assert!(decisions.iter().all(|d|d.optimization!="order_pure_filters"));
     }
 }
+
+#[tokio::test]
+async fn optimizer_exposes_constant_case_guards_without_global_folding() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    crate::ir::diagnostics::without_constant_folding(async {
+        let expensive=col("x").in_list(vec![lit(1_i64),lit(2_i64),lit(3_i64),lit(4_i64)],false);
+        let selective=col("y").eq(lit(1_i64));
+        let body=expensive.and(selective);
+        for guards in [vec![],vec![lit(false)],vec![lit(ScalarValue::Boolean(None))],vec![lit(false),lit(true)]] {
+            let arms=guards.into_iter().map(|guard|(Box::new(guard),Box::new(body.clone()))).collect();
+            let guarded=Expr::Case(Case::new(None,arms,Some(Box::new(body.clone()))));
+            let plan=LogicalPlanBuilder::from(estimate_scan("source",100.0)).filter(guarded).unwrap().build().unwrap();
+            let (optimized,decisions)=super::super::optimize::optimize(plan).unwrap();
+            assert!(decisions.iter().any(|d|d.optimization=="order_pure_filters"));
+            let LogicalPlan::Filter(filter)=optimized else {panic!("filter must remain")};
+            let Expr::BinaryExpr(and)=filter.predicate else {panic!("constant CASE guard should be exposed")};
+            assert_eq!(and.op,Operator::And);
+            assert!(and.left.to_string().contains("y"));
+            assert!(and.right.to_string().contains("IN"));
+        }
+    }).await;
+}
+
+#[tokio::test]
+async fn optimizer_keeps_dynamic_and_null_case_guards_intact() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    crate::ir::diagnostics::without_constant_folding(async {
+        let body=col("x").eq(lit(1_i64)).and(col("y").eq(lit(1_i64)));
+        for expression in [
+            Expr::Case(Case::new(None,vec![(Box::new(col("x").eq(lit(1_i64))),Box::new(body.clone()))],Some(Box::new(lit(false))))),
+            Expr::Case(Case::new(None,vec![(Box::new(lit(false)),Box::new(body.clone()))],None)),
+            Expr::Case(Case::new(Some(Box::new(col("x"))),vec![(Box::new(lit(1_i64)),Box::new(body))],Some(Box::new(lit(false))))),
+        ] {
+            let plan=LogicalPlanBuilder::from(estimate_scan("source",100.0)).filter(expression).unwrap().build().unwrap();
+            let (optimized,decisions)=super::super::optimize::optimize(plan).unwrap();
+            assert!(decisions.iter().all(|d|d.optimization!="order_pure_filters"));
+            let LogicalPlan::Filter(filter)=optimized else {panic!("guard must remain")};
+            assert!(matches!(filter.predicate,Expr::Case(_)));
+        }
+    }).await;
+}
+
+#[test]
+fn optimizer_handles_null_predicates_boolean_wrappers_and_no_statistics() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let empty=LogicalPlanBuilder::empty(false).build().unwrap();
+    let (unchanged,decisions)=super::super::optimize::optimize(empty.clone()).unwrap();
+    assert_eq!(unchanged,empty);assert!(decisions.is_empty());
+    for predicate in [col("y").is_null(),col("y").is_not_null(),
+        Expr::IsTrue(Box::new(col("y").eq(lit(1_i64))))] {
+        let expensive=col("x").in_list(vec![lit(1_i64),lit(2_i64),lit(3_i64),lit(4_i64)],false);
+        let plan=LogicalPlanBuilder::from(estimate_scan("source",100.0)).filter(expensive.and(predicate)).unwrap().build().unwrap();
+        let (optimized,decisions)=super::super::optimize::optimize(plan).unwrap();
+        assert_eq!(optimized.schema().fields().len(),3);
+        assert!(decisions.iter().all(|d|d.estimated_work_after<d.estimated_work_before));
+    }
+}
+
+#[test]
+fn constant_case_selectivity_obeys_first_true_guard_and_unknown_boundaries() {
+    let columns=BTreeMap::from([("x".into(),sample())]);
+    let unknown=col("missing").eq(lit(1));
+    let case=|arms:Vec<(Expr,Expr)>,other:Option<Expr>|Expr::Case(Case::new(None,
+        arms.into_iter().map(|(a,b)|(Box::new(a),Box::new(b))).collect(),other.map(Box::new)));
+    close(selectivity(&case(vec![(lit(false),unknown.clone()),(lit(ScalarValue::Boolean(None)),unknown.clone()),
+        (lit(true),col("x").eq(lit(1))),(lit(true),unknown.clone())],Some(unknown.clone())),&columns),0.4);
+    close(selectivity(&case(vec![(lit(false),unknown.clone())],None),&columns),0.0);
+    close(selectivity(&case(vec![(lit(false),unknown.clone())],Some(lit(true))),&columns),1.0);
+    assert!(selectivity(&case(vec![(col("x").eq(lit(1)),lit(true))],Some(lit(false))),&columns).is_none());
+    assert!(selectivity(&case(vec![(lit(true),unknown.clone())],Some(lit(false))),&columns).is_none());
+    assert!(selectivity(&case(vec![(lit(false),lit(true))],Some(unknown)),&columns).is_none());
+}

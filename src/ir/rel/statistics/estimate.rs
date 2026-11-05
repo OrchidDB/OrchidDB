@@ -195,6 +195,20 @@ fn selectivity(e: &Expr, columns: &BTreeMap<String, ColumnStatistics>) -> Option
                 p.min(1.0)
             })
         }
+        Expr::Case(case) if case.expr.is_none() => {
+            // Frontend guards can remain when constant folding is disabled.
+            // Only a literal guard proves which Boolean result is selected.
+            for (when, then) in &case.when_then_expr {
+                match when.as_ref() {
+                    Expr::Literal(ScalarValue::Boolean(Some(true)), _) => {
+                        return selectivity(then, columns);
+                    }
+                    Expr::Literal(ScalarValue::Boolean(Some(false) | None), _) => {}
+                    _ => return None,
+                }
+            }
+            case.else_expr.as_deref().map(|e| selectivity(e, columns)).unwrap_or(Some(0.0))
+        }
         Expr::Not(e) => selectivity(e, columns).map(|p| 1.0 - p),
         Expr::IsTrue(e) => selectivity(e, columns),
         Expr::Literal(ScalarValue::Boolean(Some(v)), _) => Some(if *v { 1.0 } else { 0.0 }),
