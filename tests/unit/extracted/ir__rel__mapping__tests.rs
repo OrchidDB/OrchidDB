@@ -364,3 +364,177 @@ fn mapped_cypher_relationship_registration_is_atomic_and_plans_bound_arguments()
     assert_eq!(mapping.edges,edges);assert_eq!(mapping.physical_table_names(),tables);
     assert!(mapping.edge("BROKEN").is_none());
 }
+
+fn computed_boundary_mapping() -> GraphMapping {
+    use arrow::datatypes::{Field, Schema};
+    let mut mapping = GraphMapping::new();
+    for (label, table) in [("Source", "sources"), ("Target", "targets")] {
+        mapping.register_table_schema(table, Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("time", DataType::Date32, true),
+            Field::new("group", DataType::Int64, true),
+            Field::new("score", DataType::Int64, true),
+        ])));
+        mapping.map_node(NodeMapping::table(label, table, "id")
+            .property("time", "time").property("group", "group").property("score", "score"));
+    }
+    mapping
+}
+fn computed_boundary_rule() -> ComputedRelationship {
+    serde_json::from_value(serde_json::json!({"name":"LINK","source":"Source","target":"Target"})).unwrap()
+}
+
+#[test]
+fn computed_relationship_registration_rejects_invalid_definitions_without_partial_edges() {
+    use serde_json::json;
+    for (field, value, expected) in [
+        ("name", json!(""), "nonempty and unique"),
+        ("source", json!("Missing"), "unknown source label"),
+        ("target", json!("Missing"), "unknown target label"),
+        ("limit_per_source", json!(1), "requires order_by"),
+        ("properties", json!({"":"source.score"}), "property name must be nonempty"),
+        ("predicate", json!("TRUE; SELECT 1"), "trailing SQL"),
+        ("candidates", json!({"limit_per_source":1}), "requires order_by"),
+    ] {
+        let mut mapping = computed_boundary_mapping();
+        let before = mapping.to_toml();
+        let mut definition = serde_json::to_value(computed_boundary_rule()).unwrap();
+        definition[field] = value;
+        let error = mapping.map_computed_relationship(serde_json::from_value(definition).unwrap()).err().unwrap();
+        assert!(error.to_string().contains(expected), "{field}: {error}");
+        assert_eq!(mapping.to_toml(), before);
+    }
+    let mut mapping = computed_boundary_mapping();
+    mapping.map_computed_relationship(computed_boundary_rule()).unwrap();
+    let before = mapping.to_toml();
+    assert!(mapping.map_computed_relationship(computed_boundary_rule()).err().unwrap().to_string().contains("unique"));
+    assert_eq!(mapping.to_toml(), before);
+    mapping.validate_computed_relationships().unwrap();
+    for label in ["Source", "Target"] {
+        let mut mapping = computed_boundary_mapping();
+        mapping.nodes.get_mut(label).unwrap().source = MappedSource::Computed(Box::new(computed_boundary_rule()));
+        let before = mapping.node(label).unwrap().clone();
+        let error = mapping.map_computed_relationship(computed_boundary_rule()).err().unwrap();
+        assert!(error.to_string().contains("require node sources"), "{error}");
+        assert_eq!(mapping.node(label).unwrap(), &before);
+        assert!(mapping.edges.is_empty());
+    }
+}
+
+#[test]
+fn computed_relationship_as_of_rejects_competing_selection_and_unmapped_properties() {
+    use arrow::datatypes::{Field, Schema};
+    use serde_json::json;
+    let base = json!({"name":"LINK","source":"Source","target":"Target",
+        "as_of":{"source_time":"time","target_time":"time","partition_by":{"group":"group"}}});
+    for (field, value, expected) in [
+        ("order_by", json!([{"expression":"target.score"}]), "as_of owns ordering"),
+        ("limit_per_source", json!(1), "as_of owns ordering"),
+        ("candidates", json!({"limit_per_source":1,"order_by":[{"expression":"target.score"}]}), "as_of owns ordering"),
+        ("as_of", json!({"source_time":"missing","target_time":"time"}), "mapped endpoint properties"),
+        ("as_of", json!({"source_time":"time","target_time":"missing"}), "mapped endpoint properties"),
+        ("as_of", json!({"source_time":"time","target_time":"time","partition_by":{"group":"missing"}}), "mapped endpoint properties"),
+    ] {
+        let mut mapping = computed_boundary_mapping(); let before = mapping.to_toml();
+        let mut definition = base.clone(); definition[field] = value;
+        let error = mapping.map_computed_relationship(serde_json::from_value(definition).unwrap()).err().unwrap();
+        assert!(error.to_string().contains(expected), "{field}: {error}");
+        assert_eq!(mapping.to_toml(), before);
+    }
+    for kind in [DataType::Int64, DataType::Date64] {
+        let mut mapping = computed_boundary_mapping();
+        let fields = mapping.tables["targets"].schema().fields().iter().map(|field| {
+            if field.name() == "time" { Arc::new(Field::new("time", kind.clone(), true)) } else { field.clone() }
+        }).collect::<Vec<_>>();
+        mapping.register_table_schema("targets", Arc::new(Schema::new(fields)));
+        mapping.map_computed_relationship(serde_json::from_value(base.clone()).unwrap()).unwrap();
+        assert!(mapping.validate_computed_relationships().unwrap_err().to_string().contains("matching declared types"));
+    }
+    let mut mapping = computed_boundary_mapping();
+    mapping.map_computed_relationship(serde_json::from_value(base).unwrap()).unwrap();
+    mapping.validate_computed_relationships().unwrap();
+}
+
+#[test]
+fn computed_relationship_properties_resolve_dependencies_and_reject_cycles_and_collisions() {
+    use serde_json::json;
+    let mut mapping = computed_boundary_mapping();
+    let mut rule = computed_boundary_rule();
+    rule.properties = BTreeMap::from([("a".into(), "z + 1".into()), ("z".into(), "source.score + target.score".into())]);
+    mapping.map_computed_relationship(rule).unwrap();
+    mapping.validate_computed_relationships().unwrap();
+    for properties in [json!({"a":"z + 1","z":"a + 1"}), json!({"a":"target.missing"})] {
+        let mut mapping = computed_boundary_mapping();
+        let mut rule = computed_boundary_rule(); rule.properties = serde_json::from_value(properties).unwrap();
+        mapping.map_computed_relationship(rule).unwrap();
+        let error = mapping.validate_computed_relationships().unwrap_err();
+        assert!(error.to_string().contains("unresolved or cyclic relationship properties"), "{error}");
+    }
+    let mut mapping = computed_boundary_mapping(); let before = mapping.to_toml();
+    let definition = json!({"name":"LINK","source":"Source","target":"Target","properties":{"score":"source.score"},
+        "candidates":{"properties":{"score":"target.score"},"order_by":[{"expression":"target.score"}],"limit_per_source":1}});
+    let error = mapping.map_computed_relationship(serde_json::from_value(definition).unwrap()).err().unwrap();
+    assert!(error.to_string().contains("candidate and final property names must be distinct"), "{error}");
+    assert_eq!(mapping.to_toml(), before);
+}
+
+#[test]
+fn computed_relationship_functions_require_immutable_unique_definitions() {
+    use datafusion::logical_expr::{create_udf, Volatility};
+    use crate::ir::functions::logical::LogicalFunction;
+    let function = |name: &str, volatility| LogicalFunction::new(name,
+        Arc::new(create_udf("native_identity", vec![DataType::Int64], DataType::Int64,
+            volatility, Arc::new(|args| Ok(args[0].clone())))), BTreeMap::new());
+    let mut mapping = computed_boundary_mapping();
+    for volatility in [Volatility::Stable, Volatility::Volatile] {
+        let error = mapping.register_logical_function(function("custom", volatility)).err().unwrap();
+        assert!(error.to_string().contains("must be immutable"), "{error}");
+        assert!(mapping.logical_functions.is_empty());
+    }
+    mapping.register_logical_function(function("CuStOm", Volatility::Immutable)).unwrap();
+    for name in ["custom", "CUSTOM", "text.bm25"] {
+        let error = mapping.register_logical_function(function(name, Volatility::Immutable)).err().unwrap();
+        assert!(error.to_string().contains("already exists"), "{error}");
+        assert_eq!(mapping.logical_functions.len(), 1);
+    }
+    let mut rule = computed_boundary_rule();
+    rule.properties.insert("score".into(), "custom(source.score)".into());
+    mapping.map_computed_relationship(rule).unwrap();
+    mapping.validate_computed_relationships().unwrap();
+}
+
+#[test]
+fn computed_relationship_expressions_reject_aggregate_window_subquery_and_invalid_bm25_operands() {
+    for (expression, expected) in [
+        ("sum(source.score)", "must be scalar"),
+        ("row_number() OVER ()", "must be scalar"),
+        ("(SELECT 1)", "must be scalar"),
+        ("text.bm25('query', 'document')", "BM25 second argument must be target"),
+        ("text.bm25('query', source.score)", "BM25 second argument must be target"),
+        ("text.bm25('query', target.score + 1)", "BM25 second argument must be target"),
+    ] {
+        let mut mapping = computed_boundary_mapping();
+        let mut rule = computed_boundary_rule(); rule.properties.insert("score".into(), expression.into());
+        mapping.map_computed_relationship(rule).unwrap();
+        let before = mapping.to_toml();
+        let error = mapping.validate_computed_relationships().unwrap_err();
+        assert!(error.to_string().contains(expected), "{expression}: {error}");
+        assert_eq!(mapping.to_toml(), before);
+    }
+}
+
+#[test]
+fn computed_relationship_node_sources_fail_fallible_serialization_without_panicking() {
+    let cypher = serde_json::from_value(serde_json::json!({
+        "name":"LINK", "source":"Source", "target":"Target", "parameters":[],
+        "cypher":"WITH source MATCH (target:Target) RETURN target", "returns":{"target":"target","properties":{}}
+    })).unwrap();
+    for source in [MappedSource::Computed(Box::new(computed_boundary_rule())), MappedSource::Cypher(Box::new(cypher))] {
+    let mut mapping = computed_boundary_mapping();
+    mapping.map_node(NodeMapping::new("Invalid", source, "id"));
+    let error = mapping.try_to_toml().unwrap_err();
+    assert!(error.to_string().contains("node mapping `Invalid` cannot use a relationship source"), "{error}");
+    assert!(mapping.edge("LINK").is_none());
+    assert_eq!(mapping.node("Invalid").unwrap().id_column, KeyColumns::from("id"));
+    }
+}

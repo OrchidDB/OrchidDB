@@ -2132,6 +2132,11 @@ impl GraphMapping {
             out.push_str(&toml::to_string(&BTreeMap::from([("cypher_relationships",self.cypher_relationships.values().collect::<Vec<_>>())])).map_err(|e|RelError::Unsupported(format!("Cypher relationship TOML: {e}")))?);
         }
         for (label, node) in &self.nodes {
+            if matches!(node.source, MappedSource::Computed(_) | MappedSource::Cypher(_)) {
+                return Err(RelError::Unsupported(format!(
+                    "node mapping `{label}` cannot use a relationship source"
+                )));
+            }
             out.push_str(&format!("[node.{}]\n", key(label)));
             out.push_str(&source_line(&node.source));
             if !node.parameters.is_empty() { out.push_str(&format!("\nparameters = {}\n", quote(&serde_json::to_string(&node.parameters).map_err(|e| RelError::Unsupported(e.to_string()))?))); }
