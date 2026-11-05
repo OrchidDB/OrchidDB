@@ -844,3 +844,66 @@ async fn cypher_contains_function_and_operator_agree_without_constant_folding() 
         }
     }
 }
+
+#[test]
+fn cypher_native_list_casts_preserve_nulls_and_elide_matching_types() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let list = ScalarValue::List(ScalarValue::new_list_nullable(&[
+        ScalarValue::Int64(Some(11)), ScalarValue::Int64(None), ScalarValue::Int64(Some(-3)),
+    ], &DataType::Int64));
+    let item = Arc::new(Field::new("item", DataType::Int64, true));
+    for kind in [list.data_type(), DataType::LargeList(item.clone()), DataType::FixedSizeList(item, 3)] {
+        for shadow in [false, true] {
+            let column = if shadow { collections::list_shadow_col("n", "items") } else { prop_col("n", "items") };
+            let input = list.cast_to(&kind).unwrap();
+            let plan = scalar_scope(vec![Field::new(&column, kind.clone(), true)]);
+            let property = IrExpr::property("n", "items", PropertyMissing::NullOnMissing);
+            for target in ["INT64[]", "DOUBLE[]"] {
+                let args = vec![property.clone(), IrExpr::Lit(Lit::String(target.into()))];
+                let lowered = ctx.lower_list_cast(&plan, "cast", &args, target).unwrap();
+                if target == "INT64[]" && kind == list.data_type() {
+                    assert_eq!(lowered, col_exact(&column), "matching list type must not add a cast");
+                }
+                let bound = lowered.transform_up(|expr| Ok(match &expr {
+                    Expr::Column(c) if c.name == column => Transformed::yes(lit(input.clone())),
+                    _ => Transformed::no(expr),
+                })).unwrap().data;
+                let actual = fold_cypher_boundary_expression(&scalar_scope(vec![]), bound);
+                let element = if target == "INT64[]" { DataType::Int64 } else { DataType::Float64 };
+                let expected = list.cast_to(&DataType::List(Arc::new(Field::new("item", element, true)))).unwrap();
+                assert_eq!(actual, expected, "{kind:?}, shadow={shadow}, {target}");
+            }
+            let args = vec![property, IrExpr::Lit(Lit::String("UNKNOWN[]".into()))];
+            assert!(ctx.lower_list_cast(&plan, "cast", &args, "UNKNOWN[]").is_err());
+        }
+    }
+}
+
+#[test]
+fn cypher_projected_union_tag_subscripts_preserve_nullable_tags() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let tags = ScalarValue::List(ScalarValue::new_list_nullable(&[
+        ScalarValue::Utf8(Some("number".into())), ScalarValue::Utf8(None), ScalarValue::Utf8(Some("text".into())),
+    ], &DataType::Utf8));
+    let item = Arc::new(Field::new("item", DataType::Utf8, true));
+    let column = casts::value_union_tag_col("u");
+    for kind in [tags.data_type(), DataType::LargeList(item.clone()), DataType::FixedSizeList(item, 3)] {
+        let input = tags.cast_to(&kind).unwrap();
+        let plan = scalar_scope(vec![Field::new(&column, kind, true)]);
+        for alias in ["cypher_subscript", "list_extract", "list_element", "element_at"] {
+            for (index, expected) in [(0, Some("number")), (1, None), (-1, Some("text")), (3, None), (i64::MIN, None), (i64::MAX, None)] {
+                let expression = call(alias, vec![binding("u"), IrExpr::Lit(Lit::Int(index))]);
+                let lowered = ctx.lower_value_union_tag(&plan, &expression).unwrap().expect("tag list should lower");
+                let bound = lowered.transform_up(|expr| Ok(match &expr {
+                    Expr::Column(c) if c.name == column => Transformed::yes(lit(input.clone())),
+                    _ => Transformed::no(expr),
+                })).unwrap().data;
+                assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), ScalarValue::Utf8(expected.map(str::to_owned)), "{alias} index={index}");
+            }
+        }
+    }
+}

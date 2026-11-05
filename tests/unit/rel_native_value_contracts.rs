@@ -156,3 +156,37 @@ fn detached_source_identity_survives_empty_native_property_state() {
     let value = decoded.decode(&text).unwrap();
     assert_eq!(decoded.graph.element_public_id(&value), expected);
 }
+
+#[test]
+fn cypher_native_temporal_domains_validate_kind_payload_and_timestamp_scale() {
+    for (kind, text) in [
+        ("date", "2024-02-29"), ("localtime", "12:34:56.123456789"),
+        ("time", "12:34:56+01:00"), ("localdatetime", "2024-02-29T12:34:56"),
+        ("datetime", "2024-02-29T12:34:56Z"), ("duration", "P2DT3S"),
+    ] {
+        let temporal = crate::ir::temporal::parse(kind, text).unwrap();
+        let key = format!("__orchiddb_domain_cypher_temporal_{kind}");
+        for payload in [json!(temporal.encode()), serde_json::Value::Null] {
+            let expected = if payload.is_null() { Value::Null } else { Value::Temporal(temporal.clone()) };
+            assert_eq!(from_json(&json!({key.clone():payload}), &mut Context::default()).unwrap(), expected);
+        }
+        assert!(from_json(&json!({key.clone():42}), &mut Context::default()).unwrap_err().contains("Invalid temporal domain payload"));
+        let other = if kind == "date" { "localtime" } else { "date" };
+        let wrong = format!("__orchiddb_domain_cypher_temporal_{other}");
+        assert!(from_json(&json!({wrong:temporal.encode()}), &mut Context::default()).unwrap_err().contains("declared kind"));
+    }
+    let fixed = crate::ir::temporal::parse("datetime", "2024-02-29T12:34:56+01:00").unwrap();
+    assert_eq!(from_json(&json!({"__orchiddb_domain_cypher_temporal_datetime_fixed":fixed.encode()}), &mut Context::default()).unwrap(), Value::Temporal(fixed));
+    for (scale, text) in [(1,"1969-12-31T23:59:59"), (1000,"1969-12-31T23:59:59.999"),
+        (1_000_000,"1969-12-31T23:59:59.999999"), (1_000_000_000,"1969-12-31T23:59:59.999999999")] {
+        for zoned in [false, true] {
+            let text = if zoned { format!("{text}Z") } else { text.to_string() };
+            let expected = crate::ir::temporal::parse(if zoned { "datetime" } else { "localdatetime" }, &text).unwrap();
+            assert_eq!(from_json(&json!({"__orchiddb_timestamp":[-1,scale,zoned]}), &mut Context::default()).unwrap(), Value::Temporal(expected));
+        }
+    }
+    for (payload, message) in [(json!([null,1,false]),"ticks"), (json!([1,2,false]),"scale"),
+        (json!([1,1,null]),"zone"), (json!([i64::MAX,1,false]),"range")] {
+        assert!(from_json(&json!({"__orchiddb_timestamp":payload}), &mut Context::default()).unwrap_err().contains(message));
+    }
+}
