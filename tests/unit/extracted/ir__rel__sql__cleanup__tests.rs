@@ -285,3 +285,58 @@ async fn in_subquery_nullability_includes_both_operands_and_survives_optimizatio
         }
     }
 }
+
+#[tokio::test]
+async fn postgres_top_one_keeps_filtered_ordering_and_independent_top_k() {
+    use datafusion::logical_expr::ExprFunctionExt;
+    for fetch in [None,Some(2)] {
+        let input=LogicalPlanBuilder::values(vec![
+            vec![lit(1_i64),lit(3_i64)],vec![lit(1_i64),lit(1_i64)],
+            vec![lit(1_i64),lit(1_i64)],vec![lit(2_i64),lit(2_i64)],
+            vec![lit(2_i64),lit(ScalarValue::Int64(None))],
+        ]).unwrap().project(vec![col("column1").alias("g"),col("column2").alias("k")]).unwrap()
+            .sort(vec![col("k").sort(true,false)]).unwrap().build().unwrap();
+        let LogicalPlan::Sort(mut sort)=input else {panic!()};sort.fetch=fetch;
+        let input=LogicalPlanBuilder::from(LogicalPlan::Sort(sort)).filter(col("k").is_not_null()).unwrap();
+        let ordinal=datafusion::functions_window::expr_fn::row_number().partition_by(vec![col("g")])
+            .order_by(vec![col("k").sort(true,false)]).build().unwrap().alias("ordinal");
+        let plan=input.window(vec![ordinal]).unwrap().filter(col("ordinal").gt(lit(0_u64)).and(col("ordinal").lt_eq(lit(1_u64))))
+            .unwrap().build().unwrap();
+        let rewritten=super::super::postgres_top_one::rewrite(plan.clone()).unwrap();
+        assert_eq!(rewritten.schema(),plan.schema());
+        assert_ne!(rewritten,plan);
+        let mut rows=vec![];
+        for batch in crate::ir::rel::execute_test_plan(rewritten).await.unwrap() {
+            for row in 0..batch.num_rows() {
+                rows.push((0..batch.num_columns()).map(|column|
+                    ScalarValue::try_from_array(batch.column(column),row).unwrap()).collect::<Vec<_>>());
+            }
+        }
+        rows.sort_by_key(|row|match &row[0] {ScalarValue::Int64(v)=>*v,_=>panic!()});
+        let mut expected=vec![vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(1)),ScalarValue::UInt64(Some(1))]];
+        if fetch.is_none() {expected.push(vec![ScalarValue::Int64(Some(2)),ScalarValue::Int64(Some(2)),ScalarValue::UInt64(Some(1))]);}
+        assert_eq!(rows,expected,"fetch {fetch:?}");
+    }
+}
+
+#[test]
+fn postgres_top_one_rejects_other_slices_and_volatile_partition_keys() {
+    use datafusion::logical_expr::{ExprFunctionExt,Volatility,create_udf};
+    let volatile=create_udf("volatile_partition",vec![DataType::Int64],DataType::Int64,Volatility::Volatile,
+        Arc::new(|args|Ok(args[0].clone())));
+    let input=occurrences();
+    for (partition,order) in [(vec![],vec![col("value").sort(true,false)]),
+        (vec![col("value")],vec![]),
+        (vec![volatile.call(vec![col("value")])],vec![col("value").sort(true,false)])] {
+        let ordinal=datafusion::functions_window::expr_fn::row_number().partition_by(partition).order_by(order).build().unwrap().alias("ordinal");
+        let plan=LogicalPlanBuilder::from(input.clone()).window(vec![ordinal]).unwrap()
+            .filter(col("ordinal").gt(lit(0_u64)).and(col("ordinal").lt_eq(lit(1_u64)))).unwrap().build().unwrap();
+        assert_eq!(super::super::postgres_top_one::rewrite(plan.clone()).unwrap(),plan);
+    }
+    let ordinal=datafusion::functions_window::expr_fn::row_number().partition_by(vec![col("value")])
+        .order_by(vec![col("value").sort(true,false)]).build().unwrap().alias("ordinal");
+    for predicate in [col("ordinal").eq(lit(1_u64)),col("ordinal").gt(lit(1_u64)).and(col("ordinal").lt_eq(lit(2_u64)))] {
+        let plan=LogicalPlanBuilder::from(input.clone()).window(vec![ordinal.clone()]).unwrap().filter(predicate).unwrap().build().unwrap();
+        assert_eq!(super::super::postgres_top_one::rewrite(plan.clone()).unwrap(),plan);
+    }
+}

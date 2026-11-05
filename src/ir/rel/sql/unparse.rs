@@ -254,8 +254,26 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
     // A sorted join needs an explicit SELECT list. DF's unparser otherwise
     // inherits the right relation's projection and drops visible left fields
     // when it wraps ORDER BY in a derived query (composed table procedures).
+    let mut aggregate_scope = 0;
     let plan = plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Sort(mut sort) = node else { return Ok(Transformed::no(node)); };
+        if let LogicalPlan::Aggregate(aggregate) = sort.input.as_ref() {
+            let mut aggregate = aggregate.clone();
+            let names = aggregate.schema.clone();
+            for (expression, (qualifier, field)) in aggregate.group_expr.iter_mut()
+                .chain(aggregate.aggr_expr.iter_mut()).zip(names.iter())
+            {
+                let value = match expression.clone() { Expr::Alias(alias) => *alias.expr, value => value };
+                *expression = value.alias_qualified(qualifier.cloned(), field.name());
+            }
+            // Keep aggregate operands inside their input SELECT. Otherwise an
+            // enclosing projection can expand them again outside ORDER BY's
+            // derived query, where the original input columns no longer exist.
+            sort.input = Arc::new(sort_scope(LogicalPlan::Aggregate(aggregate),
+                format!("__w_sql_cte_sorted_aggregate_{aggregate_scope}"))?);
+            aggregate_scope += 1;
+            return Ok(Transformed::yes(LogicalPlan::Sort(sort)));
+        }
         if !matches!(sort.input.as_ref(), LogicalPlan::Join(_)) {
             return Ok(Transformed::no(LogicalPlan::Sort(sort)));
         }

@@ -80,3 +80,25 @@ fn bounded_and_filtered_scans_keep_their_projection_boundary() {
         assert_eq!(rewrite(plan.clone()).unwrap(), plan);
     }
 }
+
+#[test]
+fn aggregate_scan_substitution_preserves_filtered_distinct_operands_and_group_functions() {
+    use datafusion::logical_expr::ExprFunctionExt;
+    let input=LogicalPlanBuilder::from(scan()).project(vec![col("age").alias("person_age")]).unwrap().build().unwrap();
+    let function=datafusion::functions_aggregate::expr_fn::count(col("person_age"))
+        .distinct().filter(col("person_age").gt(lit(18_i64))).build().unwrap();
+    let plan=LogicalPlanBuilder::from(input).aggregate(vec![(col("person_age")+lit(1_i64)).alias("bucket")],
+        vec![function.alias("adults")]).unwrap().build().unwrap();
+    let rewritten=rewrite(plan.clone()).unwrap();
+    assert_eq!(rewritten.schema(),plan.schema());
+    let LogicalPlan::Aggregate(aggregate)=rewritten else {panic!()};
+    assert!(matches!(aggregate.input.as_ref(),LogicalPlan::TableScan(_)));
+    let Expr::Alias(alias)=&aggregate.aggr_expr[0] else {panic!()};
+    let Expr::AggregateFunction(function)=alias.expr.as_ref() else {panic!()};
+    assert!(function.params.distinct);
+    let expected=Expr::Column(aggregate.input.schema().columns()[0].clone());
+    assert_eq!(function.params.args,vec![expected.clone()]);
+    assert_eq!(function.params.filter,Some(Box::new(expected.clone().gt(lit(18_i64)))));
+    let Expr::Alias(group)=&aggregate.group_expr[0] else {panic!()};
+    assert_eq!(group.expr.as_ref(),&(expected+lit(1_i64)));
+}
