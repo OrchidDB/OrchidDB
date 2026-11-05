@@ -86,3 +86,42 @@ async fn apply_join_preparation_matches_nullable_nested_and_uncorrelated_rows() 
     let right=LogicalPlanBuilder::empty(true).project(vec![lit(2_i64).alias("output")]).unwrap().build().unwrap();
     assert!(prepare_apply_join_inputs(left,right,&["key".into()],&["output".into()]).unwrap_err().to_string().contains("dropped correlation key"));
 }
+
+#[tokio::test]
+async fn partitioned_limit_preserves_alias_wrapped_order_and_existing_internal_names() {
+    let input = LogicalPlanBuilder::values((1..=6_i64).map(|n|vec![lit((n-1)%2),lit(n)]).collect()).unwrap()
+        .project(vec![col_exact("column1").alias("g"),col_exact("column2").alias("x")]).unwrap()
+        .sort(vec![col_exact("x").sort(false,false)]).unwrap()
+        .project(vec![col_exact("g"),col_exact("x").alias("value"),
+            lit(99_i64).alias("__apply_row_number"),lit(88_i64).alias("__apply_order_ordinal")]).unwrap()
+        .alias("visible").unwrap().build().unwrap();
+    let result=partitioned_limit(input.clone(),&["g".into()],1,Some(1)).unwrap();
+    let expected_names=input.schema().fields().iter().map(|f|f.name().clone()).collect::<Vec<_>>();
+    assert_eq!(result.schema().fields().iter().map(|f|f.name().clone()).collect::<Vec<_>>(),expected_names);
+    let plan=LogicalPlanBuilder::from(result).sort(vec![col_exact("g").sort(true,false)]).unwrap().build().unwrap();
+    let batches=crate::ir::rel::execute_test_plan(plan).await.unwrap();
+    let rows=batches.iter().flat_map(|b|(0..b.num_rows()).map(|r|(0..b.num_columns()).map(|c|
+        ScalarValue::try_from_array(b.column(c),r).unwrap()).collect::<Vec<_>>())).collect::<Vec<_>>();
+    assert_eq!(rows,vec![vec![ScalarValue::Int64(Some(0)),ScalarValue::Int64(Some(3)),ScalarValue::Int64(Some(99)),ScalarValue::Int64(Some(88))],
+        vec![ScalarValue::Int64(Some(1)),ScalarValue::Int64(Some(4)),ScalarValue::Int64(Some(99)),ScalarValue::Int64(Some(88))]]);
+}
+
+#[tokio::test]
+async fn partitioned_limit_handles_identity_empty_and_unbounded_slices() {
+    let input=LogicalPlanBuilder::values((1..=4_i64).map(|n|vec![lit(n)]).collect()).unwrap()
+        .sort(vec![col_exact("column1").sort(true,false)]).unwrap().build().unwrap();
+    assert_eq!(partitioned_limit(input.clone(),&[],0,None).unwrap(),input);
+    for (offset,fetch,expected) in [(1,Some(2),vec![2,3]),(2,None,vec![3,4]),(0,Some(0),vec![]),(9,Some(1),vec![])] {
+        let result=partitioned_limit(input.clone(),&[],offset,fetch).unwrap();
+        let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+        let actual=batches.iter().flat_map(|b|b.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+        assert_eq!(actual,expected,"offset={offset}, fetch={fetch:?}");
+    }
+    let grouped=LogicalPlanBuilder::values((1..=6_i64).map(|n|vec![lit(n%2),lit(n)]).collect()).unwrap()
+        .sort(vec![col_exact("column2").sort(true,false)]).unwrap().build().unwrap();
+    let result=partitioned_limit(grouped,&["column1".into()],1,None).unwrap();
+    let result=LogicalPlanBuilder::from(result).sort(vec![col_exact("column2").sort(true,false)]).unwrap().build().unwrap();
+    let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+    let values=batches.iter().flat_map(|b|b.column(1).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+    assert_eq!(values,vec![3,4,5,6]);
+}
