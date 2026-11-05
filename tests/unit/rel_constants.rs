@@ -773,3 +773,67 @@ fn constant_temporal_dispatch_keeps_nulls_and_defers_row_dependent_inputs() {
         assert_eq!(constant_value_expr(&call(name,vec![integer(1)])).unwrap(),None);
     }
 }
+
+#[test]
+fn constant_unwind_preserves_null_empty_and_dynamic_distinctions() {
+    for outer in [false,true] {
+        let empty=if outer {vec![Value::Null]} else {vec![]};
+        for input in [IrExpr::Lit(Lit::Null),IrExpr::List(vec![]),call("cypher_range",vec![integer(2),integer(1)])] {
+            assert_eq!(constant_unwind_values(&input,outer).unwrap(),Some(empty.clone()));
+        }
+        assert_eq!(constant_unwind_values(&integer(7),outer).unwrap(),Some(vec![Value::Int(7)]));
+        assert_eq!(constant_unwind_values(&IrExpr::List(vec![integer(7),IrExpr::Lit(Lit::Null),integer(7)]),outer).unwrap(),Some(vec![Value::Int(7),Value::Null,Value::Int(7)]));
+        for input in [IrExpr::binding("items"),IrExpr::List(vec![integer(1),IrExpr::binding("item")]),call("unknown",vec![])] {
+            assert_eq!(constant_unwind_values(&input,outer).unwrap(),None);
+        }
+    }
+    for (start,stop,step,expected) in [
+        (i64::MAX-1,i64::MAX,2,vec![i64::MAX-1]),
+        (i64::MIN+1,i64::MIN,-2,vec![i64::MIN+1]),
+        (i64::MIN,i64::MAX,i64::MAX,vec![i64::MIN,-1,i64::MAX-1]),
+    ] {assert_eq!(constant_range_values(&[integer(start),integer(stop),integer(step)]).unwrap(),expected.into_iter().map(Value::Int).collect::<Vec<_>>());}
+    assert!(constant_range_values(&[integer(0),integer(100_002)]).unwrap_err().to_string().contains("too large"));
+    for args in [vec![],vec![integer(1)],vec![integer(1);4],vec![string("1"),integer(2)],vec![integer(1),string("2")],vec![integer(1),integer(2),string("1")]] {
+        assert!(constant_range_values(&args).is_err());
+    }
+}
+
+#[test]
+fn cypher_constant_maps_preserve_duplicate_policy_and_dynamic_fallbacks() {
+    let pairs=vec![string("a"),integer(1),string("a"),integer(2),string("雪"),IrExpr::Lit(Lit::Null)];
+    assert_eq!(constant_cypher_map(&pairs).unwrap(),Some(Value::Map(BTreeMap::from([("a".into(),Value::Int(2)),("雪".into(),Value::Null)]))));
+    assert_eq!(constant_cypher_map(&[]).unwrap(),Some(Value::Map(BTreeMap::new())));
+    let lists=|keys,values|vec![IrExpr::List(keys),IrExpr::List(values)];
+    assert_eq!(constant_cypher_map(&lists(vec![string("a"),string("b")],vec![integer(1),integer(2)])).unwrap(),Some(Value::Map(BTreeMap::from([("a".into(),Value::Int(1)),("b".into(),Value::Int(2))]))));
+    let error=constant_cypher_map(&lists(vec![string("a"),string("a")],vec![integer(1),integer(2)])).unwrap_err().to_string();
+    assert!(error.contains("duplicate key: a"),"{error}");
+    assert!(constant_cypher_map(&lists(vec![string("a")],vec![])).unwrap_err().to_string().contains("length mismatch"));
+    for args in [vec![string("a")],vec![integer(1),integer(2)],vec![string("a"),IrExpr::binding("value")],lists(vec![IrExpr::binding("key")],vec![integer(1)]),lists(vec![string("a")],vec![IrExpr::binding("value")])] {
+        assert_eq!(constant_cypher_map(&args).unwrap(),None);
+    }
+}
+
+#[test]
+fn constant_slice_and_index_helpers_preserve_unicode_and_boundary_semantics() {
+    let text="a雪🙂z";
+    let items=vec![Value::String("a".into()),Value::String("雪".into()),Value::String("🙂".into()),Value::String("z".into())];
+    let expressions=vec![string("a"),string("雪"),string("🙂"),string("z")];
+    for (index,position) in [(i64::MIN,None),(-5,None),(-4,Some(0)),(-1,Some(3)),(0,None),(1,Some(0)),(3,Some(2)),(4,Some(3)),(5,None),(i64::MAX,None)] {
+        let expected=position.map(|i|items[i].clone()).unwrap_or(Value::Null);
+        assert_eq!(list_element_1_based(&items,index),expected);
+        assert_eq!(string_index_1_based(text,index),expected);
+        assert_eq!(list_element_1_based_expr(&expressions,index),position.map(|i|&expressions[i]));
+        assert_eq!(string_index_1_based("",index),Value::Null);
+    }
+    for (start,end,expected) in [(Value::Null,Value::Null,"a雪🙂z"),(Value::Int(2),Value::Int(3),"雪🙂"),(Value::Int(-2),Value::Int(-1),"🙂z"),(Value::Int(i64::MIN),Value::Int(i64::MAX),"a雪🙂z"),(Value::Int(4),Value::Int(1),""),(Value::String("bad".into()),Value::String("bad".into()),"a雪🙂z")] {
+        assert_eq!(string_slice_range(text,&start,&end),expected);
+        let actual=list_slice_range(&items,&start,&end);
+        assert_eq!(actual,expected.chars().map(|c|Value::String(c.to_string())).collect::<Vec<_>>());
+    }
+    for (target,expected) in [(string(text),Some(Value::String("雪🙂".into()))),(IrExpr::List(expressions),Some(Value::List(items[1..3].to_vec()))),(IrExpr::Lit(Lit::Null),Some(Value::Null)),(integer(1),None)] {
+        assert_eq!(constant_array_slice(&[target,integer(2),integer(3)]).unwrap(),expected);
+    }
+    for args in [vec![],vec![string(text)],vec![IrExpr::binding("text"),integer(1),integer(2)],vec![string(text),IrExpr::binding("start"),integer(2)],vec![string(text),integer(1),IrExpr::binding("end")]] {
+        assert_eq!(constant_array_slice(&args).unwrap(),None);
+    }
+}
