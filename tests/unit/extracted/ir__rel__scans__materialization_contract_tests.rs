@@ -535,3 +535,92 @@ fn graph_values_lowering_rejects_width_mismatches_before_native_literals() {
         }
     }
 }
+
+#[test]
+fn nominal_property_values_preserve_domains_and_refuse_storage_coercions() {
+    use crate::ir::functions::domain;
+    for (name, storage, plain) in [
+        ("json", ScalarValue::Utf8(Some("{\"key\":1}".into())), Value::String("{\"key\":1}".into())),
+        ("cypher_integer", ScalarValue::Decimal128(Some(9007199254740993), 38, 0), Value::Long(9007199254740993)),
+    ] {
+        let scalar = domain::scalar(name, storage.clone()).unwrap();
+        let kind = scalar.data_type();
+        let null = ScalarValue::try_from(&kind).unwrap();
+        for (value, expected) in [
+            (Value::Scalar(scalar.clone()), scalar),
+            (Value::Null, null.clone()),
+            (Value::Scalar(null.clone()), null),
+        ] {
+            assert_eq!(value_to_scalar(&value, &kind, Language::Cypher).unwrap(), expected);
+        }
+        for value in [plain, Value::Scalar(storage.clone()),
+            Value::Scalar(domain::scalar("different_domain", storage).unwrap())] {
+            assert!(value_to_scalar(&value, &kind, Language::Cypher).is_err(),
+                "nominal type must not be inferred from storage: {name} {value:?}");
+        }
+    }
+}
+
+#[test]
+fn node_and_edge_overlay_materialization_preserves_nominal_values_and_missing_properties() {
+    use crate::ir::functions::domain;
+    for scalar in [domain::json_scalar("{\"key\":1}").unwrap(),
+        domain::scalar("cypher_integer", ScalarValue::Decimal128(Some(9007199254740993), 38, 0)).unwrap()] {
+        let graph = PropertyGraph::new();
+        let properties = [
+            BTreeMap::from([("payload".into(), Value::Scalar(scalar.clone()))]),
+            BTreeMap::from([("payload".into(), Value::Null)]),
+            BTreeMap::new(),
+        ];
+        let nodes: Vec<_> = properties.iter().map(|p| graph.insert_node("P", p.clone())).collect();
+        for p in &properties { graph.insert_edge("R", &nodes[0], &nodes[1], p.clone()).unwrap(); }
+        let ctx = cypher_scan_context(&graph);
+        for edge in [false, true] {
+            let definitions = if edge { ctx.edge_property_defs(&["R".into()]) } else { ctx.node_property_defs(&["P".into()]) }.unwrap();
+            assert_eq!(definitions.len(), 1);
+            assert_eq!(definitions[0].data_type, scalar.data_type());
+            let batch = if edge {
+                materialize_edge_scan_batch("v", "R", &graph.edge_ids("R"), &graph, &definitions,
+                    edge_schema("v", &definitions), Language::Cypher)
+            } else {
+                materialize_node_scan_batch("v", "P", &graph.node_ids("P").unwrap(), &graph, &definitions,
+                    node_schema("v", &definitions), Language::Cypher)
+            }.unwrap();
+            let values = batch.column_by_name(&prop_col("v", "payload")).unwrap();
+            assert_eq!(values.len(), 3);
+            assert_eq!(values.null_count(), 2);
+            assert_eq!(ScalarValue::try_from_array(values, 0).unwrap(), scalar);
+            assert!(values.is_null(1));
+            assert!(values.is_null(2));
+            let wrong_domain = domain::data_type("different_domain", domain::descriptor(&scalar.data_type()).unwrap().1.clone());
+            let ids = if edge { graph.edge_ids("R") } else { graph.node_ids("P").unwrap() };
+            assert!(materialize_property_array(&graph, edge, if edge { "R" } else { "P" },
+                &ids, "payload", &wrong_domain, Language::Cypher).is_err());
+        }
+    }
+}
+
+#[test]
+fn mixed_temporal_property_kinds_preserve_values_in_both_scan_orders() {
+    use crate::ir::temporal::{TemporalValue, transport};
+    let date = Value::Temporal(TemporalValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 2, 29).unwrap()));
+    let time = Value::Temporal(TemporalValue::LocalTime(chrono::NaiveTime::from_hms_nano_opt(12, 34, 56, 123456789).unwrap()));
+    for values in [[date.clone(), time.clone()], [time, date]] {
+        let graph = PropertyGraph::new();
+        let nodes: Vec<_> = values.iter().map(|v| graph.insert_node("P",
+            BTreeMap::from([("payload".into(), v.clone())]))).collect();
+        for value in &values { graph.insert_edge("R", &nodes[0], &nodes[1],
+            BTreeMap::from([("payload".into(), value.clone())])).unwrap(); }
+        for (edge, label) in [(false, "P"), (true, "R")] {
+            let kind = infer_element_property_type(&graph, edge, label, "payload", Language::Cypher).unwrap();
+            assert!(transport::is_type(&kind));
+            let ids = if edge { graph.edge_ids(label) } else { graph.node_ids(label).unwrap() };
+            let array = materialize_property_array(&graph, edge, label, &ids, "payload", &kind, Language::Cypher).unwrap();
+            for (row, expected) in values.iter().enumerate() {
+                let Value::Temporal(expected) = expected else { panic!() };
+                let actual = ScalarValue::try_from_array(&array, row).unwrap();
+                assert_eq!(&transport::decode(&actual).unwrap(), expected);
+            }
+        }
+    }
+}

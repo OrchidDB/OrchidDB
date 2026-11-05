@@ -1201,7 +1201,7 @@ pub(super) fn base_cell<'a>(
 /// Materialize one property column for a scan, overlay-aware.
 ///
 /// For the scalar types the runtime can read back losslessly (booleans,
-/// i32/i64, f64, strings) the effective `node_property`/`edge_property` value
+/// i32/i64, f64, strings, nominal domains) the effective `node_property`/`edge_property` value
 /// is converted into the column's exact Arrow type, so base cells keep their
 /// values and overlay writes surface with the same type. For any other base
 /// type (narrow ints, `f32`, temporals, lists, …) the raw base cell is kept
@@ -1219,7 +1219,8 @@ pub(super) fn materialize_property_array(
     let supported = matches!(
         data_type,
         DataType::Boolean | DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Utf8
-    ) || crate::ir::temporal::transport::is_type(data_type);
+    ) || crate::ir::temporal::transport::is_type(data_type)
+        || crate::ir::functions::domain::descriptor(data_type).is_some();
     let mut scalars: Vec<ScalarValue> = Vec::with_capacity(ids.len());
     for id in ids.iter().cloned() {
         let value = element_property_value(graph, is_edge, element, id.clone(), name);
