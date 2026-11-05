@@ -176,3 +176,219 @@ fn transformed_partition_pruning_is_sound_for_every_member_of_collision_groups()
         }
     }
 }
+
+fn with_source_estimates(
+    inner: Arc<dyn TableProvider>,
+    bytes: Option<f64>,
+    rows: Option<f64>,
+) -> Arc<dyn TableProvider> {
+    use crate::ir::rel::statistics::{SourceStatistics, StatisticsProvider, StatisticsSnapshot};
+    let snapshot = StatisticsSnapshot {
+        version: 1,
+        revision: "estimate-v1".into(),
+        mapping: String::new(),
+        collected_at: String::new(),
+        sources: BTreeMap::from([(
+            "source".into(),
+            SourceStatistics {
+                estimated_bytes: bytes,
+                estimated_rows: rows,
+                ..Default::default()
+            },
+        )]),
+        relationships: vec![],
+        rdf: vec![],
+        report: Default::default(),
+    };
+    StatisticsProvider::wrap(inner, Arc::new(snapshot), "source".into())
+}
+
+#[test]
+fn layout_mixed_estimates_compare_bytes_consistently() {
+    let (mut source, mut providers) = layout_fixture();
+    let mut estimated = source.layouts[0].clone();
+    estimated.table = "estimated".into();
+    estimated.partitions = None;
+    source.layouts.push(estimated);
+    providers.insert(
+        "estimated".into(),
+        with_source_estimates(providers["physical"].clone(), Some(150.1), Some(3.1)),
+    );
+    let provider = LayoutProvider::try_new(source, &providers).unwrap();
+    let (selected, decision) = provider.choose(&[]);
+    assert_eq!(
+        selected.table, "physical",
+        "unknown file counts require comparing both candidates by bytes only"
+    );
+    assert_eq!(decision.candidates[1].estimated_bytes, Some(151));
+    assert_eq!(decision.candidates[1].estimated_files, None);
+    assert!(decision.candidates[1]
+        .reason
+        .contains("collected source estimate"));
+}
+
+#[test]
+fn layout_mixed_cost_selection_is_independent_of_candidate_order() {
+    let (mut source, mut providers) = layout_fixture();
+    let metadata = source.layouts[0].clone();
+    let mut first = metadata.clone();
+    first.table = "default_estimate".into();
+    first.partitions = None;
+    let mut other = first.clone();
+    other.table = "other_estimate".into();
+    let inner = providers["physical"].clone();
+    providers.insert(
+        first.table.clone(),
+        with_source_estimates(inner.clone(), Some(150.0), Some(8.0)),
+    );
+    providers.insert(
+        other.table.clone(),
+        with_source_estimates(inner, Some(140.0), Some(8.0)),
+    );
+    source.default_table = first.table.clone();
+    for layouts in [
+        vec![first.clone(), metadata.clone(), other.clone()],
+        vec![other.clone(), metadata.clone(), first.clone()],
+        vec![metadata.clone(), first.clone(), other.clone()],
+    ] {
+        source.layouts = layouts;
+        assert_eq!(
+            LayoutProvider::try_new(source.clone(), &providers)
+                .unwrap()
+                .choose(&[])
+                .0
+                .table,
+            "physical"
+        );
+    }
+}
+
+#[test]
+fn layout_ineligible_candidates_do_not_disable_comparable_file_costs() {
+    let (mut source, mut providers) = layout_fixture();
+    let mut many_files = source.layouts[0].clone();
+    many_files.table = "many".into();
+    let p = &mut many_files.partitions.as_mut().unwrap()[0];
+    p.bytes = 50;
+    p.files = 50;
+    let mut unknown = source.layouts[0].clone();
+    unknown.table = "unknown".into();
+    unknown.partitions = None;
+    providers.insert("many".into(), providers["physical"].clone());
+    providers.insert("unknown".into(), providers["physical"].clone());
+    for generation in ["old", "v1"] {
+        unknown.generation = generation.into();
+        source.layouts = vec![
+            source.layouts[0].clone(),
+            many_files.clone(),
+            unknown.clone(),
+        ];
+        let provider = LayoutProvider::try_new(source.clone(), &providers).unwrap();
+        let (selected, decision) = provider.choose(&[]);
+        assert_eq!(
+            selected.table, "physical",
+            "ineligible candidate: {generation}"
+        );
+        assert_eq!(decision.candidates[2].estimated_bytes, None);
+        assert_eq!(
+            decision.candidates[2].reason,
+            if generation == "old" {
+                "stale generation"
+            } else {
+                "unknown statistics"
+            }
+        );
+    }
+}
+
+#[test]
+fn layout_statistics_adapter_retains_identity_and_rounds_source_estimates() {
+    let (source, mut providers) = layout_fixture();
+    let mut layout = source.layouts[0].clone();
+    layout.partitions = None;
+    layout.snapshot = "snapshot-42".into();
+    providers.insert(
+        "physical".into(),
+        with_source_estimates(providers["physical"].clone(), Some(9.1), Some(2.1)),
+    );
+    let provider = LayoutProvider::for_statistics(layout.clone(), &providers).unwrap();
+    let (_, decision) = provider.choose(&[]);
+    assert_eq!(decision.source, "physical");
+    assert_eq!(decision.snapshot, "snapshot-42");
+    assert_eq!(decision.estimated_bytes, Some(10));
+    assert_eq!(decision.estimated_files, None);
+    assert_eq!(decision.estimated_rows, Some(3));
+    providers.insert(
+        "physical".into(),
+        with_source_estimates(providers["physical"].clone(), None, None),
+    );
+    let (_, decision) = LayoutProvider::for_statistics(layout, &providers)
+        .unwrap()
+        .choose(&[]);
+    assert_eq!(decision.table, "physical");
+    assert_eq!(decision.estimated_bytes, None);
+    assert_eq!(decision.estimated_rows, None);
+}
+
+#[test]
+fn layout_validation_rejects_missing_sources_schema_changes_and_bad_bound_literals() {
+    use arrow::datatypes::{DataType, Field, Schema};
+    let (source, providers) = layout_fixture();
+    assert!(LayoutProvider::try_new(source.clone(), &BTreeMap::new())
+        .unwrap_err()
+        .to_string()
+        .contains("unregistered layout"));
+    for field in [
+        Field::new("x", DataType::Int32, true),
+        Field::new("renamed", DataType::Int64, true),
+        Field::new("x", DataType::Int64, false),
+    ] {
+        let mut providers = providers.clone();
+        let table = Arc::new(
+            datafusion::datasource::MemTable::try_new(
+                Arc::new(Schema::new(vec![field])),
+                vec![vec![]],
+            )
+            .unwrap(),
+        );
+        providers.insert("different".into(), table);
+        let mut definition = source.clone();
+        let mut other = definition.layouts[0].clone();
+        other.table = "different".into();
+        definition.layouts.push(other);
+        assert!(LayoutProvider::try_new(definition, &providers)
+            .unwrap_err()
+            .to_string()
+            .contains("canonical column"));
+    }
+    for (column, bound) in [("missing", "1"), ("x", "not a number")] {
+        let mut definition = source.clone();
+        definition.layouts[0].partitions.as_mut().unwrap()[0]
+            .bounds
+            .insert(
+                column.into(),
+                ColumnBounds {
+                    min: Some(bound.into()),
+                    max: None,
+                },
+            );
+        assert!(LayoutProvider::try_new(definition, &providers).is_err());
+    }
+}
+
+#[test]
+fn layout_partition_cost_and_rows_saturate_without_wrapping() {
+    let (source, providers) = layout_fixture();
+    let mut layout = source.layouts[0].clone();
+    let mut partition = layout.partitions.as_ref().unwrap()[0].clone();
+    partition.bytes = u64::MAX;
+    partition.delete_bytes = 1;
+    partition.files = u64::MAX;
+    partition.rows = Some(u64::MAX);
+    layout.partitions = Some(vec![partition.clone(), partition]);
+    let provider = LayoutProvider::for_statistics(layout, &providers).unwrap();
+    let (_, decision) = provider.choose(&[]);
+    assert_eq!(decision.estimated_bytes, Some(u64::MAX));
+    assert_eq!(decision.estimated_files, Some(u64::MAX));
+    assert_eq!(decision.estimated_rows, Some(u64::MAX));
+}

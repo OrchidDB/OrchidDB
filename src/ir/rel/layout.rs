@@ -252,7 +252,14 @@ impl LayoutProvider {
             })
             .collect();
         // File counts are comparable only when every eligible candidate supplies them.
-        let compare_files = self.definition.layouts.iter().all(|l| l.partitions.is_some());
+        let compare_files = self
+            .definition
+            .layouts
+            .iter()
+            .zip(&estimates)
+            .filter(|(_, estimate)| estimate.is_some())
+            .all(|(layout, _)| layout.partitions.is_some());
+        let file_weight = if compare_files { 64 * 1024_u128 } else { 0 };
         let default = self
             .definition
             .layouts
@@ -264,8 +271,8 @@ impl LayoutProvider {
         if estimates[default].is_some() {
             for (i, estimate) in estimates.iter().enumerate() {
                 if let (Some((b, f)), Some((bb, bf))) = (estimate, estimates[best]) {
-                    let cost = u128::from(*b) + u128::from(*f) * if compare_files { 64 * 1024 } else { 0 };
-                    let best_cost = u128::from(bb) + u128::from(bf) * 64 * 1024;
+                    let cost = u128::from(*b) + u128::from(*f) * file_weight;
+                    let best_cost = u128::from(bb) + u128::from(bf) * file_weight;
                     if cost < best_cost {
                         best = i;
                     }

@@ -190,3 +190,81 @@ async fn disjunction_ranges_and_partition_evolution_affect_plan_estimates() {
     );
     assert_eq!(result["layout_selections"][0]["estimated_bytes"], 1000);
 }
+
+#[tokio::test]
+async fn mixed_partition_and_collected_estimates_choose_cheaper_bytes_in_every_dialect() {
+    use arrow::datatypes::{DataType, Field, Schema};
+    use orchiddb::ir::rel::statistics::{self as stats, SourceStatistics, StatisticsSnapshot};
+    for dialect in ["duckdb", "postgres", "trino"] {
+        let mut r = request("MATCH (e:Event) RETURN e.id ORDER BY e.id");
+        r["dialect"] = json!(dialect);
+        r["logical_sources"][0]["layouts"][0]["partitions"] =
+            json!([{"spec_id":0,"bytes":100,"files":1}]);
+        r["logical_sources"][0]["layouts"][1]["partitions"] = Value::Null;
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("region", DataType::Int64, true),
+        ]);
+        let snapshot = StatisticsSnapshot {
+            version: stats::VERSION,
+            revision: "mixed-cost".into(),
+            mapping: stats::mapping_fingerprint(&r),
+            collected_at: String::new(),
+            sources: std::collections::BTreeMap::from([(
+                "by_region".into(),
+                SourceStatistics {
+                    schema: stats::schema_fingerprint(&schema),
+                    estimated_bytes: Some(150.0),
+                    estimated_rows: Some(8.0),
+                    ..Default::default()
+                },
+            )]),
+            relationships: vec![],
+            rdf: vec![],
+            report: Default::default(),
+        };
+        r["statistics"] = serde_json::to_value(snapshot).unwrap();
+        let result = compile(r).await;
+        assert_eq!(
+            result["layout_selections"][0]["table"], "by_id",
+            "{dialect}: {result}"
+        );
+        assert_eq!(
+            result["layout_selections"][0]["candidates"][1]["estimated_bytes"],
+            150
+        );
+        assert!(result["sql"].as_str().unwrap().contains("by_id"));
+    }
+}
+
+#[tokio::test]
+async fn stale_unknown_layout_cannot_change_cost_ordering_of_current_layouts() {
+    for dialect in ["duckdb", "postgres", "trino"] {
+        let mut r = request("MATCH (e:Event) RETURN e.id");
+        r["dialect"] = json!(dialect);
+        r["logical_sources"][0]["layouts"][0]["partitions"] =
+            json!([{"spec_id":0,"bytes":100,"files":1}]);
+        r["logical_sources"][0]["layouts"][1]["partitions"] =
+            json!([{"spec_id":0,"bytes":50,"files":50}]);
+        let mut stale_table = r["tables"][0].clone();
+        stale_table["name"] = json!("stale");
+        r["tables"].as_array_mut().unwrap().push(stale_table);
+        let mut stale = r["logical_sources"][0]["layouts"][0].clone();
+        stale["table"] = json!("stale");
+        stale["generation"] = json!("old");
+        stale["partitions"] = Value::Null;
+        r["logical_sources"][0]["layouts"]
+            .as_array_mut()
+            .unwrap()
+            .push(stale);
+        let result = compile(r).await;
+        assert_eq!(
+            result["layout_selections"][0]["table"], "by_id",
+            "{dialect}: {result}"
+        );
+        assert_eq!(
+            result["layout_selections"][0]["candidates"][2]["reason"],
+            "stale generation"
+        );
+    }
+}
