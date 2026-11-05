@@ -181,7 +181,24 @@ async fn zoned_datetime_literals_keep_precision_and_timezone() {
         let plan = compile(input).await.unwrap();
         let sql = source_sql(&plan);
         assert!(sql.contains("TIMESTAMP(6) WITH TIME ZONE"), "{sql}");
-        assert!(sql.contains("2026-01-02 03:04:05.123457 +00:00"), "{sql}");
+        assert!(sql.contains("2026-01-02 03:04:05.123457Z"), "{sql}");
+        assert_eq!(sql.matches("CAST(").count(), 1, "the timestamp literal needs one typed cast: {sql}");
         assert!(!sql.contains("duckdb"), "{sql}");
+    }
+}
+
+#[tokio::test]
+async fn zoned_datetime_fractional_bounds_round_in_the_comparison_direction() {
+    for (operator,bound) in [("<","123457"),("<=","123456"),(">","123456"),(">=","123457")] {
+        let query=format!("MATCH(p:Person) WHERE p.created {operator} datetime($cutoff) RETURN p.id");
+        let mut input=request(&query);
+        input["tables"][0]["columns"].as_array_mut().unwrap().push(json!({"name":"created","data_type":"timestamptz"}));
+        input["nodes"][0]["properties"]["created"]=json!("created");
+        input["parameters"]=json!({"cutoff":"2026-01-02T03:04:05.123456789Z"});
+        let sql=source_sql(&compile(input).await.unwrap());
+        assert!(sql.contains(&format!("2026-01-02 03:04:05.{bound}Z")),"{operator}: {sql}");
+        assert!(sql.contains("TIMESTAMP(6) WITH TIME ZONE"),"{sql}");
+        assert!(sql.contains(&format!("\"created\" {operator}")),"{sql}");
+        assert_eq!(sql.matches("CAST(").count(),1,"only the bound needs a cast: {sql}");
     }
 }
