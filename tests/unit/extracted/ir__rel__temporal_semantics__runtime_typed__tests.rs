@@ -113,6 +113,10 @@
                 let expected = value.component(key);
                 let sql = component_sql(kind, false, key).unwrap();
                 if matches!(expected, Value::Null) {
+                    let query = sql.replace("__arg0", &quote(&value.encode()));
+                    let actual: bool = duckdb::Connection::open_in_memory().unwrap()
+                        .query_row(&format!("SELECT ({query}) IS NULL"), [], |row| row.get(0)).unwrap();
+                    assert!(actual, "{kind} {text} {key} must remain null");
                     continue;
                 }
                 let actual = execute(&sql, &value.encode(), "")
@@ -238,4 +242,51 @@ fn timestamp_bound_rewrite_preserves_domain_and_range_guards() {
     let projected=LogicalPlanBuilder::from(plan).project(vec![col("ts"),lit(local).alias("constant")]).unwrap().build().unwrap();
     let comparison=native_timestamp_comparison_bound(&projected,BinaryOp::Eq,col("ts"),col("constant")).unwrap();
     assert_eq!(comparison,col("ts").eq(lit(ScalarValue::TimestampNanosecond(Some(0),None))));
+}
+
+#[test]
+fn native_date_components_and_calendar_arithmetic_match_temporal_reference() {
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+    for text in ["1900-02-28", "2000-02-29", "1999-12-31", "2000-01-01", "2024-03-31", "2024-12-30"] {
+        let value = crate::ir::temporal::parse("date", text).unwrap();
+        for key in ["year", "quarter", "month", "week", "weekYear", "day", "ordinalDay", "weekDay", "dayOfQuarter"] {
+            let sql = component_sql("date", true, key).unwrap().replace("__arg0", &format!("DATE {}", quote(text)));
+            let actual: i64 = conn.query_row(&format!("SELECT {sql}"), [], |row| row.get(0)).unwrap();
+            assert_eq!(Value::Int(actual), value.component(key), "{text} {key}");
+        }
+        for duration in ["P1M", "P-1M", "P1Y", "P-1DT-0.000000001S", "P1DT0.000000001S"] {
+            let duration = crate::ir::temporal::parse("duration", duration).unwrap();
+            for (op, sign) in [(BinaryOp::Add, 1), (BinaryOp::Sub, -1)] {
+                let Value::Temporal(expected) = crate::ir::temporal::arithmetic(op, &Value::Temporal(value.clone()), &Value::Temporal(duration.clone())).unwrap() else { panic!() };
+                let sql = calendar_sql("date", true, sign)
+                    .replace("__arg0", &format!("DATE {}", quote(text)))
+                    .replace("__arg1", &quote(&duration.encode()));
+                let actual: String = conn.query_row(&format!("SELECT {sql}"), [], |row| row.get(0)).unwrap();
+                assert_eq!(actual, expected.to_string(), "{text} {op:?} {duration}");
+            }
+        }
+    }
+}
+
+#[test]
+fn duration_scaling_ratio_accepts_exact_bounded_constants_only() {
+    for (value, expected) in [
+        (ScalarValue::Int64(Some(0)), Some((0, 1))),
+        (ScalarValue::Int64(Some(-1_000_000_000)), Some((-1_000_000_000, 1))),
+        (ScalarValue::Int64(Some(1_000_000_001)), None),
+        (ScalarValue::Int64(Some(i64::MIN)), None),
+        (ScalarValue::Float64(Some(-0.125)), Some((-125, 1000))),
+        (ScalarValue::Float64(Some(0.000000001)), Some((1, 1_000_000_000))),
+        (ScalarValue::Float64(Some(0.0000000001)), None),
+        (ScalarValue::Float64(Some(1e30)), None),
+        (ScalarValue::Float64(Some(f64::INFINITY)), None),
+        (ScalarValue::Float64(Some(f64::NEG_INFINITY)), None),
+        (ScalarValue::Float64(Some(f64::NAN)), None),
+        (ScalarValue::Float64(None), None),
+        (ScalarValue::Int64(None), None),
+        (ScalarValue::Utf8(Some("1.5".into())), None),
+    ] {
+        assert_eq!(numeric_ratio(&lit(value.clone())), expected, "{value:?}");
+    }
+    assert_eq!(numeric_ratio(&datafusion::prelude::col("scale")), None);
 }
