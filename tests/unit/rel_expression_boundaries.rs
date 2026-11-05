@@ -781,3 +781,66 @@ async fn cypher_parsed_extreme_subscripts_return_null_without_constant_folding()
         for row in rows { assert_eq!(row.get("value"), Value::Null, "native={native}"); }
     }
 }
+
+#[test]
+fn cypher_contains_alias_preserves_unicode_case_empty_strings_and_nulls_across_arrow_layouts() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    for left_type in [DataType::Utf8, DataType::LargeUtf8, DataType::Utf8View] {
+        for right_type in [DataType::Utf8, DataType::LargeUtf8, DataType::Utf8View] {
+            let plan = scalar_scope(vec![Field::new("left", left_type.clone(), true), Field::new("right", right_type.clone(), true)]);
+            let lowered = ctx.lower_sql_expr(&plan, &call("contains_fn", vec![binding("left"), binding("right")])).unwrap();
+            for (left, right, expected) in [
+                (Some("café猫"), Some("fé猫"), Some(true)),
+                (Some("café"), Some("FÉ"), Some(false)),
+                (Some(""), Some(""), Some(true)),
+                (Some(""), Some("x"), Some(false)),
+                (None, Some("x"), None), (Some("x"), None, None), (None, None, None),
+            ] {
+                let lhs = ScalarValue::Utf8(left.map(str::to_owned)).cast_to(&left_type).unwrap();
+                let rhs = ScalarValue::Utf8(right.map(str::to_owned)).cast_to(&right_type).unwrap();
+                let bound = lowered.clone().transform_up(|expr| Ok(match &expr {
+                    Expr::Column(column) if column.name == "left" => Transformed::yes(lit(lhs.clone())),
+                    Expr::Column(column) if column.name == "right" => Transformed::yes(lit(rhs.clone())),
+                    _ => Transformed::no(expr),
+                })).unwrap().data;
+                assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), ScalarValue::Boolean(expected), "{left_type:?}/{right_type:?}: {left:?}, {right:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_contains_alias_rejects_non_string_operands_and_invalid_arity() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    for kind in [DataType::Int64, DataType::Boolean, DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))] {
+        let plan = scalar_scope(vec![Field::new("bad", kind, true), Field::new("text", DataType::Utf8, true)]);
+        for args in [vec![binding("bad"), binding("text")], vec![binding("text"), binding("bad")]] {
+            let error = ctx.lower_sql_expr(&plan, &call("contains_fn", args)).unwrap_err();
+            assert!(error.to_string().contains("requires string operands"), "{error}");
+        }
+    }
+    for count in [0,1,3] {
+        let error = ctx.lower_sql_expr(&scalar_scope(vec![]), &call("contains_fn", vec![binding("missing");count])).unwrap_err();
+        assert!(error.to_string().contains("contains_fn arity"), "{error}");
+    }
+    let plan = scalar_scope(vec![Field::new("missing", DataType::Null, true)]);
+    assert!(ctx.lower_sql_expr(&plan, &call("contains_fn", vec![binding("missing"), IrExpr::Lit(Lit::String("x".into()))])).is_ok());
+}
+
+#[tokio::test]
+async fn cypher_contains_function_and_operator_agree_without_constant_folding() {
+    let graph = PropertyGraph::new();
+    for expression in ["contains(text,'fé')", "text CONTAINS 'fé'"] {
+        let query = format!("UNWIND ['café','CAFÉ',null] AS text RETURN {expression} AS value");
+        let plan = crate::language::cypher::preparation::prepare(&query, &Default::default(), None).unwrap();
+        for native in [false, true] {
+            let returned = crate::ir::diagnostics::without_constant_folding(async {
+                RelBackend::with_options(RelBackendOptions { native_values: native, ..Default::default() }).execute(&plan, &graph).await
+            }).await.unwrap();
+            let rows = native_values::decode_rows(&returned.batch, &returned.fields, &graph).unwrap();
+            let actual = rows.into_iter().map(|row| row.get("value")).collect::<Vec<_>>();
+            assert_eq!(actual, vec![Value::Bool(true), Value::Bool(false), Value::Null], "{expression}, native={native}");
+        }
+    }
+}
