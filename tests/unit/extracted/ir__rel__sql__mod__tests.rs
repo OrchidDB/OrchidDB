@@ -246,3 +246,63 @@ fn sql_row_reconstruction_preserves_wide_strings_and_rejects_type_mismatches() {
     assert!(rows::build_column(&Field::new("value",DataType::Duration(arrow::datatypes::TimeUnit::Second),true),&[vec![SqlValue::Int(1)]],0).unwrap_err().to_string().contains("result column"));
     assert!(rows::parse_decimal_i128("12",-1).is_err());
 }
+
+fn executor_fallback_table(name: &str) -> TableData {
+    use arrow::array::{Int64Array, StringArray};
+    let batch = RecordBatch::try_from_iter(vec![
+        ("id", Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef),
+        ("text", Arc::new(StringArray::from(vec![Some("O'Reilly 雪"), None])) as ArrayRef),
+    ]).unwrap();
+    TableData { name: name.into(), schema: batch.schema(), batches: vec![batch] }
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn executor_fallback_materializes_tables_before_setup_and_preserves_values() {
+    struct TextExecutor(DuckDbExecutor);
+    impl SqlExecutor for TextExecutor {
+        fn dialect(&self) -> SqlDialect { SqlDialect::DuckDb }
+        fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
+            self.0.run(setup, query)
+        }
+    }
+    let mut executor = TextExecutor(DuckDbExecutor::new());
+    let table = executor_fallback_table("data table");
+    let rows = executor.run_with_tables(&[table],
+        &["UPDATE \"data table\" SET id=id+10".into()],
+        "SELECT id, text FROM \"data table\" ORDER BY id").unwrap();
+    assert_eq!(rows, vec![
+        vec![SqlValue::Int(11), SqlValue::Text("O'Reilly 雪".into())],
+        vec![SqlValue::Int(12), SqlValue::Null],
+    ]);
+    assert_eq!(executor.run_with_tables(&[], &[], "SELECT count(*) FROM \"data table\"").unwrap(),
+        vec![vec![SqlValue::Int(2)]]);
+}
+
+#[test]
+fn executor_fallback_validates_all_tables_before_dispatch_and_keeps_engine_errors() {
+    struct RecordingExecutor { dialect: SqlDialect, calls: usize, setup: Vec<String> }
+    impl SqlExecutor for RecordingExecutor {
+        fn dialect(&self) -> SqlDialect { self.dialect }
+        fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
+            self.calls += 1; self.setup = setup.to_vec();
+            assert_eq!(query, "SELECT id FROM good");
+            Err(SqlError::Execution("source connection failed".into()))
+        }
+    }
+    for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres, SqlDialect::resolve("trino").unwrap()] {
+        let mut executor = RecordingExecutor { dialect, calls: 0, setup: vec![] };
+        let good = executor_fallback_table("good");
+        let invalid = TableData { name: "invalid".into(), schema: Arc::new(Schema::empty()), batches: vec![] };
+        let error = executor.run_with_tables(&[good.clone(), invalid], &["user setup".into()], "SELECT id FROM good").unwrap_err();
+        assert!(error.to_string().contains("has no columns"), "{error}");
+        assert_eq!(executor.calls, 0, "no partial materialization on generation failure");
+        let error = executor.run_with_tables(&[good], &["user setup".into()], "SELECT id FROM good").unwrap_err();
+        assert!(matches!(error, SqlError::Execution(ref message) if message == "source connection failed"));
+        assert_eq!(executor.calls, 1);
+        assert_eq!(executor.setup.len(), 3);
+        assert!(executor.setup[0].starts_with("CREATE"));
+        assert!(executor.setup[1].starts_with("INSERT INTO"));
+        assert_eq!(executor.setup[2], "user setup");
+    }
+}
