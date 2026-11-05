@@ -454,3 +454,50 @@
         }
         assert!(lower("__orchiddb_json_valid", &[expr("text_column", SqlDialect::Postgres)], SqlDialect::Postgres).is_err());
     }
+
+    #[test]
+    fn json_aggregate_signature_and_adapter_boundaries() {
+        let dialect = SqlDialect::DuckDb;
+        for source in ["__orchiddb_json_array_agg(*)", "__orchiddb_json_array_agg(v, w)", "__orchiddb_json_object_agg(k)", "__orchiddb_json_array_agg(value => v)"] {
+            let ast::Expr::Function(call) = expr(source, dialect) else { panic!() };
+            assert!(lower_function(&call, dialect).is_err(), "{source}");
+        }
+        let ast::Expr::Function(mut call) = expr("__orchiddb_json_array_agg(v)", dialect) else { panic!() };
+        call.args = ast::FunctionArguments::None;
+        assert!(lower_function(&call, dialect).is_err());
+        let ast::Expr::Function(call) = expr("ordinary_aggregate(v)", dialect) else { panic!() };
+        assert!(lower_function(&call, dialect).unwrap().is_none());
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            let args = [expr("doc", dialect), expr("'$'", dialect), expr("'list:int64'", dialect)];
+            assert!(lower("__orchiddb_json_value", &args, dialect).unwrap_err().to_string().contains("output must be scalar"));
+        }
+        let trino = SqlDialect::Custom(&super::super::trino::TRINO);
+        assert!(access_steps("doc", &[Step::Field("a".into())], trino).is_err());
+        assert!(canonical_sql("doc", trino).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL and DuckDB CLI"]
+    fn live_json_empty_constructors_and_canonical_strings() {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            let pg = dialect == SqlDialect::Postgres;
+            let ty = if pg { "JSONB" } else { "JSON" };
+            for (name, expected) in [("object", "{}"), ("array", "[]")] {
+                let lowered = render(name, &[], dialect);
+                assert_eq!(execute(&format!("SELECT {lowered};"), pg).unwrap(), expected);
+            }
+            let lowered = render("stringify", &["doc"], dialect);
+            let sql = format!("SELECT {lowered} FROM (SELECT CAST('{{\"a\":1,\"a\":2}}' AS {ty}) doc) t;");
+            assert_eq!(serde_json::from_str::<serde_json::Value>(&execute(&sql, pg).unwrap()).unwrap(), serde_json::json!({"a":2}));
+            let null_key = render("object", &["CAST(NULL AS VARCHAR)", "1"], dialect);
+            assert!(execute(&format!("SELECT {null_key};"), pg).is_err());
+            for (name, doc) in [("keys", "[]"), ("array_length", "{}") ] {
+                let lowered = render(name, &["doc"], dialect);
+                assert!(execute(&format!("SELECT {lowered} FROM (SELECT CAST('{}' AS {ty}) doc) t;", doc), pg).is_err());
+            }
+        }
+        for (input, expected) in [("{}", "true"), ("[1,]", "false"), ("NaN", "false"), ("\"NaN\"", "true")] {
+            let lowered = render("valid", &[&string(input)], SqlDialect::DuckDb);
+            assert_eq!(execute(&format!("SELECT {lowered};"), false).unwrap(), expected);
+        }
+    }
