@@ -575,3 +575,22 @@ fn duckdb_empty_vector_transport_retains_schema_and_rejects_unsupported_types() 
         assert!(super::language_vectors::arrays(&input).unwrap_err().to_string().contains("unsupported language vector type"));
     }
 }
+
+#[test]
+fn duckdb_vector_callback_preserves_lists_of_nullable_records_across_chunks() {
+    let connection=duckdb::Connection::open_in_memory().unwrap();
+    connection.register_scalar_function::<VectorTransportSnapshot>("coverage_vector_snapshot").unwrap();
+    let fields:arrow::datatypes::Fields=vec![Field::new("label",DataType::Utf8,true),Field::new("count",DataType::Int64,true)].into();
+    let record_type=DataType::Struct(fields.clone());
+    let list_type=DataType::List(Arc::new(Field::new("item",record_type.clone(),true)));
+    let sql="SELECT coverage_vector_snapshot(struct_pack(v := CASE WHEN i % 5 = 0 THEN NULL::STRUCT(label VARCHAR, count BIGINT)[] ELSE [NULL::STRUCT(label VARCHAR, count BIGINT), struct_pack(label := CASE WHEN i % 4 = 0 THEN NULL::VARCHAR ELSE '雪' || chr(0) || CAST(i AS VARCHAR) END, count := i)] END)) FROM range(5003) t(i) WHERE i % 2 = 0 ORDER BY i";
+    let expected=(0..5003_i64).filter(|i|i%2==0).map(|i| {
+        let value=if i%5==0 {ScalarValue::try_from(&list_type).unwrap()} else {
+            let label=ScalarValue::Utf8(if i%4==0 {None}else{Some(format!("雪\0{i}"))});
+            let record=ScalarValue::Struct(Arc::new(arrow::array::StructArray::new(fields.clone(),
+                vec![label.to_array().unwrap(),ScalarValue::Int64(Some(i)).to_array().unwrap()],None)));
+            ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::try_from(&record_type).unwrap(),record],&record_type))
+        };vector_record(value)
+    }).collect::<Vec<_>>();
+    assert_eq!(vector_snapshot(&connection,sql),expected);
+}
