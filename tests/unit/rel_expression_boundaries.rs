@@ -1355,3 +1355,67 @@ fn cypher_sql_coalesce_aligns_nulls_but_defers_heterogeneous_native_values() {
     let error = ctx.lower_sql_expr(&scope, &call("cypher_coalesce", vec![binding("integer"), binding("text")])).unwrap_err();
     assert!(error.to_string().contains("Heterogeneous Cypher coalesce"));
 }
+
+#[test]
+fn cypher_label_predicates_use_logical_labels_and_preserve_missing_edge_labels() {
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let list_type = DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)));
+    let node = scalar_scope(vec![
+        Field::new(id_col("n"), DataType::Int64, true),
+        Field::new(label_col("n"), DataType::Utf8, true),
+        Field::new(node_labels_col("n"), list_type, true),
+    ]);
+    let labels = ScalarValue::List(ScalarValue::new_list(
+        &[ScalarValue::Utf8(Some("Person".into())), ScalarValue::Utf8(Some("Équipe".into())),
+          ScalarValue::Utf8(Some("Person".into()))], &DataType::Utf8, true));
+    for (wanted, expected) in [("Person", true), ("Équipe", true), ("person", false), ("", false)] {
+        let expr = ctx.lower_sql_expr(&node, &call("cypher_has_label", vec![binding("n"),
+            IrExpr::Lit(Lit::String(wanted.into()))])).unwrap();
+        let bound = bind_boundary_columns(expr, &[(node_labels_col("n").as_str(), labels.clone())]);
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound),
+            ScalarValue::Boolean(Some(expected)), "{wanted}");
+    }
+    let expr = ctx.lower_sql_expr(&node, &call("cypher_labels", vec![binding("n")])).unwrap();
+    let bound = bind_boundary_columns(expr, &[(node_labels_col("n").as_str(), labels.clone())]);
+    assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), labels);
+
+    let edge = scalar_scope(vec![
+        Field::new(id_col("r"), DataType::Int64, true),
+        Field::new(label_col("r"), DataType::Utf8, true),
+        Field::new(src_id_col("r"), DataType::Int64, true),
+        Field::new(dst_id_col("r"), DataType::Int64, true),
+    ]);
+    for (label, expected) in [(Some("KNOWS"), Some(true)), (Some("knows"), Some(false)), (None, None)] {
+        let expr = ctx.lower_sql_expr(&edge, &call("cypher_has_label", vec![binding("r"),
+            IrExpr::Lit(Lit::String("KNOWS".into()))])).unwrap();
+        let bound = bind_boundary_columns(expr, &[(label_col("r").as_str(), ScalarValue::Utf8(label.map(str::to_owned)))]);
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound), ScalarValue::Boolean(expected));
+    }
+    assert!(ctx.lower_sql_expr(&edge, &call("cypher_labels", vec![binding("r")])).unwrap_err()
+        .to_string().contains("logical node label metadata"));
+}
+
+#[test]
+fn cypher_label_predicates_decline_incomplete_identity_and_dynamic_label_metadata() {
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    for fields in [vec![], vec![Field::new(id_col("n"), DataType::Int64, true)],
+        vec![Field::new(label_col("n"), DataType::Utf8, true)],
+        vec![Field::new(id_col("n"), DataType::Int64, true), Field::new(label_col("n"), DataType::Utf8, true)]] {
+        let plan = scalar_scope(fields);
+        assert!(ctx.lower_sql_expr(&plan, &call("cypher_has_label", vec![binding("n"),
+            IrExpr::Lit(Lit::String("Person".into()))])).unwrap_err().to_string()
+            .contains("logical label metadata"));
+        assert!(ctx.lower_sql_expr(&plan, &call("cypher_labels", vec![binding("n")])).unwrap_err()
+            .to_string().contains("logical node label metadata"));
+    }
+    let null_predicate = ctx.lower_sql_expr(&scalar_scope(vec![]), &call("cypher_has_label",
+        vec![IrExpr::Lit(Lit::Null), IrExpr::Lit(Lit::String("Person".into()))])).unwrap();
+    assert!(fold_cypher_boundary_expression(&scalar_scope(vec![]), null_predicate).is_null());
+    for args in [vec![IrExpr::Lit(Lit::String("not an element".into())), binding("label")],
+        vec![binding("n"), binding("label")]] {
+        assert!(ctx.lower_sql_expr(&scalar_scope(vec![]), &call("cypher_has_label", args)).unwrap_err()
+            .to_string().contains("bound element and label"));
+    }
+}
