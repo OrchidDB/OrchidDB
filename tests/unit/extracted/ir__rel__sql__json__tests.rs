@@ -397,3 +397,60 @@
             );
         }
     }
+
+    #[test]
+    #[ignore = "requires PostgreSQL and DuckDB CLI"]
+    fn live_json_typed_scalar_conversion_boundaries() {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            let pg = dialect == SqlDialect::Postgres;
+            let ty = if pg { "JSONB" } else { "JSON" };
+            for (document, target, expected) in [
+                ("true", "boolean", "true"),
+                ("false", "boolean", "false"),
+                ("1.25", "float32", "1.25"),
+                ("-2.5", "float64", "-2.5"),
+                ("9223372036854775807", "int64", "9223372036854775807"),
+                ("42", "json", "42"),
+                ("\"hello\"", "json", "\"hello\""),
+                ("null", "json", "<sql-null>"),
+                ("[]", "json", "<sql-null>"),
+                ("{}", "float64", "<sql-null>"),
+            ] {
+                let lowered = render("value", &["doc", "'$'", &string(target)], dialect);
+                let sql = format!("SELECT coalesce(CAST({lowered} AS VARCHAR),'<sql-null>') FROM (SELECT CAST({} AS {ty}) doc) t;", string(document));
+                assert_eq!(execute(&sql, pg).unwrap(), expected, "{dialect:?} {document} as {target}");
+            }
+            for (document, target) in [
+                ("1", "boolean"), ("\"true\"", "boolean"),
+                ("\"2.5\"", "float64"), ("1e100", "float32"),
+                ("1e400", "float64"), ("9223372036854775808", "int64"),
+            ] {
+                let lowered = render("value", &["doc", "'$'", &string(target)], dialect);
+                let sql = format!("SELECT {lowered} FROM (SELECT CAST({} AS {ty}) doc) t;", string(document));
+                assert!(execute(&sql, pg).is_err(), "{dialect:?} must reject {document} as {target}");
+            }
+            let exists = render("exists", &["doc", "'$.a'"], dialect);
+            let kind = render("type", &["doc", "'$.a'"], dialect);
+            for (document, expected) in [("{}", "no:missing"), ("{\"a\":null}", "yes:null"), ("{\"a\":[]}", "yes:array")] {
+                let sql = format!("SELECT (CASE WHEN {exists} THEN 'yes' ELSE 'no' END) || ':' || coalesce({kind},'missing') FROM (SELECT CAST({} AS {ty}) doc) t;", string(document));
+                assert_eq!(execute(&sql, pg).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn json_scalar_lowering_rejects_invalid_signatures() {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres] {
+            for (name, args) in [
+                ("value", vec!["doc", "'$'", "type_column"]),
+                ("value", vec!["doc", "'$'", "'unknown_type'"]),
+                ("object", vec!["'key'"]),
+                ("unknown_operation", vec!["doc"]),
+            ] {
+                let args = args.iter().map(|arg| expr(arg, dialect)).collect::<Vec<_>>();
+                assert!(lower(&format!("__orchiddb_json_{name}"), &args, dialect).is_err());
+            }
+            assert!(lower("ordinary_function", &[], dialect).unwrap().is_none());
+        }
+        assert!(lower("__orchiddb_json_valid", &[expr("text_column", SqlDialect::Postgres)], SqlDialect::Postgres).is_err());
+    }
