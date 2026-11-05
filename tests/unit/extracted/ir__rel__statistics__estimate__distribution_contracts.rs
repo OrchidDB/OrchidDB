@@ -15,6 +15,51 @@
     fn close(actual: Option<f64>, expected: f64) {
         assert!((actual.expect("known estimate")-expected).abs()<1e-12, "{actual:?} != {expected}");
     }
+
+#[test]
+fn estimator_tracks_empty_and_singleton_union_branches_without_external_statistics() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for (left,right,expected) in [(false,false,0.0),(false,true,1.0),(true,false,1.0),(true,true,2.0)] {
+        let branch=|one|LogicalPlanBuilder::empty(one).project(vec![lit(7_i64).alias("value")]).unwrap().build().unwrap();
+        let union=LogicalPlanBuilder::from(branch(left)).union(branch(right)).unwrap().build().unwrap();
+        let mut output=vec![];let state=run(&union,"0".into(),&mut output);
+        close(state.rows,expected);close(state.bytes,0.0);close(state.input,0.0);close(state.work,0.0);
+        assert!(output.is_empty(),"estimates without collected revisions must not be published");
+        let limited=LogicalPlanBuilder::from(union).limit(0,Some(1)).unwrap().build().unwrap();
+        close(run(&limited,"0".into(),&mut vec![]).rows,expected.min(1.0));
+    }
+}
+
+#[test]
+fn estimator_resolves_nested_field_statistics_and_rejects_dynamic_field_names() {
+    use datafusion::functions::core::expr_fn::get_field;
+    let columns=BTreeMap::from([("parent".into(),ColumnStatistics{list:Some(ListStatistics{
+        elements:BTreeMap::from([("child".into(),sample())]),..Default::default()}),..Default::default()})]);
+    let expression=get_field(col("parent"),"child");
+    assert_eq!(column(&expression,&columns).unwrap().nulls,2);
+    close(nonnull(&expression,&columns),0.8);
+    assert!(column(&get_field(col("parent"),"missing"),&columns).is_none());
+    assert!(column(&get_field(col("unknown"),"child"),&columns).is_none());
+    let Expr::ScalarFunction(mut function)=expression else {panic!()};
+    function.args[1]=col("dynamic_name");
+    assert!(column(&Expr::ScalarFunction(function),&columns).is_none());
+}
+
+#[test]
+fn estimator_case_nullability_respects_ordered_arms_and_null_safe_boolean_wrappers() {
+    let columns=BTreeMap::from([("x".into(),sample())]);
+    let case=Expr::Case(Case::new(None,vec![
+        (Box::new(col("x").eq(lit(1))),Box::new(lit(ScalarValue::Int64(None)))),
+        (Box::new(col("x").eq(lit(2))),Box::new(lit(9_i64)))],Some(Box::new(lit(1_i64)))));
+    close(nonnull(&case,&columns),0.6);
+    let wrapped=Expr::BinaryExpr(datafusion::logical_expr::expr::BinaryExpr::new(
+        Box::new(col("x").eq(lit(1))),Operator::IsNotDistinctFrom,Box::new(lit(true))));
+    close(selectivity(&wrapped,&columns),0.4);
+    let unknown=Expr::Case(Case::new(None,vec![(Box::new(col("missing").eq(lit(1))),Box::new(lit(1)))],None));
+    assert!(nonnull(&unknown,&columns).is_none());
+    close(nonnull(&lit(ScalarValue::Utf8(None)),&columns),0.0);
+    close(nonnull(&lit("present"),&columns),1.0);
+}
     #[test]
     fn sampled_predicates_handle_nulls_symmetry_duplicates_and_unknowns() {
         let columns = BTreeMap::from([("x".into(), sample())]);

@@ -2,6 +2,147 @@
     use super::*;
     use serde_json::json;
 
+fn generator()->Generator {
+    Generator::new(json!({"dialect":"duckdb","tables":[{"name":"items","columns":[{"name":"id","data_type":"int64"}]}]})).unwrap()
+}
+
+#[test]
+fn statistics_truncated_lists_record_original_lengths_without_inventing_observations() {
+    let mut generator=Generator::new(json!({"tables":[{"name":"items","columns":[{"name":"xs","data_type":"list:int64"}]}]})).unwrap();
+    generator.sources[0].rows=vec![BTreeMap::from([
+        ("xs".into(),json!((0..64).collect::<Vec<_>>())),
+        ("__statistics_length_xs".into(),json!(100)),
+    ]),BTreeMap::from([("xs".into(),json!([])),("__statistics_length_xs".into(),json!(0))])];
+    let snapshot=generator.finish();
+    let list=snapshot.sources["items"].columns["xs"].list.as_ref().unwrap();
+    assert_eq!(list.total_lengths,100);assert_eq!(list.observed_elements,64);
+    assert_eq!(list.empty_lists,1);assert!(list.truncated);
+}
+
+#[test]
+fn statistics_snapshot_budget_discards_distributions_then_oversized_sources() {
+    let mut generator=generator();
+    generator.sources[0].name="x".repeat(MAX_SNAPSHOT_BYTES);
+    generator.sources[0].rows=vec![BTreeMap::from([("id".into(),json!(7))])];
+    let snapshot=generator.finish();
+    assert!(!snapshot.report.complete);assert!(snapshot.sources.is_empty());
+    assert!(snapshot.report.notes.iter().any(|note|note.contains("Snapshot size budget")));
+    assert!(serde_json::to_vec(&snapshot).unwrap().len()<MAX_SNAPSHOT_BYTES);
+    snapshot.validate().unwrap();
+}
+
+#[test]
+fn statistics_sampling_scopes_catalog_names_and_uses_each_dialects_sampling_clause() {
+    for (dialect,name) in [("duckdb","\"catalog'one\".\"schema'one\".\"table'one\""),
+        ("postgres","\"schema'one\".\"table'one\"")] {
+        let mut generator=Generator::new(json!({"dialect":dialect,"tables":[{"name":name,"columns":[]}]})).unwrap();
+        let metadata=generator.next().unwrap();
+        assert!(metadata.sql.contains("'table''one'"));assert!(metadata.sql.contains("'schema''one'"));
+        if dialect=="duckdb" {assert!(metadata.sql.contains("'catalog''one'"));}
+        generator.submit(&metadata.id,vec![BTreeMap::from([("rows".into(),json!(1000000))])],None,true).unwrap();
+        let sample=generator.next().unwrap();
+        assert!(sample.sql.contains("1 AS __statistics_row"));
+        assert!(sample.sql.contains(if dialect=="duckdb" {"USING SAMPLE"}else{"TABLESAMPLE SYSTEM"}));
+        assert!(sample.sql.ends_with(&format!("LIMIT {}",sample.max_rows)));
+        assert!(sample.timeout_ms<=TIMEOUT_MS);assert!(sample.max_bytes<=1024*1024);
+    }
+}
+
+#[test]
+fn statistics_wide_sources_prioritize_graph_keys_properties_and_collection_inputs() {
+    let columns=(0..80).map(|n|json!({"name":format!("c{n}"),"data_type":"int64"})).collect::<Vec<_>>();
+    let generator=Generator::new(json!({"tables":[{"name":"items","columns":columns}],
+        "nodes":[{"table":"items","id":"c79","properties":{"value":"c78"}}],
+        "collection_sources":[{"column":"c77","parent_columns":{"parent":"c76"}}]})).unwrap();
+    let selected=generator.sources[0].selected.iter().map(|i|generator.sources[0].schema.field(*i).name().as_str()).collect::<Vec<_>>();
+    assert_eq!(selected.len(),64);
+    for field in ["c79","c78","c77","c76"] {assert!(selected.contains(&field));}
+    let snapshot=generator.finish();assert!(snapshot.report.notes.iter().any(|note|note.contains("selected 64 of 80 columns")));
+    let sources=(0..20).map(|n|json!({"name":format!("t{n}"),"columns":[]})).collect::<Vec<_>>();
+    let mut generator=Generator::new(json!({"tables":sources})).unwrap();
+    assert_eq!(generator.next().unwrap().kind,"sample","wide catalogs reserve sampling work for every source");
+}
+
+#[test]
+fn statistics_deadline_and_each_budget_stop_without_issuing_more_requests() {
+    for limit in 0..6 {
+        let mut generator=generator();
+        match limit {
+            0=>generator.started=Instant::now()-std::time::Duration::from_millis(TIMEOUT_MS+1),
+            1=>generator.report.accepted_rows=MAX_ROWS,
+            2=>generator.report.accepted_bytes=MAX_BYTES,
+            3=>generator.report.requests=MAX_REQUESTS,
+            4=>generator.elements=MAX_ELEMENTS,
+            _=>generator.retained_bytes=MAX_RETAINED_BYTES,
+        }
+        let requests=generator.report.requests;
+        assert!(generator.exhausted());assert!(generator.next().is_none());
+        assert_eq!(generator.report.requests,requests);
+        assert_eq!(generator.report.stopped,if limit==0 {"collection deadline reached"}else{"collection budget reached"});
+    }
+}
+
+#[test]
+fn statistics_pending_request_survives_wrong_receipts_and_parses_finite_metadata() {
+    let mut generator=generator();
+    assert_eq!(generator.submit("missing",vec![],None,true).unwrap_err(),"no outstanding statistics request");
+    let request=generator.next().unwrap();
+    assert_eq!(request.kind,"metadata");
+    assert_eq!(generator.submit("wrong",vec![],None,true).unwrap_err(),"statistics request id mismatch");
+    assert_eq!(generator.next().unwrap().id,request.id);
+    for (rows,bytes,expected_rows,expected_bytes) in [(json!("12.5"),json!("64"),Some(12.5),Some(64.0)),
+        (json!("NaN"),json!(-1),None,None)] {
+        generator.submit(&request.id,vec![BTreeMap::from([("rows".into(),rows),("bytes".into(),bytes)])],None,false).unwrap();
+        assert_eq!(generator.sources[0].estimated_rows,expected_rows);
+        assert_eq!(generator.sources[0].estimated_bytes,expected_bytes);
+    }
+    generator.report.accepted_rows=MAX_ROWS;
+    assert_eq!(generator.next().unwrap().id,request.id,"an outstanding request remains resumable");
+    generator.submit(&request.id,vec![BTreeMap::from([("rows".into(),json!(100))])],None,true).unwrap();
+    assert_eq!(generator.report.stopped,"sample budget reached");
+    assert_eq!(generator.report.accepted_rows,MAX_ROWS);
+    assert!(generator.next().is_none());
+}
+
+#[test]
+fn statistics_generator_rejects_incomplete_or_ambiguous_source_metadata() {
+    for (request,message) in [
+        (json!({"dialect":"unknown","tables":[]}),"supported dialect"),
+        (json!({}),"requires tables"),
+        (json!({"tables":[{}]}),"source missing name"),
+        (json!({"tables":[{"name":"a"}]}),"source missing columns"),
+        (json!({"tables":[{"name":"a","columns":[{}]}]}),"column name missing"),
+        (json!({"tables":[{"name":"a","columns":[{"name":"id"}]}]}),"column type missing"),
+        (json!({"tables":[{"name":"a","columns":[]},{"name":"a","columns":[]}]}),"duplicate statistics source"),
+    ] {
+        let error=Generator::new(request).err().expect("metadata must be rejected");
+        assert!(error.contains(message),"{error}");
+    }
+}
+
+#[cfg(feature="duckdb")]
+#[test]
+fn statistics_previews_bound_nested_payloads_without_corrupting_nulls_or_unicode() {
+    let connection=duckdb::Connection::open_in_memory().unwrap();
+    for datatype in [DataType::List(std::sync::Arc::new(Field::new("item",DataType::Utf8,true))),
+        DataType::LargeList(std::sync::Arc::new(Field::new("item",DataType::Utf8,true)))] {
+        let expression=preview("payload",&datatype,"duckdb");
+        let sql=format!("SELECT to_json({expression})::VARCHAR FROM (SELECT list_transform(range(70), i -> CASE WHEN i=0 THEN NULL ELSE repeat('雪',300) END) AS payload)");
+        let result=connection.query_row(&sql,[],|row|row.get::<_,String>(0)).unwrap();
+        let result:Value=serde_json::from_str(&result).unwrap();let values=result.as_array().unwrap();
+        assert_eq!(values.len(),64);assert!(values[0].is_null());
+        assert!(values.iter().skip(1).all(|value|value.as_str()==Some("雪".repeat(256).as_str())));
+        assert_eq!(preview("payload",&datatype,"postgres"),"NULL");
+    }
+    let datatype=DataType::Struct(vec![Field::new("odd\"name",DataType::Utf8,true),Field::new("number",DataType::Int64,true)].into());
+    let expression=preview("payload",&datatype,"duckdb");
+    let sql=format!("SELECT to_json({expression})::VARCHAR FROM (SELECT struct_pack(\"odd\"\"name\" := repeat('x',300), number := 7::BIGINT) AS payload)");
+    let result=connection.query_row(&sql,[],|row|row.get::<_,String>(0)).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&result).unwrap(),json!({"odd\"name":"x".repeat(256),"number":7}));
+    let sql=format!("SELECT {expression} IS NULL FROM (SELECT NULL::STRUCT(\"odd\"\"name\" VARCHAR, number BIGINT) AS payload)");
+    assert!(connection.query_row(&sql,[],|row|row.get::<_,bool>(0)).unwrap());
+}
+
     #[test]
     fn scalar_histograms_preserve_frequency_nulls_and_numeric_order() {
         let values=vec![Value::Null,json!(10),json!(2),json!(2),json!(-1)];
