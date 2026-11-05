@@ -390,3 +390,42 @@ fn finite_temporal_specialization_caps_cartesian_domains_and_keeps_direct_proper
     let expr=IrExpr::Call {name:"cypher_eq".into(),args:vec![IrExpr::binding("a"),IrExpr::binding("number")]};
     assert!(lower_finite(&context,&input,&expr).is_none());
 }
+
+#[test]
+fn finite_domains_preserve_window_inputs_and_never_evaluate_volatile_expressions() {
+    use datafusion::logical_expr::{create_udf,Volatility,ColumnarValue};
+    use std::sync::atomic::{AtomicUsize,Ordering};
+    let calls=Arc::new(AtomicUsize::new(0));
+    let observed=calls.clone();
+    let volatile=create_udf("finite_domain_volatile",vec![],DataType::Int64,Volatility::Volatile,
+        Arc::new(move |_| {observed.fetch_add(1,Ordering::SeqCst);Ok(ColumnarValue::Scalar(ScalarValue::Int64(Some(1))))}));
+    let expression=Expr::Case(Case::new(None,vec![(Box::new(lit(true)),Box::new(volatile.call(vec![])))],Some(Box::new(lit(2_i64)))));
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("value"),expression.alias("effect")]).unwrap().build().unwrap();
+    assert!(finite_values(&input,"effect").is_none());
+    assert_eq!(calls.load(Ordering::SeqCst),0);
+    let window=LogicalPlanBuilder::from(input).window(vec![datafusion::functions_window::expr_fn::row_number().alias("ordinal")]).unwrap().build().unwrap();
+    assert_eq!(finite_values(&window,"value"),Some(vec![ScalarValue::Int64(Some(7))]));
+    assert!(finite_values(&window,"ordinal").is_none());
+    assert!(finite_values(&window,"effect").is_none());
+    assert_eq!(calls.load(Ordering::SeqCst),0);
+}
+
+#[test]
+fn immutable_snapshot_keeps_schema_constraints_and_empty_batch_metadata() {
+    use datafusion::catalog::TableProvider;
+    use datafusion::common::{Constraint,Constraints};
+    let schema=Arc::new(arrow::datatypes::Schema::new(vec![Field::new("id",DataType::Int64,false)]));
+    let constraints=Constraints::new_unverified(vec![Constraint::PrimaryKey(vec![0])]);
+    for batches in [vec![],vec![RecordBatch::new_empty(schema.clone())]] {
+        let inner=MemTable::try_new(schema.clone(),vec![batches.clone()]).unwrap().with_constraints(constraints.clone());
+        let expected_type=inner.table_type();
+        let snapshot=Snapshot::new(inner,&batches);
+        assert_eq!(snapshot.schema(),schema);
+        assert_eq!(snapshot.constraints(),Some(&constraints));
+        assert_eq!(snapshot.table_type(),expected_type);
+        assert_eq!(snapshot.batches().len(),batches.len());
+        assert!(snapshot.as_any().downcast_ref::<Snapshot>().is_some());
+        let plan=LogicalPlanBuilder::scan("empty",datafusion::datasource::provider_as_source(Arc::new(snapshot)),None).unwrap().build().unwrap();
+        assert_eq!(finite_values(&plan,"id"),if batches.is_empty(){None}else{Some(vec![])});
+    }
+}
