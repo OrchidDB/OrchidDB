@@ -103,17 +103,21 @@ fn candidate(node: &LogicalPlan) -> datafusion::common::Result<Option<LogicalPla
 
 // LogicalPlan equality deliberately ignores TableScan providers. Sharing needs
 // both the same logical expression and the same concrete source instances.
-fn same_source_tree(left: &LogicalPlan, right: &LogicalPlan) -> bool {
-    fn providers(left: &LogicalPlan, right: &LogicalPlan) -> bool {
-        if let (LogicalPlan::TableScan(left), LogicalPlan::TableScan(right)) = (left, right) {
-            return Arc::ptr_eq(&left.source, &right.source);
-        }
-        let left = left.inputs();
-        let right = right.inputs();
-        left.len() == right.len() && left.into_iter().zip(right)
-            .all(|(left, right)| providers(left, right))
+pub(super) fn same_source_tree(left: &LogicalPlan, right: &LogicalPlan) -> bool {
+    fn sources(plan: &LogicalPlan) -> datafusion::common::Result<Vec<Arc<dyn datafusion::logical_expr::TableSource>>> {
+        let mut sources = Vec::new();
+        plan.apply_with_subqueries(|node| {
+            if let LogicalPlan::TableScan(scan) = node { sources.push(scan.source.clone()); }
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        Ok(sources)
     }
-    left == right && providers(left, right)
+    if left != right { return false; }
+    match (sources(left), sources(right)) {
+        (Ok(left), Ok(right)) => left.len() == right.len()
+            && left.iter().zip(&right).all(|(left, right)| Arc::ptr_eq(left, right)),
+        _ => false,
+    }
 }
 
 pub(super) fn rewrite(plan: LogicalPlan) -> SqlResult<LogicalPlan> {

@@ -253,3 +253,71 @@ fn repeated_top_k_scopes_share_only_immutable_inputs() {
         assert_eq!(aliases.len(),if volatile {4}else{2},"{aliases:?}");
     }
 }
+
+fn occurrence_filter_input(value: i64, volatile: bool) -> LogicalPlan {
+    let schema=Arc::new(arrow::datatypes::Schema::new(vec![arrow::datatypes::Field::new("value",DataType::Int64,false)]));
+    let batch=arrow::array::RecordBatch::try_new(schema.clone(),vec![Arc::new(arrow::array::Int64Array::from(vec![value]))]).unwrap();
+    let source=datafusion::datasource::MemTable::try_new(schema,vec![vec![batch]]).unwrap();
+    let left=LogicalPlanBuilder::scan("source",datafusion::datasource::provider_as_source(Arc::new(source)),None).unwrap()
+        .filter(col("value").gt(lit(0_i64))).unwrap()
+        .project(vec![col("value"),if volatile {datafusion::functions::math::expr_fn::random().alias("noise")}else{lit(0_f64).alias("noise")}]).unwrap().build().unwrap();
+    let right=LogicalPlanBuilder::empty(true).project(vec![lit(1_i64).alias("occurrence")]).unwrap().build().unwrap();
+    LogicalPlanBuilder::from(left).cross_join(right).unwrap().build().unwrap()
+}
+fn occurrence_window(input: LogicalPlan) -> LogicalPlan {
+    LogicalPlanBuilder::from(input).window(vec![datafusion::functions_window::expr_fn::row_number()
+        .alias("__apply_corr_key_row")]).unwrap().build().unwrap()
+}
+fn join_filter_scope_names(plan: &LogicalPlan) -> Vec<String> {
+    let mut names=Vec::new();
+    plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::SubqueryAlias(alias)=node {
+            if alias.alias.table().starts_with("__w_sql_cte_join_filter_") {names.push(alias.alias.table().to_owned());}
+        }
+        Ok(TreeNodeRecursion::Continue)
+    }).unwrap();
+    names
+}
+
+#[test]
+fn correlation_frontier_filter_scopes_keep_one_occurrence_evaluation() {
+    for volatile in [false,true] {
+        let frontier=occurrence_window(occurrence_filter_input(1,volatile));
+        let combined=LogicalPlanBuilder::from(frontier.clone()).union(frontier).unwrap().build().unwrap();
+        let repaired=preserve_join_filter_inputs(combined).unwrap();
+        let names=join_filter_scope_names(&repaired);
+        assert_eq!(names.len(),2,"{repaired:?}");
+        assert_eq!(names[0],names[1],"Consumers of the same frontier must retain one window identity, volatile={volatile}");
+    }
+}
+
+#[test]
+fn correlation_frontier_scopes_keep_distinct_providers_and_independent_volatile_inputs() {
+    let left=occurrence_window(occurrence_filter_input(1,false));
+    let right=occurrence_window(occurrence_filter_input(2,false));
+    assert_eq!(left,right,"Logical equality alone ignores provider values");
+    let distinct=LogicalPlanBuilder::from(left).union(right).unwrap().build().unwrap();
+    let independent=occurrence_filter_input(1,true);
+    let independent=LogicalPlanBuilder::from(independent.clone()).union(independent).unwrap().build().unwrap();
+    for original in [distinct,independent] {
+        let repaired=preserve_join_filter_inputs(original).unwrap();
+        let names=join_filter_scope_names(&repaired);
+        assert_eq!(names.len(),2,"{repaired:?}");
+        assert_ne!(names[0],names[1],"Different providers and independent volatile inputs cannot become one evaluation");
+    }
+}
+
+#[test]
+fn correlation_frontier_provider_identity_includes_expression_subqueries() {
+    use datafusion::logical_expr::Subquery;
+    let query=|value| {
+        let input=occurrence_filter_input(value,false);
+        let subquery=LogicalPlanBuilder::from(input).project(vec![col("value")]).unwrap().limit(0,Some(1)).unwrap().build().unwrap();
+        let expression=Expr::ScalarSubquery(Subquery {subquery:Arc::new(subquery),outer_ref_columns:vec![],spans:Default::default()});
+        LogicalPlanBuilder::empty(true).project(vec![expression.alias("value")]).unwrap().build().unwrap()
+    };
+    let left=query(1);let right=query(2);
+    assert_eq!(left,right);
+    assert!(super::super::shared_scans::same_source_tree(&left,&left.clone()));
+    assert!(!super::super::shared_scans::same_source_tree(&left,&right));
+}

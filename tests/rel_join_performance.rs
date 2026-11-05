@@ -129,3 +129,54 @@ async fn existence_can_filter_before_an_unrelated_expansion() {
     assert_eq!(rows("MATCH (a:P), (b:P), (c:P)-[:R]->(q:Q) WHERE NOT EXISTS { MATCH (a)-[:R]-(b) } RETURN count(*)").await, ["1"]);
     assert_eq!(rows("MATCH (a:P), (b:P), (c:P)-[:R]->(q:Q) WHERE EXISTS { MATCH (a)-[:R]-(b) } RETURN count(*)").await, ["3"]);
 }
+
+#[tokio::test]
+async fn mapped_filtered_optional_matches_keep_duplicate_and_null_occurrences() {
+    use serde_json::json;
+    let people=[(1_i64,"Ada",37_i64),(2,"Bob",21),(4,"Bob",21),(42,"Ada",37)];
+    let edges=[(10_i64,1_i64,2_i64,5_i64),(11,1,2,7),(14,2,2,1),(15,4,1,0)];
+    let connection=duckdb::Connection::open_in_memory().unwrap();
+    connection.execute_batch("CREATE TABLE people(id BIGINT,name VARCHAR,age BIGINT); CREATE TABLE links(id BIGINT,src BIGINT,dst BIGINT,weight BIGINT)").unwrap();
+    for (id,name,age) in people {
+        connection.execute("INSERT INTO people VALUES (?,?,?)",duckdb::params![id,name,age]).unwrap();
+    }
+    for (id,src,dst,weight) in edges {
+        connection.execute("INSERT INTO links VALUES (?,?,?,?)",duckdb::params![id,src,dst,weight]).unwrap();
+    }
+    for name in ["Ada","Bob"] {
+    for alias in [false,true] {
+        let prefix=if alias {format!("MATCH (original:Person) WHERE original.name='{name}' WITH original AS n")}
+            else {format!("MATCH (n:Person) WHERE n.name='{name}'")};
+        let query=format!("{prefix} UNWIND [1,1,null] AS occurrence OPTIONAL MATCH (n)-[r:LINK]->(target:Person) WHERE target.age>=21 RETURN n.id AS source,target.id AS target,r.weight AS weight,occurrence");
+        let request=json!({"version":1,"language":"cypher","native_values":false,"dialect":"duckdb",
+            "sources":{"db":{"adapter":"duckdb"}},"query":query,
+            "tables":[{"name":"people","source":"db","columns":[
+                {"name":"id","data_type":"int64"},{"name":"name","data_type":"string"},{"name":"age","data_type":"int64"}]},
+                {"name":"links","source":"db","columns":[{"name":"id","data_type":"int64"},
+                    {"name":"src","data_type":"int64"},{"name":"dst","data_type":"int64"},{"name":"weight","data_type":"int64"}]}],
+            "nodes":[{"label":"Person","table":"people","id":"id","properties":{"id":"id","name":"name","age":"age"}}],
+            "edges":[{"label":"LINK","table":"links","id":"id","source_label":"Person","target_label":"Person",
+                "source":"src","target":"dst","properties":{"weight":"weight"}}]});
+        let compiled:serde_json::Value=serde_json::from_str(&orchiddb::compiler::compile_json(&request.to_string()).await.unwrap()).unwrap();
+        let nodes=compiled["execution_plan"]["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(),1,"{compiled}");
+        let sql=nodes[0]["sql"].as_str().unwrap();
+        let mut statement=connection.prepare(sql).unwrap();
+        let mut actual=statement.query_map([],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?,
+            row.get::<_,Option<i64>>(2)?,row.get::<_,Option<i64>>(3)?))).unwrap()
+            .collect::<Result<Vec<_>,_>>().unwrap();
+        let mut expected=Vec::new();
+        for (source,source_name,_) in people {
+            if source_name!=name {continue;}
+            let targets=edges.iter().filter(|(_,start,end,_)|*start==source && people.iter().any(|(id,_,age)|id==end && *age>=21))
+                .map(|(_,_,target,weight)|(Some(*target),Some(*weight))).collect::<Vec<_>>();
+            for occurrence in [Some(1_i64),Some(1),None] {
+                for (target,weight) in if targets.is_empty() {vec![(None,None)]}else{targets.clone()} {
+                    expected.push((source,target,weight,occurrence));
+                }
+            }
+        }
+        actual.sort();expected.sort();assert_eq!(actual,expected,"name={name}, alias={alias}; {sql}");
+    }
+    }
+}

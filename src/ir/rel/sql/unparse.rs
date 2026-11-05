@@ -305,6 +305,38 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
         }
         Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
     })?.data;
+    let plan = preserve_join_filter_inputs(plan)?;
+    let repairs = identifier_quote_repairs(&plan, dialect)?;
+    let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
+    Ok(apply_identifier_repairs(sql, &repairs))
+}
+
+// Correlation windows name occurrences, so all consumers of one frontier must
+// see the same numbering. Repair each original window once before repairing
+// surrounding joins: fresh scope names must not split a shared frontier into
+// independently evaluated ROW_NUMBER expressions.
+fn preserve_join_filter_inputs(plan: LogicalPlan) -> datafusion::common::Result<LogicalPlan> {
+    let mut filter_scope = 0;
+    let mut windows: Vec<(LogicalPlan, LogicalPlan)> = Vec::new();
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Window(window) = &node else { return Ok(Transformed::no(node)); };
+        if !window.window_expr.iter().any(|expr|
+            expr.schema_name().to_string().starts_with("__apply_corr_key_row")) {
+            return Ok(Transformed::no(node));
+        }
+        if let Some((_, repaired)) = windows.iter().find(|(original, _)|
+            super::shared_scans::same_source_tree(original, &node)) {
+            return Ok(Transformed::yes(repaired.clone()));
+        }
+        let original = node.clone();
+        let repaired = scope_join_filter_inputs(node, &mut filter_scope)?;
+        windows.push((original, repaired.clone()));
+        Ok(Transformed::yes(repaired))
+    })?.data;
+    scope_join_filter_inputs(plan, &mut filter_scope)
+}
+
+fn scope_join_filter_inputs(plan: LogicalPlan, filter_scope: &mut usize) -> datafusion::common::Result<LogicalPlan> {
     // Join-input filters must stay inside their input relation. The unparser
     // can otherwise move them to ON or WHERE across alias/projection layers,
     // retaining rejected rows or discarding null-extended outer-join rows.
@@ -321,7 +353,6 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
             _ => false,
         }
     }
-    let mut filter_scope = 0;
     let plan = plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Join(mut join) = node else { return Ok(Transformed::no(node)); };
         let mut changed = false;
@@ -339,15 +370,13 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
                         .alias(qualifier)?.build()?;
                 }
                 *input = Arc::new(scoped);
-                filter_scope += 1;
+                *filter_scope += 1;
                 changed = true;
             }
         }
         Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
     })?.data;
-    let repairs = identifier_quote_repairs(&plan, dialect)?;
-    let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
-    Ok(apply_identifier_repairs(sql, &repairs))
+    Ok(plan)
 }
 
 /// SQL names must follow the declared projection schema even when lowering
