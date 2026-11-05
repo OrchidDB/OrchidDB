@@ -328,3 +328,39 @@ fn iceberg_provider_keeps_predicates_above_the_scan() {
     if let LogicalPlan::TableScan(scan) = &mut plan { scan.filters.push(predicate); } else { panic!("expected scan") }
     assert!(duckdb_iceberg::lower(&plan).unwrap_err().to_string().contains("unexpected pushed filters"));
 }
+
+#[test]
+fn duckdb_region_session_collects_typed_batches_and_preserves_empty_schema() {
+    use super::region::RegionSession;
+    use arrow::array::{Int64Array, Array};
+    let mut session = DuckDbSession::default();
+    let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, true)]));
+    let batch = RegionSession::query(&mut session,
+        "SELECT CASE WHEN i = 1 THEN NULL ELSE i END AS value FROM range(4097) AS t(i) ORDER BY i", schema.clone()).unwrap();
+    assert_eq!(batch.schema(), schema);
+    assert_eq!(batch.num_rows(), 4097);
+    let values = batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(values.value(0), 0);
+    assert!(values.is_null(1));
+    assert_eq!(values.value(4096), 4096);
+    let empty = RegionSession::query(&mut session, "SELECT 1::BIGINT AS value WHERE false", schema.clone()).unwrap();
+    assert_eq!(empty.schema(), schema);
+    assert_eq!(empty.num_rows(), 0);
+    assert!(RegionSession::query(&mut session, "SELECT missing_column", schema).is_err());
+}
+
+#[test]
+fn duckdb_region_session_rejects_unverified_helpers_and_poisoned_sessions() {
+    use super::region::RegionSession;
+    let capability = crate::ir::rel::language_functions::FloatHelperCapability::verified("foreign-session".into());
+    let session = DuckDbSession::default();
+    assert!(RegionSession::validate_float_helper(&session, &capability).unwrap_err().to_string().contains("reprepare"));
+    let executor = session.executor.clone();
+    let poison = std::thread::spawn(move || {
+        let _guard = executor.lock().unwrap();
+        panic!("intentional session owner failure");
+    });
+    assert!(poison.join().is_err());
+    assert!(matches!(RegionSession::validate_float_helper(&session, &capability),
+        Err(SqlError::Execution(message)) if message == "DuckDB session poisoned"));
+}
