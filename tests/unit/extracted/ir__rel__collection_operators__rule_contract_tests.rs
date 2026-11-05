@@ -174,3 +174,114 @@
         }
     }
 
+
+#[tokio::test]
+async fn cypher_collection_display_preserves_dynamic_null_boolean_and_numeric_items() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let input = Node::GraphValues {
+        bindings: vec!["flag".into(), "number".into(), "text".into(), "missing".into()],
+        rows: vec![
+            vec![Value::Bool(true), Value::Float(1.5), Value::String("雪".into()), Value::Null],
+            vec![Value::Bool(false), Value::Float(-2.25), Value::String("".into()), Value::Null],
+            vec![Value::Null, Value::Null, Value::Null, Value::Null],
+        ], bulk: None,
+    };
+    let plan = ctx.lower_node(&input).unwrap().plan;
+    let expr = ctx.lower_collection_expr(&plan, &[
+        IrExpr::binding("flag"), IrExpr::binding("number"),
+        IrExpr::binding("text"), IrExpr::binding("missing"),
+    ]).unwrap();
+    let projected = LogicalPlanBuilder::from(plan).project(vec![expr.alias("display")]).unwrap().build().unwrap();
+    let batches = super::super::execute_test_plan(projected).await.unwrap();
+    let actual: Vec<_> = batches.iter().flat_map(|batch| (0..batch.num_rows()).map(|i|
+        ScalarValue::try_from_array(batch.column(0), i).unwrap())).collect();
+    assert_eq!(actual, ["[True,1.500000,雪,]", "[False,-2.250000,,]", "[,,,]"].map(|s| ScalarValue::Utf8(Some(s.into()))));
+}
+
+#[test]
+fn cypher_dynamic_maps_reject_duplicate_keys_malformed_pairs_and_dynamic_names() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let plan = ctx.lower_node(&Node::GraphValues {
+        bindings: vec!["value".into()], rows: vec![vec![Value::Int(3)]], bulk: None,
+    }).unwrap().plan;
+    let key = IrExpr::Lit(Lit::String("k".into()));
+    let value = IrExpr::binding("value");
+    for (args, expected) in [
+        (vec![IrExpr::List(vec![key.clone(),key.clone()]), IrExpr::List(vec![value.clone(),value.clone()])], "duplicate map key"),
+        (vec![IrExpr::List(vec![key.clone()]), IrExpr::List(vec![value.clone(),value.clone()])], "length mismatch"),
+        (vec![key.clone()], "map arity"),
+        (vec![value.clone(),value.clone()], "dynamic map key"),
+    ] {
+        let error = ctx.lower_cypher_map(&plan, &args).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+    for (args, expected) in [
+        (vec![key], "make_map arity"),
+        (vec![value.clone(),value], "dynamic make_map key"),
+    ] {
+        let error = ctx.lower_make_map(&plan, &args).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn cypher_map_display_keeps_dynamic_field_order() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let plan = ctx.lower_node(&Node::GraphValues {
+        bindings: vec!["value".into()], rows: vec![vec![Value::Int(3)]], bulk: None,
+    }).unwrap().plan;
+    let keys = vec![IrExpr::Lit(Lit::String("z".into())), IrExpr::Lit(Lit::String("a".into()))];
+    let values = vec![IrExpr::binding("value"), IrExpr::Lit(Lit::Int(8))];
+    let list_map = ctx.lower_cypher_map(&plan, &[IrExpr::List(keys.clone()), IrExpr::List(values.clone())]).unwrap();
+    let pairs = vec![keys[0].clone(),values[0].clone(),keys[1].clone(),values[1].clone()];
+    let tagged = ctx.lower_cypher_map(&plan, &pairs).unwrap();
+    let debug = ctx.lower_make_map(&plan, &pairs).unwrap();
+    let projected = LogicalPlanBuilder::from(plan).project(vec![list_map.alias("plain"),tagged.alias("tagged"),debug.alias("debug")]).unwrap().build().unwrap();
+    let batches = super::super::execute_test_plan(projected).await.unwrap();
+    for (i, expected) in ["{z=3, a=8}", "m[{\"z\":\"3\",\"a\":\"8\"}]", "Map({\"z\": String(\"3\"), \"a\": String(\"8\")})"].iter().enumerate() {
+        assert_eq!(ScalarValue::try_from_array(batches[0].column(i),0).unwrap(), ScalarValue::Utf8(Some((*expected).into())));
+    }
+}
+
+#[tokio::test]
+async fn literal_collection_insert_preserves_order_duplicates_and_nulls() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let plan = ctx.lower_node(&Node::GraphValues {
+        bindings: vec!["value".into()], rows: vec![vec![Value::Long(4)], vec![Value::Null]], bulk: None,
+    }).unwrap().plan;
+    let list = IrExpr::List(vec![IrExpr::binding("value"), IrExpr::Lit(Lit::Null)]);
+    let mut expressions = vec![];
+    for (i, name) in ["list_append", "array_append", "array_push_back", "list_prepend", "array_prepend", "array_push_front"].iter().enumerate() {
+        expressions.push(ctx.lower_constant_collection_function(&plan, name, &[list.clone(), IrExpr::Lit(Lit::Int(4))]).unwrap().alias(format!("v{i}")));
+    }
+    let projected = LogicalPlanBuilder::from(plan).project(expressions).unwrap().build().unwrap();
+    let batches = super::super::execute_test_plan(projected).await.unwrap();
+    for batch in batches {
+        for column in 0..6 {
+            for row in 0..batch.num_rows() {
+                let ScalarValue::List(array) = ScalarValue::try_from_array(batch.column(column),row).unwrap() else {panic!("expected typed list")};
+                let items = array.value(0);
+                let actual = (0..items.len()).map(|i| integer(ScalarValue::try_from_array(&items,i).unwrap())).collect::<Vec<_>>();
+                let value = if row == 0 { Some(4) } else { None };
+                let expected = if column < 3 { vec![value,None,Some(4)] } else { vec![Some(4),value,None] };
+                assert_eq!(actual,expected,"column={column}, row={row}");
+            }
+        }
+    }
+}
+
+#[test]
+fn dynamic_collection_dispatch_declines_bad_arity_and_unknown_functions() {
+    let graph = PropertyGraph::new();
+    let mut ctx = context(&graph, false);
+    let plan = ctx.lower_node(&Node::GraphOneRow).unwrap().plan;
+    for name in ["list_append", "array_append", "array_push_back", "list_prepend", "array_prepend", "array_push_front", "list_extract", "list_element", "element_at", "list_unique", "not_a_collection_function"] {
+        assert!(ctx.lower_dynamic_collection_function(&plan,name,&[]).unwrap().is_none(),"{name}");
+    }
+    let error=ctx.lower_constant_collection_function(&plan,"not_a_collection_function",&[IrExpr::binding("missing")]).unwrap_err().to_string();
+    assert!(error.contains("not relationally lowered yet"),"{error}");
+}
