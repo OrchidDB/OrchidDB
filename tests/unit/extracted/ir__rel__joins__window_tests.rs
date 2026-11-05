@@ -125,3 +125,55 @@ async fn partitioned_limit_handles_identity_empty_and_unbounded_slices() {
     let values=batches.iter().flat_map(|b|b.column(1).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
     assert_eq!(values,vec![3,4,5,6]);
 }
+
+#[tokio::test]
+async fn unordered_distinct_deduplicates_keys_and_preserves_qualified_columns() {
+    let input=LogicalPlanBuilder::values(vec![
+        vec![lit(1_i64),lit(10_i64)],vec![lit(1_i64),lit(10_i64)],
+        vec![lit(ScalarValue::Int64(None)),lit(20_i64)],vec![lit(ScalarValue::Int64(None)),lit(20_i64)],
+    ]).unwrap().project(vec![col_exact("column1").alias("key"),col_exact("column2").alias("value"),
+        lit(99_i64).alias("__distinct_key_0")]).unwrap().alias("source").unwrap().build().unwrap();
+    let key=Expr::Column(input.schema().columns()[0].clone());
+    let result=unordered_distinct_partition(input,vec![key.clone(),key],700).unwrap();
+    assert_eq!(result.schema().fields().iter().map(|f|f.name().as_str()).collect::<Vec<_>>(),vec!["key","value","__distinct_key_0"]);
+    let result=LogicalPlanBuilder::from(result).sort(vec![col_exact("value").sort(true,false)]).unwrap().build().unwrap();
+    let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+    let values=batches.iter().flat_map(|b|b.column(1).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()).collect::<Vec<_>>();
+    assert_eq!(values,vec![10,20]);
+    for batch in batches { assert!(batch.column(2).as_any().downcast_ref::<Int64Array>().unwrap().values().iter().all(|v|*v==99)); }
+}
+
+#[tokio::test]
+async fn unordered_distinct_retains_stable_float_representatives() {
+    let input=LogicalPlanBuilder::values(vec![vec![lit(-0.0_f64),lit(1_i64)],vec![lit(0.0_f64),lit(2_i64)]]).unwrap()
+        .project(vec![col_exact("column1").alias("key"),col_exact("column2").alias("order")]).unwrap()
+        .sort(vec![col_exact("order").sort(true,false)]).unwrap().build().unwrap();
+    let result=unordered_distinct_partition(input,vec![col_exact("key")],701).unwrap();
+    let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+    assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(),1);
+    assert_eq!(batches[0].column(0).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap().value(0).to_bits(),(-0.0_f64).to_bits());
+    assert_eq!(ScalarValue::try_from_array(batches[0].column(1),0).unwrap(),ScalarValue::Int64(Some(1)));
+}
+
+#[tokio::test]
+async fn unordered_distinct_without_keys_preserves_empty_input_cardinality() {
+    for name in ["value","__distinct_input_count"] {
+    for value in [Some(7_i64),None] {
+    for produce in [false,true] {
+        let input=LogicalPlanBuilder::empty(produce).project(vec![lit(ScalarValue::Int64(value)).alias(name)]).unwrap().build().unwrap();
+        let result=unordered_distinct_partition(input,vec![],702).unwrap();
+        assert_eq!(result.schema().fields().iter().map(|f|f.name().as_str()).collect::<Vec<_>>(),vec![name]);
+        let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+        assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(),usize::from(produce),"produce={produce}");
+        if produce { assert_eq!(ScalarValue::try_from_array(batches[0].column(0),0).unwrap(),ScalarValue::Int64(value)); }
+    }
+    }
+    }
+    for produce in [false,true] {
+        let input=LogicalPlanBuilder::empty(produce).build().unwrap();
+        let result=unordered_distinct_partition(input,vec![],704).unwrap();
+        assert!(result.schema().fields().is_empty());
+        let batches=crate::ir::rel::execute_test_plan(result).await.unwrap();
+        assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(),usize::from(produce));
+    }
+}

@@ -640,3 +640,25 @@ async fn dynamic_list_unique_omits_nulls_on_every_engine() {
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn unordered_distinct_empty_keys_keep_cardinality_on_every_engine() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let (pg,trino_session)=literal_test_engines();
+    let empty=LogicalPlanBuilder::empty(false).project(vec![lit(7_i64).alias("value")]).unwrap().build().unwrap();
+    let singleton=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("value")]).unwrap().build().unwrap();
+    let null_row=LogicalPlanBuilder::empty(true).project(vec![lit(ScalarValue::Int64(None)).alias("value")]).unwrap().build().unwrap();
+    let multiple=LogicalPlanBuilder::values(vec![vec![lit(8_i64)],vec![lit(7_i64)]]).unwrap()
+        .project(vec![datafusion::prelude::col("column1").alias("value")]).unwrap()
+        .sort(vec![datafusion::prelude::col("value").sort(true,false)]).unwrap().build().unwrap();
+    for (input,expected) in [(empty,"0:0"),(singleton,"1:1"),(multiple,"1:1"),(null_row,"1:0")] {
+        let plan=crate::ir::rel::joins::unordered_distinct_partition(input,vec![],703).unwrap();
+        for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&trino::TRINO)] {
+            let sql=unparse::unparse_plan(plan.clone(),dialect).unwrap();
+            let query=format!("SELECT CAST(count(*) AS VARCHAR)||':'||CAST(count(value) AS VARCHAR) FROM ({sql}) AS result");
+            assert_eq!(execute_text_case(&query,dialect,&pg,&trino_session).await,expected,"{}: {sql}",dialect.name());
+        }
+    }
+}

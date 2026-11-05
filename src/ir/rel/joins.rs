@@ -825,6 +825,7 @@ pub(super) fn unordered_distinct_partition(plan: LogicalPlan, mut keys: Vec<Expr
     }
     let original = plan.schema().columns();
     let reserved = fields.iter().map(|f|f.name().clone()).collect::<BTreeSet<_>>();
+    let presence = unique.is_empty().then(|| unique_internal_alias(&plan, &reserved, "__distinct_input_count"));
     let groups = unique.into_iter().enumerate().map(|(i,key)| {
         key.alias(unique_internal_alias(&plan, &reserved, format!("__distinct_key_{i}")))
     }).collect::<Vec<_>>();
@@ -836,7 +837,13 @@ pub(super) fn unordered_distinct_partition(plan: LogicalPlan, mut keys: Vec<Expr
         Expr::Column(column) => col_exact(column.name), other => other,
     }))).map(|result| result.data);
     let groups = groups.into_iter().map(unqualified).collect::<datafusion::common::Result<Vec<_>>>()?;
-    let values = values.into_iter().map(unqualified).collect::<datafusion::common::Result<Vec<_>>>()?;
-    let aggregate=LogicalPlanBuilder::from(plan).aggregate(groups,values)?.build()?;
-    Ok(LogicalPlanBuilder::from(aggregate).project(original.iter().map(|c|col_exact(&c.name)).collect::<Vec<_>>())?.build()?)
+    let mut values = values.into_iter().map(unqualified).collect::<datafusion::common::Result<Vec<_>>>()?;
+    // A global aggregate emits a row even for an empty input. Retain a count
+    // only long enough to discard that synthetic row without requiring windows.
+    if let Some(alias) = &presence {
+        values.push(datafusion::functions_aggregate::expr_fn::count(lit(1_i64)).alias(alias));
+    }
+    let mut aggregate=LogicalPlanBuilder::from(plan).aggregate(groups,values)?;
+    if let Some(alias) = presence { aggregate = aggregate.filter(col_exact(alias).gt(lit(0_i64)))?; }
+    Ok(aggregate.project(original.iter().map(|c|col_exact(&c.name)).collect::<Vec<_>>())?.build()?)
 }
