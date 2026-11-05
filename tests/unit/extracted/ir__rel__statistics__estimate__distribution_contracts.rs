@@ -154,3 +154,134 @@ fn estimator_case_nullability_respects_ordered_arms_and_null_safe_boolean_wrappe
         close(add(Some(9e299),Some(9e299)),1e300);
         assert!(add(None,Some(1.0)).is_none());
     }
+
+fn estimate_scan(name: &str, rows: f64) -> LogicalPlan {
+    use std::sync::Arc;
+    use arrow::datatypes::{Field, Schema};
+    use datafusion::{datasource::{empty::EmptyTable, provider_as_source}, logical_expr::LogicalPlanBuilder};
+    let uniform = ColumnStatistics { observations: 10, sample_distinct: 5,
+        estimated_distinct: Some(5.0), average_width: 8.0, ..Default::default() };
+    let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false),
+        Field::new("y", DataType::Int64, false),
+        Field::new("items", DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), true)]));
+    let source = SourceStatistics { estimated_rows: Some(rows), estimated_bytes: Some(rows * 24.0),
+        columns: BTreeMap::from([("x".into(), uniform.clone()), ("y".into(), uniform),
+            ("items".into(), ColumnStatistics {list: Some(ListStatistics {parents: 10, total_lengths: 30,
+                ..Default::default()}), ..Default::default()})]),
+        groups: vec![GroupStatistics {columns: vec!["x".into(), "y".into()], observations: 10,
+            sample_distinct: 7, ..Default::default()}], ..Default::default() };
+    let snapshot = Arc::new(StatisticsSnapshot {revision: format!("revision-{name}"),
+        sources: BTreeMap::from([(name.into(), source)]), version: VERSION, mapping: String::new(),
+        collected_at: String::new(), relationships: vec![], rdf: vec![], report: Default::default()});
+    let provider = super::super::provider::StatisticsProvider::wrap(Arc::new(EmptyTable::new(schema)), snapshot, name.into());
+    LogicalPlanBuilder::scan(name, provider_as_source(provider), None).unwrap().build().unwrap()
+}
+
+#[test]
+fn collected_estimates_preserve_joint_distributions_through_renames_and_distinct() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let plan = LogicalPlanBuilder::from(estimate_scan("source", 100.0))
+        .project(vec![col("x").alias("a"), col("y").alias("b")]).unwrap()
+        .alias("renamed").unwrap().build().unwrap();
+    let state = run(&plan, "0".into(), &mut vec![]);
+    assert_eq!(state.groups[0].columns, vec!["a", "b"]);
+    assert!(state.columns.contains_key("renamed.a"));
+    let distinct = LogicalPlanBuilder::from(plan.clone()).distinct().unwrap().build().unwrap();
+    close(estimate(&distinct).estimated_rows, 7.0);
+    let grouped = LogicalPlanBuilder::from(plan).aggregate(vec![col("a")], Vec::<Expr>::new()).unwrap().build().unwrap();
+    close(estimate(&grouped).estimated_rows, 5.0);
+    let projected = LogicalPlanBuilder::from(estimate_scan("source", 100.0))
+        .project(vec![col("x")]).unwrap().distinct().unwrap().build().unwrap();
+    close(estimate(&projected).estimated_rows, 5.0);
+    let report = explain(&projected);
+    assert_eq!(report.last().unwrap().statistics_revisions, vec!["revision-source"]);
+    close(report.last().unwrap().estimated_row_width, 8.0);
+    close(report.last().unwrap().estimated_scan_bytes, 2400.0);
+}
+
+#[test]
+fn collected_join_estimates_handle_reversed_keys_residuals_and_join_kinds() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for (kind, expected) in [(JoinType::Inner,20.0),(JoinType::Left,20.0),(JoinType::Right,20.0),
+        (JoinType::Full,20.0),(JoinType::LeftSemi,10.0),(JoinType::LeftAnti,0.0)] {
+        for reverse in [false,true] {
+            let (a,b) = if reverse {(col("r.x"),col("l.x"))} else {(col("l.x"),col("r.x"))};
+            let plan = LogicalPlanBuilder::from(estimate_scan("l",10.0))
+                .join_on(estimate_scan("r",10.0),kind,vec![a.eq(b)]).unwrap().build().unwrap();
+            let estimate = estimate(&plan);
+            close(estimate.estimated_rows,expected);
+            assert_eq!(estimate.statistics_revisions,vec!["revision-l","revision-r"]);
+            close(estimate.estimated_scan_bytes,480.0);
+        }
+    }
+    let plan = LogicalPlanBuilder::from(estimate_scan("l",10.0))
+        .join_on(estimate_scan("r",10.0),JoinType::Inner,
+            vec![col("l.x").eq(col("r.x")).and(col("l.y").eq(lit(1_i64)))])
+        .unwrap().build().unwrap();
+    close(estimate(&plan).estimated_rows,4.0);
+}
+
+#[test]
+fn collected_expansion_uses_mean_length_and_global_aggregation_preserves_empty_row() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    for rows in [0.0,10.0] {
+        let plan = LogicalPlanBuilder::from(estimate_scan("source",rows))
+            .unnest_column(datafusion::common::Column::from_name("items")).unwrap().build().unwrap();
+        let result = estimate(&plan);
+        close(result.estimated_rows,rows*3.0);
+        close(result.estimated_expanded_rows,rows*3.0);
+        close(result.estimated_work,rows*56.0);
+        let aggregate = LogicalPlanBuilder::from(plan).aggregate(Vec::<Expr>::new(),
+            vec![datafusion::functions_aggregate::expr_fn::count(lit(1_i64))]).unwrap().build().unwrap();
+        close(estimate(&aggregate).estimated_rows,1.0);
+    }
+}
+
+#[test]
+fn access_cost_uses_joint_key_statistics_and_rejects_unknown_keys() {
+    let plan = estimate_scan("source", 100.0);
+    assert_eq!(source_access_cost(&plan, &["x".into()]), Some((100.0,2400.0,5.0,3200.0)));
+    assert_eq!(source_access_cost(&plan, &["x".into(),"y".into()]), Some((100.0,2400.0,7.0,3200.0)));
+    assert!(source_access_cost(&plan, &["missing".into()]).is_none());
+    assert!(source_access_cost(&plan, &["y".into(),"x".into()]).is_none());
+    assert!(source_access_cost(&plan, &[]).is_none());
+    close(input_rows(&plan),100.0);
+}
+
+#[test]
+fn distinct_on_and_unknown_grouping_keep_estimates_conservative() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let plan = LogicalPlanBuilder::from(estimate_scan("source",100.0))
+        .distinct_on(vec![col("x")],vec![col("x"),col("y")],None).unwrap().build().unwrap();
+    close(estimate(&plan).estimated_rows,5.0);
+    let computed = LogicalPlanBuilder::from(estimate_scan("source",100.0))
+        .distinct_on(vec![col("x")+lit(1_i64)],vec![col("x")],None).unwrap().build().unwrap();
+    assert!(estimate(&computed).estimated_rows.is_none());
+    let grouped = LogicalPlanBuilder::from(estimate_scan("source",100.0))
+        .aggregate(vec![col("x")+lit(1_i64)],Vec::<Expr>::new()).unwrap().build().unwrap();
+    assert!(estimate(&grouped).estimated_rows.is_none());
+    for kind in [JoinType::Left,JoinType::Right,JoinType::Full,JoinType::LeftSemi,JoinType::LeftAnti] {
+        let plan = LogicalPlanBuilder::from(estimate_scan("l",10.0))
+            .join_on(estimate_scan("r",0.0),kind,vec![col("l.x").eq(col("r.x"))]).unwrap().build().unwrap();
+        close(estimate(&plan).estimated_rows,if matches!(kind,JoinType::Left|JoinType::Full|JoinType::LeftAnti){10.0}else{0.0});
+    }
+}
+
+#[test]
+fn projected_constructor_statistics_preserve_ndv_width_and_nullability() {
+    use datafusion::functions::{string::expr_fn::concat, encoding::expr_fn::encode};
+    let state = State {rows:Some(12.0),columns:BTreeMap::from([("x".into(),sample()),("y".into(),sample())]),..Default::default()};
+    let joined = concat(vec![col("x"),col("y")]);
+    let statistics = projected_column(&joined,&state).unwrap();
+    assert_eq!(statistics.estimated_distinct,Some(9.0));
+    assert_eq!(statistics.nulls,0);
+    assert_eq!(statistics.average_width,16.0);
+    let encoded = encode(col("x"),lit("hex"));
+    close(nonnull(&encoded,&state.columns),0.8);
+    assert_eq!(projected_column(&encoded,&state).unwrap().estimated_distinct,Some(3.0));
+    let cast = Expr::Cast(Cast::new(Box::new(lit(7_i64)),DataType::Utf8));
+    assert_eq!(projected_column(&cast,&state).unwrap().frequent,vec![("7".into(),1)]);
+    assert!(projected_column(&concat(vec![col("missing")]),&state).is_none());
+    let unknown_rows = State {rows:None,..state};
+    assert!(projected_column(&joined,&unknown_rows).is_none());
+}
