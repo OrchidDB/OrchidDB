@@ -723,3 +723,34 @@ fn source_metadata_owners_validate_table_and_index_options() {
         }
     }
 }
+
+#[test]
+fn local_strict_casts_report_overflow_and_invalid_text_instead_of_null() {
+    let expression=|target:&str|LocalExpr::Cast {input:Box::new(LocalExpr::Column {index:0}),data_type:target.into()};
+    for value in [-129,128,i64::MAX,i64::MIN] {
+        let cast=expression("int8");
+        validate_expr(&cast,&Functions::new(),1).unwrap();
+        assert!(evaluate(&cast,&batch(vec![Some(value)]),&Functions::new()).is_err(),"strict cast silently accepted {value}");
+    }
+    for text in ["not-an-integer","9223372036854775808"] {
+        let input=RecordBatch::try_from_iter(vec![("v",Arc::new(arrow::array::StringArray::from(vec![text])) as ArrayRef)]).unwrap();
+        assert!(evaluate(&expression("int64"),&input,&Functions::new()).is_err(),"strict cast silently accepted {text}");
+    }
+    let input=batch(vec![Some(-128),None,Some(127)]);
+    let result=evaluate(&expression("int8"),&input,&Functions::new()).unwrap();
+    for (row,expected) in [Some(-128_i8),None,Some(127)].into_iter().enumerate() {
+        assert_eq!(ScalarValue::try_from_array(&result,row).unwrap(),ScalarValue::Int8(expected));
+    }
+}
+
+#[test]
+fn local_identity_casts_reuse_buffers_and_widening_keeps_nulls() {
+    let input=batch(vec![Some(-128),None,Some(127)]);
+    let cast=|target:&str|LocalExpr::Cast {input:Box::new(LocalExpr::Column {index:0}),data_type:target.into()};
+    let same=evaluate(&cast("int64"),&input,&Functions::new()).unwrap();
+    assert!(Arc::ptr_eq(&same,input.column(0)));
+    let widened=evaluate(&cast("float64"),&input,&Functions::new()).unwrap();
+    for (row,expected) in [Some(-128.0),None,Some(127.0)].into_iter().enumerate() {
+        assert_eq!(ScalarValue::try_from_array(&widened,row).unwrap(),ScalarValue::Float64(expected));
+    }
+}

@@ -766,11 +766,19 @@ fn evaluate(
             }
             crate::execution::graph_values::decode_array(values)
         }
-        LocalExpr::Cast { input, data_type } => arrow::compute::cast(
-            &evaluate(input, batch, functions)?,
-            &crate::compiler::data_type(data_type)?,
-        )
-        .map_err(|e| e.to_string()),
+        LocalExpr::Cast { input, data_type } => {
+            let values = evaluate(input, batch, functions)?;
+            let target = crate::compiler::data_type(data_type)?;
+            if values.data_type() == &target {
+                return Ok(values);
+            }
+            arrow::compute::cast_with_options(
+                &values,
+                &target,
+                // This operation represents Expr::Cast, not TRY_CAST.
+                &arrow::compute::CastOptions { safe: false, ..Default::default() },
+            ).map_err(|e| e.to_string())
+        },
         LocalExpr::Literal { ipc, .. } => literal(ipc)?
             .to_array_of_size(batch.num_rows())
             .map_err(|e| e.to_string()),
