@@ -87,10 +87,13 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
                 match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')"), SqlDialect::Custom(_) => unreachable!() }
             }
             value => {
+                let typed_timestamp = matches!(ty, DataType::Timestamp(..)) && value.data_type() == ty;
                 let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect)?.data;
                 let sql_dialect = dialect.unparser_dialect();
                 let mut expression = datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded)?;
                 functions::prepare_ast(&mut expression, dialect)?;
+                // Timestamp encoding already carries this exact declared type.
+                if typed_timestamp { return Ok(expression.to_string()); }
                 expression.to_string()
             }
         }

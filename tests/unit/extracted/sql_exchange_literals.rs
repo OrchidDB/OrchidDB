@@ -222,3 +222,174 @@ async fn exchange_literals_execute_consistently_on_postgres_duckdb_and_trino() {
         assert_eq!(rows, vec![expected], "Trino {value:?}: {query}");
     }
 }
+
+#[cfg(feature = "trino")]
+async fn execute_text_case(
+    query: &str,
+    dialect: SqlDialect,
+    pg: &str,
+    trino_session: &crate::execution::trino::TrinoSession,
+) -> String {
+    use futures::StreamExt;
+    match dialect {
+        SqlDialect::DuckDb => {
+            let rows = DuckDbExecutor::default().run(&[], query).unwrap();
+            let [row] = rows.as_slice() else {
+                panic!("{rows:?}")
+            };
+            let [SqlValue::Text(value)] = row.as_slice() else {
+                panic!("{row:?}")
+            };
+            value.clone()
+        }
+        SqlDialect::Postgres => {
+            let result = std::process::Command::new("psql")
+                .args([pg, "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c", query])
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{query}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            String::from_utf8(result.stdout).unwrap().trim().to_owned()
+        }
+        SqlDialect::Custom(_) => {
+            let mut stream = trino_session.execute(query, vec![]).await.unwrap();
+            let mut values = vec![];
+            while let Some(batch) = stream.next().await {
+                let batch = batch.unwrap();
+                for row in 0..batch.num_rows() {
+                    values.push(
+                        arrow::util::display::array_value_to_string(batch.column(0).as_ref(), row)
+                            .unwrap(),
+                    );
+                }
+            }
+            assert_eq!(values.len(), 1, "{query}");
+            values.remove(0)
+        }
+    }
+}
+
+#[cfg(feature = "trino")]
+fn literal_test_engines() -> (String, crate::execution::trino::TrinoSession) {
+    use crate::execution::trino::{TrinoOptions, TrinoSession};
+    let pg = std::env::var("GRAPH_PG_URL").expect("GRAPH_PG_URL");
+    let endpoint = std::env::var("ORCHIDDB_TEST_TRINO_URL")
+        .or_else(|_| std::env::var("ORCHIDDB_TEST_OPA_URL"))
+        .expect("Trino URL");
+    (
+        pg,
+        TrinoSession::source(TrinoOptions::new(endpoint, "orchid_test")).unwrap(),
+    )
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn exchange_special_floats_preserve_nan_infinity_and_zero_sign_on_every_engine() {
+    let (pg, trino_session) = literal_test_engines();
+    for (number, expected) in [
+        (Some(f64::NAN), "nan"),
+        (Some(f64::INFINITY), "+inf"),
+        (Some(f64::NEG_INFINITY), "-inf"),
+        (Some(-0.0), "-0"),
+        (Some(0.0), "+0"),
+        (None, "null"),
+    ] {
+        for value in [
+            ScalarValue::Float64(number),
+            ScalarValue::Float32(number.map(|number| number as f32)),
+        ] {
+            for dialect in [
+                SqlDialect::DuckDb,
+                SqlDialect::Postgres,
+                SqlDialect::Custom(&trino::TRINO),
+            ] {
+                let literal = exchange_literal(value.clone(), value.data_type(), dialect).unwrap();
+                let (nan, infinite, negative) = match dialect {
+                    SqlDialect::DuckDb => ("isnan(v)", "isinf(v)", "signbit(v)"),
+                    SqlDialect::Postgres => (
+                        "v = CAST('NaN' AS DOUBLE PRECISION)",
+                        "abs(v) = CAST('Infinity' AS DOUBLE PRECISION)",
+                        "encode(float8send(CAST(v AS DOUBLE PRECISION)), 'hex') = '8000000000000000'",
+                    ),
+                    SqlDialect::Custom(_) => {
+                        ("is_nan(v)", "is_infinite(v)", "CAST(1 AS DOUBLE) / v < 0")
+                    }
+                };
+                let query = format!(
+                    "SELECT CASE WHEN v IS NULL THEN 'null' WHEN {nan} THEN 'nan' WHEN {infinite} AND v > 0 THEN '+inf' WHEN {infinite} AND v < 0 THEN '-inf' WHEN v = 0 THEN CASE WHEN {negative} THEN '-0' ELSE '+0' END ELSE 'finite' END FROM (SELECT {literal} AS v) t"
+                );
+                assert_eq!(
+                    execute_text_case(&query, dialect, &pg, &trino_session).await,
+                    expected,
+                    "{dialect:?} {value:?}: {query}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn exchange_zoned_timestamp_literals_preserve_instants_before_and_after_epoch() {
+    let (pg, trino_session) = literal_test_engines();
+    for zone in [
+        None,
+        Some("UTC"),
+        Some("Asia/Kolkata"),
+        Some("America/New_York"),
+    ] {
+        for number in [None, Some(-1_234_567_i64), Some(0), Some(1_234_567)] {
+            let value = ScalarValue::TimestampMicrosecond(number, zone.map(Into::into));
+            for dialect in [
+                SqlDialect::DuckDb,
+                SqlDialect::Postgres,
+                SqlDialect::Custom(&trino::TRINO),
+            ] {
+                let direct = exchange_literal(value.clone(), value.data_type(), dialect).unwrap();
+                let encoded = unparse::encode_expression_literals(
+                    datafusion::logical_expr::lit(value.clone()),
+                    dialect,
+                )
+                .unwrap()
+                .data;
+                let unparser_dialect = dialect.unparser_dialect();
+                let mut ast = datafusion::sql::unparser::Unparser::new(unparser_dialect.as_ref())
+                    .expr_to_sql(&encoded)
+                    .unwrap();
+                functions::prepare_ast(&mut ast, dialect).unwrap();
+                for literal in [direct, ast.to_string()] {
+                    assert_eq!(
+                        literal.to_ascii_uppercase().matches("CAST(").count(),
+                        1,
+                        "timestamp transport needs one declared-type cast: {literal}"
+                    );
+                    let epoch = match dialect {
+                        SqlDialect::DuckDb => "epoch(v)",
+                        SqlDialect::Postgres => "extract(epoch from v)",
+                        SqlDialect::Custom(_) => "to_unixtime(v AT TIME ZONE 'UTC')",
+                    };
+                    let query = format!(
+                        "SELECT coalesce(CAST({epoch} AS VARCHAR), 'null') FROM (SELECT {literal} AS v) t"
+                    );
+                    let actual = execute_text_case(&query, dialect, &pg, &trino_session).await;
+                    match number {
+                        None => assert_eq!(actual, "null", "{dialect:?} {zone:?}"),
+                        Some(micros) => {
+                            let actual: f64 = actual.parse().unwrap();
+                            let expected = micros as f64 / 1_000_000.0;
+                            assert!(
+                                (actual - expected).abs() <= 1e-9,
+                                "{dialect:?} {zone:?} {micros}: {actual} != {expected}: {query}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

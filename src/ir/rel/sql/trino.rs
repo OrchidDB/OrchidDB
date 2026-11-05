@@ -213,7 +213,7 @@ impl DialectAdapter for TrinoAdapter {
                 | ScalarValue::TimestampMillisecond(..)
                 | ScalarValue::TimestampMicrosecond(..)
                 | ScalarValue::TimestampNanosecond(..) => string(
-                    &arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?,
+                    &arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?.replace('T', " "),
                 ),
                 _ => return Err(SqlError::Unsupported(format!("trino literal {ty}"))),
             }

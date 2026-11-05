@@ -564,14 +564,14 @@ pub(super) fn encode_expression_literals(
                     lit(storage), value.data_type(), dialect.name(),
                 )?));
             }
-            if matches!(value.data_type(), DataType::Timestamp(_, Some(_))) {
-                // DF53 renders zoned timestamp literals as plain TIMESTAMP,
-                // which silently reinterprets the instant in the session zone.
+            if matches!(value.data_type(), DataType::Timestamp(..)) {
+                // Keep timestamp precision, null type, and timezone in the cast.
+                // Generic literals can lose null typing or reinterpret zoned instants.
                 let text = if value.is_null() { None } else {
                     let text = arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?;
                     // Use SQL timestamp text accepted by all source adapters;
-                    // Trino CAST rejects the ISO 8601 T/Z spelling.
-                    Some(text.replace('T', " ").replace('Z', " +00:00"))
+                    // Trino CAST requires a space instead of the ISO 8601 T.
+                    Some(text.replace('T', " "))
                 };
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(ScalarValue::Utf8(text)), value.data_type(), dialect.name(),
