@@ -1363,12 +1363,22 @@ fn prepared_temporal_literals_cannot_bypass_postgres_precision_checks() {
             islands: Default::default(),
         };
         let sql = sql::unparse(&plan, SqlDialect::Postgres);
-        if ticks % 1000 == 0 {
-            assert!(sql.is_ok(), "{sql:?}");
-        } else {
-            assert!(sql.unwrap_err().to_string().contains("sub-microsecond"));
-        }
+        // The declared nanosecond type must survive transport, even when this
+        // particular value happens to land on a microsecond boundary.
+        let error = sql.unwrap_err().to_string();
+        assert!(error.contains("nanosecond timestamp precision") || error.contains("sub-microsecond"), "{error}");
         assert!(sql::unparse(&plan, SqlDialect::DuckDb).is_ok());
+        assert!(sql::unparse(&plan, SqlDialect::Custom(&sql::trino::TRINO)).is_ok());
+        let microseconds = LoweredPlan {
+            rule_context: Default::default(),
+            plan: LogicalPlanBuilder::empty(true)
+                .project(vec![lit(ScalarValue::TimestampMicrosecond(Some(ticks), None)).alias("value")])
+                .unwrap().build().unwrap(),
+            fields: vec!["value".into()],
+            result_form: ResultForm::RowSet,
+            islands: Default::default(),
+        };
+        assert!(sql::unparse(&microseconds, SqlDialect::Postgres).is_ok());
     }
 }
 
