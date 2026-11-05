@@ -65,7 +65,42 @@ fn encode_items(items: ArrayRef) -> SqlResult<Value> {
             .collect::<SqlResult<_>>()?,
     ))
 }
+fn map_fields(field: &Field) -> SqlResult<&arrow::datatypes::Fields> {
+    let DataType::Struct(fields) = field.data_type() else {
+        return Err(SqlError::Conversion("map entries must be a two-field struct".into()));
+    };
+    if fields.len() != 2 || field.is_nullable() {
+        return Err(SqlError::Conversion("map entries must be a non-nullable two-field struct".into()));
+    }
+    Ok(fields)
+}
+// Arrow null/empty constructors assume map schemas are well formed, even when
+// the malformed map is nested below an absent field or an empty collection.
+fn validate_transport_type(ty: &DataType) -> SqlResult<()> {
+    match ty {
+        DataType::Map(field, _) => {
+            map_fields(field)?;
+            validate_transport_type(field.data_type())?;
+        }
+        DataType::Struct(fields) => {
+            for field in fields { validate_transport_type(field.data_type())?; }
+        }
+        DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _) => {
+            validate_transport_type(field.data_type())?;
+        }
+        DataType::Union(fields, _) => {
+            for (_, field) in fields.iter() { validate_transport_type(field.data_type())?; }
+        }
+        DataType::Dictionary(_, value) => validate_transport_type(value)?,
+        _ => {}
+    }
+    Ok(())
+}
 pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
+    validate_transport_type(ty)?;
+    decode_value(value, ty)
+}
+fn decode_value(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
     if value.is_null() {
         return Ok(ScalarValue::try_from(ty)?);
     }
@@ -84,7 +119,7 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
             let columns = fs
                 .iter()
                 .map(|f| {
-                    decode(object.get(f.name()).unwrap_or(&Value::Null), f.data_type())?
+                    decode_value(object.get(f.name()).unwrap_or(&Value::Null), f.data_type())?
                         .to_array()
                         .map_err(SqlError::from)
                 })
@@ -96,20 +131,15 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
             )?))
         }
         DataType::Map(f, sorted) => {
-            let DataType::Struct(fs) = f.data_type() else {
-                return Err(invalid());
-            };
-            if fs.len() != 2 {
-                return Err(invalid());
-            }
+            let fs = map_fields(f)?;
             let entries = value.as_array().ok_or_else(invalid)?;
             let keys = entries
                 .iter()
-                .map(|e| decode(&e["key"], fs[0].data_type()))
+                .map(|e| decode_value(&e["key"], fs[0].data_type()))
                 .collect::<SqlResult<Vec<_>>>()?;
             let values = entries
                 .iter()
-                .map(|e| decode(&e["value"], fs[1].data_type()))
+                .map(|e| decode_value(&e["value"], fs[1].data_type()))
                 .collect::<SqlResult<Vec<_>>>()?;
             let a = |v: Vec<ScalarValue>, t: &DataType| -> SqlResult<ArrayRef> {
                 if v.is_empty() {
@@ -138,7 +168,7 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
                 .find(|(_, f)| f.name() == tag)
                 .ok_or_else(invalid)?;
             ScalarValue::Union(
-                Some((id, Box::new(decode(&value["value"], f.data_type())?))),
+                Some((id, Box::new(decode_value(&value["value"], f.data_type())?))),
                 fs.clone(),
                 *mode,
             )
@@ -148,7 +178,7 @@ pub(super) fn decode(value: &Value, ty: &DataType) -> SqlResult<ScalarValue> {
                 .as_array()
                 .ok_or_else(invalid)?
                 .iter()
-                .map(|v| decode(v, f.data_type()))
+                .map(|v| decode_value(v, f.data_type()))
                 .collect::<SqlResult<Vec<_>>>()?;
             let a = if values.is_empty() {
                 arrow::array::new_empty_array(f.data_type())

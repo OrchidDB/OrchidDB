@@ -161,7 +161,7 @@ fn malformed_map_schemas_return_errors_without_panicking() {
         DataType::Struct(vec![Field::new("key",DataType::Utf8,false)].into()),
         DataType::Struct(vec![Field::new("key",DataType::Utf8,false),Field::new("value",DataType::Int64,true),Field::new("extra",DataType::Int64,true)].into())] {
         let ty=DataType::Map(Arc::new(Field::new("entries",entries,false)),false);
-        for payload in [json!([]),json!([{"key":"a","value":"7"}])] {
+        for payload in [Value::Null,json!([]),json!([{"key":"a","value":"7"}])] {
             let result=std::panic::catch_unwind(||decode(&payload,&ty));
             assert!(result.is_ok(),"malformed map schema panicked: {ty}");
             assert!(result.unwrap().is_err(),"malformed map schema accepted: {ty}");
@@ -183,5 +183,33 @@ fn nested_structured_records_preserve_missing_fields_and_binary_json_leaves() {
     for malformed in [json!([]),json!(true),json!("record")] {assert!(decode(&malformed,&ty).is_err());}
     for payload in [json!({"raw":"\\x0"}),json!({"raw":"\\xgg"}),json!({"items":["overflow"]}),json!({"payload":"invalid JSON"})] {
         assert!(decode(&payload,&ty).is_err(),"accepted malformed nested leaf: {payload}");
+    }
+}
+
+#[test]
+fn malformed_nested_maps_are_rejected_before_null_or_empty_array_allocation() {
+    let malformed = DataType::Map(Arc::new(Field::new("entries", DataType::Int64, false)), false);
+    let field = Arc::new(Field::new("item", malformed.clone(), true));
+    let union = DataType::Union(arrow::datatypes::UnionFields::try_new(
+        vec![0], vec![Field::new("map", malformed.clone(), true)]).unwrap(), arrow::datatypes::UnionMode::Dense);
+    for ty in [malformed.clone(), DataType::Struct(vec![field.clone()].into()),
+        DataType::List(field.clone()), DataType::LargeList(field.clone()),
+        DataType::FixedSizeList(field, 2), union,
+        DataType::Dictionary(Box::new(DataType::Int32), Box::new(malformed))] {
+        for payload in [Value::Null, json!([]), json!({}), json!([null])] {
+            let result = std::panic::catch_unwind(|| decode(&payload, &ty));
+            assert!(result.is_ok(), "panicked for {ty} with {payload}");
+            assert!(result.unwrap().is_err(), "accepted {ty} with {payload}");
+        }
+    }
+    let entries = DataType::Struct(vec![Field::new("key", DataType::Utf8, false),
+        Field::new("value", DataType::Int64, true)].into());
+    let invalid = DataType::Map(Arc::new(Field::new("entries", entries.clone(), true)), false);
+    for payload in [Value::Null, json!([])] { assert!(decode(&payload, &invalid).is_err()); }
+    let valid = DataType::Map(Arc::new(Field::new("entries", entries, false)), false);
+    for payload in [Value::Null, json!([]), json!([{"key":"a","value":null}])] {
+        let actual = decode(&payload, &valid).unwrap();
+        assert_eq!(actual.data_type(), valid);
+        assert_eq!(encode(&actual).unwrap(), payload);
     }
 }
