@@ -190,3 +190,106 @@ fn cypher_native_temporal_domains_validate_kind_payload_and_timestamp_scale() {
         assert!(from_json(&json!({"__orchiddb_timestamp":payload}), &mut Context::default()).unwrap_err().contains(message));
     }
 }
+
+#[test]
+fn cypher_native_numeric_transport_rejects_invalid_payloads_without_losing_precision() {
+    for (kind, text, expected) in [
+        ("TINYINT", "-128", Value::Byte(-128)),
+        ("SMALLINT", "32767", Value::Short(32767)),
+        ("INTEGER", "-2147483648", Value::Int(-2147483648)),
+        // The shared value model stores Int as i64, including Cypher integers.
+        ("INTEGER", "9223372036854775807", Value::Int(i64::MAX)),
+        ("BIGINT", "9223372036854775807", Value::Long(i64::MAX)),
+        ("HUGEINT", "9223372036854775807", Value::Long(i64::MAX)),
+        ("HUGEINT", "9223372036854775808", Value::BigInt("9223372036854775808".parse().unwrap())),
+        ("DECIMAL(38,9)", "12345678901234567890.123456789", Value::BigDecimal("12345678901234567890.123456789".parse().unwrap())),
+        ("FLOAT", "1.5", Value::Float32(1.5)),
+        ("DOUBLE", "-2.25", Value::Float(-2.25)),
+    ] {
+        let input = json!({"__orchiddb_number":[kind,text]});
+        assert_eq!(from_json(&input, &mut Context::default()).unwrap(), expected);
+        let encoded = Context::default().wire(&expected);
+        assert_eq!(key(&input, true).unwrap(), key(&encoded, true).unwrap(), "{kind} lost numeric identity");
+    }
+    for (payload, message) in [
+        (json!([null,"1"]), "Missing numeric type"), (json!(["BIGINT",null]), "Missing numeric value"),
+        (json!(["TINYINT","128"]), "Invalid byte"), (json!(["SMALLINT","32768"]), "Invalid short"),
+        (json!(["INTEGER","9223372036854775808"]), "Invalid integer"), (json!(["BIGINT","9223372036854775808"]), "Invalid long"),
+        (json!(["HUGEINT","x"]), "Invalid huge integer"), (json!(["DECIMAL(38,9)","x"]), "Invalid decimal"),
+        (json!(["FLOAT","x"]), "Invalid float"), (json!(["DOUBLE","x"]), "Invalid double"),
+        (json!(["UNKNOWN","1"]), "Unsupported numeric type"),
+    ] {
+        let input = json!({"__orchiddb_number":payload});
+        assert!(from_json(&input, &mut Context::default()).unwrap_err().contains(message));
+        assert!(key(&input, true).is_err(), "malformed values must not acquire a Cypher equality key");
+    }
+    for (text, expected) in [("Infinity",f64::INFINITY),("-Infinity",f64::NEG_INFINITY),("NaN",f64::NAN)] {
+        let Value::Float(value) = from_json(&json!({"__orchiddb_float":text}), &mut Context::default()).unwrap() else {panic!("float")};
+        assert!(if expected.is_nan() {value.is_nan()} else {value == expected});
+    }
+    for payload in [json!("infinity"),json!(0),json!(null)] {
+        assert!(from_json(&json!({"__orchiddb_float":payload}), &mut Context::default()).unwrap_err().contains("Invalid native float"));
+    }
+}
+
+#[test]
+fn cypher_native_evaluation_rejects_invalid_bindings_clocks_and_predicate_types() {
+    let expr = serde_json::to_string(&IrExpr::binding("x")).unwrap();
+    for value in [json!(true), json!(false), json!(null)] {
+        assert_eq!(evaluate(&expr, &json!({"x":value.clone()}), true, 0, 0).unwrap(), value);
+    }
+    assert!(evaluate(&expr, &json!({"x":1}), true, 0, 0).unwrap_err().to_string().contains("boolean predicate"));
+    for invalid in [json!(null),json!([]),json!(1)] {
+        assert!(evaluate(&expr, &invalid, false, 0, 0).unwrap_err().to_string().contains("bindings must be a struct"));
+    }
+    for (statement,transaction,message) in [(i64::MAX,0,"statement"),(0,i64::MAX,"transaction")] {
+        assert!(evaluate(&expr, &json!({"x":1}), false, statement, transaction).unwrap_err().to_string().contains(message));
+    }
+    assert!(evaluate("{", &json!({}), false, 0, 0).is_err());
+    for (input,message) in [(json!({FIELD:42}),"Invalid native value storage"),
+        (json!({FIELD:"not base64"}),""),
+        (json!({"__cypher_scalar_tag":7,"integer":1,"string":null,"boolean":null}),"Invalid heterogeneous scalar tag")] {
+        let error = evaluate(&expr, &json!({"x":input}), false, 0, 0).unwrap_err();
+        assert!(!error.to_string().is_empty());
+        if !message.is_empty() { assert!(error.to_string().contains(message)); }
+    }
+}
+
+#[test]
+fn cypher_native_literals_are_recognized_only_from_exact_constant_constructors() {
+    let value = Value::Map(BTreeMap::from([
+        ("list".into(), Value::List(vec![Value::Long(i64::MAX), Value::Null, Value::String("雪\0'".into())])),
+        ("flag".into(), Value::Bool(false)),
+    ]));
+    let expression = literal(&value).unwrap();
+    assert_eq!(literal_value(&expression), Some(value.clone()));
+    assert_eq!(from_json(&Context::default().wire(&value), &mut Context::default()).unwrap(), value);
+    for expression in [
+        lit(1_i64), col_exact("runtime_value"), literal(&Value::Null).unwrap(),
+        df_core::named_struct(vec![lit("ordinary_user_field"),lit(encode(&value))]),
+        df_core::named_struct(vec![lit(FIELD),col_exact("runtime_value")]),
+        df_core::named_struct(vec![lit(FIELD),lit("not base64")]),
+        df_core::named_struct(vec![lit(FIELD),lit(STANDARD.encode([255_u8]))]),
+    ] {
+        assert_eq!(literal_value(&expression), None, "must not decode runtime or malformed constructor: {expression}");
+    }
+}
+
+#[test]
+fn cypher_native_list_transport_preserves_nested_values_and_null_cardinality() {
+    for (input, expected) in [
+        (json!(null), vec![]),
+        (json!([]), vec![]),
+        (json!([null]), vec![Value::Null]),
+        (json!([1,null,[2,3],"雪"]), vec![Value::Int(1),Value::Null,
+            Value::List(vec![Value::Int(2),Value::Int(3)]),Value::String("雪".into())]),
+    ] {
+        let result = items(&input).unwrap();
+        let decoded = from_json(&result, &mut Context::default()).unwrap();
+        assert_eq!(decoded, Value::List(expected));
+    }
+    let expression = serde_json::to_string(&IrExpr::binding("x")).unwrap();
+    let nested = json!({"map":{"list":[null,true,"雪"]},"large":{"__orchiddb_number":["HUGEINT","9223372036854775808"]}});
+    let encoded = evaluate(&expression, &json!({"x":nested.clone()}), false, -1, 1).unwrap();
+    assert_eq!(from_json(&encoded, &mut Context::default()).unwrap(), from_json(&nested, &mut Context::default()).unwrap());
+}
