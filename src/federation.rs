@@ -821,8 +821,18 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         Binary | LargeBinary => "binary".into(),
         Date32 | Date64 => "date".into(),
         Time32(_) | Time64(_) => "time".into(),
-        Timestamp(_, None) => "timestamp".into(),
-        Timestamp(_, Some(zone)) if zone.as_ref() == "UTC" => "timestamptz".into(),
+        Timestamp(unit, zone) if zone.as_ref().is_none_or(|zone| zone.as_ref() == "UTC") => {
+            // Graph descriptors and exchanges reconstruct Arrow types from
+            // these names. Dropping the unit silently truncates nanoseconds.
+            let base = if zone.is_some() { "timestamptz" } else { "timestamp" };
+            let suffix = match unit {
+                arrow::datatypes::TimeUnit::Second => "_s",
+                arrow::datatypes::TimeUnit::Millisecond => "_ms",
+                arrow::datatypes::TimeUnit::Microsecond => "",
+                arrow::datatypes::TimeUnit::Nanosecond => "_ns",
+            };
+            format!("{base}{suffix}")
+        }
         Decimal128(p, s) => format!("decimal:{p}:{s}"),
         List(f) | LargeList(f) | FixedSizeList(f, _) => {
             format!("list:{}", type_name(f.data_type())?)

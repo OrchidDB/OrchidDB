@@ -129,3 +129,78 @@ fn trino_map_and_decimal_types_reject_invalid_or_unsupported_domains() {
         assert!(TRINO.sql_type(&ty).unwrap_err().to_string().contains("trino type"));
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires Trino"]
+async fn trino_typed_graph_transport_preserves_nested_property_values() {
+    use std::sync::Arc;
+    use arrow::datatypes::Field;
+    use datafusion::logical_expr::{LogicalPlanBuilder, col, lit};
+    use datafusion::functions::core::expr_fn::named_struct;
+    use crate::ir::rel::native_values as native;
+    use crate::execution::trino::{TrinoOptions, TrinoSession};
+    use futures::StreamExt;
+    let endpoint = std::env::var("ORCHIDDB_TEST_OPA_URL").expect("Trino URL");
+    let trino = TrinoSession::source(TrinoOptions::new(endpoint, "orchid_test")).unwrap();
+    let list = ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(7)), ScalarValue::Int64(None)], &DataType::Int64));
+    let mut values = vec![
+        ScalarValue::Binary(Some(vec![0,39,92,255])),
+        ScalarValue::Date32(Some(19782)),
+        ScalarValue::TimestampNanosecond(Some(1700000000123456789), None),
+        ScalarValue::TimestampMicrosecond(Some(1700000000123456), Some("UTC".into())),
+        list.clone(),
+        list.cast_to(&DataType::LargeList(Arc::new(Field::new("item", DataType::Int64, true)))).unwrap(),
+        list.cast_to(&DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Int64, true)), 2)).unwrap(),
+        ScalarValue::Utf8(Some("雪🙂'".into())),
+    ];
+    values.push(ScalarValue::try_from(values[0].data_type()).unwrap());
+    for value in values {
+        let descriptor = named_struct(vec![
+            lit("kind"), lit("node"), lit("id"), lit(7_i64), lit("label"), lit("Person"),
+            lit("source_keys"), lit(true), lit("properties"), named_struct(vec![lit("payload"), lit(value.clone())]),
+        ]);
+        let input = LogicalPlanBuilder::empty(true).project(vec![descriptor.clone().alias("descriptor")]).unwrap().build().unwrap();
+        let plan = LogicalPlanBuilder::from(input).project(vec![native::typed::call("element", vec![col("descriptor")]).alias("result")]).unwrap().build().unwrap();
+        let specialized = specialize(plan).unwrap();
+        let sql = super::super::unparse::unparse_plan(specialized, SqlDialect::Custom(&TRINO)).unwrap();
+        let mut stream = trino.execute(&sql, vec![]).await.unwrap();
+        let mut batches = vec![];
+        while let Some(batch) = stream.next().await { batches.push(batch.unwrap_or_else(|error| panic!("{value:?}: {error}: {sql}"))); }
+        assert_eq!(batches.iter().map(|batch|batch.num_rows()).sum::<usize>(), 1);
+        let actual = crate::execution::graph_values::decode_array(batches[0].column(0).clone()).unwrap();
+        let schema = datafusion::common::DFSchema::empty();
+        let physical = datafusion_physical_expr::create_physical_expr(&descriptor, &schema, &datafusion::logical_expr::execution_props::ExecutionProps::new()).unwrap();
+        let empty = arrow::array::RecordBatch::try_new_with_options(Arc::new(arrow::datatypes::Schema::empty()), vec![], &arrow::array::RecordBatchOptions::new().with_row_count(Some(1))).unwrap();
+        let expected_descriptor = physical.evaluate(&empty).unwrap().into_array(1).unwrap();
+        let expected = native::typed::evaluate("element", &[expected_descriptor], 1).unwrap();
+        assert_eq!(ScalarValue::try_from_array(&actual,0).unwrap(), ScalarValue::try_from_array(&expected,0).unwrap(), "{value:?}");
+    }
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires Trino"]
+async fn trino_typed_string_keys_match_native_byte_framing() {
+    use datafusion::logical_expr::{LogicalPlanBuilder, col, lit};
+    use crate::ir::rel::native_values as native;
+    use crate::execution::trino::{TrinoOptions, TrinoSession};
+    use futures::StreamExt;
+    let endpoint = std::env::var("ORCHIDDB_TEST_OPA_URL").expect("Trino URL");
+    let trino = TrinoSession::source(TrinoOptions::new(endpoint, "orchid_test")).unwrap();
+    for text in [None, Some(""), Some("雪🙂'"), Some("a\0b")] {
+        for value in [ScalarValue::Utf8(text.map(str::to_owned)), ScalarValue::LargeUtf8(text.map(str::to_owned)), ScalarValue::Utf8View(text.map(str::to_owned))] {
+            let input = LogicalPlanBuilder::empty(true).project(vec![lit(value.clone()).alias("value")]).unwrap().build().unwrap();
+            let plan = LogicalPlanBuilder::from(input).project(vec![native::typed::call("key", vec![col("value")]).alias("key")]).unwrap().build().unwrap();
+            let sql = super::super::unparse::unparse_plan(specialize(plan).unwrap(), SqlDialect::Custom(&TRINO)).unwrap();
+            let mut stream = trino.execute(&sql, vec![]).await.unwrap();
+            let mut rows = vec![];
+            while let Some(batch) = stream.next().await {
+                let batch = batch.unwrap_or_else(|error| panic!("{value:?}: {error}: {sql}"));
+                for row in 0..batch.num_rows() { rows.push(ScalarValue::try_from_array(batch.column(0),row).unwrap()); }
+            }
+            let expected = native::typed::evaluate("key", &[value.to_array().unwrap()], 1).unwrap();
+            assert_eq!(rows, vec![ScalarValue::try_from_array(&expected,0).unwrap()], "{value:?}");
+        }
+    }
+}

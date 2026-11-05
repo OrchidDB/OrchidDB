@@ -47,3 +47,22 @@
         assert_eq!(compile_json(r#"{"op":"catalog"}"#).await.unwrap_err(),
             "remote catalogs require the orchid-catalog feature");
     }
+
+#[test]
+fn timestamp_exchange_type_names_preserve_every_supported_unit_and_utc_zone() {
+    for zone in [None, Some("UTC".into())] {
+        for unit in [TimeUnit::Second, TimeUnit::Millisecond, TimeUnit::Microsecond, TimeUnit::Nanosecond] {
+            let kind = DataType::Timestamp(unit, zone.clone());
+            let name = crate::federation::type_name(&kind).unwrap();
+            assert_eq!(data_type(&name).unwrap(), kind);
+            let nested = DataType::List(Arc::new(Field::new("item", kind.clone(), true)));
+            assert_eq!(data_type(&crate::federation::type_name(&nested).unwrap()).unwrap(), nested);
+            let record = DataType::Struct(vec![Field::new("stamp", kind, true)].into());
+            assert_eq!(data_type(&crate::federation::type_name(&record).unwrap()).unwrap(), record);
+        }
+    }
+    assert_eq!(crate::federation::type_name(&DataType::Timestamp(TimeUnit::Microsecond, None)).unwrap(), "timestamp");
+    assert_eq!(crate::federation::type_name(&DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into()))).unwrap(), "timestamptz");
+    assert!(crate::federation::type_name(&DataType::Timestamp(TimeUnit::Nanosecond, Some("Europe/Paris".into()))).is_err());
+    for name in ["timestamp_ps", "timestamptz_ps", "timestamp_us_extra"] { assert!(data_type(name).is_err()); }
+}

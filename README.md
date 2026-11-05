@@ -56,6 +56,12 @@ The complete borrowed DuckDB session example is in
 [clients/rust/examples/borrowed_duckdb.rs](clients/rust/examples/borrowed_duckdb.rs).
 Schema configuration and query text are separate API inputs.
 
+Schema timestamp types `timestamp` and `timestamptz` use microsecond precision;
+`timestamptz` carries UTC. Use the `_s`, `_ms`, or `_ns` suffix for second,
+millisecond, or nanosecond precision (for example, `timestamp_ns`). Exchange
+and graph-value descriptors preserve the declared precision. Source engines
+must support that precision; PostgreSQL rejects nanosecond timestamp mappings.
+
 ## Declared table functions
 
 Declare a row-producing SQL function with

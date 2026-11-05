@@ -359,6 +359,12 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
         "timestamptz" => DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+        "timestamp_s" => DataType::Timestamp(TimeUnit::Second, None),
+        "timestamp_ms" => DataType::Timestamp(TimeUnit::Millisecond, None),
+        "timestamp_ns" => DataType::Timestamp(TimeUnit::Nanosecond, None),
+        "timestamptz_s" => DataType::Timestamp(TimeUnit::Second, Some("UTC".into())),
+        "timestamptz_ms" => DataType::Timestamp(TimeUnit::Millisecond, Some("UTC".into())),
+        "timestamptz_ns" => DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
         _ if value.starts_with("domain:") => {
             let (name, storage) = value[7..]
                 .split_once(':')
