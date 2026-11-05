@@ -551,7 +551,7 @@ impl<'a> LoweringContext<'a> {
                         "Cypher slice requires a native collection".into(),
                     ));
                 }
-                let length = datafusion::functions_nested::expr_fn::array_length(array.clone());
+                let length = df_core::coalesce(vec![datafusion::functions_nested::expr_fn::array_length(array.clone()).cast_to(&DataType::Int64, plan.schema())?, lit(0_i64)]);
                 let bound = |value: Expr| {
                     let relative = Expr::Case(Case::new(
                         None,
@@ -581,7 +581,7 @@ impl<'a> LoweringContext<'a> {
                 for value in [&start, &end] {
                     if !matches!(value.get_type(plan.schema())?,
                         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
-                        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Null)
+                        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::Null)
                     {
                         return Err(RelError::Unsupported("Cypher slice bounds require runtime type validation".into()));
                     }
@@ -589,8 +589,8 @@ impl<'a> LoweringContext<'a> {
                 let null_bound = Expr::or(start.clone().is_null(), end.clone().is_null());
                 let sliced = datafusion::functions_nested::expr_fn::array_slice(
                     array,
-                    Expr::Cast(Cast::new(Box::new(binary(bound(start), BinaryOp::Add, lit(1_i64))), DataType::Int64)),
-                    Expr::Cast(Cast::new(Box::new(bound(end)), DataType::Int64)),
+                    binary(bound(start), BinaryOp::Add, lit(1_i64)).cast_to(&DataType::Int64, plan.schema())?,
+                    bound(end).cast_to(&DataType::Int64, plan.schema())?,
                     None,
                 );
                 Ok(Expr::Case(Case::new(

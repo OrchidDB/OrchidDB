@@ -907,3 +907,129 @@ fn cypher_projected_union_tag_subscripts_preserve_nullable_tags() {
         }
     }
 }
+
+fn bind_boundary_columns(expr: Expr, values: &[(&str, ScalarValue)]) -> Expr {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    expr.transform_up(|expr| {
+        if let Expr::Column(column) = &expr {
+            if let Some((_, value)) = values.iter().find(|(name, _)| *name == column.name) {
+                return Ok(Transformed::yes(lit(value.clone())));
+            }
+        }
+        Ok(Transformed::no(expr))
+    }).unwrap().data
+}
+
+#[test]
+fn cypher_slice_clamps_signed_bounds_and_preserves_null_elements() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let bounds = [i64::MIN, -5, -3, -1, 0, 1, 2, 3, 5, i64::MAX];
+    for items in [vec![], vec![Some(11)], vec![Some(11), None, Some(33)]] {
+        let values = items.iter().map(|v| ScalarValue::Int64(*v)).collect::<Vec<_>>();
+        let list = ScalarValue::List(ScalarValue::new_list_nullable(&values, &DataType::Int64));
+        let plan = scalar_scope(vec![Field::new("items", list.data_type(), true), Field::new("start", DataType::Int64, true), Field::new("end", DataType::Int64, true)]);
+        let lowered = ctx.lower_sql_expr(&plan, &call("cypher_slice", vec![binding("items"), binding("start"), binding("end")])).unwrap();
+        for start in bounds { for end in bounds {
+            let bound = bind_boundary_columns(lowered.clone(), &[("items",list.clone()),("start",ScalarValue::Int64(Some(start))),("end",ScalarValue::Int64(Some(end)))]);
+            let output = fold_cypher_boundary_expression(&scalar_scope(vec![]), bound);
+            let ScalarValue::List(array) = output else {panic!("expected list: {output:?}")};
+            let actual = array.value(0);
+            let actual = (0..actual.len()).map(|i| match ScalarValue::try_from_array(&actual,i).unwrap() {ScalarValue::Int64(v)=>v,other=>panic!("{other:?}")}).collect::<Vec<_>>();
+            let relative = |n: i64| if n < 0 {(items.len() as i64).saturating_add(n)} else {n};
+            let from = relative(start).clamp(0, items.len() as i64) as usize;
+            let until = relative(end).clamp(0, items.len() as i64) as usize;
+            assert_eq!(actual,items[from.min(until)..until],"items={items:?}, start={start}, end={end}");
+        }}
+    }
+}
+
+#[test]
+fn cypher_slice_null_inputs_remain_null_and_small_integer_bounds_are_exact() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let list=ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(Some(11)),ScalarValue::Int64(None),ScalarValue::Int64(Some(33))],&DataType::Int64));
+    for kind in [DataType::Int8,DataType::Int16,DataType::Int32,DataType::Int64,DataType::UInt8,DataType::UInt16,DataType::UInt32] {
+        let plan=scalar_scope(vec![Field::new("items",list.data_type(),true),Field::new("start",kind.clone(),true),Field::new("end",kind.clone(),true)]);
+        let lowered=ctx.lower_sql_expr(&plan,&call("cypher_slice",vec![binding("items"),binding("start"),binding("end")])).unwrap();
+        for null_at in [None,Some(0),Some(1),Some(2)] {
+            let mut args=[list.clone(),ScalarValue::Int64(Some(1)).cast_to(&kind).unwrap(),ScalarValue::Int64(Some(3)).cast_to(&kind).unwrap()];
+            if let Some(index)=null_at {args[index]=ScalarValue::try_from(args[index].data_type()).unwrap();}
+            let result=fold_cypher_boundary_expression(&scalar_scope(vec![]),bind_boundary_columns(lowered.clone(),&[("items",args[0].clone()),("start",args[1].clone()),("end",args[2].clone())]));
+            if null_at.is_some(){assert!(result.is_null(),"{kind:?}, {null_at:?}: {result:?}");} else {
+                assert_eq!(result,ScalarValue::List(ScalarValue::new_list_nullable(&[ScalarValue::Int64(None),ScalarValue::Int64(Some(33))],&DataType::Int64)));
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_slice_invalid_domains_decline_without_coercing_to_integers_or_lists() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let list=DataType::List(Arc::new(Field::new("item",DataType::Int64,true)));
+    for kind in [DataType::Boolean,DataType::Float64,DataType::Utf8] {
+        for bad_start in [true,false] {
+            let plan=scalar_scope(vec![Field::new("items",list.clone(),true),Field::new("start",if bad_start {kind.clone()} else {DataType::Int64},true),Field::new("end",if bad_start {DataType::Int64} else {kind.clone()},true)]);
+            let error=ctx.lower_sql_expr(&plan,&call("cypher_slice",vec![binding("items"),binding("start"),binding("end")])).unwrap_err().to_string();
+            assert!(error.contains("slice bounds require runtime type validation"),"{error}");
+        }
+    }
+    for kind in [DataType::Boolean,DataType::Int64,DataType::Utf8] {
+        let plan=scalar_scope(vec![Field::new("items",kind,true)]);
+        assert!(ctx.lower_sql_expr(&plan,&call("cypher_slice",vec![binding("items"),IrExpr::Lit(Lit::Int(0)),IrExpr::Lit(Lit::Int(1))])).is_err());
+    }
+}
+
+#[test]
+fn cypher_slice_unsigned_64_bit_bounds_require_runtime_range_validation() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    for unsigned_start in [true,false] {
+        let plan=scalar_scope(vec![Field::new("items",DataType::List(Arc::new(Field::new("item",DataType::Int64,true))),true),Field::new("start",if unsigned_start {DataType::UInt64} else {DataType::Int64},true),Field::new("end",if unsigned_start {DataType::Int64} else {DataType::UInt64},true)]);
+        assert!(ctx.lower_sql_expr(&plan,&call("cypher_slice",vec![binding("items"),binding("start"),binding("end")])).is_err(),"UInt64 may exceed the runtime slice index domain");
+    }
+}
+
+#[test]
+fn cypher_integer_literal_helpers_preserve_wide_values_and_reject_malformed_input() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    for text in [i64::MIN.to_string(),i64::MAX.to_string(),"0".into(),"+7".into()] {
+        let expr=ctx.lower_integer_literal(&IrExpr::Lit(Lit::String(text.clone()))).unwrap();
+        assert_eq!(expr,lit(text.parse::<i64>().unwrap()));
+    }
+    for (text,expected) in [("9_223_372_036_854_775_808","9223372036854775808"),("-9223372036854775809","-9223372036854775809")] {
+        let expr=ctx.lower_integer_literal(&IrExpr::Lit(Lit::String(text.into()))).unwrap();
+        assert_eq!(expr,lit(expected));
+    }
+    for arg in [binding("dynamic"),IrExpr::Lit(Lit::String("1.5".into())),IrExpr::Lit(Lit::String("bad".into()))] {
+        assert!(ctx.lower_integer_literal(&arg).is_err());
+    }
+    assert_eq!(integer_literal_text(&IrExpr::Lit(Lit::Int(-8))),Some("-8".into()));
+    assert_eq!(literal_i64(&call("integer_literal",vec![IrExpr::Lit(Lit::String("1_000".into()))])),Some(1000));
+    assert_eq!(literal_i64(&call("integer_literal",vec![IrExpr::Lit(Lit::String("9223372036854775808".into()))])),None);
+}
+
+#[test]
+fn cypher_string_predicates_preserve_unicode_null_and_empty_pattern_semantics() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    for kind in [DataType::Utf8,DataType::LargeUtf8,DataType::Utf8View] {
+        let plan=scalar_scope(vec![Field::new("text",kind.clone(),true),Field::new("pattern",kind.clone(),true)]);
+        for op in [StringOp::StartsWith,StringOp::EndsWith,StringOp::Contains] {
+            let lowered=ctx.lower_sql_expr(&plan,&IrExpr::StringPredicate{op,target:Box::new(binding("text")),pattern:Box::new(binding("pattern"))}).unwrap();
+            for (text,pattern) in [(Some("猫café雪"),Some("猫")),(Some("猫café雪"),Some("雪")),(Some("猫café雪"),Some("CAFÉ")),(Some(""),Some("")),(Some("x"),Some("")),(None,Some("")),(Some("x"),None)] {
+                let expected=text.zip(pattern).map(|(s,p)|match op {StringOp::StartsWith=>s.starts_with(p),StringOp::EndsWith=>s.ends_with(p),StringOp::Contains=>s.contains(p)});
+                let expression=bind_boundary_columns(lowered.clone(),&[("text",ScalarValue::Utf8(text.map(str::to_owned)).cast_to(&kind).unwrap()),("pattern",ScalarValue::Utf8(pattern.map(str::to_owned)).cast_to(&kind).unwrap())]);
+                assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]),expression),ScalarValue::Boolean(expected));
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_slice_null_list_cannot_overflow_one_based_start_conversion() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let list_type=DataType::List(Arc::new(Field::new("item",DataType::Int64,true)));
+    let plan=scalar_scope(vec![Field::new("items",list_type.clone(),true),Field::new("start",DataType::Int64,true),Field::new("end",DataType::Int64,true)]);
+    let lowered=ctx.lower_sql_expr(&plan,&call("cypher_slice",vec![binding("items"),binding("start"),binding("end")])).unwrap();
+    for end in [i64::MIN,0,i64::MAX] {
+        let result=fold_cypher_boundary_expression(&scalar_scope(vec![]),bind_boundary_columns(lowered.clone(),&[("items",ScalarValue::try_from(&list_type).unwrap()),("start",ScalarValue::Int64(Some(i64::MAX))),("end",ScalarValue::Int64(Some(end)))]));
+        assert!(result.is_null(),"{result:?}");
+    }
+}
