@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn temporal_cardinality_fence_uses_binding_types_without_contaminating_plain_columns() {
+    let field = Arc::new(Field::new("item", DataType::Date32, true));
+    for kind in [
+        DataType::List(field.clone()),
+        DataType::LargeList(field.clone()),
+        DataType::FixedSizeList(field.clone(), 1),
+    ] {
+        let plan = LogicalPlanBuilder::empty(true)
+            .project(vec![
+                lit(ScalarValue::try_from(&kind).unwrap()).alias("dates"),
+                lit(ScalarValue::Date32(Some(0))).alias("date"),
+                lit(7_i64).alias("plain"),
+            ])
+            .unwrap().build().unwrap();
+        let size = |name: &str| IrExpr::Call {
+            name: "size".into(), args: vec![IrExpr::binding(name)],
+        };
+        assert!(!needs_temporal_semantics(&plan, &size("dates")));
+        assert!(needs_temporal_semantics(&plan, &size("date")));
+        assert!(!needs_temporal_semantics(&plan, &size("plain")));
+        assert!(needs_temporal_semantics(&plan, &size("unresolved")));
+        for (binding, expected) in [("date", true), ("plain", false), ("unresolved", true)] {
+            let property = IrExpr::property(binding, "year", crate::ir::policy::PropertyMissing::NullOnMissing);
+            assert_eq!(needs_temporal_semantics(&plan, &property), expected);
+        }
+    }
+    let plain = LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("plain")]).unwrap().build().unwrap();
+    assert!(!needs_temporal_semantics(&plain, &IrExpr::binding("unresolved")));
+}
+
+#[test]
 fn temporal_list_cardinality_is_safe_only_for_direct_typed_operands() {
     let plan = LogicalPlanBuilder::empty(true).build().unwrap();
     let date = ScalarValue::Date32(Some(0));
