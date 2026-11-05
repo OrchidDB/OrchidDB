@@ -2,6 +2,74 @@
     use super::*;
 
 #[test]
+fn sql_integer_width_boundaries_preserve_values_and_reject_overflow() {
+    for (ty,minimum,maximum) in [(DataType::Int8,-128,127),(DataType::Int16,-32768,32767),
+        (DataType::UInt8,0,255),(DataType::UInt16,0,65535),(DataType::UInt32,0,4294967295)] {
+        let field=Field::new("number",ty.clone(),true);
+        let values=vec![vec![SqlValue::Int(minimum)],vec![SqlValue::Null],vec![SqlValue::ExactNumber(maximum.to_string())]];
+        let array=rows::build_column(&field,&values,0).unwrap();
+        assert_eq!(array.data_type(),&ty);assert!(array.is_null(1));
+        for (row,expected) in [(0,minimum),(2,maximum)] {
+            assert_eq!(arrow::util::display::array_value_to_string(array.as_ref(),row).unwrap(),expected.to_string());
+        }
+        for value in [minimum-1,maximum+1] {assert!(rows::build_column(&field,&[vec![SqlValue::Int(value)]],0).is_err());}
+    }
+}
+
+#[test]
+fn sql_binary_and_dictionary_rows_preserve_payloads_and_declared_storage() {
+    for ty in [DataType::Binary,DataType::LargeBinary,DataType::BinaryView] {
+        let array=rows::build_column(&Field::new("bytes",ty.clone(),true),
+            &[vec![SqlValue::Binary(vec![0,255,39])],vec![SqlValue::Null],vec![SqlValue::Binary(vec![])]],0).unwrap();
+        assert_eq!(array.data_type(),&ty);assert!(array.is_null(1));
+        let canonical=arrow::compute::cast(array.as_ref(),&DataType::Binary).unwrap();
+        assert_eq!(ScalarValue::try_from_array(&canonical,0).unwrap(),ScalarValue::Binary(Some(vec![0,255,39])));
+        assert_eq!(ScalarValue::try_from_array(&canonical,2).unwrap(),ScalarValue::Binary(Some(vec![])));
+    }
+    for key in [DataType::Int8,DataType::UInt16,DataType::Int32] {
+        let ty=DataType::Dictionary(Box::new(key),Box::new(DataType::Utf8));
+        let array=rows::build_column(&Field::new("text",ty.clone(),true),
+            &[vec![SqlValue::Text("雪".into())],vec![SqlValue::Null],vec![SqlValue::Text("雪".into())]],0).unwrap();
+        assert_eq!(array.data_type(),&ty);
+        let decoded=arrow::compute::cast(array.as_ref(),&DataType::Utf8).unwrap();
+        assert!(decoded.is_null(1));assert_eq!(ScalarValue::try_from_array(&decoded,0).unwrap(),ScalarValue::Utf8(Some("雪".into())));
+        assert_eq!(ScalarValue::try_from_array(&decoded,0).unwrap(),ScalarValue::try_from_array(&decoded,2).unwrap());
+    }
+}
+
+#[test]
+fn sql_temporal_rows_preserve_epoch_precision_and_reject_invalid_text() {
+    use arrow::datatypes::TimeUnit;
+    for (ty,text,expected) in [
+        (DataType::Date32,"1970-01-01",ScalarValue::Date32(Some(0))),
+        (DataType::Date64,"1970-01-02",ScalarValue::Date64(Some(86400000))),
+        (DataType::Timestamp(TimeUnit::Microsecond,None),"1969-12-31 23:59:59.123456",ScalarValue::TimestampMicrosecond(Some(-876544),None)),
+        (DataType::Time64(TimeUnit::Microsecond),"00:00:01.123456",ScalarValue::Time64Microsecond(Some(1123456))),
+    ] {
+        let field=Field::new("when",ty.clone(),true);
+        let array=rows::build_column(&field,&[vec![SqlValue::Text(text.into())],vec![SqlValue::Null]],0).unwrap();
+        assert_eq!(array.data_type(),&ty);assert_eq!(ScalarValue::try_from_array(&array,0).unwrap(),expected);assert!(array.is_null(1));
+        assert!(rows::build_column(&field,&[vec![SqlValue::Text("not-a-time".into())]],0).is_err());
+    }
+}
+
+#[test]
+fn sql_list_storage_preserves_parent_nulls_and_checks_fixed_width() {
+    let item=Arc::new(Field::new("item",DataType::Int64,true));
+    let values=vec![vec![SqlValue::List(vec![SqlValue::Int(7),SqlValue::Null])],vec![SqlValue::Null]];
+    for ty in [DataType::List(item.clone()),DataType::LargeList(item.clone()),DataType::FixedSizeList(item.clone(),2)] {
+        let array=rows::build_column(&Field::new("items",ty.clone(),true),&values,0).unwrap();
+        assert_eq!(array.data_type(),&ty);assert!(array.is_null(1));
+        let canonical=arrow::compute::cast(array.as_ref(),&DataType::List(item.clone())).unwrap();
+        let ScalarValue::List(list)=ScalarValue::try_from_array(&canonical,0).unwrap() else {panic!()};
+        assert_eq!(list.value_length(0),2);assert_eq!(ScalarValue::try_from_array(&list.value(0),0).unwrap(),ScalarValue::Int64(Some(7)));
+        assert!(list.value(0).is_null(1));
+    }
+    assert!(rows::build_column(&Field::new("items",DataType::FixedSizeList(item,2),true),
+        &[vec![SqlValue::List(vec![SqlValue::Int(1)])]],0).is_err());
+}
+
+#[test]
 fn sql_decimal_rows_preserve_negative_scale_and_reject_lossy_values() {
     let field=Field::new("amount",DataType::Decimal128(10,-2),true);
     for (input,expected) in [(SqlValue::Int(12300),123),(SqlValue::Int(-12300),-123),

@@ -178,9 +178,6 @@ pub(super) fn literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<Str
             super::literals::string_literal(dialect, &encode(value)?.to_string())?
         ));
     }
-    if value.is_null() && !matches!(value, ScalarValue::Union(Some(_), _, _)) {
-        return Ok("NULL".into());
-    }
     Ok(match value {
         ScalarValue::Struct(a) => format!(
             "struct_pack({})",
