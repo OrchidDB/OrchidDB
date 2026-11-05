@@ -425,3 +425,56 @@ fn native_cypher_relationship_adjacency_prefetch_preserves_direction_and_cache()
     assert_eq!(incoming,vec![("NEAR".into(),generated_cypher_edge_id(2),"Person".into(),2_i64.into()),("NEAR".into(),generated_cypher_edge_id(3),"Person".into(),3_i64.into())]);
     source.invalidate();assert_eq!(source.neighbors(false,"Person",&1_i64.into(),&types).len(),1);source.check().unwrap();
 }
+
+fn bounded_cypher_source(rows: usize, payload_bytes: usize) -> Source {
+    use crate::ir::rel::{host::legacy::ExecutorHost,mapping::NodeMapping};
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch(&format!("CREATE TABLE people AS SELECT (i+1)::BIGINT id, repeat('x',{payload_bytes}) payload FROM range({rows}) t(i)")).unwrap();
+    let mut mapping=GraphMapping::new();
+    mapping.register_table_schema("people",Arc::new(Schema::new(vec![Field::new("id",arrow::datatypes::DataType::Int64,false),Field::new("payload",arrow::datatypes::DataType::Utf8,false)])));
+    mapping.map_node(NodeMapping::table("Person","people","id").property("payload","payload"));
+    let rule=serde_json::from_value(serde_json::json!({"name":"SELF","source":"Person","target":"Person",
+        "cypher":"WITH source RETURN source AS target, source.payload AS payload",
+        "returns":{"target":"target","properties":{"payload":{"type":"string"}}}})).unwrap();
+    mapping.map_cypher_relationship(rule).unwrap();
+    Source {host:Arc::new(ExecutorHost::new(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))))),
+        mapping:Arc::new(mapping),operators:crate::ir::functions::selected_operator_table().unwrap(),
+        cache:Default::default(),key_types:HashMap::from([
+            ((false,"Person".into()),arrow::datatypes::DataType::Int64),
+            ((true,"SELF".into()),arrow::datatypes::DataType::UInt64),
+        ])}
+}
+
+#[test]
+fn capped_cypher_source_scans_report_work_without_caching_incomplete_rows() {
+    for (rows,payload_bytes) in [(65537,0),(2,9*1024*1024)] {
+        let source=bounded_cypher_source(rows,payload_bytes);
+        let ids=[generated_cypher_edge_id(1)];
+        assert!(source.fetch_read(true,"SELF",None,&ids,true).unwrap().is_empty());
+        {
+            let cache=source.cache.lock().unwrap();
+            assert_eq!(cache.rows,rows,"capped reads must still count work");
+            assert!(!cache.queries.is_empty(),"capped reads must retain query diagnostics");
+            assert!(cache.records.is_empty());
+            assert!(!cache.complete_sources.contains(&(true,"SELF".into())));
+        }
+        assert_eq!(source.fetch_read(true,"SELF",None,&ids,false).unwrap(),ids);
+        let cache=source.cache.lock().unwrap();
+        assert_eq!(cache.rows,rows+1);
+        assert_eq!(cache.records.len(),1);
+        assert!(cache.records[&(true,"SELF".into(),ids[0].clone())].is_some());
+    }
+}
+
+#[test]
+fn complete_cypher_source_scans_cache_all_keys_and_skip_redundant_reads() {
+    let source=bounded_cypher_source(2,3);
+    let first=generated_cypher_edge_id(1);let second=generated_cypher_edge_id(2);
+    let mut fetched=source.fetch_read(true,"SELF",None,&[first.clone()],true).unwrap();
+    fetched.sort();assert_eq!(fetched,vec![first.clone(),second.clone()]);
+    assert_eq!(source.cached_keys(true,"SELF",None,&[second.clone()]),Some(vec![second.clone()]));
+    let before=source.cache.lock().unwrap().queries.len();
+    assert_eq!(source.fetch(true,"SELF",None,&[second.clone()]).unwrap(),vec![second]);
+    assert_eq!(source.cache.lock().unwrap().queries.len(),before);
+    assert_eq!(source.cache.lock().unwrap().rows,2);
+}

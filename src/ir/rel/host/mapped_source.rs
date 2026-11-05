@@ -372,11 +372,6 @@ impl Source {
             let (batch, queries) = self
                 .host
                 .execute_plan(&self.mapping, plan.build().map_err(|e| e.to_string())?)?;
-            if scan
-                && (batch.num_rows() > 65536 || batch.get_array_memory_size() > 16 * 1024 * 1024)
-            {
-                return Ok(vec![]);
-            }
             (batch, queries.join(";\n"))
         } else {
             let sql = if scan {
@@ -403,16 +398,18 @@ impl Source {
                 HostRequest::new(&sql).relation("__orchiddb_write_values", input)
             };
             let batch = self.host.query(request)?;
-            if scan
-                && (batch.num_rows() > 65536 || batch.get_array_memory_size() > 16 * 1024 * 1024)
-            {
-                let mut cache = self.cache.lock().unwrap();
-                cache.rows += batch.num_rows();
-                cache.queries.push(sql.clone());
-                return Ok(vec![]);
-            }
             (batch, sql)
         };
+        if scan
+            && (batch.num_rows() > 65536 || batch.get_array_memory_size() > 16 * 1024 * 1024)
+        {
+            // A discarded scan still consumed source work. Account for it
+            // uniformly before falling back to demand-driven lookups.
+            let mut cache = self.cache.lock().unwrap();
+            cache.rows += batch.num_rows();
+            cache.queries.push(sql);
+            return Ok(vec![]);
+        }
         let keys = keys(&batch, 0)?;
         if keys.iter().collect::<BTreeSet<_>>().len() != keys.len() {
             return Err(format!("duplicate primary key in mapping `{name}`"));
