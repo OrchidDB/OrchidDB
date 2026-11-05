@@ -238,6 +238,12 @@ fn inline_recursive_dependencies(plain:&[PlainCte], recursive:&mut [RecursiveCte
             if !stack.insert(name.to_string()) {return Err(datafusion::common::DataFusionError::Plan("Cyclic non-recursive CTE definitions".into()));}
             let input=expand(cte.term.clone(),dependent,plain,stack)?;
             stack.remove(name);
+            // The alias covers the whole former CTE, including both sides of
+            // a filtered join. Without a SELECT boundary DF can attach it to
+            // only the left relation, making right-side columns unavailable.
+            let columns = input.schema().columns().into_iter().map(Expr::Column).collect();
+            let input = LogicalPlan::Projection(datafusion::logical_expr::Projection::try_new(
+                columns, Arc::new(input))?);
             let input=datafusion::logical_expr::LogicalPlanBuilder::from(input).alias(name)?.build()?;
             Ok(Transformed::yes(input))
         })?.data)

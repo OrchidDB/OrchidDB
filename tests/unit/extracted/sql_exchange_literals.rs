@@ -662,3 +662,46 @@ async fn unordered_distinct_empty_keys_keep_cardinality_on_every_engine() {
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn encoded_list_insert_keeps_null_elements_on_every_engine() {
+    use datafusion::logical_expr::{LogicalPlanBuilder, lit};
+    use crate::ir::rel::{LoweringContext,RelBackendOptions};
+    use crate::ir::policy::GraphPlanPolicy;
+    use crate::ir::expr::IrExpr;
+    use crate::ir::policy::Language;
+    let graph = PropertyGraph::new();
+    let ctx = LoweringContext { island_memo: None, graph: &graph,
+        options: RelBackendOptions::default(), policy: GraphPlanPolicy::cypher(),
+        language: Language::Cypher, scan_counter: 0, correlate_plan: None,
+        rdf_typed_terms_used: false, scan_logical_labels: false,
+        gremlin_label_binds: Default::default(), unordered_collects: Default::default(),
+        unordered_distincts: Default::default(), };
+    let (pg, trino_session) = literal_test_engines();
+    for text in [Some("[]"), Some("[1,雪]"), None] {
+    for (item, rendered) in [(ScalarValue::Boolean(None), ""), (ScalarValue::Int64(None), ""),
+                           (ScalarValue::Boolean(Some(true)), "True"), (ScalarValue::Utf8(Some("é".into())), "é")] {
+    for prepend in [false,true] {
+        let plan = LogicalPlanBuilder::empty(true).project(vec![
+            lit(ScalarValue::Utf8(text.map(str::to_owned))).alias("xs"),lit(item.clone()).alias("item"),
+        ]).unwrap().build().unwrap();
+        let expr = ctx.lower_list_insert(&plan,&IrExpr::binding("xs"),&IrExpr::binding("item"),prepend).unwrap();
+        let plan = LogicalPlanBuilder::from(plan).project(vec![expr.alias("result")]).unwrap().build().unwrap();
+        let expected = text.map(|text| {
+            let body=&text[1..text.len()-1];
+            if body.is_empty() {format!("[{rendered}]")}
+            else if prepend {format!("[{rendered},{body}]")}
+            else {format!("[{body},{rendered}]")}
+        }).unwrap_or_else(||"<null-list>".into());
+        for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&trino::TRINO)] {
+            let sql=unparse::unparse_plan(plan.clone(),dialect).unwrap();
+            let sql=format!("SELECT CASE WHEN result IS NULL THEN '<null-list>' ELSE result END FROM ({sql}) checked");
+            assert_eq!(execute_text_case(&sql,dialect,&pg,&trino_session).await,expected,
+                "{dialect:?}, text={text:?}, item={item:?}, prepend={prepend}: {sql}");
+        }
+    }
+    }
+    }
+}

@@ -230,8 +230,16 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
-                let items = cast_utf8(items);
-                let rendered_item = render_property_text_expr(item, &item_type);
+                // Nullable inputs can unparse as an untyped NULL; Trino needs
+                // VARCHAR to resolve its string/binary substring overloads.
+                let items = if items_type == DataType::Utf8 && !items.nullable(plan.schema())? {
+                    items
+                } else { cast_utf8(items) };
+                // A null member is empty display text; a null list still
+                // propagates through the surrounding concatenation.
+                let rendered_item = Expr::Case(Case::new(None,
+                    vec![(Box::new(item.clone().is_null()), Box::new(lit("")))],
+                    Some(Box::new(render_property_text_expr(item, &item_type)))));
                 let empty = binary(items.clone(), BinaryOp::Eq, lit("[]"));
                 if prepend {
                     let suffix = Expr::Case(Case::new(

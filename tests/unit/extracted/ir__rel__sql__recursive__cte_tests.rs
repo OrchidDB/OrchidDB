@@ -111,3 +111,30 @@ fn semi_and_anti_joins_keep_filtered_and_grouped_preserved_inputs() {
         }
     }
 }
+
+#[test]
+fn inlined_recursive_filter_scopes_keep_columns_from_both_join_inputs() {
+    use datafusion::logical_expr::JoinType;
+    let schema=|name: &str| Arc::new(Schema::new(vec![Field::new(name.to_owned(),DataType::Int64,false)]));
+    let scan=|name: &str, field: &str| LogicalPlanBuilder::scan(name,
+        provider_as_source(Arc::new(EmptyTable::new(schema(field)))),None).unwrap().build().unwrap();
+    let joined=LogicalPlanBuilder::from(scan("r","step")).join_on(scan("increments","delta"),JoinType::Inner,vec![lit(true)])
+        .unwrap().filter(col("delta").gt(lit(0_i64))).unwrap().build().unwrap();
+    let work=LogicalPlanBuilder::scan("__w_sql_cte_join_filter_inline",
+        provider_as_source(Arc::new(EmptyTable::new(Arc::new(joined.schema().as_arrow().clone())))),None).unwrap()
+        .project(vec![(col("__w_sql_cte_join_filter_inline.step")+col("__w_sql_cte_join_filter_inline.delta")).alias("step")]).unwrap().build().unwrap();
+    let seed=LogicalPlanBuilder::empty(true).project(vec![lit(0_i64).alias("step")]).unwrap().build().unwrap();
+    let mut recursive=vec![RecursiveCte {name:"r".into(),static_term:seed,recursive_term:work,is_distinct:false}];
+    inline_recursive_dependencies(&[PlainCte {name:"__w_sql_cte_join_filter_inline".into(),term:joined}],&mut recursive).unwrap();
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE r(step BIGINT); INSERT INTO r VALUES (0),(1); CREATE TABLE increments(delta BIGINT); INSERT INTO increments VALUES (1),(0)").unwrap();
+    for repair_scopes in [false,true] {
+        let dialect=SqlDialect::DuckDb;
+        let sql_dialect=dialect.unparser_dialect();
+        let unparser=Unparser::new(sql_dialect.as_ref());
+        let sql=unparse_one(&recursive[0].recursive_term,&unparser,dialect,repair_scopes).unwrap();
+        let mut statement=db.prepare(&sql).unwrap_or_else(|error|panic!("repair={repair_scopes}: {error}: {sql}"));
+        let mut values=statement.query_map([],|row|row.get::<_,i64>(0)).unwrap().collect::<duckdb::Result<Vec<_>>>().unwrap();
+        values.sort();assert_eq!(values,vec![1,2],"repair={repair_scopes}: {sql}");
+    }
+}

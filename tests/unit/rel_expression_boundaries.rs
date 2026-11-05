@@ -1419,3 +1419,59 @@ fn cypher_label_predicates_decline_incomplete_identity_and_dynamic_label_metadat
             .to_string().contains("bound element and label"));
     }
 }
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn cypher_encoded_list_insert_preserves_null_members_and_display_values() {
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let values = [
+        (ScalarValue::Int64(Some(7)), "7"), (ScalarValue::Int64(None), ""),
+        (ScalarValue::Boolean(Some(true)), "True"), (ScalarValue::Boolean(Some(false)), "False"),
+        (ScalarValue::Boolean(None), ""), (ScalarValue::Float64(Some(1.25)), "1.250000"),
+        (ScalarValue::Float64(None), ""), (ScalarValue::Utf8(Some("雪".into())), "雪"),
+        (ScalarValue::Utf8(None), ""),
+    ];
+    let mut failures = Vec::new();
+    for text in [Some("[]"), Some("[1,2]"), Some("[雪,False]"), None] {
+    for (item, rendered) in &values {
+    for prepend in [false, true] {
+        let plan = LogicalPlanBuilder::empty(true).project(vec![
+            lit(ScalarValue::Utf8(text.map(str::to_owned))).alias("xs"), lit(item.clone()).alias("item"),
+        ]).unwrap().build().unwrap();
+        let expr = ctx.lower_list_insert(&plan, &binding("xs"), &binding("item"), prepend).unwrap();
+        let output = LogicalPlanBuilder::from(plan).project(vec![expr.alias("result")]).unwrap().build().unwrap();
+        let batches = crate::ir::rel::execute_test_plan(output).await.unwrap();
+        let value = ScalarValue::try_from_array(batches[0].column(0), 0).unwrap();
+        let actual = if value.is_null() { None } else { Some(value.to_string()) };
+        let expected = text.map(|text| {
+            let body = &text[1..text.len()-1];
+            if body.is_empty() { format!("[{rendered}]") }
+            else if prepend { format!("[{rendered},{body}]") }
+            else { format!("[{body},{rendered}]") }
+        });
+        if actual != expected { failures.push(format!("text={text:?}, item={item:?}, prepend={prepend}: {actual:?} != {expected:?}")); }
+    }
+    }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn cypher_encoded_list_insert_handles_all_text_layouts_and_rejects_scalar_lists() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    for kind in [DataType::Utf8, DataType::LargeUtf8, DataType::Utf8View] {
+        let plan = scalar_scope(vec![Field::new("xs",kind,true), Field::new("item",DataType::Int64,true)]);
+        for prepend in [false,true] {
+            let lowered = ctx.lower_list_insert(&plan, &binding("xs"), &binding("item"), prepend).unwrap();
+            assert_eq!(lowered.get_type(plan.schema()).unwrap(),DataType::Utf8);
+        }
+    }
+    for kind in [DataType::Int64,DataType::Float64,DataType::Boolean,DataType::Null] {
+        let plan = scalar_scope(vec![Field::new("xs",kind,true),Field::new("item",DataType::Int64,true)]);
+        for prepend in [false,true] {
+            let error = ctx.lower_list_insert(&plan, &binding("xs"), &binding("item"), prepend).unwrap_err().to_string();
+            assert!(error.contains("list operation over non-list type"),"{error}");
+        }
+    }
+}
