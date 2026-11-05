@@ -1224,3 +1224,61 @@ fn scan_projection_filter_fences_computation_correlation_and_disabled_rewrites()
     ctx.options.rule_context.optimize = false;
     assert!(ctx.filter_through_scan_projection(&naming,&predicate).unwrap().is_none());
 }
+
+#[test]
+fn cypher_order_keys_preserve_lists_and_fence_graph_struct_and_encoded_values() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    for element in [DataType::Int8,DataType::Int64,DataType::UInt64,DataType::Boolean,DataType::Null] {
+        let kind=DataType::List(Arc::new(Field::new("item",element,true)));
+        let plan=scalar_scope(vec![Field::new("x",kind.clone(),true)]);
+        let result=ctx.lower_sql_expr(&plan,&call("cypher_order_key",vec![binding("x")])).unwrap();
+        assert_eq!(result,col_exact("x"));assert_eq!(result.get_type(plan.schema()).unwrap(),kind);
+    }
+    for element in [DataType::Utf8,DataType::Float64,DataType::Struct(vec![Field::new("k",DataType::Int64,true)].into())] {
+        let kind=DataType::List(Arc::new(Field::new("item",element,true)));
+        let plan=scalar_scope(vec![Field::new("x",kind,true)]);
+        assert!(ctx.lower_sql_expr(&plan,&call("cypher_order_key",vec![binding("x")])).unwrap_err().to_string().contains("Nested Cypher ordering"));
+    }
+    let graph_plan=scalar_scope(vec![Field::new(id_col("n"),DataType::Int64,true),Field::new(label_col("n"),DataType::Utf8,true)]);
+    assert!(ctx.lower_sql_expr(&graph_plan,&call("cypher_order_key",vec![binding("n")])).unwrap_err().to_string().contains("Graph identity ordering"));
+    let nested=scalar_scope(vec![Field::new("x",DataType::Struct(vec![Field::new("k",DataType::Int64,true)].into()),true)]);
+    assert!(ctx.lower_sql_expr(&nested,&call("cypher_order_key",vec![binding("x")])).unwrap_err().to_string().contains("Nested Cypher ordering"));
+    let projected=scalar_scope(vec![Field::new("x",DataType::Int64,true),Field::new(casts::value_union_tag_col("x"),DataType::Utf8,true)]);
+    assert!(ctx.lower_sql_expr(&projected,&call("cypher_order_key",vec![binding("x")])).unwrap_err().to_string().contains("Encoded Cypher ordering"));
+    let property=IrExpr::property("n","payload",PropertyMissing::NullOnMissing);
+    let encoded=scalar_scope(vec![Field::new(prop_col("n","payload"),DataType::Utf8,true),Field::new(union_tag_col("n","payload"),DataType::Utf8,true)]);
+    assert!(ctx.lower_sql_expr(&encoded,&call("cypher_order_key",vec![property])).unwrap_err().to_string().contains("Encoded Cypher ordering"));
+}
+
+#[test]
+fn cypher_union_constructors_keep_dynamic_values_and_case_insensitive_tag_selection() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let plan=scalar_scope(vec![Field::new("x",DataType::Int64,true)]);
+    let text=|value:&str|IrExpr::Lit(Lit::String(value.into()));
+    let constructor=call("union_value",vec![call("map",vec![text("Number"),binding("x")])]);
+    assert_eq!(ctx.lower_sql_expr(&plan,&constructor).unwrap(),col_exact("x"));
+    assert_eq!(ctx.lower_sql_expr(&plan,&call("union_tag",vec![constructor.clone()])).unwrap(),lit("Number"));
+    for tag in ["Number","NUMBER","number"] {
+        assert_eq!(ctx.lower_sql_expr(&plan,&call("union_extract",vec![constructor.clone(),text(tag)])).unwrap(),col_exact("x"));
+    }
+    assert_eq!(ctx.lower_sql_expr(&plan,&call("union_extract",vec![constructor.clone(),text("other")])).unwrap(),lit(ScalarValue::Utf8(None)));
+    assert!(ctx.lower_sql_expr(&plan,&call("union_extract",vec![constructor,binding("x")])).unwrap_err().to_string().contains("dynamic tag"));
+    for value in [binding("x"),call("unrelated",vec![binding("x")])] {
+        assert!(ctx.lower_sql_expr(&plan,&call("union_extract",vec![value,text("Number")])).unwrap_err().to_string().contains("stored/dynamic union"));
+    }
+    assert!(ctx.lower_sql_expr(&plan,&call("union_tag",vec![binding("x")])).unwrap_err().to_string().contains("stored/dynamic union"));
+}
+
+#[test]
+fn cypher_union_tags_require_property_metadata_and_preserve_projected_tags() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    let property=IrExpr::property("n","payload",PropertyMissing::NullOnMissing);
+    let tag=union_tag_col("n","payload");
+    let plan=scalar_scope(vec![Field::new(prop_col("n","payload"),DataType::Utf8,true),Field::new(&tag,DataType::Utf8,true)]);
+    assert_eq!(ctx.lower_sql_expr(&plan,&call("union_tag",vec![property.clone()])).unwrap(),col_exact(&tag));
+    let missing=scalar_scope(vec![Field::new(prop_col("n","payload"),DataType::Utf8,true)]);
+    assert!(ctx.lower_sql_expr(&missing,&call("union_tag",vec![property])).unwrap_err().to_string().contains("metadata is unavailable"));
+    let projected_tag=casts::value_union_tag_col("x");
+    let projected=scalar_scope(vec![Field::new("x",DataType::Int64,true),Field::new(&projected_tag,DataType::Utf8,true)]);
+    assert_eq!(ctx.lower_sql_expr(&projected,&call("union_tag",vec![binding("x")])).unwrap(),col_exact(&projected_tag));
+}
