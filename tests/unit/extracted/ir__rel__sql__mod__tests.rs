@@ -306,3 +306,25 @@ fn executor_fallback_validates_all_tables_before_dispatch_and_keeps_engine_error
         assert_eq!(executor.setup[2], "user setup");
     }
 }
+
+#[test]
+fn iceberg_provider_keeps_predicates_above_the_scan() {
+    use datafusion::{datasource::provider_as_source, logical_expr::{TableProviderFilterPushDown, LogicalPlanBuilder, col, lit}};
+    let metadata = crate::ir::rel::source_metadata::SourceMetadata {
+        table: "lake".into(), format: Some("duckdb_iceberg".into()),
+        options: [("path".into(), serde_json::json!("/lake/owner's data"))].into(), indexes: vec![],
+    };
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    let provider = duckdb_iceberg::provider(&metadata, schema.clone()).unwrap().unwrap();
+    let predicate = col("id").gt(lit(5_i64));
+    let null_predicate = col("id").is_not_null();
+    for filters in [vec![], vec![&predicate], vec![&predicate, &null_predicate]] {
+        assert_eq!(provider.supports_filters_pushdown(&filters).unwrap(), vec![TableProviderFilterPushDown::Unsupported; filters.len()]);
+    }
+    // A violated planner contract must fail closed instead of silently dropping WHERE.
+    let mut plan = LogicalPlanBuilder::scan("lake", provider_as_source(provider), None).unwrap().build().unwrap();
+    let sql = duckdb_iceberg::lower(&plan).unwrap().unwrap().to_string();
+    assert!(sql.contains("owner''s data"), "{sql}");
+    if let LogicalPlan::TableScan(scan) = &mut plan { scan.filters.push(predicate); } else { panic!("expected scan") }
+    assert!(duckdb_iceberg::lower(&plan).unwrap_err().to_string().contains("unexpected pushed filters"));
+}
