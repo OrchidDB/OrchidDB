@@ -351,7 +351,7 @@ impl<'a> LoweringContext<'a> {
             let previous=if has_exact_col(&expanded.plan,path){IrExpr::binding(path)}else{IrExpr::Lit(Lit::Null)};
             let source=IrExpr::binding(source);
             use crate::ir::runtime::ops::expand::{path_step,PathStep};
-            let step=path_step(Some(path),true,target);
+            let step=path_step(self.language,Some(path),true,target);
             let history=if !matches!(step,PathStep::EdgeAndNode) {previous} else {
                 IrExpr::Call{name:"path_extend_after".into(),args:vec![previous,source.clone(),IrExpr::binding(rel)]}
             };

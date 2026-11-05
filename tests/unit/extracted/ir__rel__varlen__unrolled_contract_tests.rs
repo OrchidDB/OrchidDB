@@ -369,3 +369,33 @@
             }
         }
     }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn cypher_fixed_paths_keep_edges_for_internal_looking_user_names() {
+        let graph = PropertyGraph::new();
+        let first = graph.insert_node("A", BTreeMap::new());
+        let last = graph.insert_node("A", BTreeMap::new());
+        graph.insert_edge("R", &first, &last, BTreeMap::new()).unwrap();
+        for (path, target) in [("p", "m"), ("__path", "m"), ("__path", "__edge_other"), ("p", "__edge_other")] {
+            let mut ctx = context(&graph);
+            let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+            let rel = "r".to_owned();
+            let expanded = ctx.lower_expand_direction(input, "n", target, TargetMode::BindNew,
+                &LabelExpr::Any, Some(&rel), &LabelExpr::Any, Direction::Out).unwrap();
+            let expanded = ctx.materialize_fixed_path(expanded, path, "n", target, &rel).unwrap();
+            let plan = LogicalPlanBuilder::from(expanded.plan).project(vec![col_exact(path).alias("value")]).unwrap().build().unwrap();
+            let lowered = LoweredPlan { plan, fields: vec!["value".into()], result_form: ResultForm::RowSet,
+                rule_context: Default::default(), islands: expanded.islands };
+            let mut executor = sql::DuckDbExecutor::default();
+            executor.set_language_functions(true).unwrap();
+            let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+            let rows = native_values::decode_rows(&batch, &["value".into()], &graph).unwrap();
+            assert_eq!(rows.len(), 1);
+            let Value::Path(items) = rows[0].get("value") else { panic!("expected path for {path}/{target}") };
+            assert_eq!(items.len(), 3, "path={path}, target={target}: {items:?}");
+            assert!(matches!(&items[0], Value::Node { .. }));
+            assert!(matches!(&items[1], Value::Edge { .. }));
+            assert!(matches!(&items[2], Value::Node { .. }));
+        }
+    }

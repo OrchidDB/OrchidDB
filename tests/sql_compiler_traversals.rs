@@ -225,3 +225,40 @@ async fn postgres_fixed_relationship_uniqueness_uses_scalar_keys() {
     )
     .unwrap();
 }
+
+#[tokio::test]
+async fn internal_looking_cypher_path_names_preserve_nodes_and_relationships() {
+    use orchiddb::ir::value::Value as GraphValue;
+    for (path, target) in [("p", "b"), ("__path", "b"), ("__path", "__edge_other"), ("p", "__edge_other")] {
+        for hops in [1, 2] {
+            let pattern = if hops == 1 {
+                format!("(a:N)-[r]->({target}:N)")
+            } else {
+                format!("(a:N)-[r]->(middle:N)-[s]->({target}:N)")
+            };
+            let query = format!("MATCH {path}={pattern} RETURN {path} AS value");
+            let compiled: Value = serde_json::from_str(&compile_json(&request(&query).to_string()).await.unwrap()).unwrap();
+            let con = test_connection();
+            let mut statement = con.prepare(compiled["sql"].as_str().unwrap()).unwrap();
+            let batches = statement.query_arrow([]).unwrap().collect::<Vec<_>>();
+            let mut actual_rows = 0;
+            for batch in batches {
+                let rows = orchiddb::ir::rel::native_values::decode_rows(&batch, &["value".into()],
+                    &orchiddb::ir::catalog::PropertyGraph::new()).unwrap();
+                actual_rows += rows.len();
+                for row in rows {
+                    let GraphValue::Path(items) = row.get("value") else { panic!("expected path: {query}") };
+                    assert_eq!(items.len(), 2 * hops + 1, "{query}: {items:?}");
+                    assert!(items.iter().step_by(2).all(|item| matches!(item, GraphValue::Node { .. })));
+                    assert!(items.iter().skip(1).step_by(2).all(|item| matches!(item, GraphValue::Edge { .. })));
+                }
+            }
+            let expected_rows = (1..=4).map(|start| {
+                let mut expected = vec![];
+                trails(start, hops, false, &mut vec![], &mut expected);
+                expected.len()
+            }).sum::<usize>();
+            assert_eq!(actual_rows, expected_rows, "{query}");
+        }
+    }
+}

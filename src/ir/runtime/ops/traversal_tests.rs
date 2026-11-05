@@ -2,7 +2,7 @@ use super::{expand::expand_op, path_pattern::path_pattern_op};
 use crate::ir::{
     catalog::PropertyGraph,
     plan::{Direction, LabelExpr, Length, PathPart, PathSelector, PathTies, TargetMode},
-    policy::{MatchMode, PathMode},
+    policy::{Language, MatchMode, PathMode},
     runtime::{Row, RuntimeError, context::ExecutionContext},
     value::Value,
 };
@@ -63,6 +63,7 @@ fn expand(
     ctx: &mut ExecutionContext,
 ) -> Result<Vec<Row>, RuntimeError> {
     expand_op(
+        Language::Cypher,
         "a",
         "b",
         TargetMode::BindNewOrReplaceCurrent,
@@ -337,4 +338,48 @@ fn thousands_of_pattern_parts_execute_without_recursive_calls() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].bindings["p"], Value::Path(vec![nodes[0].clone()]));
+}
+
+#[test]
+fn cypher_named_paths_keep_edges_in_runtime_expansion() {
+    let (graph, nodes) = chain(2);
+    for (path, target) in [("p", "b"), ("__path", "b"), ("__path", "__edge_other"), ("p", "__edge_other")] {
+        for bound_edge in [false, true] {
+            let rows = expand_op(Language::Cypher, "a", target, TargetMode::BindNew,
+                &LabelExpr::Any, bound_edge.then_some("r"), &LabelExpr::Any, Direction::Out,
+                &Length { min: 0, max: Some(2) }, None, Some(path), PathMode::Trail,
+                MatchMode::DifferentRelationships, vec![Row::new().with("a", nodes[0].clone())],
+                &graph, &mut ExecutionContext::default()).unwrap();
+            assert_eq!(rows.len(), 3);
+            for (hops, row) in rows.iter().enumerate() {
+                let Value::Path(items) = row.get(path) else { panic!("expected path") };
+                assert_eq!(items.len(), 2 * hops + 1, "{path}/{target}, bound={bound_edge}, hops={hops}");
+                assert_eq!(items[0], nodes[0]);
+                assert_eq!(items[2 * hops], nodes[hops]);
+                assert!(items.iter().step_by(2).all(|item| matches!(item, Value::Node { .. })));
+                assert!(items.iter().skip(1).step_by(2).all(|item| matches!(item, Value::Edge { .. })));
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_acyclic_history_is_independent_of_target_variable_name() {
+    let (graph, nodes) = chain(2);
+    graph.insert_edge("R", &nodes[2], &nodes[1], Default::default()).unwrap();
+    for target in ["b", "__edge_other"] {
+        for bound_edge in [false, true] {
+            for mode in [PathMode::Acyclic, PathMode::Simple, PathMode::Trail] {
+                let rows = expand_op(Language::Cypher, "a", target, TargetMode::BindNew,
+                    &LabelExpr::Any, bound_edge.then_some("r"), &LabelExpr::Any, Direction::Out,
+                    &Length { min: 1, max: Some(3) }, None, None, mode,
+                    MatchMode::DifferentRelationships, vec![Row::new().with("a", nodes[0].clone())],
+                    &graph, &mut ExecutionContext::default()).unwrap();
+                let expected = if mode == PathMode::Trail { vec![nodes[1].clone(), nodes[2].clone(), nodes[1].clone()] }
+                    else { vec![nodes[1].clone(), nodes[2].clone()] };
+                assert_eq!(rows.iter().map(|row| row.get(target)).collect::<Vec<_>>(), expected,
+                    "target={target}, bound={bound_edge}, mode={mode:?}");
+            }
+        }
+    }
 }

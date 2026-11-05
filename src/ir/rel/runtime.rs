@@ -673,6 +673,7 @@ impl Compiler<'_> {
                 let path = path.clone();
                 let path_mode = path_mode.clone();
                 let match_mode = match_mode.clone();
+                let language = self.policy.language;
                 Ok(kernel(
                     "Expand",
                     vec![self.lower(input)?],
@@ -694,6 +695,7 @@ impl Compiler<'_> {
                         {
                             let upstream = inputs.remove(0);
                             expand_op(
+                                language,
                                 source,
                                 target,
                                 *target_mode,

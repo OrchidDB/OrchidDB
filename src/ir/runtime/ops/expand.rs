@@ -3,7 +3,7 @@
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::{BindKind, Direction, LabelExpr, Length, TargetMode};
-use crate::ir::policy::{MatchMode, PathMode};
+use crate::ir::policy::{Language, MatchMode, PathMode};
 use crate::ir::value::Value;
 
 use super::super::expr::eval;
@@ -11,7 +11,11 @@ use super::super::context::ExecutionContext;
 use super::super::{RuntimeError, IrResult, Row};
 
 pub(crate) enum PathStep { Node, Edge, EdgeAndNode }
-pub(crate) fn path_step(path:Option<&str>, has_edge_binding:bool, target:&str)->PathStep {
+pub(crate) fn path_step(language:Language, path:Option<&str>, has_edge_binding:bool, target:&str)->PathStep {
+    // Cypher variable names cannot select legacy traverser path behavior.
+    if language == Language::Cypher {
+        return if path.is_some() { PathStep::EdgeAndNode } else { PathStep::Node };
+    }
     if path.is_some_and(|binding|binding!="__path") {PathStep::EdgeAndNode}
     else if has_edge_binding && target=="__edge_other" {PathStep::Edge}
     else {PathStep::Node}
@@ -38,6 +42,7 @@ pub(crate) fn bind_op(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn expand_op(
+    language: Language,
     source: &str,
     target: &str,
     target_mode: TargetMode,
@@ -220,7 +225,7 @@ pub(crate) fn expand_op(
                     if history_binding.is_some() {
                         history.push(edge_value.clone());
                     }
-                    match path_step(path_binding,rel_binding.is_some(),target) {
+                    match path_step(language,path_binding,rel_binding.is_some(),target) {
                         PathStep::EdgeAndNode=>{path.push(edge_value.clone());path.push(target_node.clone());}
                         PathStep::Edge=>path.push(edge_value.clone()),
                         PathStep::Node if track_path=>path.push(target_node.clone()),
