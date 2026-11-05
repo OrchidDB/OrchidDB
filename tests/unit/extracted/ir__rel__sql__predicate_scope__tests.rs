@@ -207,3 +207,61 @@ async fn filter_scope_lifting_keeps_predicates_on_pruned_columns_below_projectio
     assert_eq!(scope_rows(original).await, expected);
     assert_eq!(scope_rows(stripped).await, expected);
 }
+
+#[tokio::test]
+async fn filtered_outer_semi_and_anti_joins_keep_input_filters_out_of_preserved_rows() {
+    use datafusion::prelude::col;
+    for join_type in [JoinType::Inner, JoinType::Left, JoinType::Right, JoinType::Full,
+        JoinType::LeftSemi, JoinType::LeftAnti, JoinType::RightSemi, JoinType::RightAnti] {
+        for left_wrapper in 0..4 {
+            for right_wrapper in 0..4 {
+                let wrap = |name: &str, alias: &str, wrapper: usize, values: &[Option<i64>], predicate: Expr| {
+                    let mut builder = LogicalPlanBuilder::from(scope_values(name, values)).filter(predicate).unwrap();
+                    if wrapper == 2 { builder = builder.project(vec![col(format!("{name}.x")).alias("x")]).unwrap(); }
+                    if wrapper == 3 { builder = builder.project(vec![(col(format!("{name}.x")) + lit(0_i64)).alias("x")]).unwrap(); }
+                    if wrapper > 0 { builder = builder.alias(alias).unwrap(); }
+                    builder.build().unwrap()
+                };
+                let left = wrap("l", "ls", left_wrapper, &[None, Some(0), Some(1), Some(2), Some(2)], col("l.x").gt(lit(0_i64)));
+                let right = wrap("r", "rs", right_wrapper, &[None, Some(0), Some(2), Some(2), Some(3)], col("r.x").lt(lit(3_i64)));
+                let left_key = if left_wrapper == 0 { "l.x" } else { "ls.x" };
+                let right_key = if right_wrapper == 0 { "r.x" } else { "rs.x" };
+                let plan = LogicalPlanBuilder::from(left).join(right, join_type,
+                    (vec![left_key], vec![right_key]), None).unwrap().build().unwrap();
+                // Filtered bags are [1,2,2] and [0,2,2]. The four matched
+                // pairs, unmatched 1/0, and semi/anti multiplicities follow
+                // directly from those bags, independently of SQL rendering.
+                let mut expected = match join_type {
+                    JoinType::LeftSemi | JoinType::RightSemi => vec![vec!["2".to_owned()]; 2],
+                    JoinType::LeftAnti => vec![vec!["1".to_owned()]],
+                    JoinType::RightAnti => vec![vec!["0".to_owned()]],
+                    _ => vec![vec!["2".to_owned(), "2".to_owned()]; 4],
+                };
+                if matches!(join_type, JoinType::Left | JoinType::Full) { expected.push(vec!["1".into(), "NULL".into()]); }
+                if matches!(join_type, JoinType::Right | JoinType::Full) { expected.push(vec!["NULL".into(), "0".into()]); }
+                expected.sort();
+                assert_eq!(scope_rows(plan).await, expected, "{join_type:?}: wrappers={left_wrapper}/{right_wrapper}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn filtered_join_inputs_preserve_mixed_namespaces_and_unqualified_outputs() {
+    use datafusion::prelude::col;
+    for qualified in [false, true] {
+        let left = scope_values("l", &[Some(0), Some(1), Some(2)]);
+        let aux = LogicalPlanBuilder::from(scope_values("aux", &[Some(7)]))
+            .project(vec![col("aux.x").alias("y")]).unwrap().alias("aux").unwrap().build().unwrap();
+        let mut left = LogicalPlanBuilder::from(left).cross_join(aux).unwrap()
+            .filter(col("l.x").gt(lit(0_i64))).unwrap();
+        if !qualified {
+            left = left.project(vec![col("l.x").alias("left_value"), col("aux.y").alias("payload")]).unwrap();
+        }
+        let right = scope_values("r", &[Some(0), Some(2)]);
+        let left_key = if qualified { "l.x" } else { "left_value" };
+        let joined = left.join(right, JoinType::Left, (vec![left_key], vec!["r.x"]), None).unwrap().build().unwrap();
+        let expected = vec![vec!["1".to_owned(), "7".to_owned(), "NULL".to_owned()], vec!["2".to_owned(), "7".to_owned(), "2".to_owned()]];
+        assert_eq!(scope_rows(joined.clone()).await, expected, "qualified={qualified}");
+    }
+}

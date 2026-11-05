@@ -305,6 +305,46 @@ fn emit_prepared(region: PreparedRegion, dialect: SqlDialect) -> SqlResult<Strin
         }
         Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
     })?.data;
+    // Join-input filters must stay inside their input relation. The unparser
+    // can otherwise move them to ON or WHERE across alias/projection layers,
+    // retaining rejected rows or discarding null-extended outer-join rows.
+    fn has_input_filter(plan: &LogicalPlan) -> bool {
+        match plan {
+            LogicalPlan::Filter(_) => true,
+            LogicalPlan::TableScan(scan) => !scan.filters.is_empty(),
+            LogicalPlan::Projection(projection) => has_input_filter(&projection.input),
+            LogicalPlan::SubqueryAlias(alias) => {
+                !alias.alias.table().starts_with("__w_sql_cte_")
+                    && !alias.alias.table().starts_with("__w_collect_unique")
+                    && has_input_filter(&alias.input)
+            }
+            _ => false,
+        }
+    }
+    let mut filter_scope = 0;
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Join(mut join) = node else { return Ok(Transformed::no(node)); };
+        let mut changed = false;
+        for input in [&mut join.left, &mut join.right] {
+            if has_input_filter(input) {
+                let qualifier = input.schema().iter().next().and_then(|(qualifier, _)| qualifier)
+                    .filter(|qualifier| input.schema().iter().all(|(other, _)| other == Some(*qualifier)))
+                    .cloned();
+                let mut scoped = sort_scope(input.as_ref().clone(),
+                    format!("__w_sql_cte_join_filter_{filter_scope}"))?;
+                // ON still names the original relation. A schema-only alias
+                // cannot make that qualifier visible in the SQL FROM clause.
+                if let Some(qualifier) = qualifier {
+                    scoped = datafusion::logical_expr::LogicalPlanBuilder::from(scoped)
+                        .alias(qualifier)?.build()?;
+                }
+                *input = Arc::new(scoped);
+                filter_scope += 1;
+                changed = true;
+            }
+        }
+        Ok(Transformed::new(LogicalPlan::Join(join), changed, TreeNodeRecursion::Continue))
+    })?.data;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = super::lambdas::with_plan(&plan, || super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect)))?;
     Ok(apply_identifier_repairs(sql, &repairs))
@@ -932,40 +972,6 @@ pub(super) fn strip_identity_projections(plan: LogicalPlan) -> SqlResult<Logical
 /// qualifier is required and is kept: it names a `SubqueryAlias`/table that
 /// exists as a FROM alias in the emitted SQL.
 pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, DataFusionError> {
-    // Lift filters through naming-only layers before the unparser folds them
-    // into a join condition. Rebind by field position, preserving duplicate
-    // names and leaving computed or pruned projections as scope barriers.
-    let plan = plan.transform_up_with_subqueries(|node| {
-        let (input, outputs): (&LogicalPlan, Vec<Option<Column>>) = match &node {
-            LogicalPlan::SubqueryAlias(alias) => (alias.input.as_ref(), alias.schema.columns().into_iter().map(Some).collect()),
-            LogicalPlan::Projection(projection) => {
-                let mut outputs = vec![None; projection.input.schema().fields().len()];
-                for (expr, output) in projection.expr.iter().zip(projection.schema.columns()) {
-                    let expr = if let Expr::Alias(alias) = expr { alias.expr.as_ref() } else { expr };
-                    let Expr::Column(column) = expr else { return Ok(Transformed::no(node)); };
-                    outputs[projection.input.schema().index_of_column(column)?] = Some(output);
-                }
-                (projection.input.as_ref(), outputs)
-            }
-            _ => return Ok(Transformed::no(node)),
-        };
-        let LogicalPlan::Filter(filter) = input else { return Ok(Transformed::no(node)); };
-        let mut complete = true;
-        let predicate = filter.predicate.clone().transform_up(|expr| {
-            if let Expr::Column(column) = &expr {
-                let index = filter.input.schema().index_of_column(column)?;
-                if let Some(output) = &outputs[index] {
-                    return Ok(Transformed::yes(Expr::Column(output.clone())));
-                }
-                complete = false;
-            }
-            Ok(Transformed::no(expr))
-        })?.data;
-        if !complete { return Ok(Transformed::no(node)); }
-        let input = filter.input.clone();
-        let named = node.map_children(|_| Ok(Transformed::yes(input.as_ref().clone())))?.data;
-        Ok(Transformed::yes(LogicalPlan::Filter(datafusion::logical_expr::Filter::try_new(predicate, Arc::new(named))?)))
-    })?.data;
     fn rewrite_scope(plan: LogicalPlan, in_join: bool) -> Result<Transformed<LogicalPlan>, DataFusionError> {
         let child_join_scope = match &plan {
             LogicalPlan::Join(_) => true,
