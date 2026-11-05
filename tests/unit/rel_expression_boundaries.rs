@@ -232,6 +232,57 @@ fn cypher_native_case_without_else_retains_a_typed_null() {
     }
 }
 
+#[test]
+fn cypher_boolean_integer_casts_preserve_nulls_without_direct_boolean_sql_casts() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("value", DataType::Boolean, true)]);
+    for (target, kind) in [("INT8", DataType::Int8), ("INT16", DataType::Int16),
+        ("INT32", DataType::Int32), ("INT64", DataType::Int64)] {
+        let expression = call("cast", vec![binding("value"), IrExpr::Lit(Lit::String(target.into()))]);
+        let lowered = ctx.lower_sql_expr(&plan, &expression).unwrap();
+        assert_eq!(lowered.get_type(plan.schema()).unwrap(), kind);
+        if kind == DataType::Int64 {
+            assert!(matches!(lowered, Expr::Case(_)), "Int64 CASE needs no extra cast: {lowered:?}");
+        }
+        for value in [Some(true), Some(false), None] {
+            let bound = lowered.clone().transform_up(|expr| Ok(match &expr {
+                Expr::Column(column) if column.name == "value" => Transformed::yes(lit(ScalarValue::Boolean(value))),
+                _ => Transformed::no(expr),
+            })).unwrap().data;
+            let actual = fold_cypher_boundary_expression(&scalar_scope(vec![]), bound);
+            let expected = ScalarValue::Int64(value.map(i64::from)).cast_to(&kind).unwrap();
+            assert_eq!(actual, expected, "{target}, {value:?}");
+        }
+    }
+}
+
+#[test]
+fn cypher_to_integer_truncates_fractional_values_toward_zero_and_keeps_nulls() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    for (input, expected) in [
+        (ScalarValue::Float64(Some(1.9)), Some(1)),
+        (ScalarValue::Float64(Some(-1.9)), Some(-1)),
+        (ScalarValue::Float64(Some(-0.0)), Some(0)),
+        (ScalarValue::Float64(None), None),
+        (ScalarValue::Float32(Some(-1.9)), Some(-1)),
+        (ScalarValue::Decimal128(Some(199), 8, 2), Some(1)),
+        (ScalarValue::Decimal128(Some(-199), 8, 2), Some(-1)),
+    ] {
+        let plan = scalar_scope(vec![Field::new("value", input.data_type(), true)]);
+        let lowered = ctx.lower_sql_expr(&plan, &call("tointeger", vec![binding("value")])).unwrap();
+        let bound = lowered.transform_up(|expr| Ok(match &expr {
+            Expr::Column(column) if column.name == "value" => Transformed::yes(lit(input.clone())),
+            _ => Transformed::no(expr),
+        })).unwrap().data;
+        assert_eq!(fold_cypher_boundary_expression(&scalar_scope(vec![]), bound),
+            ScalarValue::Int64(expected), "{input:?}");
+    }
+}
+
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn cypher_wide_integer_float_comparisons_preserve_exactness_and_nulls() {
