@@ -92,3 +92,118 @@
             assert!(error.to_string().contains(message),"{error}");
         }
     }
+
+    #[test]
+    fn mapped_endpoint_pruning_respects_direction_partitions_and_dynamic_labels() {
+        use crate::ir::rel::mapping::{GraphMapping, NodeMapping, EdgeMapping};
+        let graph = PropertyGraph::new();
+        let mut ctx = context(&graph);
+        let labels = LabelExpr::AnyOf(vec!["C".into(), "A".into(), "B".into(), "A".into()]);
+        assert_eq!(ctx.mapped_endpoint_labels(&labels, &LabelExpr::Any, Direction::Out).unwrap(), labels);
+        let mut mapping = GraphMapping::new();
+        for label in ["A", "B", "C", "Unrelated"] {
+            mapping.map_node(NodeMapping::table(label, label, "id"));
+        }
+        mapping.map_edge(EdgeMapping::table("R", "ab", "src", "dst", "A", "B"));
+        mapping.map_edge_partition(EdgeMapping::table("R", "cb", "src", "dst", "C", "B"));
+        ctx.options.mapping = Some(Arc::new(mapping.clone()));
+        for (direction, expected) in [
+            (Direction::Out, vec!["B"]), (Direction::In, vec!["A", "C"]),
+            (Direction::Both, vec!["A", "B", "C"]),
+        ] {
+            assert_eq!(ctx.mapped_endpoint_labels(&labels, &LabelExpr::label("R"), direction).unwrap(),
+                LabelExpr::AnyOf(expected.into_iter().map(str::to_owned).collect()));
+        }
+        assert_eq!(ctx.mapped_endpoint_labels(&LabelExpr::label("Unrelated"), &LabelExpr::Any, Direction::Both).unwrap(), LabelExpr::AnyOf(vec![]));
+        assert_eq!(ctx.mapped_endpoint_labels(&labels, &LabelExpr::label("Missing"), Direction::Both).unwrap(), LabelExpr::AnyOf(vec![]));
+        assert!(ctx.mapped_endpoint_labels(&LabelExpr::Not(Box::new(LabelExpr::label("A"))), &LabelExpr::Any, Direction::Out).is_err());
+        assert!(ctx.mapped_endpoint_labels(&labels, &LabelExpr::AllOf(vec!["R".into(), "S".into()]), Direction::Out).is_err());
+        mapping.map_node(NodeMapping::table("Dynamic", "dynamic", "id").labels_column("labels"));
+        ctx.options.mapping = Some(Arc::new(mapping));
+        // Logical memberships cannot be inferred from physical endpoint namespaces.
+        assert_eq!(ctx.mapped_endpoint_labels(&labels, &LabelExpr::label("R"), Direction::Out).unwrap(), labels);
+    }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn existing_endpoint_label_restriction_preserves_identity_and_columns() {
+        let graph = PropertyGraph::new();
+        graph.insert_node("A", BTreeMap::from([("value".into(), Value::Int(11))]));
+        graph.insert_node("B", BTreeMap::from([("value".into(), Value::Int(22))]));
+        graph.insert_node("A", BTreeMap::from([("value".into(), Value::Int(33))]));
+        for (labels, mut expected) in [
+            (LabelExpr::Any, vec![("A", 0_i64), ("B", 0), ("A", 1)]),
+            (LabelExpr::label("A"), vec![("A", 0), ("A", 1)]),
+            (LabelExpr::label("B"), vec![("B", 0)]),
+            (LabelExpr::label("Missing"), vec![]),
+            (LabelExpr::AnyOf(vec!["A".into(), "B".into()]), vec![("A", 0), ("B", 0), ("A", 1)]),
+        ] {
+            let mut ctx = context(&graph);
+            let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+            let schema = input.plan.schema().clone();
+            let restricted = ctx.restrict_existing_target(input, "n", &labels).unwrap();
+            assert_eq!(restricted.plan.schema().as_arrow(), schema.as_arrow());
+            let plan = LogicalPlanBuilder::from(restricted.plan).project(vec![col_exact(label_col("n")).alias("label"), col_exact(id_col("n")).alias("id")]).unwrap().build().unwrap();
+            let lowered = LoweredPlan { plan, fields: vec!["label".into(), "id".into()], result_form: ResultForm::RowSet,
+                rule_context: Default::default(), islands: restricted.islands };
+            let mut executor = sql::DuckDbExecutor::default();
+            let batch = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+            let mut actual = (0..batch.num_rows()).map(|row| (
+                ScalarValue::try_from_array(batch.column(0), row).unwrap().to_string(),
+                ScalarValue::try_from_array(batch.column(1), row).unwrap().to_string().parse::<i64>().unwrap(),
+            )).collect::<Vec<_>>();
+            let mut expected = expected.drain(..).map(|(label, id)| (label.to_owned(), id)).collect::<Vec<_>>();
+            actual.sort(); expected.sort();
+            assert_eq!(actual, expected, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn native_node_rebinding_preserves_existing_and_non_element_bindings() {
+        let graph = PropertyGraph::new();
+        graph.insert_node("A", BTreeMap::new());
+        let mut ctx = context(&graph);
+        let input = ctx.lower_node_scan("n", &LabelExpr::Any).unwrap();
+        let original = input.plan.clone();
+        for name in ["n", "missing"] {
+            let rebound = ctx.bind_native_node(input.clone(), name).unwrap();
+            assert_eq!(rebound.plan, original);
+        }
+        let scalar = input.with_plan(LogicalPlanBuilder::from(original).project(vec![lit(42_i64).alias("scalar")]).unwrap().build().unwrap());
+        let rebound = ctx.bind_native_node(scalar.clone(), "scalar").unwrap();
+        assert_eq!(rebound.plan, scalar.plan);
+    }
+
+    #[cfg(feature = "duckdb")]
+    #[tokio::test]
+    async fn fixed_relationship_history_compares_label_qualified_identity() {
+        let graph = PropertyGraph::new();
+        let ctx = context(&graph);
+        for (old_label, old_id, new_label, new_id, count) in [
+            ("A", "1", "A", "1", 0),
+            ("A", "1", "A", "2", 1),
+            ("A", "1", "B", "1", 1),
+            ("A:B", "c", "A", "B:c", 1),
+            ("雪", "x:y", "雪", "x:y", 0),
+            ("", "", "", "", 0),
+        ] {
+            for retain_typed_ids in [true, false] {
+                let plan = LogicalPlanBuilder::empty(true).project(vec![
+                    lit(old_id).alias(id_col("r")), lit(old_label).alias(label_col("r")),
+                ]).unwrap().build().unwrap();
+                let first = ctx.track_relationship(LoweredNode::new(plan), "trail", "r").unwrap();
+                let mut columns = vec![col_exact("trail"), lit(new_id).alias(id_col("r")), lit(new_label).alias(label_col("r"))];
+                if retain_typed_ids {
+                    columns.extend([col_exact("trail__e0_id"), col_exact("trail__e0_label")]);
+                }
+                let second_input = first.clone().with_plan(LogicalPlanBuilder::from(first.plan).project(columns).unwrap().build().unwrap());
+                let second = ctx.track_relationship(second_input, "trail", "r").unwrap();
+                let plan = LogicalPlanBuilder::from(second.plan).project(vec![lit(1_i64).alias("present")]).unwrap().build().unwrap();
+                let lowered = LoweredPlan { plan, fields: vec!["present".into()], result_form: ResultForm::RowSet,
+                    rule_context: Default::default(), islands: second.islands };
+                let mut executor = sql::DuckDbExecutor::default();
+                let result = sql::execute_lowered_sql(&mut executor, &lowered).await.unwrap().batch;
+                assert_eq!(result.num_rows(), count, "{old_label}/{old_id} -> {new_label}/{new_id}, typed={retain_typed_ids}");
+            }
+        }
+    }
