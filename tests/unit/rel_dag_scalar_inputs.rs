@@ -346,3 +346,68 @@ async fn unlowered_scalar_calls_cannot_become_native_sql_inputs() {
         );
     }
 }
+
+#[test]
+fn sql_region_dependency_rewrites_preserve_prepared_queries_for_every_engine() {
+    use arrow::datatypes::{Field,Schema};
+    let schema=Arc::new(Schema::new(vec![Field::new("answer",DataType::Int64,false)]));
+    let input=LogicalPlanBuilder::empty(true).build().unwrap();
+    let replacement=LogicalPlanBuilder::empty(false).build().unwrap();
+    for (dialect,name) in [(sql::SqlDialect::DuckDb,"DuckDbRegion"),(sql::SqlDialect::Postgres,"PostgresRegion"),(sql::SqlDialect::resolve("trino").unwrap(),"SqlRegion")] {
+        let mut prepared=sql::PreparedSql::query_only("SELECT 7 AS answer".into(),schema.clone());prepared.dialect=dialect;
+        let region=DuckDbRegion {id:7,schema:Arc::new(datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap()),prepared:Arc::new(prepared),inputs:vec![input.clone()],input_tables:vec![],source_tables:vec![]};
+        assert_eq!(region.name(),name);assert!(region.expressions().is_empty());
+        assert_eq!(region.inputs(),vec![&input]);
+        let rewritten=region.with_exprs_and_inputs(vec![],vec![replacement.clone()]).unwrap();
+        assert_eq!(rewritten.inputs(),vec![&replacement]);
+        assert_eq!(rewritten.schema(),region.schema());assert!(Arc::ptr_eq(&rewritten.prepared,&region.prepared));
+        assert!(region.with_exprs_and_inputs(vec![lit(1_i64)],vec![input.clone()]).is_err());
+        assert!(region.with_exprs_and_inputs(vec![],vec![]).is_err());
+        assert_eq!(region,region.clone());assert_ne!(region,rewritten);
+        let mut later=region.clone();later.id=8;
+        assert!(region<later);assert_eq!(region.partial_cmp(&later),Some(std::cmp::Ordering::Less));
+        let hash=|r:&DuckDbRegion|{let mut h=std::collections::hash_map::DefaultHasher::new();r.hash(&mut h);h.finish()};
+        assert_eq!(hash(&region),hash(&region.clone()));
+        assert!(format!("{region:?}").contains("7"));
+        let plan=LogicalPlan::Extension(Extension {node:Arc::new(region)});
+        assert!(plan.display_indent().to_string().contains(&format!("{}Region(id=7)",dialect.name())));
+    }
+}
+
+#[test]
+fn sql_physical_region_rewrites_preserve_typed_inputs_and_execution_resources() {
+    use arrow::datatypes::{Field,Schema};
+    let schema=Arc::new(Schema::new(vec![Field::new("x",DataType::Int64,true)]));
+    for dialect in [sql::SqlDialect::DuckDb,sql::SqlDialect::resolve("trino").unwrap()] {
+        let mut prepared=sql::PreparedSql::query_only("SELECT x FROM input".into(),schema.clone());prepared.dialect=dialect;
+        let input=Arc::new(engine_exec::InputBatches::new(schema.clone(),vec![])) as Arc<dyn ExecutionPlan>;
+        let exec=Arc::new(DuckDbExec {inputs:vec![input.clone()],input_tables:vec![],source_tables:vec![],region_session:None,
+            cost:Default::default(),prepared:Arc::new(prepared),executor:Arc::new(Mutex::new(sql::DuckDbExecutor::default())),properties:Arc::new(PlanProperties::new(schema.clone()))});
+        assert_eq!(exec.schema(),schema);assert!(exec.description().contains("live Arrow streams"));
+        assert_eq!(exec.children().len(),1);
+        let rewritten=exec.clone().with_new_children(vec![input]).unwrap();
+        let rewritten=rewritten.as_any().downcast_ref::<DuckDbExec>().unwrap();
+        assert!(Arc::ptr_eq(&rewritten.prepared,&exec.prepared));assert!(Arc::ptr_eq(&rewritten.executor,&exec.executor));assert!(Arc::ptr_eq(&rewritten.cost,&exec.cost));
+        assert!(exec.clone().with_new_children(vec![]).unwrap_err().to_string().contains("dependency mismatch"));
+        validate_sql_required_physical(&(exec as Arc<dyn ExecutionPlan>)).unwrap();
+    }
+}
+
+#[test]
+fn sql_nested_execution_statistics_accumulate_work_without_recounting_result_size() {
+    let mut parent=DagStats {duckdb_regions:1,physical_plan:"outer".into(),logical_plan:"outer logical".into(),..Default::default()};
+    parent.cost.sql_executions=2;parent.cost.result_rows=7;parent.cost.elapsed_micros=42;
+    let mut nested=DagStats {duckdb_regions:2,postgres_regions:3,other_sql_regions:4,boundary_operators:5,output_decode_operators:6,
+        physical_plan:"nested".into(),logical_plan:"nested logical".into(),sql_queries:vec!["SELECT 1".into()],
+        sql_boundaries:vec![SqlBoundary {operator:"Return".into(),engine:"duckdb".into(),category:"transport".into(),reason:"result".into()}],..Default::default()};
+    nested.cost.sql_executions=3;nested.cost.result_rows=100;nested.cost.elapsed_micros=999;
+    parent.merge_execution(&nested);parent.merge_execution(&nested);
+    assert_eq!((parent.duckdb_regions,parent.postgres_regions,parent.other_sql_regions),(5,6,8));
+    assert_eq!((parent.boundary_operators,parent.output_decode_operators),(10,12));
+    assert_eq!(parent.cost.sql_executions,8);assert_eq!(parent.cost.result_rows,7);assert_eq!(parent.cost.elapsed_micros,42);
+    assert_eq!(parent.physical_plan.matches("Executed subplan:").count(),1);
+    assert_eq!(parent.logical_plan.matches("Executed subplan:").count(),2);
+    assert_eq!(parent.sql_queries,vec!["SELECT 1","SELECT 1"]);assert_eq!(parent.sql_boundaries.len(),2);
+    let physical=parent.physical_plan.clone();let logical=parent.logical_plan.clone();parent.merge_execution(&DagStats::default());
+    assert_eq!(parent.physical_plan,physical);assert_eq!(parent.logical_plan,logical);
+}
