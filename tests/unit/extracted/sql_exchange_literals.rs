@@ -445,3 +445,104 @@ async fn timestamp_nanosecond_literals_preserve_all_nine_digits() {
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn half_precision_literals_preserve_values_and_special_states_on_every_engine() {
+    type Half = <arrow::datatypes::Float16Type as arrow::datatypes::ArrowPrimitiveType>::Native;
+    let (pg, trino_session) = literal_test_engines();
+    let mut errors = Vec::new();
+    for (bits, expected) in [
+        (None, "null"), (Some(0x0000), "+0"), (Some(0x8000), "-0"),
+        (Some(0x0001), "0.000000059604644775390625"),
+        (Some(0x0400), "0.00006103515625"), (Some(0x3c00), "1"),
+        (Some(0x7bff), "65504"), (Some(0xfbff), "-65504"),
+        (Some(0x7c00), "+inf"), (Some(0xfc00), "-inf"), (Some(0x7e00), "nan"),
+    ] {
+        let value = ScalarValue::Float16(bits.map(Half::from_bits));
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres, SqlDialect::Custom(&trino::TRINO)] {
+            for (path, literal) in [
+                ("literal", sql_literal(dialect, &value)),
+                ("exchange", exchange_literal(value.clone(), value.data_type(), dialect)),
+            ] {
+                let literal = match literal {
+                    Ok(literal) => literal,
+                    Err(error) => { errors.push(format!("{dialect:?} {path} {value:?}: {error}")); continue; }
+                };
+                if path == "exchange" {
+                    assert_eq!(literal.to_ascii_uppercase().matches("CAST(").count(), 1,
+                        "half-precision exchange needs one declared-type cast: {literal}");
+                }
+                let (nan, infinite, negative) = match dialect {
+                    SqlDialect::DuckDb => ("isnan(v)", "isinf(v)", "signbit(v)"),
+                    SqlDialect::Postgres => ("v = CAST('NaN' AS DOUBLE PRECISION)", "abs(v) = CAST('Infinity' AS DOUBLE PRECISION)", "encode(float8send(v), 'hex') = '8000000000000000'"),
+                    SqlDialect::Custom(_) => ("is_nan(v)", "is_infinite(v)", "CAST(1 AS DOUBLE) / v < 0"),
+                };
+                let double = dialect.double_type();
+                let query = format!("SELECT CASE WHEN v IS NULL THEN 'null' WHEN {nan} THEN 'nan' WHEN {infinite} THEN CASE WHEN v < 0 THEN '-inf' ELSE '+inf' END WHEN v = 0 THEN CASE WHEN {negative} THEN '-0' ELSE '+0' END ELSE CAST(v AS VARCHAR) END FROM (SELECT CAST({literal} AS {double}) AS v) t");
+                let actual = execute_text_case(&query, dialect, &pg, &trino_session).await;
+                if matches!(expected, "null" | "+0" | "-0" | "+inf" | "-inf" | "nan") {
+                    assert_eq!(actual, expected, "{dialect:?} {path} {value:?}: {query}");
+                } else {
+                    assert_eq!(actual.parse::<f64>().unwrap(), expected.parse::<f64>().unwrap(),
+                        "{dialect:?} {path} {value:?}: {query}");
+                }
+            }
+        }
+    }
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn direct_list_literals_preserve_layouts_null_children_and_empty_lists() {
+    let (pg, trino_session) = literal_test_engines();
+    let mut cases = list_cases();
+    for (value, _) in list_cases().into_iter().filter(|(value, _)|
+        !value.is_null() && matches!(value, ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_))) {
+        let kind = value.data_type();
+        let null = ScalarValue::try_from(&kind).unwrap();
+        cases.push((ScalarValue::List(ScalarValue::new_list(&[value, null], &kind, true)), json!([[7, null, 7], null])));
+    }
+    cases.extend(nested_cases());
+    for (value, expected) in cases {
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Postgres, SqlDialect::Custom(&trino::TRINO)] {
+            if dialect == SqlDialect::Postgres && postgres_lists::nested(&value.data_type()) {
+                assert_eq!(dialect.ddl_type(&value.data_type()).unwrap(), "JSONB[]");
+                assert_eq!(dialect.sql_type(&value.data_type()).unwrap(), "JSONB[]");
+            }
+            let mut literal = sql_literal(dialect, &value).unwrap();
+            if literal == "NULL" { literal = format!("CAST({literal} AS {})", dialect.sql_type(&value.data_type()).unwrap()); }
+            let payload = match dialect {
+                SqlDialect::DuckDb => format!("CAST(to_json({literal}) AS VARCHAR)"),
+                SqlDialect::Postgres => format!("CAST(to_json({literal}) AS TEXT)"),
+                SqlDialect::Custom(_) => format!("json_format(CAST({literal} AS JSON))"),
+            };
+            let query = format!("SELECT coalesce({payload}, 'null')");
+            let actual = execute_text_case(&query, dialect, &pg, &trino_session).await;
+            assert_eq!(serde_json::from_str::<Value>(&actual).unwrap(), expected, "{dialect:?} {value:?}: {query}");
+        }
+    }
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires Trino"]
+async fn nul_string_literals_preserve_bytes_or_explicitly_decline_unsupported_text() {
+    let (pg, trino_session) = literal_test_engines();
+    for value in ["\0", "\0雪'\0", "x\0\0y"] {
+        assert!(literals::string_literal(SqlDialect::Postgres, value).is_err());
+        for dialect in [SqlDialect::DuckDb, SqlDialect::Custom(&trino::TRINO)] {
+            let literal = literals::string_literal(dialect, value).unwrap();
+            assert!(!literal.contains('\0'), "SQL statement text must not contain a NUL");
+            let query = match dialect {
+                SqlDialect::DuckDb => format!("SELECT lower(hex(encode({literal})))"),
+                _ => format!("SELECT lower(to_hex(to_utf8({literal})))"),
+            };
+            let expected = value.as_bytes().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+            assert_eq!(execute_text_case(&query, dialect, &pg, &trino_session).await, expected);
+        }
+    }
+}

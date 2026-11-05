@@ -136,7 +136,7 @@ impl DialectAdapter for TrinoAdapter {
             DataType::Int32 | DataType::UInt16 => "INTEGER".into(),
             DataType::Int64 | DataType::UInt32 => "BIGINT".into(),
             DataType::UInt64 => "DECIMAL(20,0)".into(),
-            DataType::Float32 => "REAL".into(),
+            DataType::Float16 | DataType::Float32 => "REAL".into(),
             DataType::Float64 => "DOUBLE".into(),
             DataType::Date32 => "DATE".into(),
             DataType::Timestamp(unit, tz) => format!(
@@ -200,6 +200,7 @@ impl DialectAdapter for TrinoAdapter {
                 ScalarValue::List(a) => self.array_literal(a.value(0))?,
                 ScalarValue::LargeList(a) => self.array_literal(a.value(0))?,
                 ScalarValue::FixedSizeList(a) => self.array_literal(a.value(0))?,
+                ScalarValue::Float16(Some(v)) => return self.exchange_literal(&ScalarValue::Float32(Some(v.to_f32())), ty),
                 ScalarValue::Float32(Some(v)) => string(&if v.is_infinite() { if v.is_sign_negative() { "-Infinity".into() } else { "Infinity".into() } } else { v.to_string() }),
                 ScalarValue::Float64(Some(v)) => string(&if v.is_infinite() { if v.is_sign_negative() { "-Infinity".into() } else { "Infinity".into() } } else { v.to_string() }),
                 ScalarValue::Boolean(Some(v)) => v.to_string(),

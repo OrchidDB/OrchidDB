@@ -87,13 +87,13 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
                 match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')"), SqlDialect::Custom(_) => unreachable!() }
             }
             value => {
-                let typed_timestamp = matches!(ty, DataType::Timestamp(..)) && value.data_type() == ty;
+                let encoded_declared_type = matches!(ty, DataType::Timestamp(..) | DataType::Float16) && value.data_type() == ty;
                 let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect)?.data;
                 let sql_dialect = dialect.unparser_dialect();
                 let mut expression = datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded)?;
                 functions::prepare_ast(&mut expression, dialect)?;
-                // Timestamp encoding already carries this exact declared type.
-                if typed_timestamp { return Ok(expression.to_string()); }
+                // Typed literal encoding already carries this exact declared type.
+                if encoded_declared_type { return Ok(expression.to_string()); }
                 expression.to_string()
             }
         }
@@ -255,6 +255,9 @@ impl SqlDialect {
 
     fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
         if let Self::Custom(adapter) = self { return adapter.sql_type(data_type); }
+        if self == Self::Postgres && postgres_lists::nested(data_type) {
+            return crate::ir::functions::postgres_type(data_type).map_err(SqlError::from);
+        }
         if crate::ir::functions::domain::descriptor(data_type) == Some(("cypher_integer", &DataType::Decimal128(38,0))) { return Ok("DECIMAL(38,0)".into()); }
         if crate::ir::functions::domain::is_json(data_type) {
             return Ok(if self == Self::Postgres { "JSONB" } else { "JSON" }.into());
@@ -287,7 +290,7 @@ impl SqlDialect {
             DataType::Int32 | DataType::UInt16 => "INTEGER",
             DataType::Int64 | DataType::UInt32 => "BIGINT",
             DataType::UInt64 => "NUMERIC(20,0)",
-            DataType::Float32 => "REAL",
+            DataType::Float16 | DataType::Float32 => "REAL",
             DataType::Float64 => self.double_type(),
             DataType::Date32 | DataType::Date64 => "DATE",
             DataType::Decimal32(precision, scale) | DataType::Decimal64(precision, scale)

@@ -1738,6 +1738,13 @@ pub(crate) fn scalar_json(
             .map(serde_json::Value::String)
             .unwrap_or(serde_json::Value::Null));
     }
+    let list_json = |values: arrow::array::ArrayRef| -> datafusion::common::Result<serde_json::Value> {
+        Ok(serde_json::Value::Array(
+            (0..values.len())
+                .map(|i| scalar_json(&ScalarValue::try_from_array(values.as_ref(), i)?))
+                .collect::<datafusion::common::Result<Vec<_>>>()?,
+        ))
+    };
     Ok(match value {
         ScalarValue::Struct(a) => serde_json::Value::Object(
             a.fields()
@@ -1751,14 +1758,9 @@ pub(crate) fn scalar_json(
                 })
                 .collect::<datafusion::common::Result<_>>()?,
         ),
-        ScalarValue::List(a) => {
-            let values = a.value(0);
-            serde_json::Value::Array(
-                (0..values.len())
-                    .map(|i| scalar_json(&ScalarValue::try_from_array(values.as_ref(), i)?))
-                    .collect::<datafusion::common::Result<Vec<_>>>()?,
-            )
-        }
+        ScalarValue::List(a) => list_json(a.value(0))?,
+        ScalarValue::LargeList(a) => list_json(a.value(0))?,
+        ScalarValue::FixedSizeList(a) => list_json(a.value(0))?,
         ScalarValue::Utf8(Some(s))
         | ScalarValue::LargeUtf8(Some(s))
         | ScalarValue::Utf8View(Some(s)) => s.clone().into(),

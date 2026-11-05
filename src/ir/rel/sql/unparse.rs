@@ -514,6 +514,18 @@ pub(super) fn encode_expression_literals(
             return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(*cast.expr.clone(),cast.data_type.clone(),dialect.name())?));
         }
         if let Expr::Literal(value, _) = &inner {
+            if let ScalarValue::Float16(number) = value {
+                // Every binary16 value fits REAL exactly. A typed text cast
+                // also preserves signed zero and avoids bare inf/NaN tokens.
+                let text = number.map(|number| {
+                    if number.is_infinite() {
+                        if number.is_sign_negative() { "-Infinity".into() } else { "Infinity".into() }
+                    } else { number.to_f32().to_string() }
+                });
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    lit(ScalarValue::Utf8(text)), DataType::Float16, dialect.name(),
+                )?));
+            }
             // DF53 cannot emit binary scalar literals. Reuse each adapter's
             // byte-preserving codec rather than casting bytes through text.
             if !value.is_null() && matches!(value, ScalarValue::Binary(_)

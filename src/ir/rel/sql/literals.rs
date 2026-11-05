@@ -39,6 +39,11 @@ pub(super) fn literal_text(expr: &datafusion::sql::sqlparser::ast::Expr) -> Opti
 
 pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
     if let SqlDialect::Custom(adapter) = dialect { return adapter.exchange_literal(value, &value.data_type()); }
+    // PostgreSQL multidimensional arrays cannot preserve ragged or null child
+    // lists. Use the same JSONB[] carrier as expression and exchange literals.
+    if dialect == SqlDialect::Postgres && super::postgres_lists::nested(&value.data_type()) {
+        return super::exchange_literal(value.clone(), value.data_type(), dialect);
+    }
     if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
         return super::exchange_literal(value.clone(), value.data_type(), dialect);
     }
@@ -51,7 +56,7 @@ pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult
     }
     Ok(match value {
         ScalarValue::Dictionary(_, value) => sql_literal(dialect, value)?,
-        ScalarValue::Float16(v) => opt(v, |f| float_literal(dialect, f.to_f64())),
+        ScalarValue::Float16(_) => super::exchange_literal(value.clone(), value.data_type(), dialect)?,
         ScalarValue::Null => "NULL".to_string(),
         ScalarValue::Boolean(v) => opt(v, |b| if *b { "TRUE" } else { "FALSE" }.to_string()),
         ScalarValue::Int8(v) => opt(v, |i| i.to_string()),
