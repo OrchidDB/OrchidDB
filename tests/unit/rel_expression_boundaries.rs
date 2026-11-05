@@ -1083,3 +1083,96 @@ fn cypher_literal_modulo_preserves_signed_remainders_and_nulls() {
         }
     }
 }
+
+#[test]
+fn cypher_json_query_lowering_restores_domains_for_dynamic_and_plural_paths() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let empty = scalar_scope(vec![]);
+    let document = crate::ir::functions::domain::json_scalar(r#"{"items":[1,null,3],"nothing":null}"#).unwrap();
+    for packed in [false, true] {
+        let document = if packed {
+            fold_cypher_boundary_expression(&empty, native_values::literal(&Value::Scalar(document.clone())).unwrap())
+        } else { document.clone() };
+        let plan = scalar_scope(vec![Field::new("doc", document.data_type(), true), Field::new("path", DataType::Utf8, true)]);
+        for (path, expected) in [
+            (Some("$.items[0]"), Some("1")),
+            (Some("$.items[*]"), Some("[1,null,3]")),
+            (Some("$.nothing"), Some("null")),
+            (Some("$.absent"), None),
+            (None, None),
+        ] {
+            for dynamic in [false, true] {
+                let path_value = ScalarValue::Utf8(path.map(str::to_owned));
+                let path_expr = if dynamic { binding("path") } else { IrExpr::Lit(Lit::Scalar(path_value.clone())) };
+                let expr = ctx.lower_sql_expr(&plan, &call("json.query", vec![binding("doc"), path_expr])).unwrap();
+                assert!(crate::ir::functions::domain::is_json(&expr.get_type(plan.schema()).unwrap()));
+                let bound = expr.transform_up(|expr| Ok(match &expr {
+                    Expr::Column(column) if column.name == "doc" => Transformed::yes(lit(document.clone())),
+                    Expr::Column(column) if column.name == "path" => Transformed::yes(lit(path_value.clone())),
+                    _ => Transformed::no(expr),
+                })).unwrap().data;
+                let rendered = crate::ir::functions::json::function("json.stringify").unwrap().call(vec![bound]);
+                assert_eq!(fold_cypher_boundary_expression(&empty, rendered), ScalarValue::Utf8(expected.map(str::to_owned)), "packed={packed} dynamic={dynamic} path={path:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cypher_json_binary_lowering_restores_both_document_operands() {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let empty = scalar_scope(vec![]);
+    for (operation, left, right, expected) in [
+        ("json.equals", r#"{"a":1,"b":2}"#, r#"{"b":2,"a":1}"#, ScalarValue::Boolean(Some(true))),
+        ("json.contains", r#"{"a":1,"b":2}"#, r#"{"a":1}"#, ScalarValue::Boolean(Some(true))),
+        ("json.contains", r#"{"a":1}"#, r#"{"a":2}"#, ScalarValue::Boolean(Some(false))),
+        ("json.merge_patch", r#"{"a":1,"b":2}"#, r#"{"a":null,"c":3}"#, ScalarValue::Utf8(Some(r#"{"b":2,"c":3}"#.into()))),
+    ] {
+        for (pack_left, pack_right) in [(false, false), (true, false), (false, true), (true, true)] {
+            let pack = |text: &str, packed| {
+                let value = crate::ir::functions::domain::json_scalar(text).unwrap();
+                if packed { fold_cypher_boundary_expression(&empty, native_values::literal(&Value::Scalar(value)).unwrap()) } else { value }
+            };
+            let left = pack(left, pack_left);
+            let right = pack(right, pack_right);
+            let plan = scalar_scope(vec![Field::new("left", left.data_type(), true), Field::new("right", right.data_type(), true)]);
+            let expr = ctx.lower_sql_expr(&plan, &call(operation, vec![binding("left"), binding("right")])).unwrap();
+            let bound = expr.transform_up(|expr| Ok(match &expr {
+                Expr::Column(column) if column.name == "left" => Transformed::yes(lit(left.clone())),
+                Expr::Column(column) if column.name == "right" => Transformed::yes(lit(right.clone())),
+                _ => Transformed::no(expr),
+            })).unwrap().data;
+            let bound = if operation == "json.merge_patch" {
+                crate::ir::functions::json::function("json.stringify").unwrap().call(vec![bound])
+            } else { bound };
+            assert_eq!(fold_cypher_boundary_expression(&empty, bound), expected, "{operation}: {pack_left}/{pack_right}");
+        }
+    }
+}
+
+#[test]
+fn cypher_json_lowering_rejects_untyped_documents_and_invalid_static_paths() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let graph = PropertyGraph::new();
+    let ctx = cypher_context(&graph);
+    let empty = scalar_scope(vec![]);
+    let plan = scalar_scope(vec![Field::new("doc", native_values::value_type(), true)]);
+    for value in [Value::String(r#"{"a":1}"#.into()), Value::Int(7), Value::Bool(true)] {
+        let packed = fold_cypher_boundary_expression(&empty, native_values::literal(&value).unwrap());
+        let expr = ctx.lower_sql_expr(&plan, &call("json.query", vec![binding("doc"), IrExpr::Lit(Lit::String("$.a".into()))])).unwrap();
+        let schema = Arc::new(Schema::new(vec![Field::new("doc", packed.data_type(), true)]));
+        let batch = RecordBatch::try_new(schema, vec![packed.to_array().unwrap()]).unwrap();
+        let physical = datafusion_physical_expr::create_physical_expr(&expr, plan.schema(), &ExecutionProps::new()).unwrap();
+        let error = physical.evaluate(&batch).unwrap_err();
+        assert!(error.to_string().contains("document must have JSON type"), "{value:?}: {error}");
+    }
+    let doc = crate::ir::functions::domain::json_scalar("{}").unwrap();
+    let plan = scalar_scope(vec![Field::new("doc", doc.data_type(), true)]);
+    for path in ["$[", "$..", "$['unterminated"] {
+        assert!(ctx.lower_sql_expr(&plan, &call("json.query", vec![binding("doc"), IrExpr::Lit(Lit::String(path.into()))])).is_err(), "{path}");
+    }
+}
