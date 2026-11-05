@@ -248,3 +248,32 @@ fn empty_sample_errors_and_exhausted_request_budgets_do_not_trigger_unbounded_re
         assert_eq!(snapshot.sources["items"].estimated_rows,Some(64000.0));
     }
 }
+
+#[test]
+fn statistics_empty_sample_retry_terminates_and_nonempty_samples_keep_metadata_counts() {
+    for (sample_has_rows,prefix_error) in [(true,false),(false,false),(false,true)] {
+        let mut generator=generator();
+        let metadata=generator.next().unwrap();
+        generator.submit(&metadata.id,vec![BTreeMap::from([("rows".into(),json!(64000))])],None,true).unwrap();
+        let sample=generator.next().unwrap();
+        // An empty transport batch is not EOF and cannot schedule a retry.
+        generator.submit(&sample.id,vec![],None,false).unwrap();
+        assert_eq!(generator.next().unwrap().id,sample.id);
+        if sample_has_rows {
+            generator.submit(&sample.id,vec![BTreeMap::from([("id".into(),json!(7))])],None,false).unwrap();
+        }
+        generator.submit(&sample.id,vec![],None,true).unwrap();
+        if !sample_has_rows {
+            let retry=generator.next().unwrap();
+            assert!(!retry.sql.contains("SAMPLE"));
+            generator.submit(&retry.id,vec![],prefix_error.then(||"prefix failed".into()),true).unwrap();
+        }
+        assert!(generator.next().is_none(),"no repeated fallback after empty prefix or prefix error");
+        let snapshot=generator.finish();
+        assert_eq!(snapshot.report.requests,if sample_has_rows {2}else{3});
+        assert_eq!(snapshot.report.complete,!prefix_error);
+        assert_eq!(snapshot.sources["items"].estimated_rows,
+            Some(if sample_has_rows || prefix_error {64000.0}else{0.0}));
+        assert_eq!(snapshot.sources["items"].sample_rows,u64::from(sample_has_rows));
+    }
+}

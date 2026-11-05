@@ -340,3 +340,62 @@ fn postgres_top_one_rejects_other_slices_and_volatile_partition_keys() {
         assert_eq!(super::super::postgres_top_one::rewrite(plan.clone()).unwrap(),plan);
     }
 }
+
+fn shared_scan_source(name: &str, value: i64) -> LogicalPlan {
+    let schema=Arc::new(Schema::new(vec![Field::new("value",DataType::Int64,true)]));
+    let batch=RecordBatch::try_new(schema.clone(),vec![Arc::new(arrow::array::Int64Array::from(vec![Some(value),Some(value),None]))]).unwrap();
+    let source=datafusion::datasource::MemTable::try_new(schema,vec![vec![batch]]).unwrap();
+    LogicalPlanBuilder::scan(name,datafusion::datasource::provider_as_source(Arc::new(source)),None).unwrap().build().unwrap()
+}
+fn repeated_scan_union(source: LogicalPlan, output: &str) -> LogicalPlan {
+    let branch=LogicalPlanBuilder::from(source).project(vec![col("value").alias(output)]).unwrap().build().unwrap();
+    LogicalPlanBuilder::from(branch.clone()).union(branch).unwrap().build().unwrap()
+}
+
+#[tokio::test]
+async fn shared_partition_unions_preserve_duplicate_null_rows_and_avoid_reserved_names() {
+    let source=shared_scan_source("__w_sql_cte_shared_scan_0",1);
+    let left=repeated_scan_union(source.clone(),"left_value");
+    let right=repeated_scan_union(source,"right_value");
+    let plan=LogicalPlanBuilder::from(left).cross_join(right).unwrap().build().unwrap();
+    let rewritten=super::super::shared_scans::rewrite(plan.clone()).unwrap();
+    assert_eq!(rewritten.schema(),plan.schema());
+    let mut aliases=vec![];
+    rewritten.apply_with_subqueries(|node| {
+        if let LogicalPlan::SubqueryAlias(alias)=node {aliases.push(alias.alias.table().to_owned());}
+        Ok(TreeNodeRecursion::Continue)
+    }).unwrap();
+    assert_eq!(aliases.iter().filter(|name|name.as_str()=="__w_sql_cte_shared_scan_1").count(),2);
+    assert!(!aliases.iter().any(|name|name=="__w_sql_cte_shared_scan_0"));
+    let mut counts=std::collections::BTreeMap::new();
+    for batch in crate::ir::rel::execute_test_plan(rewritten).await.unwrap() {
+        for row in 0..batch.num_rows() {
+            let values=batch.columns().iter().map(|array| if array.is_null(row) {"NULL".to_owned()}
+                else {arrow::util::display::array_value_to_string(array,row).unwrap()}).collect::<Vec<_>>();
+            *counts.entry(values).or_insert(0_usize)+=1;
+        }
+    }
+    assert_eq!(counts,std::collections::BTreeMap::from([
+        (vec!["1".into(),"1".into()],16),(vec!["NULL".into(),"1".into()],8),
+        (vec!["1".into(),"NULL".into()],8),(vec!["NULL".into(),"NULL".into()],4),
+    ]));
+}
+
+#[test]
+fn shared_partition_scans_do_not_merge_different_providers_or_observable_boundaries() {
+    let one=shared_scan_source("items",1);
+    let two=shared_scan_source("items",2);
+    let different=LogicalPlanBuilder::from(repeated_scan_union(one.clone(),"left_value"))
+        .cross_join(repeated_scan_union(two,"right_value")).unwrap().build().unwrap();
+    assert_eq!(super::super::shared_scans::rewrite(different.clone()).unwrap(),different);
+    let volatile=datafusion::logical_expr::create_udf("volatile_scan",vec![DataType::Int64],DataType::Int64,
+        datafusion::logical_expr::Volatility::Volatile,Arc::new(|args|Ok(args[0].clone())));
+    let computed=LogicalPlanBuilder::from(one.clone()).project(vec![volatile.call(vec![col("value")]).alias("value")]).unwrap().build().unwrap();
+    let limited=LogicalPlanBuilder::from(one.clone()).limit(0,Some(1)).unwrap().build().unwrap();
+    let filtered=LogicalPlanBuilder::from(one).filter(col("value").gt(lit(0_i64))).unwrap().build().unwrap();
+    for source in [computed,limited,filtered] {
+        let plan=LogicalPlanBuilder::from(repeated_scan_union(source.clone(),"left_value"))
+            .cross_join(repeated_scan_union(source,"right_value")).unwrap().build().unwrap();
+        assert_eq!(super::super::shared_scans::rewrite(plan.clone()).unwrap(),plan);
+    }
+}

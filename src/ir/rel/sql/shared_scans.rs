@@ -101,6 +101,21 @@ fn candidate(node: &LogicalPlan) -> datafusion::common::Result<Option<LogicalPla
     }
 }
 
+// LogicalPlan equality deliberately ignores TableScan providers. Sharing needs
+// both the same logical expression and the same concrete source instances.
+fn same_source_tree(left: &LogicalPlan, right: &LogicalPlan) -> bool {
+    fn providers(left: &LogicalPlan, right: &LogicalPlan) -> bool {
+        if let (LogicalPlan::TableScan(left), LogicalPlan::TableScan(right)) = (left, right) {
+            return Arc::ptr_eq(&left.source, &right.source);
+        }
+        let left = left.inputs();
+        let right = right.inputs();
+        left.len() == right.len() && left.into_iter().zip(right)
+            .all(|(left, right)| providers(left, right))
+    }
+    left == right && providers(left, right)
+}
+
 pub(super) fn rewrite(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     // Restrict sharing to deterministic source trees, with exact structural
     // equality (including provider identity and projected types). No name-only
@@ -123,7 +138,7 @@ pub(super) fn rewrite(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
             _ => {}
         }
         if let Some(normalized) = candidate(node)? {
-            if let Some((_, count)) = candidates.iter_mut().find(|(p, _)| p == &normalized) {
+            if let Some((_, count)) = candidates.iter_mut().find(|(p, _)| same_source_tree(p, &normalized)) {
                 *count += 1;
             } else {
                 candidates.push((normalized, 1));
@@ -149,7 +164,7 @@ pub(super) fn rewrite(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     Ok(plan
         .transform_down_with_subqueries(|node| {
             if let Some(normalized) = candidate(&node)?
-                && let Some((_, name)) = selected.iter().find(|(p, _)| p == &normalized)
+                && let Some((_, name)) = selected.iter().find(|(p, _)| same_source_tree(p, &normalized))
             {
                 let names = node
                     .schema()
