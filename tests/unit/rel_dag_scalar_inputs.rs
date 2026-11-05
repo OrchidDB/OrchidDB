@@ -7,6 +7,68 @@ use datafusion::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[test]
+fn sql_array_coercion_reuses_matching_storage_and_rejects_nonnull_null_outputs() {
+    use arrow::array::{ArrayRef,Int32Array};
+    let array=Arc::new(Int32Array::from(vec![Some(7),None])) as ArrayRef;
+    let unchanged=coerce_sql_array(&array,&DataType::Int32).unwrap();
+    assert!(Arc::ptr_eq(&array,&unchanged));
+    assert!(coerce_sql_array(&array,&DataType::Null).is_err(),"non-null SQL values must not disappear during Null restoration");
+    let nulls=Arc::new(Int32Array::from(vec![None,None])) as ArrayRef;
+    let restored=coerce_sql_array(&nulls,&DataType::Null).unwrap();
+    assert_eq!(restored.len(),2);assert_eq!(restored.logical_null_count(),2);
+    for value in [128_i64,-129] {
+        let array=Arc::new(arrow::array::Int64Array::from(vec![value])) as ArrayRef;
+        assert!(coerce_sql_array(&array,&DataType::Int8).is_err());
+    }
+}
+
+#[test]
+fn sql_array_coercion_retains_sliced_list_offsets_parent_validity_and_child_nulls() {
+    use arrow::array::{Array,ArrayRef,ListArray,LargeListArray,FixedSizeListArray};
+    use arrow::datatypes::{Field,Int32Type};
+    let values=vec![Some(vec![Some(1),Some(2)]),None,Some(vec![Some(7),None])];
+    let field=Arc::new(Field::new("renamed_item",DataType::Int64,true));
+    for (array,target) in [
+        (Arc::new(ListArray::from_iter_primitive::<Int32Type,_,_>(values.clone())) as ArrayRef,DataType::List(field.clone())),
+        (Arc::new(LargeListArray::from_iter_primitive::<Int32Type,_,_>(values.clone())) as ArrayRef,DataType::LargeList(field.clone())),
+        (Arc::new(FixedSizeListArray::from_iter_primitive::<Int32Type,_,_>(values,2)) as ArrayRef,DataType::FixedSizeList(field,2)),
+    ] {
+        let slice=array.slice(1,2);let restored=coerce_sql_array(&slice,&target).unwrap();
+        assert_eq!(restored.data_type(),&target);assert_eq!(restored.len(),2);assert!(restored.is_null(0));
+        let value=ScalarValue::try_from_array(&restored,1).unwrap();
+        let children=match value {ScalarValue::List(a)=>a.value(0),ScalarValue::LargeList(a)=>a.value(0),ScalarValue::FixedSizeList(a)=>a.value(0),_=>panic!()};
+        assert_eq!(children.len(),2);assert_eq!(ScalarValue::try_from_array(&children,0).unwrap(),ScalarValue::Int64(Some(7)));assert!(children.is_null(1));
+    }
+}
+
+#[test]
+fn sql_array_coercion_restores_nested_null_fields_and_positional_struct_names() {
+    use arrow::array::{ArrayRef,StructArray,Int32Array,StringArray};
+    use arrow::datatypes::Field;
+    let array=Arc::new(StructArray::from(vec![
+        (Arc::new(Field::new("physical_null",DataType::Int32,true)),Arc::new(Int32Array::from(vec![None,None])) as ArrayRef),
+        (Arc::new(Field::new("physical_text",DataType::Utf8,true)),Arc::new(StringArray::from(vec![Some("雪"),None])) as ArrayRef),
+    ])) as ArrayRef;
+    let target=DataType::Struct(vec![Field::new("logical_null",DataType::Null,true),Field::new("logical_text",DataType::LargeUtf8,true)].into());
+    let restored=coerce_sql_array(&array,&target).unwrap();assert_eq!(restored.data_type(),&target);
+    let restored=restored.as_any().downcast_ref::<StructArray>().unwrap();
+    assert_eq!(restored.column(0).logical_null_count(),2);assert_eq!(ScalarValue::try_from_array(restored.column(1),0).unwrap(),ScalarValue::LargeUtf8(Some("雪".into())));
+    assert!(restored.column(1).is_null(1));
+}
+
+#[test]
+fn sql_array_coercion_restores_json_domain_validity_and_rejects_invalid_payloads() {
+    use arrow::array::{ArrayRef,StringArray};
+    use crate::ir::functions::domain;
+    let array=Arc::new(StringArray::from(vec![Some("null"),None,Some("{\"a\":7}")])) as ArrayRef;
+    let restored=coerce_sql_array(&array,&domain::json_type()).unwrap();
+    assert!(!restored.is_null(0));assert!(restored.is_null(1));
+    assert_eq!(domain::json_text(&ScalarValue::try_from_array(&restored,2).unwrap()).unwrap(),Some("{\"a\":7}".into()));
+    let invalid=Arc::new(StringArray::from(vec!["not-json"])) as ArrayRef;
+    assert!(coerce_sql_array(&invalid,&domain::json_type()).is_err());
+}
+
 fn vector(values: &[f64]) -> ScalarValue {
     ScalarValue::List(ScalarValue::new_list(
         &values

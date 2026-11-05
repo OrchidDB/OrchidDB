@@ -1577,3 +1577,7 @@ fn has_mutating_branches(node: &Node) -> bool {
 }
 
 pub(crate) fn is_kernel_exec(plan: &dyn ExecutionPlan) -> bool { plan.as_any().is::<KernelExec>() }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/cypher_runtime_boundaries.rs"]
+mod cypher_boundary_tests;
