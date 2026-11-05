@@ -186,3 +186,70 @@ fn empty_values_emit_zero_rows_with_the_declared_column_type() {
     let sql=unparse_plan(plan,SqlDialect::DuckDb).unwrap();
     assert!(DuckDbExecutor::new().run(&[],&sql).unwrap().is_empty(),"{sql}");
 }
+
+#[test]
+fn top_k_scope_preserves_shadowed_sort_keys_and_outer_offset_limit() {
+    for ascending in [false,true] {
+        for fetch in [None,Some(2),Some(4)] {
+            for offset in [0,1,4] {
+                for limit in [None,Some(1),Some(3)] {
+                    let input=LogicalPlanBuilder::values(vec![vec![lit(1_i64)],vec![lit(3_i64)],vec![lit(2_i64)]]).unwrap().build().unwrap();
+                    let name=input.schema().field(0).name().clone();
+                    let plan=LogicalPlanBuilder::from(input).project(vec![col(&name).alias("x")]).unwrap()
+                        .project(vec![(lit(100_i64)-col("x")).alias("x")]).unwrap()
+                        .sort_with_limit(vec![col("x").sort(ascending,false)],fetch).unwrap()
+                        .limit(offset,limit).unwrap().build().unwrap();
+                    let values=if ascending {vec![97,98,99]} else {vec![99,98,97]};
+                    let expected=values.into_iter().take(fetch.unwrap_or(3)).skip(offset).take(limit.unwrap_or(3))
+                        .map(|value|vec![SqlValue::Int(value)]).collect::<Vec<_>>();
+                    let sql=unparse_plan(plan,SqlDialect::DuckDb).unwrap();
+                    assert_eq!(DuckDbExecutor::new().run(&[],&sql).unwrap(),expected,"{sql}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn sort_scope_keeps_qualified_output_contract_and_values() {
+    for qualified in [false,true] {
+        let mut input=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("value")]).unwrap().build().unwrap();
+        if qualified {input=LogicalPlanBuilder::from(input).alias("original").unwrap().build().unwrap();}
+        let expected=input.schema().clone();
+        let scoped=sort_scope(input,"__w_sql_cte_sort_contract".into()).unwrap();
+        if qualified { assert_eq!(scoped.schema(),&expected); }
+        else {
+            // Unqualified consumers resolve by name through the new alias;
+            // only pre-existing qualifiers require an exact schema restoration.
+            assert_eq!(scoped.schema().fields(),expected.fields());
+            assert_eq!(scoped.schema().index_of_column(&Column::from_name("value")).unwrap(),0);
+        }
+        let sql=unparse_plan(scoped,SqlDialect::DuckDb).unwrap();
+        assert_eq!(DuckDbExecutor::new().run(&[],&sql).unwrap(),vec![vec![SqlValue::Int(7)]]);
+    }
+}
+
+#[test]
+fn repeated_top_k_scopes_share_only_immutable_inputs() {
+    use datafusion::logical_expr::{create_udf,ColumnarValue,Volatility};
+    for volatile in [false,true] {
+        let value=if volatile {
+            create_udf("scope_volatile_value",vec![],DataType::Int64,Volatility::Volatile,
+                Arc::new(|_|Ok(ColumnarValue::Scalar(ScalarValue::Int64(Some(7)))))).call(vec![])
+        } else {lit(7_i64)};
+        let sorted=LogicalPlanBuilder::empty(true).project(vec![value.alias("value")]).unwrap()
+            .sort_with_limit(vec![col("value").sort(true,false)],Some(1)).unwrap().build().unwrap();
+        let plan=LogicalPlanBuilder::from(sorted.clone()).union(sorted).unwrap().build().unwrap();
+        let fixed=expand_sort_fetch(plan).unwrap();
+        let mut aliases=std::collections::BTreeSet::new();
+        fixed.apply(|node|{
+            if let LogicalPlan::SubqueryAlias(alias)=node {
+                if alias.alias.table().starts_with("__w_sql_cte_sort_input_") || alias.alias.table().starts_with("__w_sql_cte_topk_") {
+                    aliases.insert(alias.alias.table().to_owned());
+                }
+            }
+            Ok(TreeNodeRecursion::Continue)
+        }).unwrap();
+        assert_eq!(aliases.len(),if volatile {4}else{2},"{aliases:?}");
+    }
+}

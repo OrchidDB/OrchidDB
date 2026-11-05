@@ -329,3 +329,37 @@ fn native_float_kernel_requires_duckdb_and_one_positional_argument() {
     function.args=ast::FunctionArguments::None;
     assert!(adapt_expression(&mut expression,SqlDialect::DuckDb).unwrap_err().to_string().contains("native string-to-float signature"));
 }
+
+#[test]
+fn variadic_templates_preserve_argument_asts_and_quoted_placeholder_identifiers() {
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&super::super::trino::TRINO)] {
+        for args in [vec![],vec![ast::Expr::Identifier(ast::Ident::with_quote('"',"__arg9"))],
+            vec![ast::Expr::Identifier(ast::Ident::new("__args")),ast::Expr::Value(ast::Value::SingleQuotedString("'); SELECT 2; --".into()).into())]] {
+            let expression=portable_template("coalesce(__args)",&args,dialect).unwrap();
+            let ast::Expr::Nested(inner)=expression else {panic!()};
+            let ast::Expr::Function(call)=*inner else {panic!()};
+            let ast::FunctionArguments::List(actual)=call.args else {panic!()};
+            let expected=args.iter().cloned().map(|arg|ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(ast::Expr::Nested(Box::new(arg))))).collect::<Vec<_>>();
+            assert_eq!(actual.args,expected);
+            let array=portable_template("ARRAY[__args]",&args,dialect).unwrap();
+            let ast::Expr::Nested(inner)=array else {panic!()};
+            let ast::Expr::Array(array)=*inner else {panic!()};
+            assert_eq!(array.elem,args.iter().cloned().map(|arg|ast::Expr::Nested(Box::new(arg))).collect::<Vec<_>>());
+            let quoted=portable_template("coalesce(\"__args\", '__args')",&args,dialect).unwrap().to_string();
+            assert!(quoted.contains("\"__args\"") && quoted.contains("'__args'"),"{quoted}");
+        }
+    }
+}
+
+#[test]
+fn generated_template_names_avoid_both_caller_and_template_collisions() {
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&super::super::trino::TRINO)] {
+        let arg=ast::Expr::Identifier(ast::Ident::new("__graph_dialect_0_0"));
+        let sql=portable_template("(SELECT __arg0 AS value, '__graph_dialect_0_1' AS marker FROM input AS __local0)",&[arg],dialect).unwrap().to_string();
+        assert!(sql.contains("AS __graph_dialect_0_2"),"{sql}");
+        assert!(sql.contains("'__graph_dialect_0_1'") && sql.contains("(__graph_dialect_0_0)"),"{sql}");
+        for malformed in ["'unterminated","1 +","1 2","__arg2","__arg0; SELECT 2"] {
+            assert!(portable_template(malformed,&[],dialect).is_err(),"accepted malformed mapping: {malformed}");
+        }
+    }
+}
