@@ -149,6 +149,10 @@ async fn trino_typed_graph_transport_preserves_nested_property_values() {
         ScalarValue::Date32(Some(19782)),
         ScalarValue::TimestampNanosecond(Some(1700000000123456789), None),
         ScalarValue::TimestampMicrosecond(Some(1700000000123456), Some("UTC".into())),
+        ScalarValue::Time32Second(Some(45296)),
+        ScalarValue::Time32Millisecond(Some(45296123)),
+        ScalarValue::Time64Microsecond(Some(45296123456)),
+        ScalarValue::Time64Nanosecond(Some(45296123456789)),
         list.clone(),
         list.cast_to(&DataType::LargeList(Arc::new(Field::new("item", DataType::Int64, true)))).unwrap(),
         list.cast_to(&DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Int64, true)), 2)).unwrap(),
@@ -202,5 +206,86 @@ async fn trino_typed_string_keys_match_native_byte_framing() {
             let expected = native::typed::evaluate("key", &[value.to_array().unwrap()], 1).unwrap();
             assert_eq!(rows, vec![ScalarValue::try_from_array(&expected,0).unwrap()], "{value:?}");
         }
+    }
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires Trino"]
+async fn trino_typed_path_seeds_and_appends_preserve_order_and_native_encoding() {
+    use std::sync::Arc;
+    use datafusion::logical_expr::{LogicalPlanBuilder, lit, Expr};
+    use datafusion::functions::core::expr_fn::named_struct;
+    use crate::ir::{rel::native_values as native, value::Value};
+    use crate::execution::trino::{TrinoOptions, TrinoSession};
+    use futures::StreamExt;
+    let evaluate = |expr: &Expr| {
+        let schema = datafusion::common::DFSchema::empty();
+        let physical = datafusion_physical_expr::create_physical_expr(expr, &schema, &datafusion::logical_expr::execution_props::ExecutionProps::new()).unwrap();
+        let batch = arrow::array::RecordBatch::try_new_with_options(Arc::new(arrow::datatypes::Schema::empty()), vec![], &arrow::array::RecordBatchOptions::new().with_row_count(Some(1))).unwrap();
+        physical.evaluate(&batch).unwrap().into_array(1).unwrap()
+    };
+    let endpoint = std::env::var("ORCHIDDB_TEST_OPA_URL").expect("Trino URL");
+    let trino = TrinoSession::source(TrinoOptions::new(endpoint, "orchid_test")).unwrap();
+    for literal_seed in [false, true] {
+        for ids in [vec![], vec![7_i64], vec![7,8,7]] {
+            let mut expression = native::literal(&Value::Path(vec![])).unwrap();
+            if literal_seed { expression = lit(ScalarValue::try_from_array(&evaluate(&expression),0).unwrap()); }
+            for id in &ids {
+                let descriptor = named_struct(vec![lit("kind"),lit("node"),lit("id"),lit(*id),lit("label"),lit("Person"),lit("source_keys"),lit(true),lit("properties"),named_struct(vec![lit("score"),lit(id*10)])]);
+                expression = native::typed::call("path_append",vec![expression,native::typed::call("element",vec![descriptor])]);
+            }
+            let expected = evaluate(&expression);
+            let plan = LogicalPlanBuilder::empty(true).project(vec![expression.alias("path")]).unwrap().build().unwrap();
+            let sql = super::super::unparse::unparse_plan(specialize(plan).unwrap(), SqlDialect::Custom(&TRINO)).unwrap();
+            let mut stream = trino.execute(&sql,vec![]).await.unwrap();
+            let mut actual = vec![];
+            while let Some(batch) = stream.next().await {
+                let batch = batch.unwrap_or_else(|error|panic!("{ids:?}/{literal_seed}: {error}: {sql}"));
+                let decoded = crate::execution::graph_values::decode_array(batch.column(0).clone()).unwrap();
+                for row in 0..decoded.len() { actual.push(ScalarValue::try_from_array(&decoded,row).unwrap()); }
+            }
+            assert_eq!(actual,vec![ScalarValue::try_from_array(&expected,0).unwrap()],"{ids:?}/{literal_seed}");
+        }
+    }
+}
+
+#[test]
+fn trino_typed_graph_transport_declines_maps_and_unions_without_stringifying_them() {
+    use std::sync::Arc;
+    use arrow::datatypes::{Field, Schema, UnionFields, UnionMode};
+    use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder, col};
+    let key_value = DataType::Struct(vec![Field::new("key",DataType::Utf8,false),Field::new("value",DataType::Int64,true)].into());
+    for kind in [DataType::Map(Arc::new(Field::new("entries",key_value,false)),false), DataType::Union(UnionFields::try_new([0], [Field::new("integer",DataType::Int64,true)]).unwrap(),UnionMode::Dense)] {
+        let descriptor = DataType::Struct(vec![
+            Field::new("kind",DataType::Utf8,false), Field::new("id",DataType::Int64,false),
+            Field::new("label",DataType::Utf8,false), Field::new("source_keys",DataType::Boolean,false),
+            Field::new("properties",DataType::Struct(vec![Field::new("payload",kind.clone(),true)].into()),false),
+        ].into());
+        let input = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {produce_one_row:false,schema:Arc::new(datafusion::common::DFSchema::try_from(Schema::new(vec![Field::new("descriptor",descriptor,true)])).unwrap())});
+        let plan = LogicalPlanBuilder::from(input).project(vec![crate::ir::rel::native_values::typed::call("element",vec![col("descriptor")]).alias("value")]).unwrap().build().unwrap();
+        let error = specialize(plan).unwrap_err().to_string();
+        assert!(error.contains("Trino graph transport"),"{kind}: {error}");
+    }
+}
+
+#[test]
+fn trino_typed_specialization_preserves_non_path_native_constants_and_aliases() {
+    use std::sync::Arc;
+    use crate::ir::{rel::native_values as native, value::Value};
+    use datafusion::logical_expr::{LogicalPlanBuilder, lit, Expr};
+    use datafusion::logical_expr::simplify::SimplifyContext;
+    use datafusion::optimizer::simplify_expressions::ExprSimplifier;
+    let schema = Arc::new(datafusion::common::DFSchema::empty());
+    let simplifier = ExprSimplifier::new(SimplifyContext::default().with_schema(schema.clone()));
+    for value in [Value::Null, Value::Long(7), Value::String("雪".into()), Value::List(vec![Value::Long(1),Value::Null])] {
+        let expression = native::literal(&value).unwrap();
+        let literal = simplifier.simplify(simplifier.coerce(expression,&schema).unwrap()).unwrap();
+        let Expr::Literal(scalar,_) = &literal else { panic!("native literal expected: {literal:?}") };
+        let plan = LogicalPlanBuilder::empty(true).project(vec![literal.clone().alias("user.alias"),lit(9_i64).alias("ordinary")]).unwrap().build().unwrap();
+        let transformed = specialize(plan.clone()).unwrap();
+        assert_eq!(transformed,plan,"non-path native constants need no transport rewrite: {value:?}");
+        assert_eq!(transformed.schema().field(0).name(),"user.alias");
+        assert_eq!(transformed.schema().field(0).data_type(),&scalar.data_type());
     }
 }

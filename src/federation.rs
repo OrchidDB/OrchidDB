@@ -820,7 +820,10 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         Utf8 | LargeUtf8 | Utf8View => "string".into(),
         Binary | LargeBinary => "binary".into(),
         Date32 | Date64 => "date".into(),
-        Time32(_) | Time64(_) => "time".into(),
+        Time32(arrow::datatypes::TimeUnit::Second) => "time_s".into(),
+        Time32(arrow::datatypes::TimeUnit::Millisecond) => "time_ms".into(),
+        Time64(arrow::datatypes::TimeUnit::Microsecond) => "time".into(),
+        Time64(arrow::datatypes::TimeUnit::Nanosecond) => "time_ns".into(),
         Timestamp(unit, zone) if zone.as_ref().is_none_or(|zone| zone.as_ref() == "UTC") => {
             // Graph descriptors and exchanges reconstruct Arrow types from
             // these names. Dropping the unit silently truncates nanoseconds.

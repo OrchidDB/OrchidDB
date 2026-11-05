@@ -569,3 +569,39 @@ async fn unnest_keeps_computed_and_renamed_passthrough_columns_on_every_engine()
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires PostgreSQL and Trino"]
+async fn time_literals_preserve_supported_precision_and_reject_lossy_postgres_types() {
+    let (pg,trino_session)=literal_test_engines();
+    for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&trino::TRINO)] {
+        for (value,expected) in [
+            (ScalarValue::Time32Second(Some(45296)),"12:34:56"),
+            (ScalarValue::Time32Millisecond(Some(45296123)),"12:34:56.123"),
+            (ScalarValue::Time64Microsecond(Some(45296123456)),"12:34:56.123456"),
+            (ScalarValue::Time64Nanosecond(Some(45296123456789)),"12:34:56.123456789"),
+            (ScalarValue::Time64Nanosecond(None),"null"),
+            (ScalarValue::Time64Microsecond(None),"null"),
+        ] {
+            if dialect==SqlDialect::Postgres && matches!(value,ScalarValue::Time64Nanosecond(_)) {
+                assert!(exchange_literal(value.clone(),value.data_type(),dialect).unwrap_err().to_string().contains("nanosecond time precision"));
+                assert!(unparse::encode_expression_literals(datafusion::logical_expr::lit(value),dialect).is_err());
+                continue;
+            }
+            let direct=exchange_literal(value.clone(),value.data_type(),dialect).unwrap();
+            assert_eq!(direct.matches("CAST(").count(),1,"time literals need one cast: {direct}");
+            let encoded=unparse::encode_expression_literals(datafusion::logical_expr::lit(value),dialect).unwrap().data;
+            let sql_dialect=dialect.unparser_dialect();
+            let expression_sql=logical_functions::with_expression(&encoded,&datafusion::common::DFSchema::empty(),dialect,|| {
+                let mut ast=datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded)?;
+                functions::prepare_ast(&mut ast,dialect)?;
+                Ok(ast.to_string())
+            }).unwrap();
+            for literal in [direct,expression_sql] {
+                let query=format!("SELECT coalesce(CAST({literal} AS VARCHAR),'null')");
+                assert_eq!(execute_text_case(&query,dialect,&pg,&trino_session).await,expected,"{dialect:?}: {query}");
+            }
+        }
+    }
+}

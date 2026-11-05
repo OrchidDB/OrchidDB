@@ -157,6 +157,9 @@ pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
         DataType::Timestamp(TimeUnit::Nanosecond, _) => return Err(DataFusionError::NotImplemented(
             "PostgreSQL cannot preserve nanosecond timestamp precision".into(),
         )),
+        DataType::Time64(TimeUnit::Nanosecond) => return Err(DataFusionError::NotImplemented(
+            "PostgreSQL cannot preserve nanosecond time precision".into(),
+        )),
         DataType::Timestamp(_, None) => "TIMESTAMP".into(),
         DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) => {
             if matches!(f.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) { "JSONB[]".into() }

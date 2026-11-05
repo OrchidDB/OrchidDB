@@ -66,3 +66,14 @@ fn timestamp_exchange_type_names_preserve_every_supported_unit_and_utc_zone() {
     assert!(crate::federation::type_name(&DataType::Timestamp(TimeUnit::Nanosecond, Some("Europe/Paris".into()))).is_err());
     for name in ["timestamp_ps", "timestamptz_ps", "timestamp_us_extra"] { assert!(data_type(name).is_err()); }
 }
+
+#[test]
+fn local_time_exchange_type_names_preserve_arrow_precision() {
+    for (kind,name) in [(DataType::Time32(TimeUnit::Second),"time_s"),(DataType::Time32(TimeUnit::Millisecond),"time_ms"),(DataType::Time64(TimeUnit::Microsecond),"time"),(DataType::Time64(TimeUnit::Nanosecond),"time_ns")] {
+        assert_eq!(crate::federation::type_name(&kind).unwrap(),name);
+        assert_eq!(data_type(name).unwrap(),kind);
+        let nested=DataType::List(Arc::new(Field::new("item",kind,true)));
+        assert_eq!(data_type(&crate::federation::type_name(&nested).unwrap()).unwrap(),nested);
+    }
+    assert!(data_type("time_ps").is_err());
+}

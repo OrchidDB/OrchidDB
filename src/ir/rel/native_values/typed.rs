@@ -213,6 +213,24 @@ fn scalar(value: ScalarValue, context: &mut Context) -> Result<Value, String> {
                 Err(_) => Value::BigInt(text.parse().map_err(|_| "Invalid HUGEINT")?),
             })
         }
+        value @ (ScalarValue::Time32Second(_)
+        | ScalarValue::Time32Millisecond(_)
+        | ScalarValue::Time64Microsecond(_)
+        | ScalarValue::Time64Nanosecond(_)) => {
+            let (ticks, scale) = match value {
+                ScalarValue::Time32Second(Some(n)) => (i64::from(n), 1_i64),
+                ScalarValue::Time32Millisecond(Some(n)) => (i64::from(n), 1000),
+                ScalarValue::Time64Microsecond(Some(n)) => (n, 1_000_000),
+                ScalarValue::Time64Nanosecond(Some(n)) => (n, 1_000_000_000),
+                _ => unreachable!(),
+            };
+            let time = u32::try_from(ticks.div_euclid(scale)).ok().and_then(|seconds| {
+                chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+                    seconds, (ticks.rem_euclid(scale) * (1_000_000_000 / scale)) as u32,
+                )
+            }).ok_or("Time exceeds Cypher local time range")?;
+            Ok(Value::Temporal(crate::ir::temporal::TemporalValue::LocalTime(time)))
+        }
         value @ (ScalarValue::TimestampSecond(..)
         | ScalarValue::TimestampMillisecond(..)
         | ScalarValue::TimestampMicrosecond(..)

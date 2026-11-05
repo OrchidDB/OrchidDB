@@ -534,12 +534,14 @@ pub(super) fn encode_expression_literals(
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
                     .map_err(|e| DataFusionError::Plan(e.to_string()))?));
             }
-            // Custom adapters own structured and floating-point transport.
+            // Custom adapters own structured, floating-point and time transport.
             // The generic unparser cannot render Trino ROW/ARRAY types,
-            // and its decimal spelling of floats can exceed Trino precision.
+            // its decimal spelling of floats can exceed Trino precision, and
+            // an unqualified TIME cast truncates Trino values to milliseconds.
             if matches!(dialect, SqlDialect::Custom(_))
                 && (super::structured::is_structured(&value.data_type())
                     || matches!(value, ScalarValue::Float32(_) | ScalarValue::Float64(_))
+                    || matches!(value.data_type(), DataType::Time32(_) | DataType::Time64(_))
                     || matches!(value, ScalarValue::UInt64(Some(number)) if *number > i64::MAX as u64)
                     || matches!(value.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(..))) {
                 return Ok(Transformed::yes(super::structured::literal_expr(value, dialect)
@@ -576,8 +578,8 @@ pub(super) fn encode_expression_literals(
                     lit(storage), value.data_type(), dialect.name(),
                 )?));
             }
-            if matches!(value.data_type(), DataType::Timestamp(..)) {
-                // Keep timestamp precision, null type, and timezone in the cast.
+            if matches!(value.data_type(), DataType::Timestamp(..) | DataType::Time32(_) | DataType::Time64(_)) {
+                // Keep temporal precision, null type, and timezone in the cast.
                 // Generic literals can lose null typing or reinterpret zoned instants.
                 let text = if value.is_null() { None } else {
                     let text = arrow::util::display::array_value_to_string(value.to_array()?.as_ref(), 0)?;

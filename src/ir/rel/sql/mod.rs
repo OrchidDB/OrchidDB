@@ -87,7 +87,7 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
                 match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')"), SqlDialect::Custom(_) => unreachable!() }
             }
             value => {
-                let encoded_declared_type = matches!(ty, DataType::Timestamp(..) | DataType::Float16) && value.data_type() == ty;
+                let encoded_declared_type = matches!(ty, DataType::Timestamp(..) | DataType::Time32(_) | DataType::Time64(_) | DataType::Float16) && value.data_type() == ty;
                 let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect)?.data;
                 let sql_dialect = dialect.unparser_dialect();
                 let mut expression = datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded)?;
@@ -301,6 +301,7 @@ impl SqlDialect {
             DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None) if self == Self::DuckDb => "TIMESTAMP_NS",
             DataType::Timestamp(arrow::datatypes::TimeUnit::Second | arrow::datatypes::TimeUnit::Millisecond | arrow::datatypes::TimeUnit::Microsecond, Some(_)) => "TIMESTAMP WITH TIME ZONE",
             DataType::Time32(_) | DataType::Time64(arrow::datatypes::TimeUnit::Microsecond) => "TIME",
+            DataType::Time64(arrow::datatypes::TimeUnit::Nanosecond) if self == Self::DuckDb => "TIME_NS",
             DataType::Binary | DataType::LargeBinary | DataType::BinaryView | DataType::FixedSizeBinary(_) => if self == Self::Postgres { "BYTEA" } else { "BLOB" },
 
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => match self {

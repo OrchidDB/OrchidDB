@@ -75,3 +75,24 @@ fn recursive_edge_projection_preserves_path_identity_and_property_data() {
         }
     }
 }
+
+#[test]
+fn arrow_local_times_preserve_units_nulls_and_reject_out_of_day_values() {
+    let cases: &[(fn(Option<i64>)->ScalarValue, i64, &str)] = &[
+        (|n|ScalarValue::Time32Second(n.map(|n|n as i32)),1,"23:59:59"),
+        (|n|ScalarValue::Time32Millisecond(n.map(|n|n as i32)),1000,"23:59:59.999"),
+        (ScalarValue::Time64Microsecond,1_000_000,"23:59:59.999999"),
+        (ScalarValue::Time64Nanosecond,1_000_000_000,"23:59:59.999999999"),
+    ];
+    for (value, scale, last) in cases {
+        for (ticks,text) in [(0,"00:00:00"),(86400*scale-1,*last)] {
+            assert_eq!(scalar(value(Some(ticks)),&mut Context::default()).unwrap(),Value::Temporal(crate::ir::temporal::parse("localtime",text).unwrap()));
+        }
+        assert_eq!(scalar(value(None),&mut Context::default()).unwrap(),Value::Null);
+        for ticks in [-1,86400*scale] {
+            assert!(scalar(value(Some(ticks)),&mut Context::default()).unwrap_err().contains("local time range"));
+        }
+    }
+    assert!(scalar(ScalarValue::Time64Nanosecond(Some(i64::MAX)),&mut Context::default()).is_err());
+    assert!(scalar(ScalarValue::Time64Microsecond(Some(i64::MIN)),&mut Context::default()).is_err());
+}

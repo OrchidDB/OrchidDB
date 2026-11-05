@@ -210,6 +210,10 @@ impl DialectAdapter for TrinoAdapter {
                 _ if ty.is_integer() => value.to_string(),
                 ScalarValue::Decimal128(..)
                 | ScalarValue::Date32(_)
+                | ScalarValue::Time32Second(_)
+                | ScalarValue::Time32Millisecond(_)
+                | ScalarValue::Time64Microsecond(_)
+                | ScalarValue::Time64Nanosecond(_)
                 | ScalarValue::TimestampSecond(..)
                 | ScalarValue::TimestampMillisecond(..)
                 | ScalarValue::TimestampMicrosecond(..)
