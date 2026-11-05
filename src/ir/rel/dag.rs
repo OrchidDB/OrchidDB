@@ -182,6 +182,7 @@ impl DagSession {
 #[derive(Debug, Clone)]
 struct SourceTable {
     name: String,
+    input_name: String,
     schema: arrow::datatypes::SchemaRef,
     uses: usize,
 }
@@ -275,6 +276,7 @@ fn partition<'a>(
     external: &'a std::collections::BTreeSet<String>,
     dialect: sql::SqlDialect,
     rule_context: &'a crate::ir::rules::RuleContext,
+    transport_sources: bool,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
         let explain = std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some();
@@ -307,6 +309,8 @@ fn partition<'a>(
             let projected = datafusion::logical_expr::LogicalPlanBuilder::from(sql_plan)
                 .project(columns)?
                 .build()?;
+            let (projected, source_tables) = exchange::bind_sources(projected, external,
+                &mut candidate_external, transport_sources)?;
             let candidate = LoweredPlan {
                 rule_context: rule_context.clone(),
                 plan: projected,
@@ -344,6 +348,7 @@ fn partition<'a>(
                             external,
                             dialect,
                             rule_context,
+                            transport_sources,
                         )
                         .await?,
                     );
@@ -359,23 +364,6 @@ fn partition<'a>(
                     sql::SqlDialect::Postgres => stats.postgres_regions += 1,
                     sql::SqlDialect::Custom(_) => stats.other_sql_regions += 1,
                 };
-                let mut source_tables = std::collections::BTreeMap::new();
-                candidate.plan.apply_with_subqueries(|node| {
-                    if let LogicalPlan::TableScan(scan) = node {
-                        let name = scan.table_name.to_string();
-                        if external.contains(&name) || external.contains(scan.table_name.table()) {
-                            source_tables
-                                .entry(name.clone())
-                                .and_modify(|t: &mut SourceTable| t.uses += 1)
-                                .or_insert_with(|| SourceTable {
-                                    name,
-                                    schema: scan.source.schema(),
-                                    uses: 1,
-                                });
-                        }
-                    }
-                    Ok(TreeNodeRecursion::Continue)
-                })?;
                 stats.sql_queries.push(prepared.query.clone());
                 return Ok(LogicalPlan::Extension(Extension {
                     node: Arc::new(DuckDbRegion {
@@ -384,7 +372,7 @@ fn partition<'a>(
                         prepared: Arc::new(prepared),
                         inputs: dependencies,
                         input_tables,
-                        source_tables: source_tables.into_values().collect(),
+                        source_tables,
                     }),
                 }));
             }
@@ -413,7 +401,7 @@ fn partition<'a>(
                     ));
                 }
                 let source =
-                    partition(&source, stats, eligibility, external, dialect, rule_context).await?;
+                    partition(&source, stats, eligibility, external, dialect, rule_context, transport_sources).await?;
                 match dialect {
                     sql::SqlDialect::DuckDb => stats.duckdb_regions += 1,
                     sql::SqlDialect::Postgres => stats.postgres_regions += 1,
@@ -444,6 +432,7 @@ fn partition<'a>(
                     external,
                     dialect,
                     rule_context,
+                    transport_sources,
                 )
                 .await;
             }
@@ -481,7 +470,7 @@ fn partition<'a>(
         let mut inputs = Vec::new();
         for input in plan.inputs() {
             inputs
-                .push(partition(input, stats, eligibility, external, dialect, rule_context).await?);
+                .push(partition(input, stats, eligibility, external, dialect, rule_context, transport_sources).await?);
         }
         stats.boundary_operators += 1;
         let output_decode = matches!(plan, LogicalPlan::Extension(e) if e.node.name() == "Pruned(DecodeTraversers)");
@@ -763,7 +752,7 @@ impl ExecutionPlan for DuckDbExec {
                         BatchSource::once(stream)
                     };
                     relations.push(InputRelation {
-                        name: table.name,
+                        name: table.input_name,
                         source,
                     });
                 }
@@ -1021,6 +1010,7 @@ pub(crate) async fn prepare_with_extensions(
             &resources.external,
             dialect,
             rule_context,
+            resources.region_session.is_some(),
         )
         .await?
     };

@@ -479,3 +479,628 @@ fn transport_memory_reservations_keep_failed_growth_atomic_and_release_on_drop()
     drop(reservation);
     assert_eq!(pool.reserved(), 0);
 }
+
+async fn boundary_rows(exec: Arc<dyn ExecutionPlan>) -> Vec<Vec<ScalarValue>> {
+    use futures::TryStreamExt;
+    let batches = exec
+        .execute(0, Arc::new(TaskContext::default()))
+        .unwrap()
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap();
+    batches
+        .iter()
+        .flat_map(|batch| {
+            (0..batch.num_rows()).map(move |row| {
+                batch
+                    .columns()
+                    .iter()
+                    .map(|column| ScalarValue::try_from_array(column, row).unwrap())
+                    .collect()
+            })
+        })
+        .collect()
+}
+
+fn physical_boundary(
+    prepared: sql::PreparedSql,
+    resources: &DagSession,
+    source_tables: Vec<SourceTable>,
+    inputs: Vec<Arc<dyn ExecutionPlan>>,
+    input_tables: Vec<sql::TableData>,
+) -> Arc<DuckDbExec> {
+    Arc::new(DuckDbExec {
+        properties: Arc::new(PlanProperties::new(prepared.output_schema())),
+        prepared: Arc::new(prepared),
+        inputs,
+        input_tables,
+        source_tables,
+        region_session: resources.region_session.clone(),
+        executor: resources.executor.clone(),
+        cost: Default::default(),
+    })
+}
+
+#[tokio::test]
+async fn aliased_empty_relations_preserve_schema_and_unit_row_cardinality() {
+    use arrow::datatypes::{Field, Schema};
+    for fields in [
+        vec![],
+        vec![
+            Field::new("n", DataType::Int64, true),
+            Field::new("s", DataType::Utf8, true),
+        ],
+    ] {
+        let schema = Arc::new(Schema::new(fields));
+        for one_row in [false, true] {
+            let empty = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+                produce_one_row: one_row,
+                schema: Arc::new(
+                    datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap(),
+                ),
+            });
+            let aliased = LogicalPlanBuilder::from(empty)
+                .alias("outer_scope")
+                .unwrap()
+                .alias("renamed_scope")
+                .unwrap()
+                .build()
+                .unwrap();
+            let exec =
+                compile_execution(&aliased, &[], &resources(0), &Default::default()).unwrap();
+            assert_eq!(exec.schema().as_ref(), schema.as_ref());
+            validate_sql_required_physical(&exec).unwrap();
+            let rows = boundary_rows(exec).await;
+            assert_eq!(rows.len(), usize::from(one_row));
+            if one_row {
+                assert_eq!(rows[0].len(), schema.fields().len());
+                assert!(rows[0].iter().all(ScalarValue::is_null));
+            }
+        }
+    }
+}
+
+#[test]
+fn execution_compilation_rejects_relational_operators_without_sql_lowering() {
+    let plan = LogicalPlanBuilder::empty(true)
+        .project(vec![lit(7_i64).alias("value")])
+        .unwrap()
+        .build()
+        .unwrap();
+    let error = compile_execution(&plan, &[], &resources(0), &Default::default())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("requires SQL lowering"), "{error}");
+}
+
+#[tokio::test]
+async fn sql_boundaries_preserve_duplicate_null_rows_and_reject_extra_partitions() {
+    use arrow::datatypes::{Field, Schema};
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value",
+        DataType::Int64,
+        true,
+    )]));
+    for mode in [0, 2] {
+        let resource = resources(mode);
+        let prepared=sql::PreparedSql::query_only("SELECT value FROM (VALUES (CAST(NULL AS BIGINT)), (7), (7)) t(value) ORDER BY value NULLS LAST".into(),schema.clone());
+        let exec = physical_boundary(prepared, &resource, vec![], vec![], vec![]);
+        assert_eq!(
+            exec.execute(1, Arc::new(TaskContext::default()))
+                .err()
+                .unwrap()
+                .to_string(),
+            "Execution error: DuckDB region has one partition"
+        );
+        assert_eq!(
+            boundary_rows(exec).await,
+            vec![
+                vec![ScalarValue::Int64(Some(7))],
+                vec![ScalarValue::Int64(Some(7))],
+                vec![ScalarValue::Int64(None)]
+            ]
+        );
+    }
+}
+
+#[tokio::test]
+async fn source_tables_stream_across_sessions_and_replay_for_joins_and_local_inputs() {
+    use arrow::{
+        array::Int64Array,
+        datatypes::{Field, Schema},
+    };
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value x",
+        DataType::Int64,
+        true,
+    )]));
+    for mode in 0..5 {
+        let source = Arc::new(Mutex::new(sql::DuckDbExecutor::default()));
+        source.lock().unwrap().execute_batch("CREATE TABLE \"source a\" (\"value x\" BIGINT); INSERT INTO \"source a\" VALUES (7),(NULL),(7); CREATE TABLE \"source b\" (\"value x\" BIGINT); INSERT INTO \"source b\" VALUES (7),(8)").unwrap();
+        source.lock().unwrap().execute_batch("CREATE SCHEMA \"scope space\"; CREATE TABLE \"scope space\".\"source a\" AS SELECT * FROM \"source a\"").unwrap();
+        let target = Arc::new(Mutex::new(sql::DuckDbExecutor::default()));
+        let mut resource = DagSession::with_shared(source, Default::default());
+        resource.region_session = Some(Arc::new(Mutex::new(Box::new(sql::DuckDbSession {
+            executor: target,
+        }))));
+        let mut sources = vec![SourceTable {
+            name: "source a".into(),
+            input_name: "source a".into(),
+            schema: schema.clone(),
+            uses: if mode == 1 { 2 } else { 1 },
+        }];
+        let mut inputs = vec![];
+        let mut tables = vec![];
+        let query = match mode {
+            0 => "SELECT \"value x\" FROM \"source a\" ORDER BY \"value x\" NULLS LAST",
+            1 => {
+                "SELECT a.\"value x\" FROM \"source a\" a JOIN \"source a\" b ON a.\"value x\" IS NOT DISTINCT FROM b.\"value x\" ORDER BY a.\"value x\" NULLS LAST"
+            }
+            2 => {
+                sources.push(SourceTable {
+                    name: "source b".into(),
+                    input_name: "source b".into(),
+                    schema: schema.clone(),
+                    uses: 1,
+                });
+                "SELECT a.\"value x\" FROM \"source a\" a JOIN \"source b\" b ON a.\"value x\"=b.\"value x\" ORDER BY a.\"value x\""
+            }
+            4 => {
+                sources[0].name = "\"scope space\".\"source a\"".into();
+                sources[0].input_name = "qualified input".into();
+                "SELECT \"value x\" FROM \"qualified input\" ORDER BY \"value x\" NULLS LAST"
+            }
+            _ => {
+                let batch =
+                    RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(vec![1]))])
+                        .unwrap();
+                inputs.push(
+                    Arc::new(engine_exec::InputBatches::new(schema.clone(), vec![batch]))
+                        as Arc<dyn ExecutionPlan>,
+                );
+                tables.push(sql::TableData {
+                    name: "local input".into(),
+                    schema: schema.clone(),
+                    batches: vec![],
+                });
+                "SELECT a.\"value x\" FROM \"source a\" a CROSS JOIN \"local input\" ORDER BY a.\"value x\" NULLS LAST"
+            }
+        };
+        let exec = physical_boundary(
+            sql::PreparedSql::query_only(query.into(), schema.clone()),
+            &resource,
+            sources,
+            inputs,
+            tables,
+        );
+        let expected = match mode {
+            1 => vec![Some(7), Some(7), Some(7), Some(7), None],
+            2 => vec![Some(7), Some(7)],
+            _ => vec![Some(7), Some(7), None],
+        };
+        assert_eq!(
+            boundary_rows(exec).await,
+            expected
+                .into_iter()
+                .map(|v| vec![ScalarValue::Int64(v)])
+                .collect::<Vec<_>>(),
+            "mode={mode}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn caller_sessions_accept_typed_batches_and_reject_setup_statements() {
+    use arrow::{
+        array::Int64Array,
+        datatypes::{Field, Schema},
+    };
+    use futures::TryStreamExt;
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value",
+        DataType::Int64,
+        true,
+    )]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int64Array::from(vec![Some(8), None, Some(8)]))],
+    )
+    .unwrap();
+    let resource = resources(2);
+    let mut prepared = sql::PreparedSql::query_only(
+        "SELECT value FROM incoming ORDER BY value NULLS LAST".into(),
+        schema.clone(),
+    );
+    prepared.tables.push(sql::TableData {
+        name: "incoming".into(),
+        schema: schema.clone(),
+        batches: vec![batch],
+    });
+    assert_eq!(
+        boundary_rows(physical_boundary(
+            prepared,
+            &resource,
+            vec![],
+            vec![],
+            vec![]
+        ))
+        .await,
+        vec![
+            vec![ScalarValue::Int64(Some(8))],
+            vec![ScalarValue::Int64(Some(8))],
+            vec![ScalarValue::Int64(None)]
+        ]
+    );
+    let mut prepared = sql::PreparedSql::query_only("SELECT 1 AS value".into(), schema);
+    prepared
+        .setup
+        .push("CREATE TABLE unwanted(value BIGINT)".into());
+    let stream = physical_boundary(prepared, &resource, vec![], vec![], vec![])
+        .execute(0, Arc::new(TaskContext::default()))
+        .unwrap();
+    let error = stream
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Caller SQL sessions require typed input relations"),
+        "{error}"
+    );
+    let executor = resource.executor.clone();
+    let count = executor
+        .lock()
+        .unwrap()
+        .connection()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name='unwanted'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn dependent_sql_operations_use_default_and_supplied_sessions_and_preserve_empty_inputs() {
+    use arrow::datatypes::{Field, Schema};
+    let schema = Arc::new(
+        datafusion::common::DFSchema::try_from(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            true,
+        )]))
+        .unwrap(),
+    );
+    for mode in [0, 2] {
+        for one_row in [false, true] {
+            let resource = resources(mode);
+            let plan = super::super::dependent::DependentOperation {
+                source: Arc::new(LogicalPlanBuilder::empty(one_row).build().unwrap()),
+                template: sql::lowering::SqlTemplate {
+                    sql: "SELECT CAST(7 AS BIGINT) AS value".into(),
+                    parameters: 0,
+                    dialect: "duckdb".into(),
+                },
+                schema: schema.clone(),
+            }
+            .into_plan();
+            let exec = compile_execution(&plan, &[], &resource, &Default::default()).unwrap();
+            validate_sql_required_physical(&exec).unwrap();
+            assert!(exec.execute(1, Arc::new(TaskContext::default())).is_err());
+            let expected = if one_row {
+                vec![vec![ScalarValue::Int64(Some(7))]]
+            } else {
+                vec![]
+            };
+            assert_eq!(
+                boundary_rows(exec).await,
+                expected,
+                "mode={mode}, one_row={one_row}"
+            );
+        }
+    }
+}
+
+#[derive(Debug)]
+struct UnapprovedOperator(Arc<dyn ExecutionPlan>);
+impl ExecutionPlan for UnapprovedOperator {
+    fn name(&self) -> &str {
+        "InputBatches"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn properties(&self) -> &Arc<PlanProperties> {
+        self.0.properties()
+    }
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.0]
+    }
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        if children.len() != 1 {
+            return Err(DataFusionError::Plan("one child required".into()));
+        }
+        Ok(Arc::new(Self(children[0].clone())))
+    }
+    fn execute(&self, _: usize, _: Arc<TaskContext>) -> Result<SendableRecordBatchStream> {
+        panic!("physical-plan validation must not execute an unapproved operator")
+    }
+}
+
+#[test]
+fn physical_sql_audit_checks_nested_operator_identity_instead_of_trusting_names() {
+    let schema = Arc::new(arrow::datatypes::Schema::empty());
+    let input =
+        Arc::new(engine_exec::InputBatches::new(schema.clone(), vec![])) as Arc<dyn ExecutionPlan>;
+    validate_sql_required_physical(&input).unwrap();
+    let unapproved = Arc::new(UnapprovedOperator(input)) as Arc<dyn ExecutionPlan>;
+    let prepared = sql::PreparedSql::query_only("SELECT 1".into(), schema);
+    let nested = physical_boundary(
+        prepared,
+        &resources(0),
+        vec![],
+        vec![unapproved.clone()],
+        vec![],
+    ) as Arc<dyn ExecutionPlan>;
+    for plan in [unapproved, nested] {
+        let error = validate_sql_required_physical(&plan)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("rejected executable operator InputBatches"),
+            "{error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn poisoned_sql_resources_return_errors_instead_of_panicking_or_executing() {
+    use futures::TryStreamExt;
+    let resource = resources(0);
+    let executor = resource.executor.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = executor.lock().unwrap();
+            panic!("simulate a failed SQL owner");
+        })
+        .join()
+        .is_err()
+    );
+    assert!(
+        resource
+            .rule_context()
+            .unwrap_err()
+            .to_string()
+            .contains("SQL session poisoned")
+    );
+    let resource = resources(2);
+    let session = resource.region_session.clone().unwrap();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = session.lock().unwrap();
+            panic!("simulate a failed caller session");
+        })
+        .join()
+        .is_err()
+    );
+    let schema = Arc::new(arrow::datatypes::Schema::new(vec![
+        arrow::datatypes::Field::new("value", DataType::Int64, true),
+    ]));
+    let prepared = sql::PreparedSql::query_only("SELECT CAST(7 AS BIGINT) AS value".into(), schema);
+    let exec = physical_boundary(prepared, &resource, vec![], vec![], vec![]);
+    let error = exec
+        .execute(0, Arc::new(TaskContext::default()))
+        .unwrap()
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("SQL session poisoned"), "{error}");
+}
+
+#[tokio::test]
+async fn qualified_external_sources_execute_through_the_planned_caller_session() {
+    use arrow::datatypes::{Field, Schema};
+    use datafusion::common::TableReference;
+    for reference in [
+        TableReference::partial("scope space", "source a"),
+        TableReference::partial("other", "source a"),
+        TableReference::bare("literal.dot"),
+        TableReference::bare("embedded\"quote"),
+    ] {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value x",
+            DataType::Int64,
+            true,
+        )]));
+        let source = Arc::new(Mutex::new(sql::DuckDbExecutor::default()));
+        source
+            .lock()
+            .unwrap()
+            .execute_batch("CREATE SCHEMA \"scope space\"; CREATE SCHEMA other")
+            .unwrap();
+        let name = reference.to_quoted_string();
+        source
+            .lock()
+            .unwrap()
+            .execute_batch(&format!(
+                "CREATE TABLE {name} (\"value x\" BIGINT); INSERT INTO {name} VALUES (7),(NULL),(7)"
+            ))
+            .unwrap();
+        let mut resource = DagSession::with_shared(source, [reference.to_string()].into());
+        resource.region_session = Some(Arc::new(Mutex::new(Box::new(sql::DuckDbSession {
+            executor: Arc::new(Mutex::new(sql::DuckDbExecutor::default())),
+        }))));
+        let plan = LogicalPlanBuilder::scan(
+            reference.clone(),
+            datafusion::datasource::provider_as_source(Arc::new(
+                datafusion::datasource::empty::EmptyTable::new(schema),
+            )),
+            None,
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        let (result, stats) = execute_with_extensions(lowered(plan), vec![], None, Some(&resource))
+            .await
+            .unwrap_or_else(|error| panic!("{reference:?}: {error}"));
+        assert_eq!(stats.duckdb_regions, 1);
+        let mut rows = (0..result.batch.num_rows())
+            .map(|row| ScalarValue::try_from_array(result.batch.column(0), row).unwrap())
+            .collect::<Vec<_>>();
+        rows.sort_by_key(|value| match value {
+            ScalarValue::Int64(value) => *value,
+            _ => panic!(),
+        });
+        assert_eq!(
+            rows,
+            vec![
+                ScalarValue::Int64(None),
+                ScalarValue::Int64(Some(7)),
+                ScalarValue::Int64(Some(7))
+            ]
+        );
+    }
+}
+
+#[test]
+fn external_source_bindings_preserve_scan_contract_and_local_table_ownership() {
+    use datafusion::common::{Column, TableReference};
+    use datafusion::logical_expr::TableScan;
+    let original = scan(vec![ScalarValue::Int64(Some(7))]).build().unwrap();
+    let LogicalPlan::TableScan(original) = original else {
+        panic!()
+    };
+    let name = TableReference::partial("scope", "table");
+    let predicate = Expr::Column(Column::new(Some(name.clone()), "column1")).gt(lit(3_i64));
+    let plan = LogicalPlan::TableScan(
+        TableScan::try_new(
+            name.clone(),
+            original.source,
+            Some(vec![0]),
+            vec![predicate],
+            Some(2),
+        )
+        .unwrap(),
+    );
+    let external: std::collections::BTreeSet<String> =
+        [name.to_string(), "__orchid_source_input_0".into()].into();
+    let mut reserved = external.clone();
+    let (bound, sources) =
+        exchange::bind_sources(plan.clone(), &external, &mut reserved, true).unwrap();
+    assert_eq!(bound.schema(), plan.schema());
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].name, name.to_quoted_string());
+    assert_eq!(sources[0].input_name, "__orchid_source_input_1");
+    assert_eq!(sources[0].uses, 1);
+    let LogicalPlan::Projection(projection) = bound else {
+        panic!()
+    };
+    let LogicalPlan::TableScan(scan) = projection.input.as_ref() else {
+        panic!()
+    };
+    assert_eq!(scan.fetch, Some(2));
+    assert_eq!(scan.projection, Some(vec![0]));
+    assert_eq!(
+        scan.filters,
+        vec![Expr::Column(Column::new(Some(scan.table_name.clone()), "column1")).gt(lit(3_i64))]
+    );
+    let (unbound, _) =
+        exchange::bind_sources(plan.clone(), &external, &mut reserved, false).unwrap();
+    assert_eq!(unbound, plan);
+    let local = super::scalar_inputs::scan(vec![ScalarValue::Int64(Some(9))])
+        .build()
+        .unwrap();
+    let (unchanged, sources) =
+        exchange::bind_sources(local.clone(), &external, &mut reserved, true).unwrap();
+    assert_eq!(unchanged, local);
+    assert!(sources.is_empty());
+    assert!(
+        !reserved.contains("documents"),
+        "local data must still be materialized"
+    );
+}
+
+#[tokio::test]
+async fn caller_source_bindings_keep_same_named_schemas_and_repeated_scans_distinct() {
+    use arrow::datatypes::{Field, Schema};
+    use datafusion::common::{Column, TableReference};
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value x",
+        DataType::Int64,
+        true,
+    )]));
+    for repeat in [false, true] {
+        let source = Arc::new(Mutex::new(sql::DuckDbExecutor::default()));
+        source.lock().unwrap().execute_batch("CREATE SCHEMA first; CREATE SCHEMA second; CREATE TABLE first.items (\"value x\" BIGINT); INSERT INTO first.items VALUES (7),(NULL),(7); CREATE TABLE second.items (\"value x\" BIGINT); INSERT INTO second.items VALUES (7),(8)").unwrap();
+        let left_name = TableReference::partial("first", "items");
+        let right_name = if repeat {
+            left_name.clone()
+        } else {
+            TableReference::partial("second", "items")
+        };
+        let mut resource = DagSession::with_shared(
+            source,
+            [
+                left_name.to_string(),
+                right_name.to_string(),
+                "__orchid_source_input_0".into(),
+            ]
+            .into(),
+        );
+        resource.region_session = Some(Arc::new(Mutex::new(Box::new(sql::DuckDbSession {
+            executor: Arc::new(Mutex::new(sql::DuckDbExecutor::default())),
+        }))));
+        let source_plan = |name, alias| {
+            LogicalPlanBuilder::scan(
+                name,
+                datafusion::datasource::provider_as_source(Arc::new(
+                    datafusion::datasource::empty::EmptyTable::new(schema.clone()),
+                )),
+                None,
+            )
+            .unwrap()
+            .alias(alias)
+            .unwrap()
+            .build()
+            .unwrap()
+        };
+        let left = source_plan(left_name, "left side");
+        let right = source_plan(right_name, "right side");
+        let left_column = Expr::Column(Column::new(
+            Some(TableReference::bare("left side")),
+            "value x",
+        ));
+        let right_column = Expr::Column(Column::new(
+            Some(TableReference::bare("right side")),
+            "value x",
+        ));
+        let plan = LogicalPlanBuilder::from(left)
+            .join_on(
+                right,
+                datafusion::logical_expr::JoinType::Inner,
+                [left_column.clone().eq(right_column)],
+            )
+            .unwrap()
+            .project(vec![left_column.alias("value")])
+            .unwrap()
+            .build()
+            .unwrap();
+        let (result, stats) = execute_with_extensions(lowered(plan), vec![], None, Some(&resource))
+            .await
+            .unwrap();
+        assert_eq!(stats.duckdb_regions, 1);
+        assert_eq!(result.batch.num_rows(), if repeat { 4 } else { 2 });
+        for row in 0..result.batch.num_rows() {
+            assert_eq!(
+                ScalarValue::try_from_array(result.batch.column(0), row).unwrap(),
+                ScalarValue::Int64(Some(7))
+            );
+        }
+    }
+}
