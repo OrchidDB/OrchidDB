@@ -207,3 +207,44 @@ fn statistics_previews_bound_nested_payloads_without_corrupting_nulls_or_unicode
             ("\"a\"","\"b\"",Less),("-Infinity","Infinity",Less),
         ] {assert_eq!(numeric_cmp(left,right),expected,"{left}, {right}");}
     }
+
+#[test]
+fn empty_block_samples_retry_with_a_bounded_prefix_on_each_sampling_dialect() {
+    for dialect in ["duckdb","postgres"] {
+        let mut generator=Generator::new(json!({"dialect":dialect,"tables":[{"name":"items","columns":[{"name":"id","data_type":"int64"}]}]})).unwrap();
+        let metadata=generator.next().unwrap();
+        generator.submit(&metadata.id,vec![BTreeMap::from([("rows".into(),json!(64000))])],None,true).unwrap();
+        let sample=generator.next().unwrap();
+        assert!(sample.sql.contains("SAMPLE"));
+        generator.submit(&sample.id,vec![],None,false).unwrap();
+        assert_eq!(generator.next().unwrap().id,sample.id,"pending request is replayed until complete");
+        generator.submit(&sample.id,vec![],None,true).unwrap();
+        let retry=generator.next().unwrap();
+        assert!(!retry.sql.contains("SAMPLE"));
+        assert_eq!(retry.kind,"sample");
+        assert!(retry.sql.ends_with(&format!("LIMIT {}",retry.max_rows)));
+        assert!(retry.max_bytes<=sample.max_bytes);
+        generator.submit(&retry.id,vec![BTreeMap::from([("id".into(),json!(7))])],None,true).unwrap();
+        assert!(generator.next().is_none());
+        let snapshot=generator.finish();
+        assert!(snapshot.report.complete);
+        assert_eq!(snapshot.sources["items"].columns["id"].observations,1);
+        assert_eq!(snapshot.sources["items"].estimated_rows,Some(1.0));
+    }
+}
+
+#[test]
+fn empty_sample_errors_and_exhausted_request_budgets_do_not_trigger_unbounded_retries() {
+    for error in [None,Some("sample failed".to_string())] {
+        let mut generator=generator();
+        let metadata=generator.next().unwrap();
+        generator.submit(&metadata.id,vec![BTreeMap::from([("rows".into(),json!(64000))])],None,true).unwrap();
+        let sample=generator.next().unwrap();
+        if error.is_none() {generator.report.requests=MAX_REQUESTS;}
+        generator.submit(&sample.id,vec![],error.clone(),true).unwrap();
+        assert!(generator.next().is_none());
+        let snapshot=generator.finish();
+        assert!(!snapshot.report.complete);
+        assert_eq!(snapshot.sources["items"].estimated_rows,Some(64000.0));
+    }
+}

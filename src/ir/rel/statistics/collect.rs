@@ -26,6 +26,7 @@ struct Source {
     estimated_bytes: Option<f64>,
     method: String,
     accepted_bytes: usize,
+    prefix_retry: bool,
 }
 /// A bounded, adaptive acquisition coordinator. No data access occurs here.
 pub struct Generator {
@@ -197,6 +198,7 @@ impl Generator {
                 estimated_bytes: None,
                 method: "unavailable".into(),
                 accepted_bytes: 0,
+                prefix_retry: false,
             });
         }
         // Reserve sample work for every source. Wide catalogs spend the request
@@ -303,7 +305,7 @@ impl Generator {
                 cols.push("1 AS __statistics_row".into());
             }
             let sampling =
-                if let Some(rows) = s.estimated_rows.filter(|r| *r > max_rows as f64 * 4.0) {
+                if let Some(rows) = s.estimated_rows.filter(|r| !s.prefix_retry && *r > max_rows as f64 * 4.0) {
                     let percent = (max_rows as f64 / rows * 100.0).clamp(0.01, 100.0);
                     s.method = "system block sample; capped and potentially truncated".into();
                     if self.dialect == "duckdb" {
@@ -398,6 +400,17 @@ impl Generator {
                 self.queue.push_back((i, "sample".into()));
             } else {
                 let s = &mut self.sources[i];
+                // A block sample can miss every block of a nonempty table.
+                // Retry once with a bounded prefix rather than treating the
+                // missing observations as an empty source or unknown cost.
+                // next() still enforces all request, time, row and byte budgets.
+                if s.method.starts_with("system") && s.rows.is_empty()
+                    && error_is_none(&self.report, &r) && self.report.stopped.is_empty()
+                    && self.started.elapsed().as_millis() <= TIMEOUT_MS as u128
+                {
+                    s.prefix_retry = true;
+                    self.queue.push_back((i, "sample".into()));
+                }
                 if !s.method.starts_with("system")
                     && s.rows.len() < r.max_rows
                     && error_is_none(&self.report, &r)
