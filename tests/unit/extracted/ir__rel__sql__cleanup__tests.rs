@@ -199,3 +199,89 @@
         assert!(rows(cross(singleton(lit(7_i64),true),empty)).is_empty());
     }
 
+
+fn scope_subquery_expressions(reference: Option<Expr>) -> Vec<Expr> {
+    use datafusion::logical_expr::{Subquery, expr::{Exists, InSubquery, SetComparison, SetQuantifier}, Operator};
+    let subquery = Subquery {
+        subquery: Arc::new(LogicalPlanBuilder::empty(true)
+            .project(vec![reference.clone().unwrap_or_else(|| lit(7_i64)).alias("inner_value")]).unwrap().build().unwrap()),
+        outer_ref_columns: reference.into_iter().collect(), spans: Default::default(),
+    };
+    vec![Expr::ScalarSubquery(subquery.clone()), Expr::Exists(Exists::new(subquery.clone(), false)),
+        Expr::InSubquery(InSubquery::new(Box::new(lit(1_i64)), subquery.clone(), false)),
+        Expr::SetComparison(SetComparison::new(Box::new(lit(1_i64)), subquery, Operator::Eq, SetQuantifier::Any))]
+}
+
+#[tokio::test]
+async fn correlation_scopes_avoid_reserved_aliases_and_preserve_each_subquery_kind() {
+    let input = LogicalPlanBuilder::from(occurrences()).alias("__w_sql_cte_correlation_0").unwrap()
+        .alias("__w_sql_cte_correlation_1").unwrap()
+        .project(vec![col("value").alias("outer_value")]).unwrap().build().unwrap();
+    let reference = Expr::OuterReferenceColumn(input.schema().field(0).clone(), Column::new_unqualified("outer_value"));
+    for (kind, expression) in scope_subquery_expressions(Some(reference)).into_iter().enumerate() {
+        let original = LogicalPlanBuilder::from(input.clone())
+            .project(vec![col("outer_value"), expression.alias("result")]).unwrap().build().unwrap();
+        let scoped = super::super::correlation::preserve_scopes(original.clone()).unwrap();
+        assert_eq!(scoped.schema(), original.schema());
+        let LogicalPlan::Projection(projection) = &scoped else { panic!() };
+        let LogicalPlan::SubqueryAlias(alias) = projection.input.as_ref() else { panic!("missing correlation scope") };
+        assert_eq!(alias.alias.table(), "__w_sql_cte_correlation_2");
+        assert!(matches!(&projection.expr[0], Expr::Column(column) if column.relation.as_ref().unwrap().table() == alias.alias.table()));
+        assert_eq!(super::super::correlation::preserve_scopes(scoped.clone()).unwrap(), scoped);
+        let batches = crate::ir::rel::execute_test_plan(scoped).await.unwrap_or_else(|error| panic!("subquery kind {kind}: {error}"));
+        let mut actual = Vec::new();
+        for batch in batches { for row in 0..batch.num_rows() {
+            actual.push(batch.columns().iter().map(|array| if array.is_null(row) { "NULL".to_string() }
+                else { arrow::util::display::array_value_to_string(array, row).unwrap() }).collect::<Vec<_>>());
+        }}
+        actual.sort();
+        let expected = if kind == 0 { vec![vec!["1","1"],vec!["1","1"],vec!["NULL","NULL"]] }
+            else if kind == 1 { vec![vec!["1","true"],vec!["1","true"],vec!["NULL","true"]] }
+            else { vec![vec!["1","true"],vec!["1","true"],vec!["NULL","NULL"]] };
+        assert_eq!(actual, expected, "subquery kind {kind}");
+    }
+}
+
+#[test]
+fn correlation_scopes_leave_closed_subqueries_and_free_outer_inputs_unchanged() {
+    let input = singleton(lit(7_i64), true);
+    for expression in scope_subquery_expressions(None) {
+        let plan = LogicalPlanBuilder::from(input.clone()).project(vec![expression.alias("result")]).unwrap().build().unwrap();
+        assert_eq!(super::super::correlation::preserve_scopes(plan.clone()).unwrap(), plan);
+    }
+    let outer = Expr::OuterReferenceColumn(Arc::new(Field::new("parent", DataType::Int64, true)), Column::new_unqualified("parent"));
+    let input = LogicalPlanBuilder::empty(true).project(vec![outer.alias("outer_value")]).unwrap().build().unwrap();
+    let reference = Expr::OuterReferenceColumn(input.schema().field(0).clone(), Column::new_unqualified("outer_value"));
+    for expression in scope_subquery_expressions(Some(reference)) {
+        let plan = LogicalPlanBuilder::from(input.clone()).project(vec![expression.alias("result")]).unwrap().build().unwrap();
+        assert_eq!(super::super::correlation::preserve_scopes(plan.clone()).unwrap(), plan);
+    }
+}
+
+#[tokio::test]
+async fn in_subquery_nullability_includes_both_operands_and_survives_optimization() {
+    use datafusion::logical_expr::{Subquery, expr::InSubquery, ExprSchemable};
+    for left in [Some(7_i64), Some(8), None] {
+        for right in [Some(7_i64), None] {
+            for empty in [false, true] {
+                for negated in [false, true] {
+                    let subquery = Subquery { subquery: Arc::new(LogicalPlanBuilder::empty(!empty)
+                        .project(vec![lit(ScalarValue::Int64(right)).alias("right_value")]).unwrap().build().unwrap()),
+                        outer_ref_columns: vec![], spans: Default::default() };
+                    let expression = Expr::InSubquery(InSubquery::new(Box::new(lit(ScalarValue::Int64(left))), subquery, negated));
+                    let seed = LogicalPlanBuilder::empty(true).build().unwrap();
+                    assert_eq!(expression.nullable(seed.schema()).unwrap(), left.is_none() || right.is_none());
+                    let plan = LogicalPlanBuilder::from(seed).project(vec![expression.clone().alias("result"),
+                        expression.is_null().alias("missing")]).unwrap().build().unwrap();
+                    let batches = crate::ir::rel::execute_test_plan(plan).await.unwrap();
+                    assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 1);
+                    let batch = batches.iter().find(|b| b.num_rows() != 0).unwrap();
+                    let expected = if empty { Some(negated) } else { left.zip(right).map(|(a,b)| (a == b) != negated) };
+                    assert_eq!(ScalarValue::try_from_array(batch.column(0), 0).unwrap(), ScalarValue::Boolean(expected),
+                        "left {left:?}, right {right:?}, empty {empty}, negated {negated}");
+                    assert_eq!(ScalarValue::try_from_array(batch.column(1), 0).unwrap(), ScalarValue::Boolean(Some(expected.is_none())));
+                }
+            }
+        }
+    }
+}

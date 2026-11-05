@@ -14,7 +14,7 @@ include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 [workspace]
 members = ["clients/rust", "clients/native", "extension/functions", "compiler/datafusion"]
 default-members = ["."]
-exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo", "vendor/duckdb", "vendor/libduckdb-sys", "vendor/datafusion-functions", "vendor/datafusion-functions-aggregate", "vendor/datafusion-functions-nested", "vendor/datafusion-sql"]
+exclude = ["clients/rust/examples", "tools/diagnostics/streaming-prototypes/duckdb-arrow-stream-demo", "tools/diagnostics/streaming-prototypes/trino-arrow-stream-demo", "vendor/duckdb", "vendor/libduckdb-sys", "vendor/datafusion-functions", "vendor/datafusion-functions-aggregate", "vendor/datafusion-functions-nested", "vendor/datafusion-sql", "vendor/datafusion-expr"]
 resolver = "2"
 
 [features]
@@ -132,6 +132,7 @@ required-features = ["duckdb"]
 
 # Pinned driver fix: fallible Arrow streaming must not report late errors as EOF.
 [patch.crates-io]
+datafusion-expr = { path = "vendor/datafusion-expr" }
 duckdb = { path = "vendor/duckdb" }
 datafusion-functions = { path = "vendor/datafusion-functions" }
 datafusion-functions-aggregate = { path = "vendor/datafusion-functions-aggregate" }

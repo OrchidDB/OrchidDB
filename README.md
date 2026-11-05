@@ -256,6 +256,10 @@ The native ABI is an implementation detail of the Go binding.
 
 ## Local builds
 
+The pinned `datafusion-expr` patch preserves SQL `IN` and `NOT IN` nullability
+when the subquery can return null, preventing incorrect optimizer simplification
+and rejection of valid nullable results.
+
 ```sh
 make build
 make clients-check
