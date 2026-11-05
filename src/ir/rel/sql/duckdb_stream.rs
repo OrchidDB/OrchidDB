@@ -57,7 +57,7 @@ fn domain_input(expression: &str, kind: &DataType, depth: usize) -> Result<Strin
             Ok(format!("CAST(list_transform({expression}, {item} -> {converted}) AS {target})"))
         }
         DataType::Map(field, _) => {
-            let DataType::Struct(fields) = field.data_type() else { return Err("invalid Arrow map storage".into()); };
+            let fields = super::structured::map_fields(field).map_err(|error| error.to_string())?;
             let item = format!("__orchid_domain_entry_{depth}");
             let key = domain_input(&format!("{item}.key"), fields[0].data_type(), depth + 1)?;
             let value = domain_input(&format!("{item}.value"), fields[1].data_type(), depth + 1)?;

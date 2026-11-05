@@ -65,7 +65,7 @@ fn encode_items(items: ArrayRef) -> SqlResult<Value> {
             .collect::<SqlResult<_>>()?,
     ))
 }
-fn map_fields(field: &Field) -> SqlResult<&arrow::datatypes::Fields> {
+pub(super) fn map_fields(field: &Field) -> SqlResult<&arrow::datatypes::Fields> {
     let DataType::Struct(fields) = field.data_type() else {
         return Err(SqlError::Conversion("map entries must be a two-field struct".into()));
     };

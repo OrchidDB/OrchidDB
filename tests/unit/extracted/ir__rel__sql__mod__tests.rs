@@ -594,3 +594,108 @@ fn duckdb_vector_callback_preserves_lists_of_nullable_records_across_chunks() {
     }).collect::<Vec<_>>();
     assert_eq!(vector_snapshot(&connection,sql),expected);
 }
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn streaming_domain_projection_preserves_nested_nulls_and_json_values() {
+    use crate::ir::functions::domain;
+    let json_type = domain::json_type();
+    let DataType::Struct(storage) = &json_type else { panic!() };
+    let storage_name = SqlDialect::DuckDb.quote_ident(storage[0].name());
+    let wrapped = format!("struct_pack({storage_name} := '[1,null]')");
+    let item = Arc::new(Field::new("item", json_type.clone(), true));
+    let entries = Arc::new(Field::new("entries", DataType::Struct(vec![
+        Field::new("key", DataType::Utf8, false), Field::new("value", json_type.clone(), true)
+    ].into()), false));
+    let cases = [
+        (json_type.clone(), wrapped.clone(), "[1,null]"),
+        (DataType::List(item.clone()), format!("[{wrapped}, NULL]"), "[[1,null],null]"),
+        (DataType::LargeList(item.clone()), format!("[{wrapped}, NULL]"), "[[1,null],null]"),
+        (DataType::FixedSizeList(item, 2), format!("[{wrapped}, NULL]"), "[[1,null],null]"),
+        (DataType::Struct(vec![Field::new("odd\"field", json_type.clone(), true)].into()),
+            format!("struct_pack(\"odd\"\"field\" := {wrapped})"), "{\"odd\\\"field\":[1,null]}"),
+        (DataType::Map(entries, false), format!("map(['a','b'], [{wrapped}, NULL])"), "{\"a\":[1,null],\"b\":null}"),
+        (DataType::Dictionary(Box::new(DataType::Int32), Box::new(json_type)), wrapped, "[1,null]"),
+    ];
+    let connection = duckdb::Connection::open_in_memory().unwrap();
+    for (ty, expression, expected) in cases {
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("v", ty.clone(), true)]));
+        let projection = super::duckdb_stream::input_projection(&schema).unwrap();
+        let sql = format!("SELECT to_json(v)::VARCHAR FROM (SELECT {projection} FROM (SELECT {expression} AS v))");
+        let actual: String = connection.query_row(&sql, [], |row| row.get(0)).unwrap();
+        assert_eq!(actual, expected, "{ty}: {sql}");
+        let null_sql = format!("SELECT v IS NULL FROM (SELECT {projection} FROM (SELECT CASE WHEN true THEN NULL ELSE {expression} END AS v))");
+        let is_null: bool = connection.query_row(&null_sql, [], |row| row.get(0)).unwrap();
+        assert!(is_null, "null parent lost for {ty}");
+    }
+    let plain = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("v", DataType::Int64, true)]));
+    assert_eq!(super::duckdb_stream::input_projection(&plain).unwrap(), "*");
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn streaming_domain_projection_rejects_unsupported_union_and_malformed_maps() {
+    use crate::ir::functions::domain;
+    let json_type = domain::json_type();
+    let union = DataType::Union(arrow::datatypes::UnionFields::try_new(vec![0],
+        vec![Field::new("json", json_type.clone(), true)]).unwrap(), arrow::datatypes::UnionMode::Dense);
+    let malformed_maps = [json_type.clone(), DataType::List(Arc::new(Field::new("item", json_type.clone(), true))), DataType::Struct(vec![
+        Field::new("key", DataType::Utf8, false), Field::new("value", json_type.clone(), true),
+        Field::new("extra", DataType::Int64, true)].into())];
+    let mut types = vec![union];
+    types.extend(malformed_maps.into_iter().map(|ty| DataType::Map(Arc::new(Field::new("entries", ty, false)), false)));
+    for ty in types {
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("v", ty.clone(), true)]));
+        let result = std::panic::catch_unwind(|| super::duckdb_stream::input_projection(&schema));
+        assert!(result.is_ok(), "projection panicked for {ty}");
+        assert!(result.unwrap().is_err(), "projection accepted {ty}");
+    }
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_request_stream_keeps_query_order_and_skips_empty_results() {
+    use crate::federation::{Session, TransferColumn};
+    let columns = vec![TransferColumn { name: "value".into(), data_type: "int64".into(), nullable: true }];
+    futures::executor::block_on(async {
+        let mut session = DuckDbSession::default();
+        let queries = vec![Ok("SELECT 0::BIGINT WHERE false".into()),
+            Ok("SELECT i FROM range(4097) AS t(i) ORDER BY i".into()),
+            Ok("SELECT 0::BIGINT WHERE false".into()), Ok("SELECT NULL::BIGINT".into()),
+            Ok("SELECT 9::INTEGER".into())];
+        let stream = Session::query_requests_stream(&mut session, Box::pin(futures::stream::iter(queries)), columns.clone()).await.unwrap();
+        let batches = stream.collect_batches().await.unwrap();
+        let schema = crate::federation::transfer_schema(&columns).unwrap();
+        assert!(batches.iter().all(|batch| batch.schema() == schema));
+        let batch = arrow::compute::concat_batches(&schema, &batches).unwrap();
+        let values = batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+        assert_eq!(values.len(), 4099);
+        for i in 0..4097 { assert_eq!(values.value(i), i as i64); }
+        assert!(values.is_null(4097)); assert_eq!(values.value(4098), 9);
+        let stream = Session::query_requests_stream(&mut session, Box::pin(futures::stream::empty()), columns).await.unwrap();
+        assert!(stream.collect_batches().await.unwrap().is_empty());
+    });
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_request_stream_stops_before_later_requests_after_errors() {
+    use crate::federation::{Session, TransferColumn};
+    use futures::StreamExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for failure in [Err("request producer failed".to_string()), Ok("SELECT missing_column".into()),
+        Ok("SELECT 1, 2".into()), Ok("SELECT 'not an integer'".into())] {
+        futures::executor::block_on(async {
+            let mut session = DuckDbSession::default();
+            let polls = Arc::new(AtomicUsize::new(0)); let observed = polls.clone();
+            let queries = futures::stream::iter(vec![Ok("SELECT 7::BIGINT".into()), failure, Ok("SELECT 99::BIGINT".into())])
+                .inspect(move |_| { observed.fetch_add(1, Ordering::SeqCst); });
+            let columns = vec![TransferColumn { name: "value".into(), data_type: "int64".into(), nullable: true }];
+            let mut stream = Session::query_requests_stream(&mut session, Box::pin(queries), columns).await.unwrap();
+            assert_eq!(stream.next().await.unwrap().unwrap().num_rows(), 1);
+            assert!(stream.next().await.unwrap().is_err());
+            assert!(stream.next().await.is_none());
+            assert_eq!(polls.load(Ordering::SeqCst), 2);
+        });
+    }
+}
