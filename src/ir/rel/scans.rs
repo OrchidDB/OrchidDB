@@ -1739,6 +1739,7 @@ pub(super) fn values_array<'a>(
     let values=values.collect::<Vec<_>>();
     if !values.is_empty() && values.iter().all(|v|matches!(v,Value::Scalar(_)|Value::Null)) {
         let scalars=values.iter().map(|value|match value {
+            Value::Scalar(scalar) if scalar.data_type() == *data_type => Ok(scalar.clone()),
             Value::Scalar(scalar)=>scalar.cast_to(data_type),
             _=>ScalarValue::try_from(data_type),
         }).collect::<datafusion::common::Result<Vec<_>>>()?;
@@ -1754,7 +1755,8 @@ pub(super) fn values_array<'a>(
         | DataType::UInt16
         | DataType::UInt32 => {
             let wide = values_array(language, values, &DataType::Int64)?;
-            Ok(arrow::compute::cast(&wide, data_type)?)
+            let options = arrow::compute::CastOptions { safe: false, ..Default::default() };
+            Ok(arrow::compute::cast_with_options(&wide, data_type, &options)?)
         }
         DataType::UInt64 => {
             let mut builder = arrow::array::UInt64Builder::new();

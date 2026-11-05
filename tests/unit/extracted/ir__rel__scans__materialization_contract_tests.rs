@@ -624,3 +624,46 @@ fn mixed_temporal_property_kinds_preserve_values_in_both_scan_orders() {
         }
     }
 }
+
+#[test]
+fn narrow_graph_values_reject_out_of_range_values_without_turning_them_into_nulls() {
+    for (kind,min,max) in [
+        (DataType::Int8,i8::MIN as i64,i8::MAX as i64),
+        (DataType::Int16,i16::MIN as i64,i16::MAX as i64),
+        (DataType::Int32,i32::MIN as i64,i32::MAX as i64),
+        (DataType::UInt8,0,u8::MAX as i64),
+        (DataType::UInt16,0,u16::MAX as i64),
+        (DataType::UInt32,0,u32::MAX as i64),
+    ] {
+        for native in [false,true] {
+            let value=|v|if native {Value::Scalar(ScalarValue::Int64(Some(v)))} else {Value::Long(v)};
+            let valid=vec![Value::Null,value(min),value(max)];
+            let array=values_array(Language::Cypher,valid.iter(),&kind).unwrap();
+            assert_eq!(array.data_type(),&kind);assert_eq!(array.null_count(),1);
+            assert!(array.is_null(0));
+            for (row,expected) in [(1,min),(2,max)] {
+                assert_eq!(ScalarValue::try_from_array(&array,row).unwrap().cast_to(&DataType::Int64).unwrap(),ScalarValue::Int64(Some(expected)));
+            }
+            for bad in [min-1,max+1] {
+                let values=vec![Value::Null,value(min),value(bad),value(max)];
+                assert!(values_array(Language::Cypher,values.iter(),&kind).is_err(),"{kind:?} accepted {bad}; native={native}");
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_values_keep_zero_column_cardinality_and_validate_every_row_width() {
+    for count in [0,1,3] {
+        let batch=values_batch(Language::Cypher,&[],&vec![vec![];count]).unwrap();
+        assert_eq!(batch.num_columns(),0);assert_eq!(batch.num_rows(),count);
+    }
+    let bindings=vec!["a".into(),"b".into()];
+    for row in [vec![],vec![Value::Int(1)],vec![Value::Null;3]] {
+        let error=values_batch(Language::Cypher,&bindings,&[vec![Value::Null;2],row]).unwrap_err().to_string();
+        assert!(error.contains("row width does not match bindings"),"{error}");
+    }
+    let batch=values_batch(Language::Cypher,&bindings,&vec![vec![Value::Null;2];3]).unwrap();
+    assert_eq!(batch.num_rows(),3);
+    for column in batch.columns(){assert_eq!(column.data_type(),&DataType::Null);assert_eq!(column.logical_null_count(),3);}
+}
