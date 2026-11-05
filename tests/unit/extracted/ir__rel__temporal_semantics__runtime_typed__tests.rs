@@ -290,3 +290,108 @@ fn duration_scaling_ratio_accepts_exact_bounded_constants_only() {
     }
     assert_eq!(numeric_ratio(&datafusion::prelude::col("scale")), None);
 }
+
+#[test]
+fn typed_column_arithmetic_matches_native_and_sql_with_null_and_empty_batches() {
+    use datafusion::logical_expr::execution_props::ExecutionProps;
+    let graph = PropertyGraph::new();
+    let context = LoweringContext {
+        island_memo: None, graph: &graph, options: RelBackendOptions::default(),
+        policy: crate::ir::policy::GraphPlanPolicy::cypher(), language: Language::Cypher,
+        scan_counter: 0, correlate_plan: None, rdf_typed_terms_used: false,
+        scan_logical_labels: false, gremlin_label_binds: Default::default(),
+        unordered_collects: Default::default(), unordered_distincts: Default::default(),
+    };
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+    for (kind, text) in [
+        ("duration", "P1M2DT3.000000001S"), ("duration", "P-2M-3DT-0.000000001S"),
+        ("localtime", "23:59:59.999999999"), ("time", "00:00:00.000000001-00:01:02"),
+        ("date", "2000-01-31"), ("localdatetime", "2000-02-29T23:59:59.999999999"),
+        ("datetime", "2000-02-29T23:59:59.999999999+01:00"),
+    ] {
+        let value = crate::ir::temporal::parse(kind, text).unwrap();
+        let domain_kind = if kind == "datetime" { "datetime_fixed" } else { kind };
+        let scalar = domain::scalar(&format!("cypher_temporal_{domain_kind}"), ScalarValue::Utf8(Some(value.encode()))).unwrap();
+        // Evaluate component lowering on actual nullable columns, rather than
+        // only checking the standalone SQL component templates.
+        let component_schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("a", scalar.data_type(), true)]));
+        let component_plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+            produce_one_row: false, schema: Arc::new(datafusion::common::DFSchema::try_from(component_schema.as_ref().clone()).unwrap()),
+        });
+        let component_batch = RecordBatch::try_new(component_schema.clone(), vec![ScalarValue::iter_to_array(vec![scalar.clone(), ScalarValue::try_from(&scalar.data_type()).unwrap()]).unwrap()]).unwrap();
+        for key in ["year", "month", "day", "hour", "nanosecond", "timezone", "offset", "offsetSeconds", "epochSeconds", "months", "seconds", "milliseconds", "microseconds", "nanoseconds", "unknown"] {
+            let expr = lower(&context, &component_plan, &IrExpr::Call {
+                name: "cypher_subscript".into(), args: vec![IrExpr::binding("a"), IrExpr::Lit(Lit::String(key.into()))],
+            }).unwrap();
+            let physical = datafusion_physical_expr::create_physical_expr(&expr, component_plan.schema(), &ExecutionProps::new()).unwrap();
+            let output = physical.evaluate(&component_batch).unwrap().into_array(2).unwrap();
+            assert!(ScalarValue::try_from_array(&output, 1).unwrap().is_null());
+            assert_eq!(physical.evaluate(&RecordBatch::new_empty(component_schema.clone())).unwrap().into_array(0).unwrap().len(), 0);
+            let actual = ScalarValue::try_from_array(&output, 0).unwrap();
+            let actual = if domain::descriptor(&actual.data_type()).is_some() { domain::storage(&actual).unwrap() } else { actual };
+            match value.component(key) {
+                Value::Null => assert!(actual.is_null(), "{kind} {key}"),
+                Value::String(text) => assert_eq!(actual, ScalarValue::Utf8(Some(text))),
+                Value::Int(n) | Value::Long(n) => match actual {
+                    ScalarValue::Int64(Some(actual)) => assert_eq!(actual, n),
+                    ScalarValue::Decimal128(Some(actual), 38, 0) => assert_eq!(actual, i128::from(n)),
+                    other => panic!("{kind} {key}: {other:?}"),
+                },
+                Value::BigInt(n) => assert_eq!(actual, ScalarValue::Decimal128(Some(n.to_string().parse().unwrap()), 38, 0)),
+                other => panic!("unexpected component {other:?}"),
+            }
+        }
+        for (rhs, operations) in [
+            (Value::Temporal(crate::ir::temporal::parse("duration", "P1M-2DT0.000000002S").unwrap()), vec![BinaryOp::Add, BinaryOp::Sub]),
+            (Value::Float(-0.5), vec![BinaryOp::Mul, BinaryOp::Div]),
+            (Value::Int(2), vec![BinaryOp::Mul, BinaryOp::Div]),
+        ] {
+            if kind != "duration" && !matches!(rhs, Value::Temporal(_)) { continue; }
+            let right_scalar = match &rhs {
+                Value::Temporal(v) => domain::scalar("cypher_temporal_duration", ScalarValue::Utf8(Some(v.encode()))).unwrap(),
+                Value::Float(n) => ScalarValue::Float64(Some(*n)),
+                Value::Int(n) => ScalarValue::Int64(Some(*n)), _ => unreachable!(),
+            };
+            let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("a", scalar.data_type(), true), Field::new("b", right_scalar.data_type(), true)]));
+            let plan = LogicalPlan::EmptyRelation(datafusion::logical_expr::EmptyRelation {
+                produce_one_row: false, schema: Arc::new(datafusion::common::DFSchema::try_from(schema.as_ref().clone()).unwrap()),
+            });
+            let batch = RecordBatch::try_new(schema.clone(), vec![
+                ScalarValue::iter_to_array(vec![scalar.clone(), ScalarValue::try_from(&scalar.data_type()).unwrap(), scalar.clone()]).unwrap(),
+                ScalarValue::iter_to_array(vec![right_scalar.clone(), right_scalar.clone(), ScalarValue::try_from(&right_scalar.data_type()).unwrap()]).unwrap(),
+            ]).unwrap();
+            for op in operations {
+                for swapped in [false, true] {
+                    if swapped && !matches!(op, BinaryOp::Add | BinaryOp::Mul) { continue; }
+                    let left = IrExpr::binding("a");
+                    let right = if matches!(rhs, Value::Temporal(_)) { IrExpr::binding("b") } else { IrExpr::Lit(Lit::Scalar(right_scalar.clone())) };
+                    let (left, right) = if swapped { (right, left) } else { (left, right) };
+                    let expr = arithmetic(&context, &plan, op, &left, &right).unwrap_or_else(|| panic!("{kind} {op:?} swapped={swapped} should lower"));
+                    let physical = datafusion_physical_expr::create_physical_expr(&expr, plan.schema(), &ExecutionProps::new()).unwrap();
+                    let result = physical.evaluate(&batch).unwrap().into_array(3).unwrap();
+                    let (a, b) = if swapped { (rhs.clone(), Value::Temporal(value.clone())) } else { (Value::Temporal(value.clone()), rhs.clone()) };
+                    let Value::Temporal(expected) = crate::ir::temporal::arithmetic(op, &a, &b).unwrap() else { panic!() };
+                    assert_eq!(transport::decode(&ScalarValue::try_from_array(&result, 0).unwrap()).unwrap(), expected);
+                    assert!(ScalarValue::try_from_array(&result, 1).unwrap().is_null());
+                    let last = ScalarValue::try_from_array(&result, 2).unwrap();
+                    if matches!(rhs, Value::Temporal(_)) { assert!(last.is_null()); } else { assert_eq!(transport::decode(&last).unwrap(), expected); }
+                    assert_eq!(physical.evaluate(&RecordBatch::new_empty(schema.clone())).unwrap().into_array(0).unwrap().len(), 0);
+                    let Expr::ScalarFunction(call) = &expr else { panic!("expected typed arithmetic function") };
+                    let function = call.func.inner().as_any().downcast_ref::<LogicalFunction>().unwrap();
+                    let template = &function.sql_mapping("duckdb", 2).unwrap().value;
+                    let argument_sql = |arg: &Expr| match arg {
+                        Expr::Column(c) if c.name == "a" => quote(&value.encode()),
+                        Expr::Column(c) if c.name == "b" => match &rhs { Value::Temporal(v) => quote(&v.encode()), _ => unreachable!() },
+                        Expr::Literal(ScalarValue::Float64(Some(n)), _) => n.to_string(),
+                        Expr::Literal(ScalarValue::Int64(Some(n)), _) => n.to_string(),
+                        other => panic!("unexpected normalized operand {other:?}"),
+                    };
+                    let sql = template.replace("__arg0", &argument_sql(&call.args[0])).replace("__arg1", &argument_sql(&call.args[1]));
+                    let actual: String = conn.query_row(&format!("SELECT CAST(({sql}) AS VARCHAR)"), [], |row| row.get(0))
+                        .unwrap_or_else(|e| panic!("{kind} {op:?} swapped={swapped}: {e}\n{sql}"));
+                    assert_eq!(actual, expected.encode(), "{kind} {op:?} swapped={swapped}");
+                }
+            }
+        }
+    }
+}
