@@ -1,6 +1,36 @@
 use super::*;
 use arrow::datatypes::DataType;
 
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn mapped_endpoint_key_conflicts_leave_existing_rows_unchanged() {
+    use crate::ir::rel::{mapping::{NodeMapping, EdgeMapping}, sql::DuckDbExecutor};
+    use crate::mapped_engine::MappedGraphEngine;
+    for key_is_endpoint in [false, true] {
+        let mut mapping = GraphMapping::new();
+        mapping.map_node(NodeMapping::table("Person", "people", "id").property("id", "id"));
+        let edge = EdgeMapping::table("LINK", "links", "src", "dst", "Person", "Person")
+            .with_id(if key_is_endpoint { "src" } else { "id" })
+            .property("key", if key_is_endpoint { "src" } else { "id" })
+            .property("source", "src");
+        mapping.map_edge(edge);
+        let mut engine = MappedGraphEngine::new(DuckDbExecutor::new(), Arc::new(mapping));
+        engine.execute_sql("CREATE TABLE people(id BIGINT PRIMARY KEY); INSERT INTO people VALUES(1),(2); CREATE TABLE links(id BIGINT, src BIGINT, dst BIGINT); INSERT INTO links VALUES(10,1,2)").unwrap();
+        let statement = if key_is_endpoint {
+            "MATCH (a:Person {id:1}), (b:Person {id:2}) CREATE (a)-[:LINK {key:99}]->(b)"
+        } else {
+            "MATCH (a:Person {id:1}), (b:Person {id:2}) CREATE (a)-[:LINK {key:99,source:2}]->(b)"
+        };
+        let error = engine.cypher(statement).await.unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("conflict") || message.contains("mapped edge endpoint changes are not supported"), "{error}");
+        let connection = engine.executor_mut().connection().unwrap();
+        let rows: i64 = connection.query_row("SELECT count(*) FROM links", [], |r| r.get(0)).unwrap();
+        let original: i64 = connection.query_row("SELECT count(*) FROM links WHERE id=10 AND src=1 AND dst=2", [], |r| r.get(0)).unwrap();
+        assert_eq!((rows, original), (1, 1));
+    }
+}
+
 fn address(id: i64) -> RowAddress {
     ("people".into(), KeyColumns::from("id"), ElementId::new(ScalarValue::Int64(Some(id))).unwrap())
 }
@@ -289,4 +319,65 @@ fn mapped_metadata_loads_shared_defaults_once_without_evaluating_volatile_defaul
     assert!(unloaded.mapped_defaults.is_empty());
     assert!(unloaded.unsupported_defaults.is_empty());
     assert_eq!(host.defaults_reads.get(),0);
+}
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn mapped_logical_layout_mutations_reject_writes_to_physical_rows() {
+    use crate::ir::rel::{mapping::NodeMapping, layout::{LogicalSource, TableLayout}};
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE physical_people(id BIGINT PRIMARY KEY, age BIGINT); INSERT INTO physical_people VALUES(1,40)").unwrap();
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("physical_people", Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false), Field::new("age", DataType::Int64, true),
+    ])));
+    mapping.register_logical_source(LogicalSource {
+        name: "logical_people".into(), generation: "v1".into(), default_table: "physical_people".into(),
+        layouts: vec![TableLayout { table: "physical_people".into(), generation: "v1".into(),
+            snapshot: "s1".into(), specs: vec![], partitions: None }],
+    }).unwrap();
+    mapping.map_node(NodeMapping::table("Person", "logical_people", "id").property("id", "id").property("age", "age"));
+    let mut engine = crate::engine::GraphEngine::mapped(db, Arc::new(mapping)).unwrap();
+    for statement in ["MATCH (p:Person) SET p.age=99", "MATCH (p:Person) DELETE p", "CREATE (:Person {id:2,age:50})"] {
+        let error = engine.cypher(statement).await.unwrap_err();
+        assert!(error.to_string().contains("read-only"), "{statement}: {error}");
+        let result = engine.cypher("MATCH (p:Person) RETURN p.age").await.unwrap();
+        assert_eq!(result.returned.batch.num_rows(), 1);
+        assert_eq!(ScalarValue::try_from_array(result.returned.batch.column(0), 0).unwrap(), ScalarValue::Int64(Some(40)));
+    }
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn mapped_shared_primary_key_relationships_require_explicit_consistent_edges() {
+    use crate::ir::rel::{mapping::{NodeMapping, EdgeMapping, ForeignKeyEndpoint}, sql::DuckDbExecutor};
+    use crate::mapped_engine::MappedGraphEngine;
+    for child_is_source in [false, true] {
+        let mut mapping = GraphMapping::new();
+        mapping.map_node(NodeMapping::table("Parent", "parents", "id").property("id", "id"));
+        mapping.map_node(NodeMapping::table("Child", "children", "id").property("id", "id"));
+        let edge = if child_is_source {
+            EdgeMapping::table("LINK", "children", "id", "id", "Child", "Parent")
+                .foreign_key(ForeignKeyEndpoint::Source)
+        } else {
+            EdgeMapping::table("LINK", "children", "id", "id", "Parent", "Child")
+                .foreign_key(ForeignKeyEndpoint::Destination)
+        };
+        mapping.map_edge(edge);
+        mapping.validate_foreign_keys().unwrap();
+        let mut engine = MappedGraphEngine::new(DuckDbExecutor::new(), Arc::new(mapping));
+        engine.execute_sql("CREATE TABLE parents(id BIGINT PRIMARY KEY); INSERT INTO parents VALUES(1),(2); CREATE TABLE children(id BIGINT PRIMARY KEY REFERENCES parents(id))").unwrap();
+        let error = engine.cypher("CREATE (:Child {id:1})").await.unwrap_err();
+        assert!(error.to_string().contains("explicit `LINK` relationship"), "{error}");
+        let pattern = if child_is_source { "(:Child {id:2})-[:LINK]->(p)" } else { "(p)-[:LINK]->(:Child {id:2})" };
+        let error = engine.cypher(&format!("MATCH (p:Parent {{id:1}}) CREATE {pattern}")).await.unwrap_err();
+        assert!(error.to_string().contains("conflicts with child key"), "{error}");
+        let rows: i64 = engine.executor_mut().connection().unwrap()
+            .query_row("SELECT count(*) FROM children", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 0);
+        let pattern = if child_is_source { "(:Child {id:1})-[:LINK]->(p)" } else { "(p)-[:LINK]->(:Child {id:1})" };
+        engine.cypher(&format!("MATCH (p:Parent {{id:1}}) CREATE {pattern}")).await.unwrap();
+        let id: i64 = engine.executor_mut().connection().unwrap()
+            .query_row("SELECT id FROM children", [], |r| r.get(0)).unwrap();
+        assert_eq!(id, 1);
+    }
 }
