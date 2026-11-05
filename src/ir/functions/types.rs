@@ -30,6 +30,10 @@ pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
         DataType::Date32 | DataType::Date64 => "DATE".into(),
         DataType::Time64(TimeUnit::Nanosecond) => "TIME_NS".into(),
         DataType::Time32(_) | DataType::Time64(_) => "TIME".into(),
+        // DuckDB has TIMESTAMP_NS, but its zoned timestamp stores microseconds.
+        DataType::Timestamp(TimeUnit::Nanosecond, Some(_)) => return Err(DataFusionError::NotImplemented(
+            "DuckDB cannot preserve nanosecond precision in timestamps with time zone".into(),
+        )),
         DataType::Timestamp(_, Some(_)) => "TIMESTAMPTZ".into(),
         DataType::Timestamp(unit, None) => match unit {
             TimeUnit::Second => "TIMESTAMP_S",
@@ -149,6 +153,10 @@ pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
         | DataType::LargeBinary
         | DataType::BinaryView
         | DataType::FixedSizeBinary(_) => "BYTEA".into(),
+        // Both PostgreSQL timestamp types store at most microsecond precision.
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => return Err(DataFusionError::NotImplemented(
+            "PostgreSQL cannot preserve nanosecond timestamp precision".into(),
+        )),
         DataType::Timestamp(_, None) => "TIMESTAMP".into(),
         DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) => {
             if matches!(f.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) { "JSONB[]".into() }

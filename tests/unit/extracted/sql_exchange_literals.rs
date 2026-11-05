@@ -393,3 +393,55 @@ async fn exchange_zoned_timestamp_literals_preserve_instants_before_and_after_ep
         }
     }
 }
+
+#[test]
+fn timestamp_nanosecond_types_reject_lossy_engine_mappings() {
+    use arrow::datatypes::TimeUnit;
+    for (dialect, zone) in [
+        (SqlDialect::DuckDb, Some("UTC")),
+        (SqlDialect::Postgres, None),
+        (SqlDialect::Postgres, Some("UTC")),
+    ] {
+        for number in [None, Some(-1), Some(0), Some(1), Some(1001)] {
+            let value = ScalarValue::TimestampNanosecond(number, zone.map(Into::into));
+            assert!(exchange_literal(value.clone(), value.data_type(), dialect).is_err(),
+                "lossy exchange accepted: {dialect:?} {value:?}");
+            assert!(unparse::encode_expression_literals(datafusion::logical_expr::lit(value.clone()), dialect).is_err(),
+                "lossy expression accepted: {dialect:?} {value:?}");
+        }
+        let ty = DataType::Timestamp(TimeUnit::Nanosecond, zone.map(Into::into));
+        let list = DataType::List(Arc::new(arrow::datatypes::Field::new("item", ty, true)));
+        assert!(dialect.sql_type(&list).is_err(), "lossy nested type accepted: {dialect:?}");
+    }
+}
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+#[ignore = "requires Trino"]
+async fn timestamp_nanosecond_literals_preserve_all_nine_digits() {
+    let (pg, trino_session) = literal_test_engines();
+    for (dialect, zone) in [
+        (SqlDialect::DuckDb, None),
+        (SqlDialect::Custom(&trino::TRINO), None),
+        (SqlDialect::Custom(&trino::TRINO), Some("UTC")),
+    ] {
+        for (number, expected) in [
+            (None, "null"),
+            (Some(-1), "1969-12-31 23:59:59.999999999"),
+            (Some(1), "1970-01-01 00:00:00.000000001"),
+            (Some(1001), "1970-01-01 00:00:00.000001001"),
+        ] {
+            let value = ScalarValue::TimestampNanosecond(number, zone.map(Into::into));
+            let direct = exchange_literal(value.clone(), value.data_type(), dialect).unwrap();
+            let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect).unwrap().data;
+            let sql_dialect = dialect.unparser_dialect();
+            let mut ast = datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded).unwrap();
+            functions::prepare_ast(&mut ast, dialect).unwrap();
+            for literal in [direct, ast.to_string()] {
+                let query = format!("SELECT coalesce(CAST({literal} AS VARCHAR), 'null')");
+                let expected = if zone.is_some() && number.is_some() { format!("{expected} UTC") } else { expected.to_owned() };
+                assert_eq!(execute_text_case(&query, dialect, &pg, &trino_session).await, expected, "{dialect:?}: {query}");
+            }
+        }
+    }
+}
