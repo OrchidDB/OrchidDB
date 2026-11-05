@@ -1176,3 +1176,51 @@ fn cypher_json_lowering_rejects_untyped_documents_and_invalid_static_paths() {
         assert!(ctx.lower_sql_expr(&plan, &call("json.query", vec![binding("doc"), IrExpr::Lit(Lit::String(path.into()))])).is_err(), "{path}");
     }
 }
+
+fn projection_boundary_scan() -> LogicalPlan {
+    use datafusion::datasource::{MemTable, provider_as_source};
+    let schema = Arc::new(Schema::new(vec![Field::new("a",DataType::Int64,false),Field::new("b",DataType::Int64,false)]));
+    let batch = RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(arrow::array::Int64Array::from(vec![1,2,3])) as ArrayRef,
+        Arc::new(arrow::array::Int64Array::from(vec![9,8,7])) as ArrayRef,
+    ]).unwrap();
+    let provider = MemTable::try_new(schema,vec![vec![batch]]).unwrap();
+    LogicalPlanBuilder::scan("source",provider_as_source(Arc::new(provider)),None).unwrap().build().unwrap()
+}
+
+#[tokio::test]
+async fn scan_projection_filter_resolves_shadowed_aliases_by_output_position() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let scan = projection_boundary_scan();
+    let plan = LogicalPlanBuilder::from(scan).project(vec![
+        col_exact("a").alias("b"), col_exact("b").alias("a"), lit(5_i64).alias("constant"),
+    ]).unwrap().build().unwrap();
+    let predicate = col_exact("a").gt(lit(7_i64)).and(col_exact("constant").eq(lit(5_i64)));
+    let rewritten = ctx.filter_through_scan_projection(&plan,&predicate).unwrap().unwrap();
+    assert_eq!(rewritten.schema(),plan.schema());
+    let reference = LogicalPlanBuilder::from(plan).filter(predicate).unwrap().build().unwrap();
+    let expected = crate::ir::rel::execute_test_plan(reference).await.unwrap();
+    let actual = crate::ir::rel::execute_test_plan(rewritten).await.unwrap();
+    assert_eq!(actual,expected);
+    assert_eq!(actual.iter().map(RecordBatch::num_rows).sum::<usize>(),2);
+    let a = actual[0].column(1).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+    assert_eq!(a.values().as_ref(), &[9,8]);
+}
+
+#[test]
+fn scan_projection_filter_fences_computation_correlation_and_disabled_rewrites() {
+    let graph = PropertyGraph::new(); let mut ctx = cypher_context(&graph);
+    let scan = projection_boundary_scan();
+    let naming = LogicalPlanBuilder::from(scan.clone()).project(vec![col_exact("a").alias("renamed")]).unwrap().build().unwrap();
+    let predicate = col_exact("renamed").gt(lit(1_i64));
+    assert!(ctx.filter_through_scan_projection(&scan,&lit(true)).unwrap().is_none());
+    let computed = LogicalPlanBuilder::from(scan).project(vec![(col_exact("a")+lit(1_i64)).alias("renamed")]).unwrap().build().unwrap();
+    assert!(ctx.filter_through_scan_projection(&computed,&predicate).unwrap().is_none());
+    let nested = LogicalPlanBuilder::from(naming.clone()).project(vec![col_exact("renamed")]).unwrap().build().unwrap();
+    assert!(ctx.filter_through_scan_projection(&nested,&predicate).unwrap().is_none());
+    let outer = Expr::OuterReferenceColumn(Arc::new(Field::new("outer",DataType::Int64,false)),datafusion::common::Column::from_name("outer"));
+    assert!(ctx.filter_through_scan_projection(&naming,&col_exact("renamed").eq(outer)).unwrap().is_none());
+    assert!(ctx.filter_through_scan_projection(&naming,&col_exact("missing").eq(lit(1_i64))).is_err());
+    ctx.options.rule_context.optimize = false;
+    assert!(ctx.filter_through_scan_projection(&naming,&predicate).unwrap().is_none());
+}
