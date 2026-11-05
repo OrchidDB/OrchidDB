@@ -65,12 +65,20 @@ pub(super) fn cut_inputs(
             return Ok(None);
         }
         let provider = datafusion::datasource::MemTable::try_new(schema.clone(), vec![vec![]])?;
-        let scan = LogicalPlanBuilder::scan(
+        let mut scan = LogicalPlanBuilder::scan(
             name.clone(),
             datafusion::datasource::provider_as_source(Arc::new(provider)),
             None,
-        )?
-        .build()?;
+        )?;
+        // A schema-qualified projection alone does not create a SQL relation
+        // alias. Preserve the exported namespace when a parent join still
+        // references the runtime input by its original qualifier.
+        if let Some(qualifier) = input.schema().iter().next().and_then(|(qualifier, _)| qualifier)
+            && input.schema().iter().all(|(other, _)| other == Some(qualifier))
+        {
+            scan = scan.alias(qualifier.clone())?;
+        }
+        let scan = scan.build()?;
         let exprs = scan
             .schema()
             .columns()

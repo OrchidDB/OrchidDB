@@ -66,3 +66,17 @@
         assert_eq!(rewrite(plan.clone()).unwrap(), plan);
     }
 
+
+#[test]
+fn bounded_and_filtered_scans_keep_their_projection_boundary() {
+    for limited in [false, true] {
+        let LogicalPlan::TableScan(mut source) = scan() else { panic!() };
+        if limited { source.fetch = Some(1); }
+        else { source.filters = vec![col("age").gt(lit(18_i64))]; }
+        let plan = LogicalPlanBuilder::from(LogicalPlan::TableScan(source))
+            .project(vec![col("age").alias("person_age")]).unwrap()
+            .aggregate(Vec::<Expr>::new(), vec![datafusion::functions_aggregate::count::count_all().alias("total")])
+            .unwrap().build().unwrap();
+        assert_eq!(rewrite(plan.clone()).unwrap(), plan);
+    }
+}

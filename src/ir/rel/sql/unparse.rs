@@ -163,9 +163,17 @@ fn prepare_region(plan: LogicalPlan, dialect: SqlDialect, context: &crate::ir::r
         if columns.is_empty() {
             columns.push(lit(1_i64).alias("__orchid_void"));
         }
-        let plan = datafusion::logical_expr::LogicalPlanBuilder::empty(true)
-            .project(columns)?.limit(0, Some(0))?.build()?;
-        Ok(Transformed::yes(plan))
+        let mut plan = datafusion::logical_expr::LogicalPlanBuilder::empty(true)
+            .project(columns)?.limit(0, Some(0))?;
+        // Optimizing an empty named join input can remove its alias node while
+        // retaining the qualifier in its schema and the parent's join keys.
+        // Restore that SQL-visible namespace around the zero-row SELECT.
+        if let Some(qualifier) = empty.schema.iter().next().and_then(|(qualifier, _)| qualifier)
+            && empty.schema.iter().all(|(other, _)| other == Some(qualifier))
+        {
+            plan = plan.alias(qualifier.clone())?;
+        }
+        Ok(Transformed::yes(plan.build()?))
     })?.data;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = normalize_projection_names(plan)?;
