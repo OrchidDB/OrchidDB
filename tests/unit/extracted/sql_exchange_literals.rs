@@ -546,3 +546,26 @@ async fn nul_string_literals_preserve_bytes_or_explicitly_decline_unsupported_te
         }
     }
 }
+
+#[cfg(feature = "trino")]
+#[tokio::test]
+async fn unnest_keeps_computed_and_renamed_passthrough_columns_on_every_engine() {
+    use datafusion::{logical_expr::LogicalPlanBuilder, prelude::{col,lit}};
+    use datafusion::common::Column;
+    let (pg,trino_session)=literal_test_engines();
+    for mode in 0..3 {
+        let input=LogicalPlanBuilder::empty(true).project(vec![lit(8_i64).alias("base")]).unwrap().build().unwrap();
+        let stable=match mode {0=>lit(9_i64),1=>col("base"),_=>col("base")+lit(1_i64)};
+        let input=LogicalPlanBuilder::from(input).project(vec![
+            datafusion::functions_nested::expr_fn::make_array(vec![lit(7_i64),lit(ScalarValue::Int64(None)),lit(7_i64)]).alias("items"),
+            stable.alias("stable"),
+        ]).unwrap().build().unwrap();
+        let plan=LogicalPlanBuilder::from(input).unnest_column(Column::new_unqualified("items")).unwrap().build().unwrap();
+        for dialect in [SqlDialect::DuckDb,SqlDialect::Postgres,SqlDialect::Custom(&trino::TRINO)] {
+            let sql=recursive::unparse_plan(plan.clone(),dialect).unwrap();
+            let query=format!("SELECT CAST(count(*) AS VARCHAR) || ':' || CAST(count(items) AS VARCHAR) || ':' || CAST(sum(stable) AS VARCHAR) FROM ({sql}) AS expanded");
+            let expected=if mode==1 {"3:2:24"} else {"3:2:27"};
+            assert_eq!(execute_text_case(&query,dialect,&pg,&trino_session).await,expected,"{} mode={mode}: {sql}",dialect.name());
+        }
+    }
+}

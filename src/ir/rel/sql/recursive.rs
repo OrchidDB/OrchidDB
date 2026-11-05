@@ -554,6 +554,20 @@ fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPla
             // originally fenced UNNEST. Fence the actual row-expanding node
             // after optimization, before the unparser can merge its SELECT
             // into a filter or substitute UNNEST inside a scalar expression.
+            // The unparser skips UNNEST's input projection and substitutes
+            // only expanded expressions. Materialize computed or renamed
+            // passthrough columns so their names remain bound after that skip.
+            if let LogicalPlan::Projection(projection) = unnest.input.as_ref() {
+                let computed_passthrough = projection.expr.iter().enumerate().any(|(index, expr)| {
+                    !unnest.list_type_columns.iter().any(|(input, _)| *input == index)
+                        && !unnest.struct_type_columns.contains(&index)
+                        && !matches!(expr, Expr::Column(column) if column.name == *projection.schema.field(index).name())
+                });
+                if computed_passthrough {
+                    let input = hoist_operator(LogicalPlan::Projection(projection.clone()), "unnest_input", &mut plain_ctes, &mut seen)?;
+                    unnest.input = Arc::new(input.data);
+                }
+            }
             if !matches!(unnest.input.as_ref(), LogicalPlan::Projection(_)) {
                 let columns = unnest.input.schema().columns().into_iter()
                     .map(datafusion::logical_expr::Expr::Column).collect();
