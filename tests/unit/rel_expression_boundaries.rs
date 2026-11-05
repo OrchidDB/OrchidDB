@@ -314,3 +314,20 @@ fn cypher_graph_identity_and_distinct_count_preserve_source_key_types() {
     let plan = scalar_scope(vec![Field::new(id_col("n"),DataType::Struct(vec![Field::new("part",DataType::Int64,true)].into()),true),Field::new(label_col("n"),DataType::Utf8,true)]);
     assert!(ctx.lower_sql_expr(&plan,&IrExpr::Id("n".into())).unwrap_err().to_string().contains("composite or heterogeneous source IDs"));
 }
+
+#[test]
+fn cypher_same_type_casts_preserve_columns_without_sql_cast_nodes() {
+    let graph=PropertyGraph::new();let ctx=cypher_context(&graph);
+    for (kind,target) in [(DataType::Boolean,"BOOLEAN"),(DataType::Int8,"INT8"),(DataType::Int16,"INT16"),
+        (DataType::Int32,"INT32"),(DataType::Int64,"INT64"),(DataType::UInt64,"UINT64"),
+        (DataType::Float32,"FLOAT32"),(DataType::Float64,"FLOAT64"),(DataType::Utf8,"VARCHAR"),
+        (DataType::Decimal128(18,3),"DECIMAL(18,3)")] {
+        let plan=scalar_scope(vec![Field::new("x",kind,true)]);
+        let expr=call("cast",vec![binding("x"),IrExpr::Lit(Lit::String(target.into()))]);
+        assert_eq!(ctx.lower_sql_expr(&plan,&expr).unwrap(),col_exact("x"),"{target}");
+    }
+    for (kind,function) in [(DataType::Int64,"tointeger"),(DataType::Float64,"tofloat"),(DataType::Boolean,"toboolean"),(DataType::Utf8,"tostring")] {
+        let plan=scalar_scope(vec![Field::new("x",kind,true)]);
+        assert_eq!(ctx.lower_sql_expr(&plan,&call(function,vec![binding("x")])).unwrap(),col_exact("x"),"{function}");
+    }
+}

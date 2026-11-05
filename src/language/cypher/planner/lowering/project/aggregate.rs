@@ -543,9 +543,6 @@ pub(super) fn rewrite_non_aggregate_projection_expr(
         return ensure_group_key(lowerer, rewrite, expr, preferred_alias).map(Expr::Variable);
     }
     match expr {
-        Expr::Variable(name) if !bound.contains(name) => {
-            ensure_group_key(lowerer, rewrite, expr, preferred_alias).map(Expr::Variable)
-        }
         Expr::Property { target, key } => Ok(Expr::Property {
             target: Box::new(rewrite_non_aggregate_projection_expr(
                 lowerer, target, rewrite, None, bound,

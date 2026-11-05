@@ -378,3 +378,50 @@
                 .all(|sql| !sql.contains("unrelated"))
         );
     }
+
+fn generated_cypher_edge_id(id: u64) -> ElementId {
+    ElementId::new(datafusion::common::ScalarValue::UInt64(Some(id))).unwrap()
+}
+
+fn cypher_relationship_source_fixture() -> crate::ir::catalog::PropertyGraph {
+    use crate::ir::rel::mapping::NodeMapping;
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE people(id BIGINT,score BIGINT); INSERT INTO people VALUES(1,10),(2,20),(3,30)").unwrap();
+    let mut mapping=GraphMapping::new();
+    mapping.register_table_schema("people",Arc::new(Schema::new(vec![Field::new("id",arrow::datatypes::DataType::Int64,false),Field::new("score",arrow::datatypes::DataType::Int64,false)])));
+    mapping.map_node(NodeMapping::table("Person","people","id").property("id","id").property("score","score"));
+    let rule=serde_json::from_value(serde_json::json!({"name":"NEAR","source":"Person","target":"Person",
+        "cypher":"WITH source MATCH (target:Person) WHERE target.id <> source.id RETURN target, target.score AS score ORDER BY target.id LIMIT 1",
+        "returns":{"target":"target","properties":{"score":{"type":"integer"}}}})).unwrap();
+    mapping.map_cypher_relationship(rule).unwrap();
+    attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap()
+}
+
+#[test]
+fn native_cypher_relationship_ids_hydrate_typed_endpoints_and_cache_properties() {
+    let graph=cypher_relationship_source_fixture();let source=graph.source.as_ref().unwrap();
+    let mut ids=source.ids(true,"NEAR");source.check().unwrap();ids.sort();
+    assert_eq!(ids,vec![generated_cypher_edge_id(1),generated_cypher_edge_id(2),generated_cypher_edge_id(3)]);
+    let queries=source.stats().1.len();
+    for (edge,src,dst,score) in [(1_i64,1_i64,2_i64,20_i64),(2,2,1,10),(3,3,1,10)] {
+        assert_eq!(source.endpoints("NEAR",&generated_cypher_edge_id(edge as u64)),Some(("Person".into(),src.into(),"Person".into(),dst.into())));
+        assert_eq!(source.property(true,"NEAR",&generated_cypher_edge_id(edge as u64),"score"),Value::Int(score));
+        assert_eq!(source.property(true,"NEAR",&generated_cypher_edge_id(edge as u64),"missing"),Value::Null);
+    }
+    source.check().unwrap();assert_eq!(source.stats().1.len(),queries);
+}
+
+#[test]
+fn native_cypher_relationship_adjacency_prefetch_preserves_direction_and_cache() {
+    let graph=cypher_relationship_source_fixture();let source=graph.source.as_ref().unwrap();
+    let types=vec!["NEAR".to_owned()];
+    source.prefetch_neighbors(false,&[("Person".into(),1_i64.into()),("Person".into(),3_i64.into())],&types);
+    source.check().unwrap();let queries=source.stats().1.len();
+    for (id,edge,target) in [(1_i64,1_i64,2_i64),(3,3,1)] {
+        assert_eq!(source.neighbors(false,"Person",&id.into(),&types),vec![("NEAR".into(),generated_cypher_edge_id(edge as u64),"Person".into(),target.into())]);
+    }
+    assert_eq!(source.stats().1.len(),queries);
+    let mut incoming=source.neighbors(true,"Person",&1_i64.into(),&types);incoming.sort();source.check().unwrap();
+    assert_eq!(incoming,vec![("NEAR".into(),generated_cypher_edge_id(2),"Person".into(),2_i64.into()),("NEAR".into(),generated_cypher_edge_id(3),"Person".into(),3_i64.into())]);
+    source.invalidate();assert_eq!(source.neighbors(false,"Person",&1_i64.into(),&types).len(),1);source.check().unwrap();
+}

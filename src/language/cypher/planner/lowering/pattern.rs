@@ -1313,15 +1313,6 @@ fn pattern_mentions(part: &PatternPart, binding: &str) -> bool {
         })
 }
 
-#[allow(dead_code)]
-fn reverse_direction(direction: Direction) -> Direction {
-    match direction {
-        Direction::Out => Direction::In,
-        Direction::In => Direction::Out,
-        Direction::Both => Direction::Both,
-    }
-}
-
 #[cfg(test)]
 #[path = "../../../../../tests/unit/cypher_pattern_filters.rs"]
 mod filter_contracts;

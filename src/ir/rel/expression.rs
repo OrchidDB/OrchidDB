@@ -794,6 +794,9 @@ impl<'a> LoweringContext<'a> {
                 }
                 let (mut value, data_type, lenient) = self.cast_parts(plan, name, args)?;
                 let source_type = value.get_type(plan.schema())?;
+                // A value already in the requested domain needs no SQL cast.
+                // Typed carriers still take the checked conversion below.
+                if source_type == data_type { return Ok(value); }
                 if native_values::is_value(&source_type)
                     || (!lenient && matches!(data_type, DataType::Float32 | DataType::Float64)
                         && matches!(source_type, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)) {

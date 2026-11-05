@@ -408,3 +408,44 @@ async fn lazy_completion_retries_factory_errors_but_reuses_an_initialized_sessio
     assert_eq!(attempts.load(Ordering::SeqCst),3);
     assert_eq!(queries.load(Ordering::SeqCst),3);
 }
+
+#[test]
+fn local_call_hoisting_respects_conditional_and_sql_argument_boundaries() {
+    use datafusion::logical_expr::{create_udf,col,lit,when,Volatility};
+    let request:CompileRequest=serde_json::from_value(serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]})).unwrap();
+    let local=create_udf(&format!("{LOCAL}positive"),vec![DataType::Int64],DataType::Boolean,
+        Volatility::Immutable,Arc::new(|_|unreachable!("planning must never evaluate a local function")));
+    let identity=create_udf(&format!("{LOCAL}identity"),vec![DataType::Int64],DataType::Int64,
+        Volatility::Immutable,Arc::new(|_|unreachable!("planning must never evaluate a local function")));
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("v")]).unwrap().build().unwrap();
+    for predicate in [
+        when(col("v").gt(lit(0_i64)),local.call(vec![col("v")])).otherwise(lit(false)).unwrap(),
+        local.call(vec![col("v")]).and(col("v").gt(lit(0_i64))),
+        col("v").lt(lit(0_i64)).or(local.call(vec![col("v")])),
+        local.call(vec![col("v")+lit(1_i64)]),
+        datafusion::functions::math::expr_fn::abs(identity.call(vec![col("v")])).gt(lit(0_i64)),
+    ] {
+        let plan=LogicalPlanBuilder::from(input.clone()).filter(predicate).unwrap().build().unwrap();
+        let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+        let error=builder.lower(&plan).unwrap_err();
+        assert!(error.contains("local UDF must be an explicit projection"),"{error}");
+        assert!(!builder.plan.nodes.iter().any(|node|matches!(node.operation,Operation::LocalProject{..})),"unsafe expression must not be hoisted before rejection");
+    }
+}
+
+#[test]
+fn unconditional_local_call_hoisting_avoids_user_column_collisions() {
+    use datafusion::logical_expr::{create_udf,col,lit,Volatility};
+    let request:CompileRequest=serde_json::from_value(serde_json::json!({"version":1,"language":"cypher","dialect":"duckdb","query":"RETURN 1","tables":[]})).unwrap();
+    let local=create_udf(&format!("{LOCAL}positive"),vec![DataType::Int64],DataType::Boolean,
+        Volatility::Immutable,Arc::new(|_|unreachable!("planning must never evaluate a local function")));
+    let input=LogicalPlanBuilder::empty(true).project(vec![lit(7_i64).alias("v"),lit(99_i64).alias("__orchid_local_0")]).unwrap().build().unwrap();
+    let plan=LogicalPlanBuilder::from(input).filter(local.call(vec![col("v")])).unwrap().build().unwrap();
+    let mut builder=Builder {request:&request,bound:BTreeMap::new(),shared_occurrences:vec![],plan:ExecutionPlan {version:1,nodes:vec![],result:0}};
+    let id=builder.lower(&plan).unwrap();
+    assert_eq!(builder.plan.nodes[id].columns.iter().map(|c|c.name.as_str()).collect::<Vec<_>>(),vec!["v","__orchid_local_0"]);
+    let lifted=builder.plan.nodes.iter().filter(|node|matches!(&node.operation,Operation::LocalProject{expressions,..}
+        if expressions.iter().any(|expr|matches!(expr,LocalExpr::Call{function,..} if function=="positive")))).collect::<Vec<_>>();
+    assert_eq!(lifted.len(),1,"the local function must be evaluated in exactly one stage");
+    assert!(lifted[0].columns.iter().any(|c|c.name=="__orchid_local_0_"));
+}

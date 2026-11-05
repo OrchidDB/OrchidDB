@@ -646,3 +646,7 @@ fn mixed_local_grouping_propagates_invalid_outer_expression_errors() {
         assert!(error.to_string().contains("no_such_function"),"{text}: {error}");
     }
 }
+
+
+mixed!(group_comprehension_predicate, "[x IN [local,outside] WHERE x > outside | x + local]");
+mixed!(group_comprehension_shadowed_local, "[local IN [local,outside] WHERE local > outside | local + outside]");

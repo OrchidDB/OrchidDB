@@ -954,18 +954,13 @@ fn prepare_graph_parsed(
     let mut graph = PropertyGraph::new();
     graph.procedures = Arc::new(procedure_catalog(&request)?);
     let operators: Arc<dyn OperatorTable> = Arc::new(registry);
-    let plan = with_operator_table(operators.clone(), || -> Result<_, String> {
-        let plan = match request.language.as_str() {
-            "cypher" => crate::catalog::lowering::prepare_query(
-                &request.query,
-                &parameters,
-                &mut mapping,
-                request.native_values,
-            )
-            .map_err(|e| e.to_string())?,
-            other => return Err(format!("unsupported query language `{other}`")),
-        };
-        Ok(plan)
+    let plan = with_operator_table(operators.clone(), || {
+        crate::catalog::lowering::prepare_query(
+            &request.query,
+            &parameters,
+            &mut mapping,
+            request.native_values,
+        ).map_err(|e| e.to_string())
     })?;
     let mapping = Arc::new(mapping);
     graph.mapping = Some(mapping.clone());
