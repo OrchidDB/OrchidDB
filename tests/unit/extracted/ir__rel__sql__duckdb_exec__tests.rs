@@ -135,3 +135,52 @@ fn lost_session_never_silently_opens_an_empty_replacement_database() {
         assert!(executor.connection.is_none());
     }
 }
+
+#[test]
+fn arrow_query_errors_identify_prepare_and_execution_without_poisoning_connection() {
+    let connection=Connection::open_in_memory().unwrap();
+    let error=execute_arrow(&connection,"SELECT FROM").unwrap_err().to_string();
+    assert!(error.contains("duckdb prepare:"),"{error}");
+    connection.execute_batch("CREATE TABLE invalid_values(value VARCHAR); INSERT INTO invalid_values VALUES ('not-an-integer')").unwrap();
+    let error=execute_arrow(&connection,"SELECT CAST(value AS BIGINT) FROM invalid_values").unwrap_err().to_string();
+    assert!(error.contains("duckdb query:"),"{error}");
+    let empty=execute_arrow(&connection,"SELECT CAST(NULL AS BIGINT) AS value WHERE FALSE").unwrap();
+    assert_eq!(empty.num_rows(),0);assert_eq!(empty.num_columns(),1);
+    assert_eq!(empty.schema().field(0).name(),"value");
+    assert_eq!(empty.schema().field(0).data_type(),&arrow::datatypes::DataType::Int64);
+    let recovered=execute_arrow(&connection,"SELECT 7::BIGINT AS value").unwrap();
+    assert_eq!(recovered.num_rows(),1);
+    assert_eq!(recovered.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap().value(0),7);
+}
+
+#[test]
+fn failed_setup_blocks_roll_back_only_their_owned_transaction() {
+    for atomic in [false,true] {
+        let connection=Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE persistent_values(v BIGINT); INSERT INTO persistent_values VALUES (11)").unwrap();
+        if !atomic {connection.execute_batch("BEGIN TRANSACTION").unwrap();}
+        let error=execute_setup_block(&connection,&[
+            "INSERT INTO persistent_values VALUES (22)".into(),
+            "INSERT INTO missing_setup_table VALUES (33)".into(),
+        ],atomic).unwrap_err().to_string();
+        assert!(error.contains("duckdb setup:")&&error.contains("statement: INSERT INTO missing_setup_table"),"{error}");
+        if !atomic {connection.execute_batch("ROLLBACK").unwrap();}
+        let values=connection.query_row("SELECT list(v ORDER BY v)::VARCHAR FROM persistent_values",[],|row|row.get::<_,String>(0)).unwrap();
+        assert_eq!(values,"[11]");
+        execute_setup_block(&connection,&["INSERT INTO persistent_values VALUES (44)".into()],true).unwrap();
+        assert_eq!(connection.query_row("SELECT sum(v)::BIGINT FROM persistent_values",[],|row|row.get::<_,i64>(0)).unwrap(),55);
+    }
+}
+
+#[test]
+fn setup_transaction_boundary_errors_leave_connection_recoverable() {
+    let connection=Connection::open_in_memory().unwrap();
+    connection.execute_batch("BEGIN TRANSACTION").unwrap();
+    let error=execute_setup_block(&connection,&[],true).unwrap_err().to_string();
+    assert!(error.contains("duckdb setup begin:"),"{error}");
+    connection.execute_batch("ROLLBACK").unwrap();
+    let error=execute_setup_block(&connection,&["COMMIT".into()],true).unwrap_err().to_string();
+    assert!(error.contains("duckdb setup commit:"),"{error}");
+    execute_setup_block(&connection,&["CREATE TABLE recovered(v BIGINT)".into(),"INSERT INTO recovered VALUES (5)".into()],true).unwrap();
+    assert_eq!(connection.query_row("SELECT v FROM recovered",[],|row|row.get::<_,i64>(0)).unwrap(),5);
+}
