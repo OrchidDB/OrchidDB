@@ -184,3 +184,83 @@ fn setup_transaction_boundary_errors_leave_connection_recoverable() {
     execute_setup_block(&connection,&["CREATE TABLE recovered(v BIGINT)".into(),"INSERT INTO recovered VALUES (5)".into()],true).unwrap();
     assert_eq!(connection.query_row("SELECT v FROM recovered",[],|row|row.get::<_,i64>(0)).unwrap(),5);
 }
+
+#[test]
+fn setup_cache_keys_preserve_object_identity() {
+    let names = ["plain", "part\"a", "part\"b", "雪\"quoted", "ends\"", "\"starts"];
+    let mut keys = std::collections::BTreeSet::new();
+    for name in names {
+        let statement = format!("CREATE TABLE {} (v BIGINT)", SqlDialect::DuckDb.quote_ident(name));
+        assert!(keys.insert(setup_table_key(&statement)), "{statement}");
+        let view = format!("CREATE VIEW {} AS SELECT 1", SqlDialect::DuckDb.quote_ident(name));
+        assert_eq!(setup_table_key(&statement), setup_table_key(&view));
+    }
+    for (left, right) in [
+        ("CREATE TABLE plain(v BIGINT)", "CREATE TABLE \"PLAIN\"(x VARCHAR)"),
+        ("CREATE TABLE s.t(v BIGINT)", "CREATE TABLE \"S\".\"T\"(x VARCHAR)"),
+    ] {
+        assert_eq!(setup_table_key(left), setup_table_key(right));
+    }
+    for (left, right) in [
+        ("CREATE TABLE \"s.t\"(v BIGINT)", "CREATE TABLE s.t(v BIGINT)"),
+        ("CREATE SCHEMA s", "CREATE TABLE s(v BIGINT)"),
+        ("CREATE TABLE s.first(v BIGINT)", "CREATE TABLE s.second(v BIGINT)"),
+        ("CREATE TABLE first(\"value\" BIGINT)", "CREATE TABLE second(\"value\" BIGINT)"),
+    ] {
+        assert_ne!(setup_table_key(left), setup_table_key(right));
+    }
+    for statement in ["CREATE TABLE \"unfinished", "CREATE TABLE \"ends\"\"", "SELECT 1", "CREATE TABLE a(v BIGINT); CREATE TABLE b(v BIGINT)"] {
+        assert_eq!(setup_table_key(statement), statement);
+    }
+}
+
+#[test]
+fn repeated_quoted_table_setup_is_cached_independently() {
+    for timed in [false,true] {
+        let mut executor=if timed {DuckDbExecutor::with_timeout(Duration::from_secs(2))}else{DuckDbExecutor::new()};
+        let mut setup=vec![];
+        for (name,value) in [("part\"a",11),("part\"b",22),("雪\"table",33)] {
+            let name=SqlDialect::DuckDb.quote_ident(name);
+            setup.push(format!("CREATE TABLE {name}(v BIGINT)"));
+            setup.push(format!("INSERT INTO {name} VALUES ({value})"));
+        }
+        let query="SELECT (SELECT v FROM \"part\"\"a\") + (SELECT v FROM \"part\"\"b\") + (SELECT v FROM \"雪\"\"table\")";
+        for _ in 0..3 {
+            assert_eq!(executor.run(&setup,query).unwrap(),vec![vec![SqlValue::Int(66)]]);
+        }
+        assert_eq!(executor.applied_setup.len(),3);
+    }
+}
+
+#[test]
+fn repeated_schema_qualified_setup_keeps_each_relation_cache_entry() {
+    for timed in [false,true] {
+        let mut executor=if timed {DuckDbExecutor::with_timeout(Duration::from_secs(2))}else{DuckDbExecutor::new()};
+        let setup=vec![
+            "CREATE SCHEMA \"scope\"".into(),
+            "CREATE TABLE \"scope\".\"first\"(v BIGINT)".into(),
+            "INSERT INTO \"scope\".\"first\" VALUES (11)".into(),
+            "CREATE TABLE \"scope\".\"second\"(v BIGINT)".into(),
+            "INSERT INTO \"scope\".\"second\" VALUES (22)".into(),
+        ];
+        for _ in 0..3 {
+            assert_eq!(executor.run(&setup,"SELECT (SELECT v FROM \"scope\".\"first\") + (SELECT v FROM \"scope\".\"second\")").unwrap(),vec![vec![SqlValue::Int(33)]]);
+        }
+        assert_eq!(executor.applied_setup.len(),3);
+    }
+}
+
+#[test]
+fn unquoted_table_setup_does_not_use_a_quoted_column_as_its_identity() {
+    let mut executor=DuckDbExecutor::new();
+    let setup=vec![
+        "CREATE TABLE first_table(\"value\" BIGINT)".into(),
+        "INSERT INTO first_table VALUES (7)".into(),
+        "CREATE TABLE second_table(\"value\" BIGINT)".into(),
+        "INSERT INTO second_table VALUES (9)".into(),
+    ];
+    for _ in 0..3 {
+        assert_eq!(executor.run(&setup,"SELECT (SELECT value FROM first_table)+(SELECT value FROM second_table)").unwrap(),vec![vec![SqlValue::Int(16)]]);
+    }
+    assert_eq!(executor.applied_setup.len(),2);
+}

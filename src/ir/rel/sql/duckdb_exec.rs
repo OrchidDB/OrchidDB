@@ -923,14 +923,28 @@ fn execute_query(conn: &Connection, query: &str) -> SqlResult<Vec<Vec<SqlValue>>
 }
 
 fn setup_table_key(statement: &str) -> String {
-    let Some(start) = statement.find('"') else {
+    use datafusion::sql::sqlparser::{ast::{SchemaName, Statement}, dialect::DuckDbDialect, parser::Parser};
+    let Ok(statements) = Parser::parse_sql(&DuckDbDialect {}, statement) else {
         return statement.to_string();
     };
-    let rest = &statement[start + 1..];
-    let Some(end) = rest.find('"') else {
+    let [statement_ast] = statements.as_slice() else {
         return statement.to_string();
     };
-    rest[..end].replace("\"\"", "\"")
+    let (kind, name) = match statement_ast {
+        Statement::CreateTable(table) => ("relation", &table.name),
+        Statement::CreateView(view) => ("relation", &view.name),
+        Statement::CreateSchema { schema_name: SchemaName::Simple(name) | SchemaName::NamedAuthorization(name, _), .. } => ("schema", name),
+        _ => return statement.to_string(),
+    };
+    // Length prefixes distinguish qualified names from names containing dots.
+    // DuckDB compares identifiers case-insensitively, including quoted ones.
+    let mut key = format!("{kind}:");
+    for part in &name.0 {
+        let Some(identifier) = part.as_ident() else { return statement.to_string(); };
+        let value = identifier.value.to_ascii_lowercase();
+        key.push_str(&format!("{}:{value}", value.len()));
+    }
+    key
 }
 
 fn convert_value(value: ValueRef<'_>) -> SqlResult<SqlValue> {
