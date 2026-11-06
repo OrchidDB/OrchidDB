@@ -1550,3 +1550,49 @@ fn cypher_cast_planning_preserves_valid_decimal_precision_and_negative_scales() 
         assert_eq!(operand, col_exact("value")); assert!(!lenient);
     }
 }
+
+#[test]
+fn cypher_subscript_lowering_rejects_non_lists_and_non_integer_indices() {
+    let graph = PropertyGraph::new();
+    let mut ctx = cypher_context(&graph);
+    ctx.options.native_values = false;
+    for target in [DataType::Utf8, DataType::LargeUtf8, DataType::Utf8View,
+        DataType::Boolean, DataType::Int64, DataType::Float64] {
+        let plan = scalar_scope(vec![Field::new("target", target.clone(), true)]);
+        let error = ctx.lower_cypher_subscript(&plan, &binding("target"),
+            &IrExpr::Lit(Lit::Int(0))).unwrap_err().to_string();
+        let expected = if matches!(target, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+            "strings are not indexable lists"
+        } else { "cypher subscript over type" };
+        assert!(error.contains(expected), "{target}: {error}");
+    }
+    let list = DataType::List(Arc::new(Field::new("item", DataType::Int64, true)));
+    for index in [DataType::Boolean, DataType::Utf8, DataType::Float64,
+        DataType::Decimal128(10, 0), DataType::Date32, list.clone()] {
+        let plan = scalar_scope(vec![Field::new("target", list.clone(), true),
+            Field::new("index", index.clone(), true)]);
+        let error = ctx.lower_cypher_subscript(&plan, &binding("target"),
+            &binding("index")).unwrap_err().to_string();
+        assert!(error.contains("index requires runtime type validation"), "{index}: {error}");
+    }
+}
+
+#[test]
+fn cypher_subscript_null_targets_preserve_operand_errors() {
+    let graph = PropertyGraph::new();
+    let mut ctx = cypher_context(&graph);
+    ctx.options.native_values = false;
+    let plan = scalar_scope(vec![Field::new("target", DataType::Null, true),
+        Field::new("index", DataType::Utf8, true)]);
+    for index in [IrExpr::Lit(Lit::String("key".into())), binding("index"),
+        IrExpr::Lit(Lit::Int(0)), IrExpr::Lit(Lit::Null)] {
+        let lowered = ctx.lower_cypher_subscript(&plan, &binding("target"), &index).unwrap();
+        assert_eq!(lowered, lit(ScalarValue::Null));
+    }
+    // Null propagation cannot suppress invalid binding resolution or a computed key.
+    for index in [binding("missing"), call("unregistered_subscript_key", vec![])] {
+        assert!(ctx.lower_cypher_subscript(&plan, &binding("target"), &index).is_err());
+    }
+    assert!(ctx.lower_cypher_subscript(&plan, &binding("missing"),
+        &IrExpr::Lit(Lit::Null)).is_err());
+}
