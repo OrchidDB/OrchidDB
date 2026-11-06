@@ -931,3 +931,99 @@ async fn distinct_on_payload_comes_from_the_selected_row() {
     assert_eq!(optimized.display_indent().to_string().matches("TableScan: people").count(),1,"{optimized:?}");
     assert_eq!(rows(optimized).await,vec![vec!["1".to_string(),"Ada".to_string()],vec!["3".to_string(),"Bob".to_string()]]);
 }
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_boundaries_reject_ambiguous_logical_bindings() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, extract, validate};
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE keyed(id BIGINT PRIMARY KEY); CREATE TABLE repeated(id BIGINT); INSERT INTO keyed VALUES(1); INSERT INTO repeated VALUES(1),(1)").unwrap();
+    let database: String = db.query_row("SELECT current_database()", [], |r| r.get(0)).unwrap();
+    let mut bindings = vec![TableBinding::new("items", &database, "main", "keyed"),
+        TableBinding::new("items", &database, "main", "repeated")];
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert("items", Constraint::enforced("unique_id", Fact::Unique {
+        columns: names(&["id"]), nulls_equal: false,
+    }));
+    for _ in 0..2 {
+        assert!(extract(&db, &bindings).unwrap_err().contains("duplicate logical DuckDB binding `items`"));
+        assert!(validate(&db, &bindings, &catalog, "snapshot").unwrap_err().contains("duplicate logical DuckDB binding `items`"));
+        bindings.reverse();
+    }
+    // Distinct logical aliases of one physical source are still valid.
+    let aliases = [TableBinding::new("first", &database, "main", "keyed"),
+        TableBinding::new("second", &database, "main", "keyed")];
+    let catalog = extract(&db, &aliases).unwrap();
+    assert_eq!(catalog.tables.len(), 2);
+    validate(&db, &aliases, &catalog, "snapshot").unwrap();
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_boundaries_composite_null_and_dependency_semantics() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, validate};
+    let db = duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE facts(a BIGINT,b BIGINT,v VARCHAR); INSERT INTO facts VALUES(1,2,'same'),(1,3,'same'),(NULL,2,'null'),(NULL,2,'null')").unwrap();
+    let database: String = db.query_row("SELECT current_database()", [], |r| r.get(0)).unwrap();
+    let bindings = [TableBinding::new("facts", &database, "main", "facts")];
+    for (fact, valid) in [
+        (Fact::Unique {columns:names(&["a","b"]),nulls_equal:false},true),
+        (Fact::Unique {columns:names(&["a","b"]),nulls_equal:true},false),
+        (Fact::NonNull {columns:names(&["b","v"])},true),
+        (Fact::NonNull {columns:names(&["a","b"])},false),
+        (Fact::FunctionalDependency {determinant:names(&["a"]),dependent:names(&["v"])},true),
+        (Fact::FunctionalDependency {determinant:names(&["a"]),dependent:names(&["b","v"])},false),
+    ] {
+        let mut catalog = ConstraintCatalog::default();
+        catalog.insert("facts",Constraint::enforced("candidate",fact));
+        let result=validate(&db,&bindings,&catalog,"immutable-snapshot");
+        if valid {
+            let result=result.unwrap();
+            assert!(matches!(&result.tables["facts"][0].evidence,Evidence::Validated{scope} if scope=="immutable-snapshot"));
+            assert!(matches!(catalog.tables["facts"][0].evidence,Evidence::Enforced));
+        } else { assert!(result.unwrap_err().contains("facts.candidate is violated")); }
+    }
+    db.execute_batch("INSERT INTO facts VALUES(NULL,2,'different')").unwrap();
+    let mut catalog=ConstraintCatalog::default();
+    catalog.insert("facts",Constraint::enforced("null_dependency",Fact::FunctionalDependency{
+        determinant:names(&["a"]),dependent:names(&["v"])}));
+    assert!(validate(&db,&bindings,&catalog,"snapshot").unwrap_err().contains("null_dependency"));
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_boundaries_foreign_keys_skip_partial_nulls_and_detect_orphans() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, validate};
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE parent(a BIGINT,b BIGINT); CREATE TABLE child(x BIGINT,y BIGINT); INSERT INTO parent VALUES(1,2); INSERT INTO child VALUES(1,2),(NULL,99),(99,NULL),(NULL,NULL)").unwrap();
+    let database:String=db.query_row("SELECT current_database()",[],|r|r.get(0)).unwrap();
+    let bindings=[TableBinding::new("parent",&database,"main","parent"),TableBinding::new("child",&database,"main","child")];
+    let mut catalog=ConstraintCatalog::default();
+    catalog.insert("child",Constraint::enforced("fk",Fact::ForeignKey{
+        columns:names(&["x","y"]),target:"parent".into(),references:names(&["a","b"])}));
+    validate(&db,&bindings,&catalog,"snapshot").unwrap();
+    db.execute_batch("INSERT INTO child VALUES(1,99)").unwrap();
+    assert!(validate(&db,&bindings,&catalog,"snapshot").unwrap_err().contains("child.fk is violated"));
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_boundaries_quote_names_and_require_valid_scope_and_schema() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, extract, validate};
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE SCHEMA \"odd.schema\"; CREATE TABLE \"odd.schema\".\"odd\"\"table\"(\"key\"\"name\" BIGINT PRIMARY KEY, \"collate\" VARCHAR); INSERT INTO \"odd.schema\".\"odd\"\"table\" VALUES(1,'COLLATE NOCASE')").unwrap();
+    let database:String=db.query_row("SELECT current_database()",[],|r|r.get(0)).unwrap();
+    let bindings=[TableBinding::new("logical",&database,"odd.schema","odd\"table")];
+    let catalog=extract(&db,&bindings).unwrap();
+    assert!(catalog.tables["logical"].iter().any(|c|matches!(&c.fact,Fact::Unique{columns,..} if columns==&names(&["key\"name"]))));
+    validate(&db,&bindings,&catalog,"snapshot").unwrap();
+    assert!(validate(&db,&bindings,&catalog,"").unwrap_err().contains("nonempty snapshot"));
+    assert!(validate(&db,&[],&catalog,"snapshot").is_err());
+    let absent=[TableBinding::new("logical",&database,"odd.schema","absent")];
+    assert!(validate(&db,&absent,&catalog,"snapshot").is_err());
+    let mut invalid=catalog.clone();
+    invalid.insert("logical",Constraint::enforced("missing",Fact::NonNull{columns:names(&["missing"])}));
+    assert!(validate(&db,&bindings,&invalid,"snapshot").is_err());
+    db.execute_batch("SET default_collation='nocase'").unwrap();
+    assert!(extract(&db,&bindings).unwrap_err().contains("binary comparison semantics"));
+}

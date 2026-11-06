@@ -35,12 +35,22 @@ impl TableBinding {
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
 }
+fn validate_bindings(tables: &[TableBinding]) -> Result<(), String> {
+    let mut names = std::collections::BTreeSet::new();
+    for table in tables {
+        if !names.insert(&table.name) {
+            return Err(format!("duplicate logical DuckDB binding `{}`", table.name));
+        }
+    }
+    Ok(())
+}
 /// Extract PK/UNIQUE/NOT NULL/FK metadata only for the explicit bindings.
 /// Foreign keys to tables outside the supplied set are omitted.
 pub fn extract(
     connection: &Connection,
     tables: &[TableBinding],
 ) -> Result<ConstraintCatalog, String> {
+    validate_bindings(tables)?;
     let collation: String = connection
         .query_row("SELECT current_setting('default_collation')", [], |r| {
             r.get(0)
@@ -149,6 +159,7 @@ pub fn validate(
     if scope.is_empty() {
         return Err("validation requires a nonempty snapshot scope".into());
     }
+    validate_bindings(tables)?;
     let table = |name: &str| {
         tables
             .iter()
