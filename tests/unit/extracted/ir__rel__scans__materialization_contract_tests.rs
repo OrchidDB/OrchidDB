@@ -667,3 +667,94 @@ fn graph_values_keep_zero_column_cardinality_and_validate_every_row_width() {
     assert_eq!(batch.num_rows(),3);
     for column in batch.columns(){assert_eq!(column.data_type(),&DataType::Null);assert_eq!(column.logical_null_count(),3);}
 }
+
+fn mapped_constant_batches_plan(empty: bool) -> LogicalPlan {
+    use arrow::array::BooleanArray;
+    let graph = PropertyGraph::new();
+    let mut context = cypher_scan_context(&graph);
+    context.options.mapping = Some(Arc::new(Default::default()));
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id",DataType::Int64,true), Field::new("flag",DataType::Boolean,true),
+    ]));
+    let batches = if empty {
+        vec![RecordBatch::new_empty(schema.clone()),RecordBatch::new_empty(schema)]
+    } else {
+        vec![
+            RecordBatch::try_new(schema.clone(),vec![Arc::new(Int64Array::from(vec![Some(3),None])),Arc::new(BooleanArray::from(vec![Some(true),Some(false)]))]).unwrap(),
+            RecordBatch::try_new(schema,vec![Arc::new(Int64Array::from(vec![Some(3),Some(3)])),Arc::new(BooleanArray::from(vec![None,None]))]).unwrap(),
+        ]
+    };
+    let lowered = context.scan_batches("constants",batches).unwrap();
+    assert_eq!(context.scan_counter,0,"mapped constants must not install physical source tables");
+    lowered.plan
+}
+
+#[test]
+#[cfg(feature="duckdb")]
+fn mapped_constant_batches_preserve_nulls_duplicates_and_empty_schema_in_sql() {
+    use crate::ir::rel::sql::{SqlDialect,unparse_plan};
+    let connection = duckdb::Connection::open_in_memory().unwrap();
+    for empty in [false,true] {
+        let plan = mapped_constant_batches_plan(empty);
+        assert_eq!(plan.schema().field(0).data_type(),&DataType::Int64);
+        assert_eq!(plan.schema().field(1).data_type(),&DataType::Boolean);
+        let sql = unparse_plan(plan,SqlDialect::DuckDb).unwrap();
+        let values = connection.query_row(&format!("SELECT count(*),sum(id)::BIGINT,count(flag) FROM ({sql}) q"),[],|row| {
+            Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?,row.get::<_,i64>(2)?))
+        }).unwrap();
+        assert_eq!(values,if empty {(0,None,0)}else{(4,Some(9),2)},"{sql}");
+    }
+}
+
+#[test]
+fn catalog_scan_keys_use_column_names_and_reject_absent_key_fields() {
+    let graph = PropertyGraph::new(); let mut context = cypher_scan_context(&graph);
+    let schema = Arc::new(Schema::new(vec![Field::new("flag",DataType::Boolean,true),Field::new("id",DataType::Int64,false)]));
+    let batch = RecordBatch::new_empty(schema);
+    let lowered = context.scan_batches_keyed("keyed",vec![batch.clone()],&["id".into()]).unwrap();
+    let facts = crate::ir::rel::constraints::analyze(&lowered.plan);
+    assert!(facts.unique_on(&[1],false)); assert!(!facts.unique_on(&[0],false));
+    assert_eq!(context.scan_counter,1);
+    assert!(context.scan_batches_keyed("invalid",vec![batch],&["missing".into()]).is_err());
+    assert_eq!(context.scan_counter,1,"failed scans must not allocate a source name");
+}
+
+#[test]
+fn catalog_scan_rejects_incompatible_batch_schemas() {
+    let graph = PropertyGraph::new(); let mut context = cypher_scan_context(&graph);
+    let first = RecordBatch::new_empty(Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,false)])));
+    let second = RecordBatch::new_empty(Arc::new(Schema::new(vec![Field::new("id",DataType::Boolean,false)])));
+    assert!(context.scan_batches("incompatible",vec![first,second]).is_err());
+    assert_eq!(context.scan_counter,0);
+}
+
+#[cfg(feature="trino")]
+#[tokio::test]
+#[ignore="requires PostgreSQL and Trino"]
+async fn mapped_constant_batches_execute_on_postgres_and_trino() {
+    use crate::ir::rel::sql::{SqlDialect,unparse_plan};
+    use crate::execution::trino::{TrinoOptions,TrinoSession};
+    use futures::StreamExt;
+    let pg = std::env::var("GRAPH_PG_URL").unwrap();
+    let endpoint = std::env::var("ORCHIDDB_TEST_TRINO_URL").or_else(|_|std::env::var("ORCHIDDB_TEST_OPA_URL")).unwrap();
+    let trino = TrinoSession::source(TrinoOptions::new(endpoint,"orchid_test")).unwrap();
+    for empty in [false,true] {
+        for dialect in [SqlDialect::Postgres,SqlDialect::resolve("trino").unwrap()] {
+            let sql = unparse_plan(mapped_constant_batches_plan(empty),dialect).unwrap();
+            let sql = format!("SELECT count(*),COALESCE(sum(id),-1),count(flag) FROM ({sql}) q");
+            let expected = if empty {vec!["0","-1","0"]}else{vec!["4","9","2"]};
+            if dialect==SqlDialect::Postgres {
+                let result = std::process::Command::new("psql").args([&pg,"-X","-A","-t","-v","ON_ERROR_STOP=1","-c",&sql]).output().unwrap();
+                assert!(result.status.success(),"{sql}: {}",String::from_utf8_lossy(&result.stderr));
+                assert_eq!(String::from_utf8(result.stdout).unwrap().trim(),expected.join("|"));
+            } else {
+                let mut stream = trino.execute(&sql,vec![]).await.unwrap(); let mut rows = vec![];
+                while let Some(batch) = stream.next().await {
+                    let batch=batch.unwrap();
+                    for row in 0..batch.num_rows() {rows.push(batch.columns().iter().map(|column|arrow::util::display::array_value_to_string(column.as_ref(),row).unwrap()).collect::<Vec<_>>());}
+                }
+                assert_eq!(rows,vec![expected],"{sql}");
+            }
+        }
+    }
+}
