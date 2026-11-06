@@ -25,6 +25,16 @@
         mapping.plan_sql("SELECT fn.sqrt(9.0), fn.char_length('hello')").unwrap();
         assert!(provider.get_function_meta("fn.sqrt").is_some());
         assert!(provider.udf_names().contains(&"fn.sqrt".into()));
+        let aggregate_names = provider.udaf_names();
+        let window_names = provider.udwf_names();
+        assert!(aggregate_names.contains(&"avg".into()));
+        assert!(window_names.contains(&"row_number".into()));
+        for name in aggregate_names {
+            assert!(provider.get_aggregate_meta(&name).is_some(), "unresolvable aggregate {name}");
+        }
+        for name in window_names {
+            assert!(provider.get_window_meta(&name).is_some(), "unresolvable window {name}");
+        }
     }
 
     #[test]
@@ -536,5 +546,199 @@ fn computed_relationship_node_sources_fail_fallible_serialization_without_panick
     assert!(error.to_string().contains("node mapping `Invalid` cannot use a relationship source"), "{error}");
     assert!(mapping.edge("LINK").is_none());
     assert_eq!(mapping.node("Invalid").unwrap().id_column, KeyColumns::from("id"));
+    }
+}
+
+fn multiplicity_boundary_mapping() -> GraphMapping {
+    use arrow::datatypes::{Field, Schema};
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("links", Arc::new(Schema::new(vec![
+        Field::new("src", DataType::Int64, false),
+        Field::new("dst", DataType::Int64, false),
+    ])));
+    mapping.map_node(NodeMapping::table("Source", "links", "src"));
+    mapping.map_node(NodeMapping::table("Target", "links", "dst"));
+    mapping.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "Source", "Target"));
+    use crate::ir::rel::constraints::{Constraint, ConstraintCatalog, Fact};
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert("links", Constraint::enforced("distinct_pairs", Fact::Unique {
+        columns: vec!["src".into(), "dst".into()], nulls_equal: false,
+    }));
+    mapping.set_constraints(catalog);
+    mapping
+}
+
+#[test]
+fn relationship_multiplicity_reports_invalid_endpoints_before_claiming_proofs() {
+    for (case, expected) in [
+        (0, "unknown relationship"), (1, "missing endpoint absent_source"),
+        (2, "missing endpoint absent_target"), (3, "unknown endpoint label Source"),
+        (4, "unknown endpoint label Target"), (5, "missing target identity"),
+        (6, "missing target identity"),
+    ] {
+        let mut mapping = multiplicity_boundary_mapping();
+        match case {
+            0 => { mapping.edges.clear(); }
+            1 => { mapping.edges.get_mut("LINK").unwrap().src_column = "absent_source".into(); }
+            2 => { mapping.edges.get_mut("LINK").unwrap().dst_column = "absent_target".into(); }
+            3 => { mapping.nodes.remove("Source"); }
+            4 => { mapping.nodes.remove("Target"); }
+            5 => { mapping.nodes.get_mut("Source").unwrap().id_column = "missing".into(); }
+            6 => { mapping.nodes.get_mut("Target").unwrap().id_column = "missing".into(); }
+            _ => unreachable!(),
+        }
+        let error = mapping.relationship_multiplicity("LINK").unwrap_err();
+        assert!(error.to_string().contains(expected), "case {case}: {error}");
+    }
+}
+
+#[test]
+fn relationship_multiplicity_distinguishes_same_rows_from_derived_identities() {
+    let mapping = multiplicity_boundary_mapping();
+    let facts = mapping.relationship_multiplicity("LINK").unwrap();
+    assert!(facts.source_endpoint_exists && facts.target_endpoint_exists);
+    assert!(!facts.at_most_one_outgoing && !facts.at_most_one_incoming);
+    for label in ["Source", "Target"] {
+        let mut mapping = multiplicity_boundary_mapping();
+        let column = if label == "Source" { "src" } else { "dst" };
+        mapping.map_node(NodeMapping::query(label, format!("SELECT {column} + 1 AS id FROM links"), "id"));
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.source_endpoint_exists, label != "Source");
+        assert_eq!(facts.target_endpoint_exists, label != "Target");
+        assert!(!facts.at_most_one_outgoing && !facts.at_most_one_incoming);
+    }
+}
+
+#[test]
+fn relationship_multiplicity_does_not_extend_proofs_across_partitions_or_key_arities() {
+    let mut mapping = multiplicity_boundary_mapping();
+    mapping.map_edge_partition(EdgeMapping::table("LINK", "links", "src", "dst", "Source", "Target"));
+    let facts = mapping.relationship_multiplicity("LINK").unwrap();
+    assert!(!facts.source_endpoint_exists && !facts.target_endpoint_exists);
+    assert!(!facts.at_most_one_outgoing && !facts.at_most_one_incoming);
+    for label in ["Source", "Target"] {
+        let mut mapping = multiplicity_boundary_mapping();
+        mapping.nodes.get_mut(label).unwrap().id_column = ["src", "dst"].into();
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.source_endpoint_exists, label != "Source");
+        assert_eq!(facts.target_endpoint_exists, label != "Target");
+    }
+}
+
+#[test]
+fn relationship_multiplicity_requires_non_null_endpoint_columns() {
+    use arrow::datatypes::{Field, Schema};
+    for (source_null, target_null) in [(true,false), (false,true), (true,true)] {
+        let mut mapping = multiplicity_boundary_mapping();
+        mapping.register_table_schema("links", Arc::new(Schema::new(vec![
+            Field::new("src", DataType::Int64, source_null),
+            Field::new("dst", DataType::Int64, target_null),
+        ])));
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.source_endpoint_exists, !source_null);
+        assert_eq!(facts.target_endpoint_exists, !target_null);
+    }
+}
+
+#[test]
+fn relationship_multiplicity_does_not_infer_provenance_from_untrusted_table_names() {
+    let mut mapping = multiplicity_boundary_mapping();
+    mapping.set_constraints(Default::default());
+    let facts = mapping.relationship_multiplicity("LINK").unwrap();
+    assert!(!facts.source_endpoint_exists && !facts.target_endpoint_exists);
+    assert!(!facts.at_most_one_outgoing && !facts.at_most_one_incoming);
+}
+
+#[test]
+fn relationship_multiplicity_uses_only_the_active_constraint_snapshot() {
+    use crate::ir::rel::constraints::Evidence;
+    for scope in [None, Some("other"), Some("snapshot-1")] {
+        let mut mapping = multiplicity_boundary_mapping();
+        mapping.constraints.tables.get_mut("links").unwrap()[0].evidence =
+            Evidence::Validated { scope: "snapshot-1".into() };
+        mapping.set_constraint_scope(scope.map(str::to_owned));
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.source_endpoint_exists, scope == Some("snapshot-1"));
+        assert_eq!(facts.target_endpoint_exists, scope == Some("snapshot-1"));
+        assert!(!facts.at_most_one_outgoing && !facts.at_most_one_incoming);
+    }
+}
+
+#[test]
+fn relationship_multiplicity_keeps_alias_provenance_but_rejects_filtered_target_completeness() {
+    for (query, expected) in [
+        ("SELECT src AS id FROM links", true),
+        ("SELECT src AS id FROM links WHERE dst > 0", false),
+        ("SELECT src AS id FROM links LIMIT 1", false),
+    ] {
+        let mut mapping = multiplicity_boundary_mapping();
+        mapping.map_node(NodeMapping::query("Source", query, "id"));
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.source_endpoint_exists, expected, "{query}");
+        assert!(facts.target_endpoint_exists, "{query}");
+    }
+}
+
+#[test]
+fn relationship_multiplicity_checks_source_and_target_degree_independently() {
+    use crate::ir::rel::constraints::{Constraint, Fact};
+    for (outgoing, incoming) in [(false,false),(true,false),(false,true),(true,true)] {
+        let mut mapping = multiplicity_boundary_mapping();
+        for (enabled, column) in [(outgoing, "src"), (incoming, "dst")] {
+            if enabled {
+                mapping.constraints.insert("links", Constraint::enforced(
+                    format!("unique_{column}"), Fact::Unique {
+                        columns: vec![column.into()], nulls_equal: false,
+                    }));
+            }
+        }
+        let facts = mapping.relationship_multiplicity("LINK").unwrap();
+        assert_eq!(facts.at_most_one_outgoing, outgoing);
+        assert_eq!(facts.at_most_one_incoming, incoming);
+        assert!(facts.source_endpoint_exists && facts.target_endpoint_exists);
+    }
+}
+
+fn derived_collection_boundary_mapping() -> GraphMapping {
+    use arrow::datatypes::{Field, Schema};
+    let mut mapping = GraphMapping::new();
+    mapping.register_table_schema("parents", Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("items", DataType::List(Arc::new(Field::new("item", DataType::Int64, true))), true),
+    ])));
+    mapping.register_collection_source(serde_json::from_value(serde_json::json!({
+        "name":"expanded_items", "table":"parents", "column":"items",
+        "parent_columns":{"parent":"id"}, "element":"value"
+    })).unwrap()).unwrap();
+    mapping
+}
+
+#[test]
+fn derived_source_detection_preserves_database_owned_queries_and_reports_invalid_sql() {
+    let mapping = derived_collection_boundary_mapping();
+    for source in [MappedSource::Table("unregistered_external".into()),
+        MappedSource::Query("SELECT id FROM unregistered_external".into())] {
+        assert!(mapping.derived_source_sql(&source, &[]).unwrap().is_none());
+    }
+    let error = mapping.derived_source_sql(&MappedSource::Query("SELECT (".into()), &[]).unwrap_err();
+    assert!(error.to_string().contains("mapping query parse"), "{error}");
+    assert!(mapping.collection_sql("absent").is_none());
+    assert!(mapping.collection_sql("expanded_items").is_some());
+}
+
+#[test]
+#[cfg(feature = "duckdb")]
+fn derived_collection_queries_expand_before_applying_result_filters() {
+    let mapping = derived_collection_boundary_mapping();
+    let connection = duckdb::Connection::open_in_memory().unwrap();
+    connection.execute_batch("CREATE TABLE parents(id BIGINT, items BIGINT[]); INSERT INTO parents VALUES (1,[1,2,NULL]),(2,[3]),(3,NULL),(4,[])").unwrap();
+    for query in ["SELECT parent, value FROM expanded_items",
+        "SELECT e.parent, e.value FROM parents p JOIN expanded_items e ON p.id = e.parent"] {
+        let source = MappedSource::Query(query.into());
+        let sql = mapping.derived_source_sql(&source, &[col_exact("value").gt(lit(1_i64))]).unwrap().unwrap();
+        let mut stmt = connection.prepare(&format!("SELECT parent, value FROM ({sql}) q ORDER BY parent, value")).unwrap();
+        let values = stmt.query_map([], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?))).unwrap()
+            .collect::<Result<Vec<_>,_>>().unwrap();
+        assert_eq!(values, vec![(1,2),(2,3)], "{sql}");
     }
 }
