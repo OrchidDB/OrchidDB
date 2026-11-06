@@ -1,5 +1,6 @@
 //! Native input evaluation must precede SQL placement on every execution path.
 use super::*;
+use crate::ir::{GraphPlan, GraphPlanPolicy, PropertyGraph};
 use arrow::{array::Float64Array, datatypes::DataType};
 use datafusion::{
     common::ScalarValue,
@@ -1457,4 +1458,66 @@ fn sql_array_coercion_retains_list_layout_limits_and_zero_width_parent_rows() {
         assert_eq!(result.len(),3);assert_eq!(result.null_count(),1);
         assert!(!result.is_null(0));assert!(result.is_null(1));assert!(!result.is_null(2));
     }
+}
+
+#[derive(Debug)]
+struct SessionBoundaryObserver {
+    calls: Arc<AtomicUsize>,
+    reject: bool,
+}
+impl crate::ir::rel::runtime::policy::BoundaryExecutable for SessionBoundaryObserver {
+    fn execute(&self, boundary: &crate::ir::rel::runtime::CompiledKernel,
+        inputs: Vec<Vec<crate::ir::runtime::Row>>, state: &mut crate::ir::rel::runtime::KernelState,
+    ) -> Result<Vec<crate::ir::runtime::Row>, crate::ir::diagnostics::QueryExecutionError> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        if self.reject { return Err("session boundary rejected".into()); }
+        boundary.invoke_default(inputs,state)
+    }
+}
+
+#[test]
+fn session_boundary_overrides_survive_recreation_without_leaking_between_sessions() {
+    use crate::ir::rel::runtime::{CompileOptions,KernelState,CompiledKernel,compile_for_host};
+    use crate::ir::rel::runtime::policy::{BoundaryKind,ExecutableSet};
+    let graph=PropertyGraph::new();
+    let graph_plan=GraphPlan::new(GraphPlanPolicy::cypher(),crate::ir::plan::Node::GraphOneRow);
+    let compiled=compile_for_host(&graph_plan,&graph,CompileOptions{sql_islands:false,..Default::default()}).unwrap();
+    let kernel=CompiledKernel::from_plan(&compiled).expect("literal input boundary");
+    assert_eq!(kernel.boundary_kind(),Some(BoundaryKind::LiteralInput));
+    let calls=Arc::new(AtomicUsize::new(0));
+    let mut original=DagSession::new(None);
+    original.set_boundary_executables(ExecutableSet::default().with(BoundaryKind::LiteralInput,
+        Arc::new(SessionBoundaryObserver{calls:calls.clone(),reject:false})));
+    let recreated=original.recreated(None);
+    let isolated=DagSession::new(None);
+    for (session,expected_calls) in [(&original,1),(&recreated,2),(&isolated,2)] {
+        let mut state=KernelState::default(); state.frontier=vec![crate::ir::runtime::Row::new()]; state.context.rule_context=session.rule_context().unwrap();
+        assert_eq!(kernel.invoke(vec![],&mut state).unwrap().len(),1);
+        assert_eq!(calls.load(Ordering::Relaxed),expected_calls);
+    }
+    original.set_boundary_executables(ExecutableSet::default());
+    for (session,expected_calls) in [(&original,2),(&recreated,3)] {
+        let mut state=KernelState::default(); state.frontier=vec![crate::ir::runtime::Row::new()]; state.context.rule_context=session.rule_context().unwrap();
+        assert_eq!(kernel.invoke(vec![],&mut state).unwrap().len(),1);
+        assert_eq!(calls.load(Ordering::Relaxed),expected_calls);
+    }
+}
+
+#[test]
+fn session_boundary_failures_propagate_without_poisoning_later_query_contexts() {
+    use crate::ir::rel::runtime::{CompileOptions,KernelState,CompiledKernel,compile_for_host};
+    use crate::ir::rel::runtime::policy::{BoundaryKind,ExecutableSet};
+    let graph_plan=GraphPlan::new(GraphPlanPolicy::cypher(),crate::ir::plan::Node::GraphOneRow);
+    let compiled=compile_for_host(&graph_plan,&PropertyGraph::new(),CompileOptions{sql_islands:false,..Default::default()}).unwrap();
+    let kernel=CompiledKernel::from_plan(&compiled).unwrap();
+    let calls=Arc::new(AtomicUsize::new(0)); let mut session=DagSession::new(None);
+    session.set_boundary_executables(ExecutableSet::default().with(BoundaryKind::LiteralInput,
+        Arc::new(SessionBoundaryObserver{calls:calls.clone(),reject:true})));
+    let mut state=KernelState::default(); state.frontier=vec![crate::ir::runtime::Row::new()]; state.context.rule_context=session.rule_context().unwrap();
+    assert!(kernel.invoke(vec![],&mut state).unwrap_err().to_string().contains("session boundary rejected"));
+    assert_eq!(calls.load(Ordering::Relaxed),1);
+    session.set_boundary_executables(ExecutableSet::default());
+    let mut next=KernelState::default(); next.frontier=vec![crate::ir::runtime::Row::new()]; next.context.rule_context=session.rule_context().unwrap();
+    assert_eq!(kernel.invoke(vec![],&mut next).unwrap().len(),1);
+    assert_eq!(calls.load(Ordering::Relaxed),1);
 }
