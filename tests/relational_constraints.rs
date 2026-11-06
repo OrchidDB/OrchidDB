@@ -1027,3 +1027,43 @@ fn duckdb_constraint_boundaries_quote_names_and_require_valid_scope_and_schema()
     db.execute_batch("SET default_collation='nocase'").unwrap();
     assert!(extract(&db,&bindings).unwrap_err().contains("binary comparison semantics"));
 }
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_validation_rejects_collated_equality_evidence() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, validate};
+    for column_collation in [false, true] {
+        let db=duckdb::Connection::open_in_memory().unwrap();
+        let collation=if column_collation {" COLLATE NOCASE"} else {""};
+        db.execute_batch(&format!("CREATE TABLE facts(id BIGINT,value VARCHAR{collation}); INSERT INTO facts VALUES(1,'A'),(1,'a')")).unwrap();
+        if !column_collation {db.execute_batch("SET default_collation='nocase'").unwrap();}
+        let database:String=db.query_row("SELECT current_database()",[],|r|r.get(0)).unwrap();
+        let bindings=[TableBinding::new("facts",&database,"main","facts")];
+        let mut catalog=ConstraintCatalog::default();
+        catalog.insert("facts",Constraint::enforced("dependency",Fact::FunctionalDependency{
+            determinant:names(&["id"]),dependent:names(&["value"])}));
+        assert!(validate(&db,&bindings,&catalog,"snapshot").is_err(),
+            "case-insensitive equality must not certify a binary functional dependency; column_collation={column_collation}");
+    }
+}
+
+#[cfg(feature = "duckdb")]
+#[test]
+fn duckdb_constraint_extraction_limits_foreign_keys_to_explicit_bindings() {
+    use orchiddb::ir::rel::constraints::duckdb::{TableBinding, extract};
+    let db=duckdb::Connection::open_in_memory().unwrap();
+    db.execute_batch("CREATE TABLE parent(a BIGINT,b BIGINT,PRIMARY KEY(a,b)); CREATE TABLE child(x BIGINT,y BIGINT,tag VARCHAR UNIQUE, CHECK(x>=0), FOREIGN KEY(x,y) REFERENCES parent(a,b))").unwrap();
+    let database:String=db.query_row("SELECT current_database()",[],|r|r.get(0)).unwrap();
+    let bindings=[TableBinding::new("children",&database,"main","child"),TableBinding::new("parents",&database,"main","parent")];
+    let restricted=extract(&db,&bindings[..1]).unwrap();
+    assert!(!restricted.tables["children"].iter().any(|c|matches!(c.fact,Fact::ForeignKey{..})));
+    assert!(restricted.tables["children"].iter().any(|c|matches!(&c.fact,Fact::Unique{columns,nulls_equal:false} if columns==&names(&["tag"]))));
+    let complete=extract(&db,&bindings).unwrap();
+    assert!(complete.tables["children"].iter().any(|c|matches!(&c.fact,Fact::ForeignKey{columns,target,references}
+        if columns==&names(&["x","y"]) && target=="parents" && references==&names(&["a","b"]))));
+    assert_eq!(complete,extract(&db,&bindings).unwrap(),"unchanged metadata has a stable revision");
+    assert_ne!(complete.revision,restricted.revision);
+    let empty=extract(&db,&[]).unwrap();
+    assert!(empty.tables.is_empty());
+    assert!(empty.revision.starts_with("duckdb:"));
+}

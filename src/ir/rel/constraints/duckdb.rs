@@ -44,20 +44,14 @@ fn validate_bindings(tables: &[TableBinding]) -> Result<(), String> {
     }
     Ok(())
 }
-/// Extract PK/UNIQUE/NOT NULL/FK metadata only for the explicit bindings.
-/// Foreign keys to tables outside the supplied set are omitted.
-pub fn extract(
-    connection: &Connection,
-    tables: &[TableBinding],
-) -> Result<ConstraintCatalog, String> {
-    validate_bindings(tables)?;
+fn validate_comparison_domain(connection: &Connection, tables: &[TableBinding]) -> Result<(), String> {
     let collation: String = connection
         .query_row("SELECT current_setting('default_collation')", [], |r| {
             r.get(0)
         })
         .map_err(|e| e.to_string())?;
     if !collation.is_empty() && !collation.eq_ignore_ascii_case("binary") {
-        return Err("constraint extraction requires binary comparison semantics; supply explicit compatible facts for collated sources".into());
+        return Err("constraint validation and extraction require binary comparison semantics; supply explicit compatible facts for collated sources".into());
     }
     // Key enforcement and query equality must use the same domain. DuckDB
     // exposes collations in table definitions, not Arrow field metadata.
@@ -80,6 +74,16 @@ pub fn extract(
             if tokens.iter().any(|t|matches!(t,Token::Word(w) if w.quote_style.is_none()&&w.value.eq_ignore_ascii_case("collate"))) {return Err(format!("collated source {} requires explicit equality-compatible constraints",t.name));}
         }
     }
+    Ok(())
+}
+/// Extract PK/UNIQUE/NOT NULL/FK metadata only for the explicit bindings.
+/// Foreign keys to tables outside the supplied set are omitted.
+pub fn extract(
+    connection: &Connection,
+    tables: &[TableBinding],
+) -> Result<ConstraintCatalog, String> {
+    validate_bindings(tables)?;
+    validate_comparison_domain(connection, tables)?;
     let mut result = ConstraintCatalog::default();
     let mut stmt=connection.prepare("SELECT constraint_name, constraint_type, to_json(constraint_column_names)::VARCHAR, referenced_table, to_json(referenced_column_names)::VARCHAR FROM duckdb_constraints() WHERE database_name=? AND schema_name=? AND table_name=? ORDER BY constraint_index").map_err(|e|e.to_string())?;
     for t in tables {
@@ -160,6 +164,7 @@ pub fn validate(
         return Err("validation requires a nonempty snapshot scope".into());
     }
     validate_bindings(tables)?;
+    validate_comparison_domain(connection, tables)?;
     let table = |name: &str| {
         tables
             .iter()
