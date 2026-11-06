@@ -1475,3 +1475,52 @@ fn cypher_encoded_list_insert_handles_all_text_layouts_and_rejects_scalar_lists(
         }
     }
 }
+
+#[test]
+fn cypher_cast_planning_preserves_operands_and_distinguishes_lenient_conversions() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    for source in [DataType::Utf8, DataType::Int64, DataType::Float64, DataType::Boolean] {
+        let plan = scalar_scope(vec![Field::new("value", source.clone(), true)]);
+        for (name, target, lenient) in [
+            ("toInteger", DataType::Int64, true), ("TOFLOAT", DataType::Float64, true),
+            ("toBoolean", DataType::Boolean, true), ("toString", DataType::Utf8, true),
+            ("to_int8", DataType::Int8, false), ("to_int16", DataType::Int16, false),
+            ("to_int32", DataType::Int32, false), ("to_int64", DataType::Int64, false),
+            ("to_uint8", DataType::UInt8, false), ("to_uint16", DataType::UInt16, false),
+            ("to_uint32", DataType::UInt32, false), ("to_uint64", DataType::UInt64, false),
+            ("to_float", DataType::Float32, false), ("to_double", DataType::Float64, false),
+        ] {
+            let (operand, actual, tolerant) = ctx.cast_parts(&plan, name, &[binding("value")]).unwrap();
+            assert_eq!(operand, col_exact("value"), "{name} must not pre-cast its operand");
+            assert_eq!(operand.get_type(plan.schema()).unwrap(), source);
+            assert_eq!(actual, target, "{name}");
+            assert_eq!(tolerant, lenient, "{name}");
+        }
+        for (name, target) in [(" INT64 ", DataType::Int64), ("\"STRING\"", DataType::Utf8),
+            ("DECIMAL(18, 4)", DataType::Decimal128(18,4))] {
+            let (operand, actual, lenient) = ctx.cast_parts(&plan, "CAST", &[
+                binding("value"), IrExpr::Lit(Lit::String(name.into()))]).unwrap();
+            assert_eq!(operand, col_exact("value")); assert_eq!(actual, target); assert!(!lenient);
+        }
+    }
+}
+
+#[test]
+fn cypher_cast_planning_reports_bad_arity_targets_and_unbound_operands() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("value",DataType::Int64,true)]);
+    for (name, args, expected) in [
+        ("cast", vec![], "cast arity"),
+        ("cast", vec![binding("value")], "cast arity"),
+        ("cast", vec![binding("value"),binding("value"),binding("value")], "cast arity"),
+        ("cast", vec![binding("value"),binding("value")], "dynamic cast target"),
+        ("toInteger", vec![], "arity"),
+        ("toFloat", vec![binding("value"),binding("value")], "arity"),
+        ("unsupported_conversion", vec![binding("value")], "not relationally lowered"),
+        ("cast", vec![binding("value"),IrExpr::Lit(Lit::String("DECIMAL(x,2)".into()))], "invalid decimal target"),
+    ] {
+        let error = ctx.cast_parts(&plan,name,&args).unwrap_err();
+        assert!(error.to_string().contains(expected), "{name}: {error}");
+    }
+    assert!(ctx.cast_parts(&plan,"toInteger",&[binding("missing")]).is_err());
+}
