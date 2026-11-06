@@ -1524,3 +1524,29 @@ fn cypher_cast_planning_reports_bad_arity_targets_and_unbound_operands() {
     }
     assert!(ctx.cast_parts(&plan,"toInteger",&[binding("missing")]).is_err());
 }
+
+#[test]
+fn cypher_cast_planning_rejects_decimal_types_arrow_cannot_represent() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("value", DataType::Int64, true)]);
+    for target in ["DECIMAL(0,0)", "DECIMAL(39,0)", "DECIMAL(255,0)",
+        "DECIMAL(38,39)", "DECIMAL(2,3)", "DECIMAL(38,127)"] {
+        let result = ctx.cast_parts(&plan,"cast",&[
+            binding("value"), IrExpr::Lit(Lit::String(target.into()))]);
+        assert!(result.is_err(), "invalid decimal target was accepted: {target}: {result:?}");
+        assert!(result.unwrap_err().to_string().contains("invalid decimal target"));
+    }
+}
+
+#[test]
+fn cypher_cast_planning_preserves_valid_decimal_precision_and_negative_scales() {
+    let graph = PropertyGraph::new(); let ctx = cypher_context(&graph);
+    let plan = scalar_scope(vec![Field::new("value", DataType::Int64, true)]);
+    for (precision, scale) in [(1,0), (1,1), (38,0), (38,38), (18,4), (2,-3), (38,-128)] {
+        let target = format!("DECIMAL({precision},{scale})");
+        let (operand, kind, lenient) = ctx.cast_parts(&plan,"cast",&[
+            binding("value"), IrExpr::Lit(Lit::String(target))]).unwrap();
+        assert_eq!(kind, DataType::Decimal128(precision,scale));
+        assert_eq!(operand, col_exact("value")); assert!(!lenient);
+    }
+}

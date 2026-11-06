@@ -301,6 +301,11 @@ pub(super) fn data_type_for_cast_target(type_name: &str) -> RelResult<DataType> 
                 "invalid decimal target `{type_name}`"
             )));
         }
+        arrow::datatypes::validate_decimal_precision_and_scale::<arrow::datatypes::Decimal128Type>(
+            precision, scale,
+        ).map_err(|error| RelError::Unsupported(format!(
+            "invalid decimal target `{type_name}`: {error}"
+        )))?;
         return Ok(DataType::Decimal128(precision, scale));
     }
     match normalized.as_str() {
