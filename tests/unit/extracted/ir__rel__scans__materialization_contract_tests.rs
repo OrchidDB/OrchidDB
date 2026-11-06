@@ -758,3 +758,42 @@ async fn mapped_constant_batches_execute_on_postgres_and_trino() {
         }
     }
 }
+
+#[test]
+fn mapped_scans_reject_schema_changes_before_inlining_constant_rows() {
+    for empty in [false,true] {
+        let first_schema=Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,true)]));
+        let first=if empty {RecordBatch::new_empty(first_schema)}else{
+            RecordBatch::try_new(first_schema,vec![Arc::new(Int64Array::from(vec![Some(1)]))]).unwrap()
+        };
+        let cases = vec![
+            ("changed_type",RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("id",DataType::Int32,true)])),vec![Arc::new(arrow::array::Int32Array::from(vec![Some(2)]))]).unwrap()),
+            ("changed_name",RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("other",DataType::Int64,true)])),vec![Arc::new(Int64Array::from(vec![Some(2)]))]).unwrap()),
+            ("extra_column",RecordBatch::try_new(Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,true),Field::new("extra",DataType::Int64,true)])),vec![Arc::new(Int64Array::from(vec![Some(2)])),Arc::new(Int64Array::from(vec![Some(99)]))]).unwrap()),
+        ];
+        for (name,second) in cases {
+            let second=if empty {RecordBatch::new_empty(second.schema())}else{second};
+            for mapped in [false,true] {
+                let graph=PropertyGraph::new(); let mut context=cypher_scan_context(&graph);
+                context.options.mapping=mapped.then(||Arc::new(Default::default()));
+                let result=context.scan_batches(name,vec![first.clone(),second.clone()]);
+                assert!(result.is_err(),"{name} schema silently accepted: mapped={mapped}, empty={empty}");
+                assert_eq!(context.scan_counter,0);
+            }
+        }
+    }
+}
+
+#[test]
+fn scan_schema_compatibility_allows_nonnullable_batches_under_nullable_fields() {
+    for mapped in [false,true] {
+        let graph=PropertyGraph::new(); let mut context=cypher_scan_context(&graph);
+        context.options.mapping=mapped.then(||Arc::new(Default::default()));
+        let batches=[true,false].into_iter().map(|nullable|RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("id",DataType::Int64,nullable)])),
+            vec![Arc::new(Int64Array::from(vec![1_i64]))],
+        ).unwrap()).collect();
+        let result=context.scan_batches("compatible",batches).unwrap();
+        assert_eq!(result.plan.schema().field(0).data_type(),&DataType::Int64);
+    }
+}

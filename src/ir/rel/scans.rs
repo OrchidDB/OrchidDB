@@ -300,6 +300,15 @@ impl<'a> LoweringContext<'a> {
             .map(RecordBatch::schema)
             .unwrap_or_else(|| Arc::new(Schema::empty()));
         if self.options.mapping.is_some() && !schema.fields().is_empty() {
+            // Match MemTable's schema contract before zipping cells with field
+            // names; incompatible batches must not be coerced or truncated.
+            for batch in &batches {
+                if !schema.contains(&batch.schema()) {
+                    return Err(datafusion::error::DataFusionError::Plan(
+                        "Mismatch between schema and batches".into(),
+                    ).into());
+                }
+            }
             // These are compiler-owned constants (VALUES and empty scans),
             // not mapped source data. Keep them in the relational plan so the
             // owning SQL engine executes them without installing a MemTable.
